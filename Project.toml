@@ -1,0 +1,16 @@
+name = "LifeAI"
+uuid = "97d4aa85-b24f-40f3-9546-923fb8deb5c5"
+version = "0.1.0"
+authors = ["beamiter <beamiter@163.com>"]
+
+[deps]
+ConcreteStructs = "2569d6c7-a4a2-43d3-a901-331e8e4be471"
+Lux = "b2108857-7c20-44ae-9111-449ecde12c47"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+ConcreteStructs = "0.2.5"
+Lux = "1.31.4"
+Random = "1.11.0"
+Test = "1.11.0"

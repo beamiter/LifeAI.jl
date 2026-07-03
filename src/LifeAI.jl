@@ -1,6 +1,7 @@
 module LifeAI
 
 export MultiHeadAttention
+export manual_scaled_dot_product_attention
 export TransformerBlock
 export RoPE
 export SamplingSchedule
@@ -15,13 +16,5 @@ include("core/sampling.jl")
 include("data/tokenizer.jl")
 include("data/dataset.jl")
 include("train/train_gpt.jl")
-
-using .MultiHeadAttention
-using .TransformerBlock
-using .RoPE
-using .SamplingSchedule
-using .Tokenizer
-using .DatasetLoader
-using .TrainerGPT
 
 end # module LifeAI
