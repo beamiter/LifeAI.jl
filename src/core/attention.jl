@@ -1,5 +1,6 @@
 using Lux
 using ConcreteStructs
+using NNlib: batched_mul, softmax
 
 @concrete struct MultiHeadAttention <: AbstractLuxContainerLayer{(
     :q_proj, :k_proj, :v_proj, :o_proj
@@ -59,7 +60,7 @@ function (attn::MultiHeadAttention)(x, ps, st::NamedTuple)
     values = reshape(values, attn.head_dim, attn.num_heads, num_tokens, B)
 
     # 3. scaled dot-product attention
-    context, attn_weights = manual_scaled_dot_product_attention(
+    context, attn_weights = batched_scaled_dot_product_attention(
         queries,
         keys,
         values;
@@ -164,4 +165,59 @@ function manual_scaled_dot_product_attention(
     end
 
     return eltype(q).(out), attn
+end
+
+function batched_scaled_dot_product_attention(
+    q,
+    k,
+    v;
+    is_causal::Bool=true,
+)
+    # q, k, v:
+    # (D, H, T, B)
+    D, H, Tq, B = size(q)
+    Dk, Hk, Tk, Bk = size(k)
+    Dv, Hv, Tv, Bv = size(v)
+
+    @assert D == Dk == Dv
+    @assert H == Hk == Hv
+    @assert B == Bk == Bv
+    @assert Tk == Tv
+
+    HB = H * B
+    inv_sqrt_d = inv(sqrt(Float32(D)))
+
+    # 合并 head 和 batch：
+    #
+    # q3: (Tq, D,  H*B)
+    # k3: (D,  Tk, H*B)
+    # v3: (Tk, D,  H*B)
+    q3 = reshape(permutedims(Float32.(q), (3, 1, 2, 4)), Tq, D, HB)
+    k3 = reshape(permutedims(Float32.(k), (1, 3, 2, 4)), D, Tk, HB)
+    v3 = reshape(permutedims(Float32.(v), (3, 1, 2, 4)), Tk, D, HB)
+
+    # scores: (Tq, Tk, H*B)
+    scores = batched_mul(q3, k3) .* inv_sqrt_d
+
+    if is_causal
+        # mask: (Tq, Tk, 1)
+        # tk > tq 的位置不可见
+        mask = reshape((1:Tk)' .> (1:Tq), Tq, Tk, 1)
+        scores = ifelse.(mask, -Inf32, scores)
+    end
+
+    # attention weights: 对 key 维度做 softmax
+    # weights: (Tq, Tk, H*B)
+    weights = softmax(scores; dims=2)
+
+    # context3: (Tq, D, H*B)
+    context3 = batched_mul(weights, v3)
+
+    # 还原为 (D, H, Tq, B)
+    context = permutedims(reshape(context3, Tq, D, H, B), (2, 3, 1, 4))
+
+    # attn: (Tq, Tk, H, B)
+    attn = reshape(weights, Tq, Tk, H, B)
+
+    return eltype(q).(context), attn
 end

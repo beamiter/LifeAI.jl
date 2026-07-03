@@ -2,6 +2,7 @@ module LifeAI
 
 export MultiHeadAttention
 export manual_scaled_dot_product_attention
+export batched_scaled_dot_product_attention
 export TransformerBlock
 export RoPE
 export SamplingSchedule
