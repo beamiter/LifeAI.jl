@@ -15,6 +15,9 @@ using NNlib: batched_mul, softmax
     head_dim::Int
     d_out::Int
     is_causal::Bool
+
+    use_rope::Bool
+    rope
 end
 
 function MultiHeadAttention(
@@ -23,6 +26,9 @@ function MultiHeadAttention(
     head_dim=nothing,
     use_bias::Bool=false,
     is_causal::Bool=true,
+    use_rope::Bool=false,
+    max_seq_len::Int=2048,
+    rope_theta::Real=10000.0,
 )
     if head_dim === nothing
         @assert d_in % num_heads == 0 "`d_in` must be divisible by `num_heads`"
@@ -30,6 +36,17 @@ function MultiHeadAttention(
     end
 
     d_out = num_heads * head_dim
+
+    if use_rope
+        @assert iseven(head_dim) "`head_dim` must be even when using RoPE"
+        rope = RoPE(
+            head_dim;
+            max_seq_len,
+            theta=rope_theta,
+        )
+    else
+        rope = nothing
+    end
 
     return MultiHeadAttention(
         Dense(d_in, d_out; use_bias),
@@ -41,6 +58,8 @@ function MultiHeadAttention(
         head_dim,
         d_out,
         is_causal,
+        use_rope,
+        rope,
     )
 end
 
@@ -58,6 +77,13 @@ function (attn::MultiHeadAttention)(x, ps, st::NamedTuple)
     queries = reshape(queries, attn.head_dim, attn.num_heads, num_tokens, B)
     keys = reshape(keys, attn.head_dim, attn.num_heads, num_tokens, B)
     values = reshape(values, attn.head_dim, attn.num_heads, num_tokens, B)
+
+    # 2.5 RoPE:
+    #     只作用在 Q/K 上，不作用在 V 上。
+    if attn.use_rope
+        queries = apply_rope(queries, attn.rope)
+        keys = apply_rope(keys, attn.rope)
+    end
 
     # 3. scaled dot-product attention
     context, attn_weights = batched_scaled_dot_product_attention(
