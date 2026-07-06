@@ -62,10 +62,14 @@ function TransformerBlock(
     @assert mlp_hidden_dim > 0 "`mlp_hidden_dim` must be positive"
 
     # GPT-style pre-norm: normalize over the channel/model dimension only.
+    #
     # For x: (d_model, seq_len, batch), dims=1 means each token is normalized
-    # independently across its feature dimension.
-    norm1 = LayerNorm((d_model,); epsilon=Float32(norm_epsilon), dims=1)
-    norm2 = LayerNorm((d_model,); epsilon=Float32(norm_epsilon), dims=1)
+    # independently across its feature dimension. In the current Lux/LuxLib version,
+    # parameter arrays must have the same rank as x when dims is specified.
+    # Therefore we use (d_model, 1), so scale/bias broadcast over seq_len.
+    norm_shape = (d_model, 1)
+    norm1 = LayerNorm(norm_shape; epsilon=Float32(norm_epsilon), dims=1)
+    norm2 = LayerNorm(norm_shape; epsilon=Float32(norm_epsilon), dims=1)
 
     attn = MultiHeadAttention(
         d_model,
