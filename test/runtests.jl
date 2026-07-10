@@ -2,7 +2,7 @@ using Test
 using Random
 using Lux
 using LifeAI: MultiHeadAttention, manual_scaled_dot_product_attention, batched_scaled_dot_product_attention,
-RoPE, apply_rope, TransformerBlock
+RoPE, apply_rope, TransformerBlock, GPTModel
 
 @testset "Attention" begin
     include("test_manual_attention.jl")
@@ -15,4 +15,8 @@ end
 
 @testset "TransformerBlock" begin
     include("test_transformer.jl")
+end
+
+@testset "GPT" begin
+    include("test_gpt.jl")
 end

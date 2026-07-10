@@ -9,6 +9,7 @@ export SamplingSchedule
 export Tokenizer
 export DatasetLoader
 export TrainerGPT
+export GPTModel
 
 include("core/rope.jl")
 include("core/attention.jl")
@@ -17,5 +18,6 @@ include("core/sampling.jl")
 include("data/tokenizer.jl")
 include("data/dataset.jl")
 include("train/train_gpt.jl")
+include("models/gpt.jl")
 
 end # module LifeAI
