@@ -7,7 +7,7 @@ export TransformerBlock
 export RoPE, apply_rope
 export SamplingSchedule
 export Tokenizer, fit_tokenizer, encode, decode, vocab_size
-export DatasetLoader
+export DatasetLoader, num_samples, num_batches
 export TrainerGPT
 export GPTModel
 

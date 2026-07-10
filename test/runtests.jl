@@ -24,3 +24,7 @@ end
 @testset "Tokenizer" begin
     include("test_tokenizer.jl")
 end
+
+@testset "DatasetLoader" begin
+    include("test_dataset.jl")
+end
