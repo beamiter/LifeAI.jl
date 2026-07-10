@@ -6,7 +6,7 @@ export batched_scaled_dot_product_attention
 export TransformerBlock
 export RoPE, apply_rope
 export SamplingSchedule
-export Tokenizer
+export Tokenizer, fit_tokenizer, encode, decode, vocab_size
 export DatasetLoader
 export TrainerGPT
 export GPTModel

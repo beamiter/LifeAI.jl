@@ -20,3 +20,7 @@ end
 @testset "GPT" begin
     include("test_gpt.jl")
 end
+
+@testset "Tokenizer" begin
+    include("test_tokenizer.jl")
+end
