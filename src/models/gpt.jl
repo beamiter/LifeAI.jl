@@ -109,6 +109,19 @@ function GPTModel(
     )
 end
 
+function _validate_token_ids(tokens::Array{T,N}, vocab_size::Int) where {T<:Integer,N}
+    @assert all(id -> 1 <= id <= vocab_size, tokens) "token id is outside 1:vocab_size"
+    return nothing
+end
+
+function _validate_token_ids(tokens::Array, vocab_size::Int)
+    @assert false "`tokens` must contain integer token ids"
+end
+
+# Device arrays are validated on the host before they enter a compiled train
+# step. Avoid data-dependent Julia control flow while Reactant is tracing.
+_validate_token_ids(tokens, vocab_size::Int) = nothing
+
 function (model::GPTModel)(tokens, ps, st::NamedTuple)
     @assert ndims(tokens) == 2 "`tokens` must have shape (seq_len, batch)"
 
@@ -116,8 +129,7 @@ function (model::GPTModel)(tokens, ps, st::NamedTuple)
 
     @assert seq_len > 0 "`tokens` must contain at least one token"
     @assert seq_len <= model.max_seq_len "sequence length exceeds model.max_seq_len"
-    @assert eltype(tokens) <: Integer "`tokens` must contain integer token ids"
-    @assert all(id -> 1 <= id <= model.vocab_size, tokens) "token id is outside 1:vocab_size"
+    _validate_token_ids(tokens, model.vocab_size)
 
     # Embedding maps (seq_len, batch) -> (d_model, seq_len, batch).
     x, st_token_embedding = model.token_embedding(

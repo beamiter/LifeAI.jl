@@ -136,33 +136,30 @@ end
 
 function apply_rope(
     x,
-    rope::RoPE;
+    cos_cache,
+    sin_cache;
     start_pos::Int=1,
 )
     D, H, T, B = size(x)
 
-    @assert D == rope.head_dim "`x` head_dim does not match rope.head_dim"
     @assert iseven(D) "`head_dim` must be even for RoPE"
+    @assert size(cos_cache) == size(sin_cache) "RoPE cache shapes must match"
+    @assert size(cos_cache, 1) == D ÷ 2 "RoPE cache head_dim does not match input"
     @assert start_pos >= 1 "`start_pos` must be >= 1"
-    @assert start_pos + T - 1 <= rope.max_seq_len "`x` exceeds rope.max_seq_len"
+    @assert start_pos + T - 1 <= size(cos_cache, 2) "`x` exceeds RoPE cache length"
 
     half_dim = D ÷ 2
 
-    # Pair adjacent channels without mutating an output buffer. Zygote cannot
-    # differentiate through the explicit writes in apply_rope!, while these
-    # reshape/view/broadcast operations remain fully differentiable.
+    # The caches are model states, so Reactant moves them onto the XLA device
+    # before tracing. This avoids host-to-device transfers inside the compiled
+    # train step and mirrors the cache handling used by the Lux Qwen example.
     x_pairs = reshape(x, 2, half_dim, H, T, B)
     x1 = selectdim(x_pairs, 1, 1)
     x2 = selectdim(x_pairs, 1, 2)
 
     positions = start_pos:(start_pos + T - 1)
-    device = get_device(x)
-
-    cos_values = device(eltype(x).(@view(rope.cos_cache[:, positions])))
-    sin_values = device(eltype(x).(@view(rope.sin_cache[:, positions])))
-
-    cos_values = reshape(cos_values, half_dim, 1, T, 1)
-    sin_values = reshape(sin_values, half_dim, 1, T, 1)
+    cos_values = reshape(eltype(x).(cos_cache[:, positions]), half_dim, 1, T, 1)
+    sin_values = reshape(eltype(x).(sin_cache[:, positions]), half_dim, 1, T, 1)
 
     y1 = x1 .* cos_values .- x2 .* sin_values
     y2 = x1 .* sin_values .+ x2 .* cos_values
@@ -174,6 +171,20 @@ function apply_rope(
     )
 
     return reshape(y_pairs, D, H, T, B)
+end
+
+function apply_rope(
+    x,
+    rope::RoPE;
+    start_pos::Int=1,
+)
+    @assert size(x, 1) == rope.head_dim "`x` head_dim does not match rope.head_dim"
+
+    device = get_device(x)
+    cos_cache = device(eltype(x).(rope.cos_cache))
+    sin_cache = device(eltype(x).(rope.sin_cache))
+
+    return apply_rope(x, cos_cache, sin_cache; start_pos)
 end
 
 function apply_rope_threaded!(

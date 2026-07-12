@@ -1,7 +1,8 @@
 using Lux
 using ConcreteStructs
 using MLDataDevices: get_device
-using NNlib: batched_mul, softmax
+using NNlib: batched_mul, make_causal_mask, softmax
+using Random: AbstractRNG
 
 @concrete struct MultiHeadAttention <: AbstractLuxContainerLayer{(
     :q_proj, :k_proj, :v_proj, :o_proj
@@ -64,6 +65,17 @@ function MultiHeadAttention(
     )
 end
 
+function LuxCore.initialstates(rng::AbstractRNG, attn::MultiHeadAttention)
+    return (;
+        q_proj=LuxCore.initialstates(rng, attn.q_proj),
+        k_proj=LuxCore.initialstates(rng, attn.k_proj),
+        v_proj=LuxCore.initialstates(rng, attn.v_proj),
+        o_proj=LuxCore.initialstates(rng, attn.o_proj),
+        rope_cos_cache=attn.use_rope ? attn.rope.cos_cache : nothing,
+        rope_sin_cache=attn.use_rope ? attn.rope.sin_cache : nothing,
+    )
+end
+
 function (attn::MultiHeadAttention)(x, ps, st::NamedTuple)
     # x: (d_in, num_tokens, batch)
     _, num_tokens, B = size(x)
@@ -82,8 +94,8 @@ function (attn::MultiHeadAttention)(x, ps, st::NamedTuple)
     # 2.5 RoPE:
     #     只作用在 Q/K 上，不作用在 V 上。
     if attn.use_rope
-        queries = apply_rope(queries, attn.rope)
-        keys = apply_rope(keys, attn.rope)
+        queries = apply_rope(queries, st.rope_cos_cache, st.rope_sin_cache)
+        keys = apply_rope(keys, st.rope_cos_cache, st.rope_sin_cache)
     end
 
     # 3. scaled dot-product attention
@@ -107,6 +119,8 @@ function (attn::MultiHeadAttention)(x, ps, st::NamedTuple)
             k_proj=st_k_proj,
             v_proj=st_v_proj,
             o_proj=st_o_proj,
+            rope_cos_cache=st.rope_cos_cache,
+            rope_sin_cache=st.rope_sin_cache,
         ),
     )
 end
@@ -227,11 +241,17 @@ function batched_scaled_dot_product_attention(
     scores = batched_mul(q3, k3) .* inv_sqrt_d
 
     if is_causal
-        # mask: (Tq, Tk, 1), moved to the same device as scores.
-        # tk > tq 的位置不可见
-        mask = reshape((1:Tk)' .> (1:Tq), Tq, Tk, 1)
-        mask = get_device(scores)(mask)
-        scores = ifelse.(mask, -Inf32, scores)
+        # Build the mask from `scores` so it is created directly on the active
+        # backend. Calling `get_device` while Reactant traces is unsupported.
+        visible = if Tq == Tk
+            # NNlib's mask is upper triangular; transpose it because scores are
+            # laid out as (query, key, batch-head).
+            reshape(permutedims(make_causal_mask(scores; dims=2)), Tq, Tk, 1)
+        else
+            # Cross-attention is only used outside the compiled GPT path.
+            get_device(scores)(reshape((1:Tk)' .<= (1:Tq), Tq, Tk, 1))
+        end
+        scores = ifelse.(visible, scores, -Inf32)
     end
 
     # attention weights: 对 key 维度做 softmax
