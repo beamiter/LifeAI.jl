@@ -1,5 +1,6 @@
 using Lux
 using ConcreteStructs
+using MLDataDevices: get_device
 using NNlib: batched_mul, softmax
 
 @concrete struct MultiHeadAttention <: AbstractLuxContainerLayer{(
@@ -226,9 +227,10 @@ function batched_scaled_dot_product_attention(
     scores = batched_mul(q3, k3) .* inv_sqrt_d
 
     if is_causal
-        # mask: (Tq, Tk, 1)
+        # mask: (Tq, Tk, 1), moved to the same device as scores.
         # tk > tq 的位置不可见
         mask = reshape((1:Tk)' .> (1:Tq), Tq, Tk, 1)
+        mask = get_device(scores)(mask)
         scores = ifelse.(mask, -Inf32, scores)
     end
 

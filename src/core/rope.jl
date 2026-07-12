@@ -1,3 +1,5 @@
+using MLDataDevices: get_device
+
 """
     RoPE(head_dim; max_seq_len=2048, theta=10000.0)
 
@@ -137,8 +139,41 @@ function apply_rope(
     rope::RoPE;
     start_pos::Int=1,
 )
-    y = similar(x)
-    return apply_rope!(y, x, rope; start_pos)
+    D, H, T, B = size(x)
+
+    @assert D == rope.head_dim "`x` head_dim does not match rope.head_dim"
+    @assert iseven(D) "`head_dim` must be even for RoPE"
+    @assert start_pos >= 1 "`start_pos` must be >= 1"
+    @assert start_pos + T - 1 <= rope.max_seq_len "`x` exceeds rope.max_seq_len"
+
+    half_dim = D ÷ 2
+
+    # Pair adjacent channels without mutating an output buffer. Zygote cannot
+    # differentiate through the explicit writes in apply_rope!, while these
+    # reshape/view/broadcast operations remain fully differentiable.
+    x_pairs = reshape(x, 2, half_dim, H, T, B)
+    x1 = selectdim(x_pairs, 1, 1)
+    x2 = selectdim(x_pairs, 1, 2)
+
+    positions = start_pos:(start_pos + T - 1)
+    device = get_device(x)
+
+    cos_values = device(eltype(x).(@view(rope.cos_cache[:, positions])))
+    sin_values = device(eltype(x).(@view(rope.sin_cache[:, positions])))
+
+    cos_values = reshape(cos_values, half_dim, 1, T, 1)
+    sin_values = reshape(sin_values, half_dim, 1, T, 1)
+
+    y1 = x1 .* cos_values .- x2 .* sin_values
+    y2 = x1 .* sin_values .+ x2 .* cos_values
+
+    y_pairs = cat(
+        reshape(y1, 1, half_dim, H, T, B),
+        reshape(y2, 1, half_dim, H, T, B);
+        dims=1,
+    )
+
+    return reshape(y_pairs, D, H, T, B)
 end
 
 function apply_rope_threaded!(

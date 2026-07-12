@@ -28,3 +28,7 @@ end
 @testset "DatasetLoader" begin
     include("test_dataset.jl")
 end
+
+@testset "GPT training and generation" begin
+    include("test_train_gpt.jl")
+end

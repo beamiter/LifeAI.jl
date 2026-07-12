@@ -1,6 +1,7 @@
 # LifeAI.jl
 
-LifeAI.jl is organized as a Julia package skeleton for sequence models and text generation research.
+LifeAI.jl is a small Julia/Lux research project for understanding and building
+decoder-only language models end to end.
 
 ## Layout
 
@@ -13,13 +14,26 @@ LifeAI.jl is organized as a Julia package skeleton for sequence models and text 
 - `src/data/` data pipeline modules:
   - `tokenizer.jl`
   - `dataset.jl`
-- `src/train/` training scripts:
-  - `train_gpt.jl`
-- `examples/minigpt.jl` quick smoke example.
+- `src/models/gpt.jl` decoder-only GPT model.
+- `src/train/train_gpt.jl` next-token loss and training loop.
+- `src/generation/text_generation.jl` greedy, temperature, and top-k generation.
+- `examples/minigpt.jl` tiny character-level training and generation demo.
 - `notes/week01_transformer.md` initial milestone notes.
 
-## Run example
+## Install dependencies
 
 ```bash
-julia examples/minigpt.jl
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```
+
+## Run tests
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.test()'
+```
+
+## Train and generate
+
+```bash
+julia --project=. examples/minigpt.jl
 ```
