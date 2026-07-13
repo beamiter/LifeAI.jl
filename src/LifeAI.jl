@@ -12,6 +12,8 @@ export GPTModel
 export TrainerGPT, init_train_state, next_token_loss, train_step!, train_gpt!
 export generate
 export LayerKVCache, GPTKVCache, init_kv_cache, prefill, decode_step, generate_cached
+export StaticLayerKVCache, StaticGPTKVCache, init_static_kv_cache
+export XLAKVDecoder, xla_prefill!, xla_decode_step!, generate_xla_cached!
 
 include("core/rope.jl")
 include("core/attention.jl")
@@ -23,5 +25,6 @@ include("models/gpt.jl")
 include("train/train_gpt.jl")
 include("generation/text_generation.jl")
 include("generation/kv_cache.jl")
+include("generation/xla_kv_cache.jl")
 
 end # module LifeAI

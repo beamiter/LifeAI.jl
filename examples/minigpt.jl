@@ -30,7 +30,7 @@ model = GPTModel(
     64,
     4,
     2;
-    max_seq_len=32,
+    max_seq_len=160,
     use_rope=true,
 )
 
@@ -71,23 +71,24 @@ train_state, losses = train_gpt!(
 println("initial loss = $(first(losses))")
 println("final loss   = $(last(losses))")
 
-# The request here is training acceleration. Move the small trained model back
-# to the CPU for the existing eager generation loop; XLA generation can be
-# compiled separately once a KV cache is added.
-host = Lux.cpu_device()
-ps_host, st_host = host((train_state.parameters, train_state.states))
-
-generated, _ = generate(
+# Keep parameters and states on the Reactant device. Prefill compiles once for
+# this prompt shape; the fixed-shape one-token decode executable is then reused
+# for all later token positions.
+decoder = XLAKVDecoder(
     model,
-    ps_host,
-    st_host,
+    train_state.parameters,
+    train_state.states;
+    xla_backend=xla_backend,
+)
+
+generated, _ = generate_xla_cached!(
+    decoder,
     tokenizer,
     "小机器人";
     max_new_tokens=120,
     temperature=0.8f0,
     top_k=8,
     rng=rng,
-    device=host,
 )
 
 println()
