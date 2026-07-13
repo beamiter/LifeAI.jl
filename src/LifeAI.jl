@@ -11,6 +11,7 @@ export DatasetLoader, num_samples, num_batches
 export GPTModel
 export TrainerGPT, init_train_state, next_token_loss, train_step!, train_gpt!
 export generate
+export LayerKVCache, GPTKVCache, init_kv_cache, prefill, decode_step, generate_cached
 
 include("core/rope.jl")
 include("core/attention.jl")
@@ -21,5 +22,6 @@ include("data/dataset.jl")
 include("models/gpt.jl")
 include("train/train_gpt.jl")
 include("generation/text_generation.jl")
+include("generation/kv_cache.jl")
 
 end # module LifeAI

@@ -32,3 +32,7 @@ end
 @testset "GPT training and generation" begin
     include("test_train_gpt.jl")
 end
+
+@testset "GPT KV cache" begin
+    include("test_kv_cache.jl")
+end
