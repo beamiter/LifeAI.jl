@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v1.0.1
+# v1.0.3
 
 using Markdown
 using InteractiveUtils
@@ -16,248 +16,170 @@ macro bind(def, element)
     #! format: on
 end
 
-# ╔═╡ 231683dc-76f2-11f1-b598-71ad80529b10
+# ╔═╡ 10000000-0000-0000-0000-000000000001
 begin
     import Pkg
     Pkg.activate(normpath(joinpath(@__DIR__, "..")))
 
-    using Random
-    using LinearAlgebra
     using PlutoUI
     using Plots
+    using Statistics
+
+    figure_dir = joinpath(@__DIR__, "assets")
+    mkpath(figure_dir)
 end
 
-# ╔═╡ 85ca7b42-db45-40e0-9bd2-ddff1f6f9815
+# ╔═╡ 10000000-0000-0000-0000-000000000002
+md"""
+# 01｜为什么需要 KV Cache？
+
+这一章先不碰复杂实现，只回答一个问题：
+
+> 模型连续生成 token 时，为什么不应该反复重算全部历史？
+
+所有图都会同时显示在 Pluto 中，并保存到当前目录的 `assets/`，可以直接用于知乎文章。
+"""
+
+# ╔═╡ 10000000-0000-0000-0000-000000000003
+@bind prompt_len Slider(4:2:128; default=32, show_value=true)
+
+# ╔═╡ 10000000-0000-0000-0000-000000000004
+@bind new_tokens Slider(1:64; default=24, show_value=true)
+
+# ╔═╡ 10000000-0000-0000-0000-000000000005
 begin
-    D = 4      # head_dim
-    H = 1      # 先只看一个 head
-    T = 6      # token 数量
-    B = 1      # 先只看一个 batch
+    context_lengths = collect(prompt_len:(prompt_len + new_tokens - 1))
 
-    rng = MersenneTwister(1234)
+    # 这里只画“数量级直觉”，不是具体硬件耗时模型。
+    eager_step_cost = context_lengths .^ 2
+    cached_step_cost = context_lengths
 
-    q = randn(rng, Float32, D, H, T, B)
-    k = randn(rng, Float32, D, H, T, B)
-    v = randn(rng, Float32, D, H, T, B)
-
-    h = 1
-    b = 1
-    is_causal = true
+    eager_total_cost = cumsum(eager_step_cost)
+    cached_total_cost = cumsum(cached_step_cost)
 end
 
-# ╔═╡ 15f1069c-8172-474e-b205-85dc2af5a83b
-@bind tq Slider(1:T, show_value=true, default=3)
+# ╔═╡ 10000000-0000-0000-0000-000000000006
+md"""
+## 1. 每生成一个 token，重复计算在哪里？
 
-# ╔═╡ 2d8d639d-20a2-48c6-98b4-eb3f98276ffe
+没有缓存时，第 `L+1` 个 token 到来后，前面 `L` 个 token 会再次经过模型，历史位置的 K/V 也会再次计算。
+
+有缓存时，历史 K/V 已经保存在每层 cache 中，只需要：
+
+1. 为新 token 计算 Q/K/V；
+2. 把新 K/V 加入缓存；
+3. 让新 Q 与历史 K 做注意力。
+
+因此下面用平方增长和线性增长，展示两种路径的数量级直觉。
+"""
+
+# ╔═╡ 10000000-0000-0000-0000-000000000007
 begin
-    inv_sqrt_d = inv(sqrt(Float32(D)))
-
-    # 1. 当前 query token 和所有 key token 计算 score
-    raw_scores = Float32[]
-
-    for tk in 1:T
-        score = dot(q[:, h, tq, b], k[:, h, tk, b]) * inv_sqrt_d
-        push!(raw_scores, score)
-    end
-
-    # 2. causal mask
-    masked_scores = copy(raw_scores)
-
-    if is_causal
-        for tk in 1:T
-            if tk > tq
-                masked_scores[tk] = -Inf32
-            end
-        end
-    end
-
-    # 3. stable softmax
-    finite_scores = filter(isfinite, masked_scores)
-    max_score = maximum(finite_scores)
-
-    exp_scores = [
-        isfinite(s) ? exp(s - max_score) : 0.0f0
-        for s in masked_scores
-    ]
-
-    weights = exp_scores ./ sum(exp_scores)
-
-    # 4. context = weighted sum of V
-    context = zeros(Float32, D)
-
-    for tk in 1:T
-        context .+= weights[tk] .* v[:, h, tk, b]
-    end
-
-    raw_scores, masked_scores, weights, context
+    p_step = plot(
+        context_lengths,
+        eager_step_cost;
+        label="整段重算：近似 O(L²)",
+        xlabel="当前上下文长度 L",
+        ylabel="单步相对计算量",
+        title="每生成一个 token 的计算量",
+        linewidth=3,
+        marker=:circle,
+        legend=:topleft,
+        size=(820, 460),
+    )
+    plot!(
+        p_step,
+        context_lengths,
+        cached_step_cost;
+        label="KV Cache：近似 O(L)",
+        linewidth=3,
+        marker=:square,
+    )
+    savefig(p_step, joinpath(figure_dir, "01_step_cost.png"))
+    p_step
 end
 
-# ╔═╡ c5c3c613-14a0-4511-b573-6fb7c1250949
+# ╔═╡ 10000000-0000-0000-0000-000000000008
 begin
-    masked_scores_for_plot = [
-        isfinite(s) ? s : minimum(finite_scores) - 1.0f0
-        for s in masked_scores
-    ]
-
-    p1 = bar(
-        1:T,
-        raw_scores;
-        label=false,
-        xlabel="key token tk",
-        ylabel="score",
-        title="1. Raw scores: q[tq] ⋅ k[tk] / sqrt(D)",
+    p_total = plot(
+        1:new_tokens,
+        eager_total_cost;
+        label="整段重算",
+        xlabel="已经生成的新 token 数",
+        ylabel="累计相对计算量",
+        title="累计计算量会迅速拉开",
+        linewidth=3,
+        marker=:circle,
+        legend=:topleft,
+        size=(820, 460),
     )
-
-    p2 = bar(
-        1:T,
-        masked_scores_for_plot;
-        label=false,
-        xlabel="key token tk",
-        ylabel="masked score",
-        title="2. After causal mask",
+    plot!(
+        p_total,
+        1:new_tokens,
+        cached_total_cost;
+        label="KV Cache",
+        linewidth=3,
+        marker=:square,
     )
-
-    p3 = bar(
-        1:T,
-        weights;
-        label=false,
-        xlabel="key token tk",
-        ylabel="attention weight",
-        title="3. Softmax attention weights",
-        ylim=(0, 1),
-    )
-
-    p4 = bar(
-        1:D,
-        context;
-        label=false,
-        xlabel="feature dim d",
-        ylabel="context value",
-        title="4. Output context vector",
-    )
-
-    plot(p1, p2, p3, p4; layout=(2, 2), size=(900, 650))
+    savefig(p_total, joinpath(figure_dir, "02_total_cost.png"))
+    p_total
 end
 
-# ╔═╡ db432179-401c-43e6-bd0c-aa8034222d05
-@bind stage Select([
-    "1 raw scores",
-    "2 causal mask",
-    "3 softmax weights",
-    "4 weighted sum V",
-])
+# ╔═╡ 10000000-0000-0000-0000-000000000009
+round(eager_total_cost[end] / cached_total_cost[end]; digits=2)
 
-# ╔═╡ 37c05fb3-82cc-4ee3-a4c6-a4ee29fda31a
+# ╔═╡ 10000000-0000-0000-0000-000000000010
+md"""
+当前滑块参数下，直觉模型中的累计计算量相差约 **$(round(eager_total_cost[end] / cached_total_cost[end]; digits=2)) 倍**。
+
+上下文越长，重复计算越昂贵，所以 KV Cache 对长文本生成尤其重要。
+"""
+
+# ╔═╡ 10000000-0000-0000-0000-000000000011
 begin
-    if stage == "1 raw scores"
-        bar(
-            1:T,
-            raw_scores;
-            label=false,
-            xlabel="key token tk",
-            ylabel="score",
-            title="Step 1: q[tq] ⋅ k[tk] / sqrt(D)",
-        )
-
-    elseif stage == "2 causal mask"
-        bar(
-            1:T,
-            masked_scores_for_plot;
-            label=false,
-            xlabel="key token tk",
-            ylabel="masked score",
-            title="Step 2: future tokens are masked",
-        )
-
-    elseif stage == "3 softmax weights"
-        bar(
-            1:T,
-            weights;
-            label=false,
-            xlabel="key token tk",
-            ylabel="attention weight",
-            title="Step 3: softmax turns scores into weights",
-            ylim=(0, 1),
-        )
-
-    else
-        bar(
-            1:D,
-            context;
-            label=false,
-            xlabel="feature dim d",
-            ylabel="context value",
-            title="Step 4: weighted sum of V gives context",
-        )
-    end
-end
-
-# ╔═╡ 2841e8dd-dbae-4e0e-9590-bf2aa51c96cd
-function attention_matrix_for_one_head(q, k; h=1, b=1, is_causal=true)
-    D, H, Tq, B = size(q)
-    _, _, Tk, _ = size(k)
-
-    inv_sqrt_d = inv(sqrt(Float32(D)))
-
-    scores = zeros(Float32, Tq, Tk)
-
-    for tq in 1:Tq
-        for tk in 1:Tk
-            if is_causal && tk > tq
-                scores[tq, tk] = -Inf32
-            else
-                scores[tq, tk] =
-                    dot(q[:, h, tq, b], k[:, h, tk, b]) * inv_sqrt_d
-            end
-        end
-    end
-
-    weights = zeros(Float32, Tq, Tk)
-
-    for tq in 1:Tq
-        row = scores[tq, :]
-        finite_row = filter(isfinite, row)
-        max_score = maximum(finite_row)
-
-        exp_row = [
-            isfinite(s) ? exp(s - max_score) : 0.0f0
-            for s in row
-        ]
-
-        weights[tq, :] .= exp_row ./ sum(exp_row)
-    end
-
-    return weights
-end
-
-# ╔═╡ 0419c2a4-a269-43b6-b796-4be4f6af2d07
-begin
-    attn_matrix = attention_matrix_for_one_head(
-        q,
-        k;
-        h=1,
-        b=1,
-        is_causal=true,
-    )
-
-    heatmap(
-        1:T,
-        1:T,
-        attn_matrix;
-        xlabel="key token tk",
-        ylabel="query token tq",
-        title="Full causal attention matrix",
+    visible_len = min(prompt_len, 32)
+    causal = Float32[j <= i for i in 1:visible_len, j in 1:visible_len]
+    p_causal = heatmap(
+        1:visible_len,
+        1:visible_len,
+        causal;
+        xlabel="Key / Value 的历史位置",
+        ylabel="Query 位置",
+        title="因果注意力：当前位置只能看过去和自己",
         yflip=true,
+        colorbar=false,
+        size=(650, 560),
     )
+    savefig(p_causal, joinpath(figure_dir, "03_causal_attention.png"))
+    p_causal
 end
+
+# ╔═╡ 10000000-0000-0000-0000-000000000012
+md"""
+## 2. 一句话理解 KV Cache
+
+> 每一层都保存历史 token 的 Key 和 Value；下一步只为新 token 做增量计算。
+
+它缓存的不是最终文本，也不是 logits，而是每层 attention 已经计算好的历史 K/V。
+"""
+
+# ╔═╡ 10000000-0000-0000-0000-000000000013
+md"""
+## 本章输出图片
+
+运行上面的绘图单元格后会生成：
+
+- `assets/01_step_cost.png`
+- `assets/02_total_cost.png`
+- `assets/03_causal_attention.png`
+"""
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
-LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 
 [compat]
 Plots = "~1.41.6"
@@ -270,7 +192,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "6f8f1d6048ee1b3be520b9d710733b1d03d3a6a4"
+project_hash = "70fb521f6430c4d289e850d35afd458e7a994ab7"
 
 [[deps.AbstractPlutoDingetjes]]
 git-tree-sha1 = "6c3913f4e9bdf6ba3c08041a446fb1332716cbc2"
@@ -326,15 +248,19 @@ version = "3.31.0"
 
 [[deps.ColorTypes]]
 deps = ["FixedPointNumbers", "Random"]
-git-tree-sha1 = "b10d0b65641d57b8b4d5e234446582de5047050d"
+git-tree-sha1 = "67e11ee83a43eb71ddc950302c53bf33f0690dfe"
 uuid = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
-version = "0.11.5"
+version = "0.12.1"
+weakdeps = ["StyledStrings"]
+
+    [deps.ColorTypes.extensions]
+    StyledStringsExt = "StyledStrings"
 
 [[deps.ColorVectorSpace]]
 deps = ["ColorTypes", "FixedPointNumbers", "LinearAlgebra", "Requires", "Statistics", "TensorCore"]
-git-tree-sha1 = "a1f44953f2382ebb937d60dafbe2deea4bd23249"
+git-tree-sha1 = "8b3b6f87ce8f65a2b4f857528fd8d70086cd72b1"
 uuid = "c3611d14-8923-5661-9e6a-0046d554d3a4"
-version = "0.10.0"
+version = "0.11.0"
 
     [deps.ColorVectorSpace.extensions]
     SpecialFunctionsExt = "SpecialFunctions"
@@ -416,9 +342,9 @@ version = "0.1.11"
 
 [[deps.Expat_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "c307cd83373868391f3ac30b41530bc5d5d05d08"
+git-tree-sha1 = "e6c4a6407a949e79a9d3f249bf49e6987c80e01f"
 uuid = "2e619515-83b5-522b-bb60-26c02a35a201"
-version = "2.8.1+0"
+version = "2.8.2+0"
 
 [[deps.FFMPEG]]
 deps = ["FFMPEG_jll"]
@@ -428,9 +354,9 @@ version = "0.4.5"
 
 [[deps.FFMPEG_jll]]
 deps = ["Artifacts", "Bzip2_jll", "FreeType2_jll", "FriBidi_jll", "JLLWrappers", "LAME_jll", "Libdl", "Ogg_jll", "OpenSSL_jll", "Opus_jll", "PCRE2_jll", "Zlib_jll", "libaom_jll", "libass_jll", "libfdk_aac_jll", "libva_jll", "libvorbis_jll", "x264_jll", "x265_jll"]
-git-tree-sha1 = "cac41ca6b2d399adfc95e51240566f8a60a80806"
+git-tree-sha1 = "7a58e45171b63ed4782f2d36fdee8713a469e6e0"
 uuid = "b22a6f82-2f65-5046-a5b2-351ab43fb4e5"
-version = "8.1.0+0"
+version = "8.1.2+0"
 
 [[deps.FileWatching]]
 uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
@@ -584,9 +510,9 @@ version = "1.6.1"
 
 [[deps.JpegTurbo_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "c0c9b76f3520863909825cbecdef58cd63de705a"
+git-tree-sha1 = "1dae3057da6f2b9c857afef03177bbdc7c4afe92"
 uuid = "aacddb02-875f-59d6-b918-886e6ef4fbf8"
-version = "3.1.5+0"
+version = "3.2.0+0"
 
 [[deps.JuliaSyntaxHighlighting]]
 deps = ["StyledStrings"]
@@ -607,9 +533,9 @@ version = "4.1.0+0"
 
 [[deps.LLVMOpenMP_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "eb62a3deb62fc6d8822c0c4bef73e4412419c5d8"
+git-tree-sha1 = "3ac157462e1e800777cc97d0eafd1bdb5356a470"
 uuid = "1d63c593-3942-5779-bab2-d838dc0a180e"
-version = "18.1.8+0"
+version = "21.1.8+0"
 
 [[deps.LaTeXStrings]]
 git-tree-sha1 = "dda21b8cbd6a6c40d9d02a73230f9d70fed6918c"
@@ -689,9 +615,9 @@ version = "2.42.0+0"
 
 [[deps.Libtiff_jll]]
 deps = ["Artifacts", "JLLWrappers", "JpegTurbo_jll", "LERC_jll", "Libdl", "XZ_jll", "Zlib_jll", "Zstd_jll"]
-git-tree-sha1 = "f04133fe05eff1667d2054c53d59f9122383fe05"
+git-tree-sha1 = "aebd334d06cee9f24cea70bd19a39749daf73881"
 uuid = "89763e89-9b03-5906-acba-b20f662cd828"
-version = "4.7.2+0"
+version = "4.7.3+0"
 
 [[deps.Libuuid_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1286,9 +1212,9 @@ version = "1.4.7+0"
 
 [[deps.Xorg_xkeyboard_config_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_xkbcomp_jll"]
-git-tree-sha1 = "ed349d26affcacafbc7fc2941ace1fb98f71e715"
+git-tree-sha1 = "2e59214e017a55cb87474a00fa76035c82ac0e17"
 uuid = "33bec58e-1273-512f-9401-5d533626f822"
-version = "2.47.0+1"
+version = "2.47.0+2"
 
 [[deps.Xorg_xtrans_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1420,14 +1346,18 @@ version = "1.13.0+0"
 """
 
 # ╔═╡ Cell order:
-# ╠═231683dc-76f2-11f1-b598-71ad80529b10
-# ╠═85ca7b42-db45-40e0-9bd2-ddff1f6f9815
-# ╠═15f1069c-8172-474e-b205-85dc2af5a83b
-# ╠═2d8d639d-20a2-48c6-98b4-eb3f98276ffe
-# ╠═c5c3c613-14a0-4511-b573-6fb7c1250949
-# ╠═db432179-401c-43e6-bd0c-aa8034222d05
-# ╠═37c05fb3-82cc-4ee3-a4c6-a4ee29fda31a
-# ╠═2841e8dd-dbae-4e0e-9590-bf2aa51c96cd
-# ╠═0419c2a4-a269-43b6-b796-4be4f6af2d07
+# ╠═10000000-0000-0000-0000-000000000001
+# ╟─10000000-0000-0000-0000-000000000002
+# ╠═10000000-0000-0000-0000-000000000003
+# ╠═10000000-0000-0000-0000-000000000004
+# ╠═10000000-0000-0000-0000-000000000005
+# ╟─10000000-0000-0000-0000-000000000006
+# ╠═10000000-0000-0000-0000-000000000007
+# ╠═10000000-0000-0000-0000-000000000008
+# ╠═10000000-0000-0000-0000-000000000009
+# ╟─10000000-0000-0000-0000-000000000010
+# ╠═10000000-0000-0000-0000-000000000011
+# ╟─10000000-0000-0000-0000-000000000012
+# ╟─10000000-0000-0000-0000-000000000013
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

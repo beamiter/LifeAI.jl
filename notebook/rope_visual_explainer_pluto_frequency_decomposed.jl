@@ -19,6 +19,9 @@ end
 # ╔═╡ 3e615a50-179f-4a8b-97b5-0e00a2482196
 
 begin
+    import Pkg
+    Pkg.activate(normpath(joinpath(@__DIR__, "..")))
+
     using PlutoUI
     using Plots
     using LinearAlgebra
