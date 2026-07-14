@@ -28,6 +28,14 @@ begin
     using Random
     using Statistics
     using LaTeXStrings
+
+    cjk_font = let
+        source = readchomp(`fc-match -f '%{file}' "Noto Sans CJK SC"`)
+        target = joinpath(tempdir(), "LifeAI-NotoSansCJKSC.ttf")
+        ispath(target) || symlink(source, target)
+        splitext(target)[1]
+    end
+    Plots.default(fontfamily=cjk_font)
 end
 
 

@@ -25,6 +25,14 @@ begin
     using LinearAlgebra
     using PlutoUI
     using Plots
+
+    cjk_font = let
+        source = readchomp(`fc-match -f '%{file}' "Noto Sans CJK SC"`)
+        target = joinpath(tempdir(), "LifeAI-NotoSansCJKSC.ttf")
+        ispath(target) || symlink(source, target)
+        splitext(target)[1]
+    end
+    Plots.default(fontfamily=cjk_font)
 end
 
 # ╔═╡ 85ca7b42-db45-40e0-9bd2-ddff1f6f9815

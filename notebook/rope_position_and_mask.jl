@@ -26,6 +26,14 @@ begin
     using PlutoUI
     using Plots
 
+    cjk_font = let
+        source = readchomp(`fc-match -f '%{file}' "Noto Sans CJK SC"`)
+        target = joinpath(tempdir(), "LifeAI-NotoSansCJKSC.ttf")
+        ispath(target) || symlink(source, target)
+        splitext(target)[1]
+    end
+    Plots.default(fontfamily=cjk_font)
+
     figure_dir = joinpath(@__DIR__, "assets")
     mkpath(figure_dir)
 end
