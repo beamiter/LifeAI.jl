@@ -1,5 +1,9 @@
 # Week 01 — Project Skeleton and Transformer Foundations
 
+> 周期：2026-07-01 — 2026-07-07
+>
+> 历史记录：本文保留 Week 01 当时的目标与 TODO。后续多项 TODO 已经完成，最新状态请查看 [`current_status.md`](current_status.md)。
+
 ## Completed Layout
 
 - `src/LifeAI.jl` entrypoint module now wires core, data, and training modules.
