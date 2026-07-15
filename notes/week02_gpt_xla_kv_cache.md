@@ -1,16 +1,18 @@
 # Week 02 — Minimal GPT, XLA Training, and KV-Cached Decoding
 
-> 周期：2026-07-08 — 2026-07-14
+> 状态：Closed
+>
+> Week 代表逻辑研发阶段而非自然周；达到 Close 条件后即可进入下一阶段。
 
-## 本周目标
+## 本阶段目标
 
-Week 01 已经完成 Attention、RoPE 和 TransformerBlock，本周的核心问题是：
+Week 01 已经完成 Attention、RoPE 和 TransformerBlock，本阶段的核心问题是：
 
 > 能否把已有组件组合成一个真正可训练、可生成，并能高效增量推理的最小 GPT？
 
-本周工作不仅打通了从文本到生成结果的完整链路，还继续推进到 Reactant/XLA 训练、动态 KV Cache 和适合编译复用的固定形状 KV Cache。
+本阶段不仅打通了从文本到生成结果的完整链路，还继续推进到 Reactant/XLA 训练、动态 KV Cache 和适合编译复用的固定形状 KV Cache。
 
-## 本周结果
+## 本阶段结果
 
 ### 1. 完成最小 decoder-only GPT
 
@@ -87,7 +89,7 @@ loss / gradients
 - 新增 `XLAKVDecoder`，分别处理 prompt prefill 编译和固定形状的单 token decode 编译。
 - 实现 `generate_xla_cached!`，使后续 token 能复用同一个 decode executable。
 
-本周由此形成两条互相校验的 cache 路径：
+本阶段由此形成两条互相校验的 cache 路径：
 
 | 路径 | 存储方式 | 主要价值 |
 | --- | --- | --- |
@@ -107,18 +109,18 @@ loss / gradients
 
 同时修复 notebook 的项目环境激活方式，并为图表补充中文字体设置。
 
-## 时间线
+## 推进顺序
 
-| 日期 | 主要进展 |
+| 步骤 | 主要进展 |
 | --- | --- |
-| 07-10 | 完成 GPTModel、Tokenizer、DatasetLoader 及对应测试 |
-| 07-12 | 完成 loss、训练循环、采样生成、MiniGPT 示例和 Reactant/XLA 训练路径 |
-| 07-13 | 完成动态 KV Cache、固定形状 KV Cache 与 XLA 增量解码 |
-| 07-14 | 集中补充 prefill/decode、RoPE、KV Cache 与 XLA 的 Pluto 学习笔记 |
+| 1 | 完成 GPTModel、Tokenizer、DatasetLoader 及对应测试 |
+| 2 | 完成 loss、训练循环、采样生成、MiniGPT 示例和 Reactant/XLA 训练路径 |
+| 3 | 完成动态 KV Cache、固定形状 KV Cache 与 XLA 增量解码 |
+| 4 | 集中补充 prefill/decode、RoPE、KV Cache 与 XLA 的 Pluto 学习笔记 |
 
 ## 验证状态
 
-本周结束后的 2026-07-15 复核中，默认测试套件共有 597 项通过：
+该阶段完成后复核默认测试套件，共有 597 项通过：
 
 | 测试集 | 通过数 |
 | --- | ---: |
@@ -133,7 +135,7 @@ loss / gradients
 
 Reactant/XLA KV Cache 测试由 `LIFEAI_TEST_XLA=true` 显式启用，不属于上述默认 597 项，因此不能据此声称所有 XLA 硬件后端都已完成实机验证。
 
-## 本周关键学习
+## 本阶段关键学习
 
 1. **模型闭环比孤立组件更能暴露问题。** Embedding、张量布局、loss 索引、梯度、采样任何一处不一致，都会在端到端训练中显现。
 2. **prefill 和 decode 是两种不同的计算形态。** prefill 处理整个 prompt，需要 causal relation；decode 只处理一个新 token，可以直接看到 cache 中全部有效历史。

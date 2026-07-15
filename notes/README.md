@@ -5,10 +5,20 @@
 ## 索引
 
 - [`current_status.md`](current_status.md)：最新项目状态、能力边界和近期里程碑。
-- [`week01_transformer.md`](week01_transformer.md)：07-01 至 07-07，项目骨架、Attention、RoPE 与 Transformer 基础。
-- [`week02_gpt_xla_kv_cache.md`](week02_gpt_xla_kv_cache.md)：07-08 至 07-14，最小 GPT、XLA 训练与 KV Cache 增量推理。
-- [`weekly/`](weekly/)：weekly plan、实验过程和周末回顾。
+- [`week01_transformer.md`](week01_transformer.md)：Week 01，项目骨架、Attention、RoPE 与 Transformer 基础。
+- [`week02_gpt_xla_kv_cache.md`](week02_gpt_xla_kv_cache.md)：Week 02，最小 GPT、XLA 训练与 KV Cache 增量推理。
+- [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
 - [`monthly/`](monthly/)：月度总结和跨周能力变化。
+
+## Week 的含义
+
+这里的 Week 是一个**逻辑研发阶段**，不是七天自然周：
+
+1. Open 一个 Week，写清核心问题、预期结果和 Close 条件。
+2. 围绕目标实现、学习和验证，不为填满时间而增加任务。
+3. Close 条件提前满足时，立即关闭当前 Week 并完成回顾。
+4. 未完成项只有在仍然重要时才进入下一个 Week。
+5. Close 后更新项目状态，再 Open 下一阶段。
 
 ## 记录原则
 
@@ -18,4 +28,4 @@
 4. **围绕能力积累**：每项工作说明它增强了模型、智能体、具身闭环或工程基础中的哪一部分。
 5. **保留历史语境**：旧计划可以过期，但不重写当时的判断；用新的状态快照说明后续结果。
 
-新的一周或月份可以分别复制 [`weekly/TEMPLATE.md`](weekly/TEMPLATE.md) 和 [`monthly/TEMPLATE.md`](monthly/TEMPLATE.md) 开始记录。
+开启新的 Week 或编写月度总结时，可以分别复制 [`weekly/TEMPLATE.md`](weekly/TEMPLATE.md) 和 [`monthly/TEMPLATE.md`](monthly/TEMPLATE.md)。

@@ -1,8 +1,8 @@
 # Week 01 — Project Skeleton and Transformer Foundations
 
-> 周期：2026-07-01 — 2026-07-07
+> 状态：Closed
 >
-> 历史记录：本文保留 Week 01 当时的目标与 TODO。后续多项 TODO 已经完成，最新状态请查看 [`current_status.md`](current_status.md)。
+> 历史记录：Week 代表逻辑研发阶段而非自然周。本文保留 Week 01 当时的目标与 TODO；后续多项 TODO 已经完成，最新状态请查看 [`current_status.md`](current_status.md)。
 
 ## Completed Layout
 

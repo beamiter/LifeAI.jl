@@ -1,7 +1,5 @@
 # LifeAI.jl 当前状态
 
-> 状态日期：2026-07-15
-
 ## 一句话判断
 
 项目已经从 Attention 原理学习推进到一个可训练、可生成并支持 KV Cache / XLA 路径的最小 decoder-only GPT；当前仍处于模型基础设施阶段，尚未形成 agent loop、multimodal perception 或 embodied control loop。
@@ -47,7 +45,7 @@
 
 ## 验证状态
 
-2026-07-15 运行默认测试套件：
+运行默认测试套件：
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.test()'
