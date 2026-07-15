@@ -21,6 +21,8 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 **阶段判断：语言模型基础闭环已形成，推理工程正在深化，智能体与具身层尚未开始。**
 
+当前活动阶段是 [`Week 03 — Reproducible Training and Evaluation`](notes/week03_reproducible_training.md)：先让实验可保存、可恢复、可评估、可比较，再进入模型结构与真实语料升级。
+
 目前已经具备：
 
 - 手写与批量 scaled dot-product attention、因果遮罩和 Multi-Head Attention。

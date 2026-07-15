@@ -32,7 +32,7 @@ logits: (vocab_size, seq_len, batch)
 
 - 实现字符级 `Tokenizer`，支持词表拟合、encode、decode 和 unknown token。
 - 实现滑动窗口 `DatasetLoader`，生成 next-token prediction 所需的输入与目标。
-- 支持 `seq_len`、`batch_size`、`stride`、shuffle 和 `drop_last`。
+- 支持 `seq_len`、`batch_size`、`stride` 和 `drop_last`；当前按确定性顺序迭代。
 - 保持 Julia/Lux 使用的 1-based token id，并在进入设备或编译路径前完成合法性检查。
 
 数据流由此形成：

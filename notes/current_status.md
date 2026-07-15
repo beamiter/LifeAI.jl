@@ -4,6 +4,10 @@
 
 项目已经从 Attention 原理学习推进到一个可训练、可生成并支持 KV Cache / XLA 路径的最小 decoder-only GPT；当前仍处于模型基础设施阶段，尚未形成 agent loop、multimodal perception 或 embodied control loop。
 
+## 当前活动阶段
+
+[`Week 03 — Reproducible Training and Evaluation`](week03_reproducible_training.md) 已 Open，目标是让现有小 GPT 实验可保存、可恢复、可评估、可比较。模型结构、Tokenizer 与真实中文语料实验在该基线建立后分阶段推进。
+
 ## 已实现能力
 
 ### 1. 模型基本组件
@@ -17,7 +21,7 @@
 ### 2. 数据与训练
 
 - 字符级 Tokenizer，支持编码、解码和未知字符处理。
-- 滑动窗口 DatasetLoader，支持 batch、stride、shuffle 和 `drop_last`。
+- 滑动窗口 DatasetLoader，支持 batch、stride 和 `drop_last`；当前按确定性顺序迭代，尚未实现 shuffle。
 - 稀疏 next-token cross entropy，不需要构造 dense one-hot target。
 - Zygote 常规训练路径。
 - Reactant + Enzyme 的 XLA 训练路径，支持稳定 shape 检查和编译复用。
@@ -68,15 +72,24 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 ## 建议的近期里程碑
 
-### Milestone A：收束文本模型基础闭环
+### Milestone A：建立可恢复、可评估、可比较的实验基线
 
-- 建立固定的小模型配置、checkpoint 保存/加载和最小 evaluation。
+- 建立版本化 checkpoint、加载与断点续训。
+- 完成无泄漏的 train / validation 划分、perplexity 和 global gradient norm clipping。
 - 对 full forward、动态 KV Cache 和静态 XLA KV Cache 做一致性与性能基线。
-- 把 notebook 中已经验证的关键结论回收到可维护的文档或测试中。
 
-完成标准：同一个可复现实验能够完成训练、保存、加载、生成、质量检查与推理性能比较。
+完成标准：同一个可复现实验能够完成训练、验证、保存、加载、恢复、生成与推理性能比较。
 
-### Milestone B：建立最小有状态智能体闭环
+### Milestone B：推进模型组件、Tokenizer 与中文训练
+
+- 以独立开关和对照实验加入 RMSNorm、SwiGLU、embedding / lm_head 权重共享。
+- 建立 byte-level baseline，再实现并评估 BPE。
+- 实现 GQA，并复用 KV Cache correctness / benchmark 验证 cache 布局和 decode 收益。
+- 建立来源、清洗、切分和配置可追踪的小型中文语料训练流程。
+
+完成标准：每项结构变化都能与固定 baseline 独立比较，并在版本化 Tokenizer 和中文数据上完成可恢复训练与 validation evaluation。
+
+### Milestone C：建立最小有状态智能体闭环
 
 - 定义与具体机器人无关的 `Observation`、`Action`、`Memory` 和 policy / model 接口。
 - 先在一个简单、可重复的模拟环境中跑通“感知 → 记忆 → 决策 → 行动 → 反馈”。
