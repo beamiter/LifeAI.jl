@@ -2,11 +2,11 @@
 
 ## 一句话判断
 
-项目已经从 Attention 原理学习推进到一个可训练、可生成并支持 KV Cache / XLA 路径的最小 decoder-only GPT；当前仍处于模型基础设施阶段，尚未形成 agent loop、multimodal perception 或 embodied control loop。
+项目已经形成一个可训练、可生成、可保存恢复、可评估比较，并支持 KV Cache / XLA 路径的最小 decoder-only GPT；当前仍处于模型基础设施阶段，尚未形成 agent loop、multimodal perception 或 embodied control loop。
 
 ## 当前活动阶段
 
-[`Week 03 — Reproducible Training and Evaluation`](week03_reproducible_training.md) 已 Open，目标是让现有小 GPT 实验可保存、可恢复、可评估、可比较。模型结构、Tokenizer 与真实中文语料实验在该基线建立后分阶段推进。
+[`Week 03 — Reproducible Training and Evaluation`](week03_reproducible_training.md) 已 Closed。[`Week 04 — Modern GPT Building Blocks`](week04_model_modernization.md) 已 Open，正在独立加入并比较 RMSNorm、SwiGLU 与 embedding / LM head 权重共享。
 
 ## 已实现能力
 
@@ -23,6 +23,10 @@
 - 字符级 Tokenizer，支持编码、解码和未知字符处理。
 - 滑动窗口 DatasetLoader，支持 batch、stride 和 `drop_last`；当前按确定性顺序迭代，尚未实现 shuffle。
 - 稀疏 next-token cross entropy，不需要构造 dense one-hot target。
+- 基于原始 token stream 的无泄漏 train / validation 划分。
+- token-weighted validation loss 与 perplexity evaluation。
+- 版本化、设备无关的 checkpoint，保存模型配置、Tokenizer、parameters / states、optimizer state、step、训练进度与 RNG。
+- 确定性 checkpoint resume，以及可配置的 global gradient norm clipping。
 - Zygote 常规训练路径。
 - Reactant + Enzyme 的 XLA 训练路径，支持稳定 shape 检查和编译复用。
 
@@ -33,6 +37,8 @@
 - 动态 KV Cache，支持 prompt prefill、单 token decode 和 cached generation。
 - 固定容量、固定 shape 的 KV Cache，为编译后的增量推理保持执行形状稳定。
 - XLA prefill / decode 接口及编译后生成流程。
+- full forward、动态 KV Cache、静态 KV Cache 的 correctness matrix 与 microbenchmark。
+- CPU、CUDA GPU、XLA CPU、XLA GPU 独立进程 benchmark，可区分 cold compile、warm-up 和 steady-state。
 
 ### 4. 学习与可视化记录
 
@@ -55,14 +61,18 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-默认套件共 597 项测试通过，验证了 Attention、RoPE、TransformerBlock、GPT、Tokenizer、DatasetLoader、训练/生成和动态 KV Cache。`test/test_xla_kv_cache.jl` 只有设置 `LIFEAI_TEST_XLA=true` 时才会运行，因此默认测试通过不等价于当前机器上已验证全部 XLA 后端。
+2026-07-18 复核默认套件，共 654 项测试通过；其中 Week 03 可复现实验测试 57 项，覆盖无泄漏划分、evaluation / perplexity、梯度裁剪、checkpoint / resume 和 KV Cache correctness / benchmark schema。最新本机四后端 benchmark 的 CPU、CUDA GPU、XLA CPU、XLA GPU 均为 `ok` 且 correctness 为 `true`。
+
+`test/test_xla_kv_cache.jl` 只有设置 `LIFEAI_TEST_XLA=true` 时才会运行，因此默认 654 项通过本身不等价于专项 XLA 测试已覆盖全部硬件路径；默认测试与硬件 benchmark 是两类证据。
 
 ## 当前边界
 
 以下能力尚未实现，不应从现有 GPT demo 推断为已经具备：
 
 - 面向真实任务和长期运行的模型质量。
-- checkpoint 管理、可重复实验配置、系统化评估与性能基线。
+- RMSNorm、SwiGLU、embedding / LM head 权重共享等现代模型组件。
+- byte-level / BPE Tokenizer、版本化真实语料和较大规模训练。
+- 实验注册、超参数搜索、分布式训练和面向生产的性能评估。
 - 对话状态、工作记忆、长期记忆和记忆检索。
 - 任务规划、工具调用、反思和自主执行循环。
 - 图像、音频、空间状态或机器人传感器输入。
@@ -72,13 +82,15 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 ## 建议的近期里程碑
 
-### Milestone A：建立可恢复、可评估、可比较的实验基线
+### Milestone A：建立可恢复、可评估、可比较的实验基线（已完成）
 
 - 建立版本化 checkpoint、加载与断点续训。
 - 完成无泄漏的 train / validation 划分、perplexity 和 global gradient norm clipping。
 - 对 full forward、动态 KV Cache 和静态 XLA KV Cache 做一致性与性能基线。
 
 完成标准：同一个可复现实验能够完成训练、验证、保存、加载、恢复、生成与推理性能比较。
+
+完成记录：Week 03 已于 2026-07-18 Closed；默认测试 654 / 654 通过，四后端基线均完成 correctness 与性能记录。
 
 ### Milestone B：推进模型组件、Tokenizer 与中文训练
 
@@ -101,10 +113,10 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 | 主线 | 当前状态 | 下一关键缺口 |
 | --- | --- | --- |
-| 模型基本组件 | 已形成最小 GPT 闭环 | checkpoint、evaluation、benchmark、更多架构实验 |
-| 高效训练与推理 | 已有 Zygote / XLA 与两类 KV Cache | 后端实测、性能基线、稳定接口 |
+| 模型基本组件 | 已形成最小 GPT 与可复现实验闭环 | RMSNorm、SwiGLU、权重共享及独立对照 |
+| 高效训练与推理 | 已有 Zygote / XLA、两类 KV Cache 与四后端基线 | 现代组件兼容、稳定公共接口、真实规模验证 |
 | 智能体核心 | 尚未开始 | memory、planning、tools、agent loop |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | 已有 Week 01 与多份 notebook | 稳定执行 weekly plan 和月度总结 |
+| 学习记录 | Week 01—03 已 Closed，Week 04 已 Open | 完成 Week 04 并持续月度总结 |

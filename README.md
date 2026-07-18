@@ -19,24 +19,27 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：语言模型基础闭环已形成，推理工程正在深化，智能体与具身层尚未开始。**
+**阶段判断：语言模型与可复现实验闭环已形成，模型组件现代化正在推进，智能体与具身层尚未开始。**
 
-当前活动阶段是 [`Week 03 — Reproducible Training and Evaluation`](notes/week03_reproducible_training.md)：先让实验可保存、可恢复、可评估、可比较，再进入模型结构与真实语料升级。
+[`Week 03 — Reproducible Training and Evaluation`](notes/week03_reproducible_training.md) 已 Closed。当前活动阶段是 [`Week 04 — Modern GPT Building Blocks`](notes/week04_model_modernization.md)，目标是独立加入并比较 RMSNorm、SwiGLU 与 embedding / LM head 权重共享。
 
 目前已经具备：
 
 - 手写与批量 scaled dot-product attention、因果遮罩和 Multi-Head Attention。
 - RoPE、pre-norm TransformerBlock 和 decoder-only GPTModel。
 - 字符级 Tokenizer、DatasetLoader、next-token loss 和训练循环。
+- 无泄漏 train / validation 划分、token-weighted evaluation / perplexity 和 global gradient norm clipping。
+- 版本化 checkpoint、设备无关保存/加载和确定性断点续训。
 - 基于 Zygote 的常规训练，以及 Reactant/Enzyme 驱动的 XLA 训练路径。
 - greedy、temperature、top-k 文本生成。
 - 动态 KV Cache 的 prefill / decode，以及面向 XLA 的固定形状 KV Cache 和编译后增量解码。
+- full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
 - 围绕 Attention、RoPE、prefill/decode 和 KV Cache 的 Pluto 可视化学习笔记。
 - 默认测试套件全部通过；Reactant/XLA 专项测试需显式启用。
 
 尚未具备：
 
-- 可用于真实任务的预训练模型、稳定的 checkpoint / evaluation / benchmark 流程。
+- 可用于真实任务的预训练模型、现代化模型组件、版本化 Tokenizer 与真实语料训练流程。
 - 长短期记忆、规划、工具使用、反思等完整的 agent loop。
 - 视觉、听觉和传感器输入等多模态感知。
 - 面向仿真或实体机器人的 observation / action 抽象、控制链路与安全边界。

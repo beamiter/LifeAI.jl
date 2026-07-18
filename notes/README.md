@@ -7,7 +7,8 @@
 - [`current_status.md`](current_status.md)：最新项目状态、能力边界和近期里程碑。
 - [`week01_transformer.md`](week01_transformer.md)：Week 01，项目骨架、Attention、RoPE 与 Transformer 基础。
 - [`week02_gpt_xla_kv_cache.md`](week02_gpt_xla_kv_cache.md)：Week 02，最小 GPT、XLA 训练与 KV Cache 增量推理。
-- [`week03_reproducible_training.md`](week03_reproducible_training.md)：Week 03（Open），checkpoint、断点续训、validation / perplexity、梯度裁剪与 KV Cache 基线。
+- [`week03_reproducible_training.md`](week03_reproducible_training.md)：Week 03（Closed），checkpoint、断点续训、validation / perplexity、梯度裁剪与 KV Cache 基线。
+- [`week04_model_modernization.md`](week04_model_modernization.md)：Week 04（Open），RMSNorm、SwiGLU、embedding / LM head 权重共享及独立对照实验。
 - [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
 - [`monthly/`](monthly/)：月度总结和跨周能力变化。
 

@@ -1,6 +1,8 @@
 # Week 03 — Reproducible Training and Evaluation
 
-> 状态：Open
+> 状态：Closed
+>
+> 关闭记录：2026-07-18
 
 ## Open：核心问题
 
@@ -40,13 +42,13 @@ Week 06：GQA、较真实的小型中文语料训练与综合 benchmark
 
 | 工作项 | 交付物 | 验收方式 | 状态 |
 | --- | --- | --- | --- |
-| KV Cache 与增量推理收口 | correctness / benchmark 脚本与结果记录 | eager、dynamic、static logits 对齐；区分编译时间、prefill 和 decode 指标 | 计划中 |
-| Checkpoint 保存与加载 | 版本化 checkpoint payload 和 save/load API | round-trip 后 config、tokenizer、parameters、states、optimizer state、step 一致 | 计划中 |
-| 断点续训 | resume API 与确定性测试 | 连续训练与中断恢复训练在受控条件下结果一致或在明确容差内一致 | 计划中 |
-| Train / validation 划分 | 基于原始 token stream 的 split 工具 | 两侧窗口不跨越 split boundary，validation 不参与参数更新 | 计划中 |
-| Evaluation / perplexity | 无梯度 evaluation loop | 按 token 数加权的 NLL 正确，`perplexity = exp(mean_nll)` | 计划中 |
-| 梯度裁剪 | global norm clipping 配置、指标和测试 | 超阈值梯度被裁剪，未超阈值梯度保持不变 | 计划中 |
-| 示例与文档 | 可中断再恢复的最小训练示例 | 从保存到恢复、评估和生成可以完整运行 | 计划中 |
+| KV Cache 与增量推理收口 | correctness / benchmark 脚本与结果记录 | eager、dynamic、static logits 对齐；区分编译时间、prefill 和 decode 指标 | 已验证 |
+| Checkpoint 保存与加载 | 版本化 checkpoint payload 和 save/load API | round-trip 后 config、tokenizer、parameters、states、optimizer state、step 一致 | 已验证 |
+| 断点续训 | resume API 与确定性测试 | 连续训练与中断恢复训练在受控条件下结果一致或在明确容差内一致 | 已验证 |
+| Train / validation 划分 | 基于原始 token stream 的 split 工具 | 两侧窗口不跨越 split boundary，validation 不参与参数更新 | 已验证 |
+| Evaluation / perplexity | 无梯度 evaluation loop | 按 token 数加权的 NLL 正确，`perplexity = exp(mean_nll)` | 已验证 |
+| 梯度裁剪 | global norm clipping 配置、指标和测试 | 超阈值梯度被裁剪，未超阈值梯度保持不变 | 已验证 |
+| 示例与文档 | 可中断再恢复的最小训练示例 | 从保存到恢复、评估和生成可以完整运行 | 已完成 |
 
 ## 四后端性能对比
 
@@ -253,13 +255,45 @@ perplexity = exp(mean_nll)
 
 ## 实验与过程记录
 
-按推进顺序补充输入配置、结果、异常和架构决策。
+### 自动化验证
+
+2026-07-18 运行默认测试套件：
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.test()'
+```
+
+结果为 654 / 654 通过，其中 Week 03 新增的可复现实验测试为 57 / 57。覆盖：
+
+- token stream 级 train / validation 划分与边界检查；
+- token-weighted NLL、validation loss 与 perplexity；
+- global gradient norm clipping 的裁剪与不裁剪分支；
+- checkpoint round-trip、logits 一致性和确定性 resume；
+- full forward、dynamic cache、static cache correctness matrix；
+- benchmark 返回结构、warm-up 与 steady-state 指标。
+
+默认命令不包含由 `LIFEAI_TEST_XLA=true` 控制的专项测试，不能仅凭 654 项默认测试声称所有 XLA 路径都已被该命令覆盖。
+
+### 四后端基线
+
+最新一次本机 benchmark 使用相同模型、输入 shape、随机种子，3 个 warm-up step 和 30 个正式样本；原始产物保存在被 `.gitignore` 排除的 `benchmark_results/` 中，关键结果在此固化：
+
+| 后端 | 状态 | correctness | 训练稳态 p50 / p90 ms | 训练 tokens/s | static cache decode 稳态 ms/token |
+| --- | --- | --- | ---: | ---: | ---: |
+| CPU | ok | true | 376.46 / 448.06 | 2720.0 | 0.54 |
+| CUDA GPU | ok | true | 9.88 / 11.20 | 103613.6 | 1.33 |
+| XLA CPU | ok | true | 41.96 / 43.06 | 24405.2 | 0.22 |
+| XLA GPU | ok | true | 2.76 / 3.13 | 370711.9 | 0.53 |
+
+测试配置为 vocab 512、`d_model=128`、4 heads、4 layers、训练序列 128、batch 8、prompt 128、decode 64。该结果是当前机器上的工程基线，不外推为其他模型规模或硬件上的普遍结论。
+
+XLA GPU 的相同 4-token decode 对比中，no-cache、dynamic cache、static cache 均与 reference 对齐；三者分别产生 5、5、2 个目标 executable，steady decode p50 分别为 1.12、1.30、0.86 ms/token。结果支持“固定 shape 能减少重编译并改善当前 workload 的 decode 稳态延迟”，同时也显示编译冷启动成本必须与稳态指标分开解释。
 
 ## Close 回顾
 
-- **完成了什么**：
-- **验证证据**：
-- **没有完成及原因**：
-- **最重要的认知变化**：
-- **是否满足 Close 条件**：否，当前为 Open。
-- **带到下一 Week 的问题**：
+- **完成了什么**：建立版本化、设备无关的 checkpoint 与恢复路径；补齐无泄漏数据划分、token-weighted evaluation / perplexity、global gradient norm clipping；形成 full / dynamic / static KV Cache correctness 与四后端 benchmark；提供 train → validate → save → load → resume → generate 示例。
+- **验证证据**：默认测试 654 / 654 通过，Week 03 专项 57 / 57；最新四后端 benchmark 均为 `ok` 且 correctness 为 `true`；checkpoint 测试验证 logits、参数、optimizer state、step 和恢复后 loss 的一致性。
+- **没有完成及原因**：没有加入 RMSNorm、SwiGLU、权重共享、Tokenizer 或真实语料；这些是为保持变量可归因而主动留给后续 Week 的范围，不是 Week 03 缺项。默认测试命令未包含显式启用的 XLA 专项套件，其覆盖边界已单独记录。
+- **最重要的认知变化**：性能结论必须同时保留 correctness reference、cold compile、warm-up、steady-state 和 shape / executable 数；“可运行”只有在训练状态、数据边界和指标口径都能复现时才成为可信实验基线。
+- **是否满足 Close 条件**：是，Week 03 于 2026-07-18 Closed。
+- **带到下一 Week 的问题**：如何在不破坏 legacy baseline、checkpoint 和 KV Cache / XLA 路径的前提下，独立引入并比较 RMSNorm、SwiGLU 与 embedding / LM head 权重共享。
