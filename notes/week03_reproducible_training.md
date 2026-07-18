@@ -48,6 +48,65 @@ Week 06：GQA、较真实的小型中文语料训练与综合 benchmark
 | 梯度裁剪 | global norm clipping 配置、指标和测试 | 超阈值梯度被裁剪，未超阈值梯度保持不变 | 计划中 |
 | 示例与文档 | 可中断再恢复的最小训练示例 | 从保存到恢复、评估和生成可以完整运行 | 计划中 |
 
+## 四后端性能对比
+
+新增 `scripts/benchmark_week03.sh`，以独立进程对比以下四条路径：
+
+| 名称 | 训练后端 | 设备 | 推理路径 |
+| --- | --- | --- | --- |
+| `cpu` | Zygote | CPU | eager 固定形状 KV Cache |
+| `gpu` | Zygote | NVIDIA CUDA GPU | eager 固定形状 KV Cache |
+| `xla_cpu` | Reactant + Enzyme | XLA CPU | 编译后的固定形状 KV Cache |
+| `xla_gpu` | Reactant + Enzyme | XLA GPU | 编译后的固定形状 KV Cache |
+
+直接运行完整对比：
+
+```bash
+./scripts/benchmark_week03.sh
+```
+
+结果写入 `benchmark_results/week03-<timestamp>/`：
+
+- `summary.md`：四后端横向表格。
+- `cpu.tsv` 等：可继续用脚本或表格软件分析的长格式原始指标。
+- `cpu.log` 等：每个独立进程的完整日志。
+- `status.tsv`：成功、失败或缺少硬件后端的状态。
+
+默认指标包括：
+
+- 训练首步延迟（包含该后端首次编译/执行）、稳态 p50/p90/min/max、tokens/s。
+- KV Cache prefill 首次与稳态延迟。
+- KV Cache 单 token decode 首次与稳态 p50/p90、tokens/s。
+- 与 host full-forward reference 的 prefill/decode 最大绝对误差。
+- 参数量、理论参数/KV Cache 字节数、进程峰值 RSS。
+- `nvidia-smi` 可用时的轮询峰值 GPU 显存。
+
+每个后端必须使用相同模型、输入 shape、随机种子和样本数。脚本默认把后端放进独立 Julia 进程，避免 CUDA、Reactant/XLA 的编译缓存和内存池互相污染。首步与稳态应分别解读，不能把 XLA 编译时间混入 steady-state 吞吐。
+
+跨设备 correctness 默认使用 `isapprox(atol=5e-3, rtol=5e-3)`；这是为了容纳 GPU/XLA 不同归约与融合顺序带来的浮点误差。原始最大绝对误差仍写入 TSV。需要严格复现实验时可设置 `LIFEAI_BENCH_ATOL` 和 `LIFEAI_BENCH_RTOL`。
+
+可以用环境变量调整实验规模。例如：
+
+```bash
+LIFEAI_BENCH_SAMPLES=30 \
+LIFEAI_BENCH_EMBED_DIM=256 \
+LIFEAI_BENCH_NUM_HEADS=8 \
+LIFEAI_BENCH_NUM_LAYERS=6 \
+LIFEAI_BENCH_SEQ_LEN=256 \
+LIFEAI_BENCH_BATCH_SIZE=16 \
+LIFEAI_BENCH_PROMPT_TOKENS=256 \
+LIFEAI_BENCH_DECODE_TOKENS=128 \
+./scripts/benchmark_week03.sh
+```
+
+只跑部分后端：
+
+```bash
+LIFEAI_BENCH_BACKENDS="cpu xla_cpu" ./scripts/benchmark_week03.sh
+```
+
+建议正式采样前关闭其他高负载任务，固定 `JULIA_NUM_THREADS`、CPU governor 和 GPU power state，并至少使用 30 个稳态样本。GPU 显存是 `nvidia-smi` 的离散轮询峰值，短暂峰值可能漏采；进程 RSS 也不等价于设备显存。
+
 ## 关键设计约束
 
 ### 1. Checkpoint 保存的是实验状态，不只是模型权重

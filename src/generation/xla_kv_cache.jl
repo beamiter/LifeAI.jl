@@ -161,7 +161,9 @@ function _scaled_dot_product_attention_valid_prefix(
     # `valid_length` is an XLA-tracked scalar during compiled decoding. The
     # physical cache shape stays constant while this mask exposes only the
     # already-written prefix.
-    key_positions = reshape(Int32.(collect(1:Tk)), 1, Tk, 1)
+    key_positions_host = reshape(Int32.(collect(1:Tk)), 1, Tk, 1)
+    key_positions = similar(scores, Int32, 1, Tk, 1)
+    copyto!(key_positions, key_positions_host)
     visible = key_positions .<= valid_length
     scores = ifelse.(visible, scores, -Inf32)
 

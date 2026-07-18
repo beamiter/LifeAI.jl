@@ -119,3 +119,11 @@ julia --project=. examples/minigpt.jl
 ```bash
 LIFEAI_XLA_BACKEND=cpu julia --project=. examples/minigpt.jl
 ```
+
+对比 CPU、CUDA GPU、XLA+CPU 和 XLA+GPU 的训练与 KV Cache 推理性能：
+
+```bash
+./scripts/benchmark_week03.sh
+```
+
+脚本会分别记录首编译/首次执行和 steady-state 指标，并生成 TSV 原始数据与 Markdown 汇总。配置项和指标口径见 [`Week 03 四后端性能对比`](notes/week03_reproducible_training.md#四后端性能对比)。
