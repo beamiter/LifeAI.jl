@@ -66,6 +66,8 @@ function _xla_mode_steady(prefill_runs, decode_runs, decode_token_count)
     return (;
         prefill,
         decode,
+        prefill_samples_seconds=copy(prefill_runs),
+        decode_samples_seconds=copy(decode_runs),
         decode_p50_seconds_per_token=decode.p50_seconds / decode_token_count,
         decode_p90_seconds_per_token=decode.p90_seconds / decode_token_count,
         decode_tokens_per_second=decode_token_count / decode.p50_seconds,

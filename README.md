@@ -126,6 +126,6 @@ LIFEAI_XLA_BACKEND=cpu julia --project=. examples/minigpt.jl
 ./scripts/benchmark_week03.sh
 ```
 
-脚本会分别记录首编译/首次执行和 steady-state 指标，并生成 TSV 原始数据与 Markdown 汇总。配置项和指标口径见 [`Week 03 四后端性能对比`](notes/week03_reproducible_training.md#四后端性能对比)。
+脚本会分别记录首编译/首次执行、post-compile warm-up 和 steady-state 指标，并保留逐 iteration 原始耗时，生成 TSV 原始数据与 Markdown 汇总。默认使用 3 个 warm-up step 和 30 个正式样本，避免一次性 runtime settling 扭曲 p90。配置项和指标口径见 [`Week 03 四后端性能对比`](notes/week03_reproducible_training.md#四后端性能对比)。
 
 其中 XLA+GPU 会额外对比 no-cache、dynamic KV Cache 和 static KV Cache，并报告不同 shape 导致的 executable 数量与 cold compilation 总成本。

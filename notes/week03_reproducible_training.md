@@ -74,15 +74,18 @@ Week 06：GQA、较真实的小型中文语料训练与综合 benchmark
 
 默认指标包括：
 
-- 训练首步延迟（包含该后端首次编译/执行）、稳态 p50/p90/min/max、tokens/s。
+- 训练首步延迟（包含该后端首次编译/执行）、post-compile GC、warm-up 原始耗时、稳态 p50/p90/min/max、tokens/s。
 - KV Cache prefill 首次与稳态延迟。
 - KV Cache 单 token decode 首次与稳态 p50/p90、tokens/s。
 - XLA+GPU no-cache、dynamic cache、static cache 的 cold decode 总时间、稳态延迟/吞吐和 executable 数。
 - 与 host full-forward reference 的 prefill/decode 最大绝对误差。
 - 参数量、理论参数/KV Cache 字节数、进程峰值 RSS。
 - `nvidia-smi` 可用时的轮询峰值 GPU 显存。
+- 训练、prefill、decode 逐样本原始耗时；可用这些数组复核分位数和定位离群 iteration。
 
 每个后端必须使用相同模型、输入 shape、随机种子和样本数。脚本默认把后端放进独立 Julia 进程，避免 CUDA、Reactant/XLA 的编译缓存和内存池互相污染。首步与稳态应分别解读，不能把 XLA 编译时间混入 steady-state 吞吐。
+
+训练 cold step 后会先执行一次显式 GC，再运行 `LIFEAI_BENCH_WARMUP_STEPS` 个不计入稳态统计的 step（默认 3），随后再显式 GC 并开始正式采样。两次 GC 和每个 warm-up step 的耗时都会写入 TSV。这样可隔离 XLA GPU 在 cold compile/first run 后稳定出现的一次性 runtime settling；该事件属于 warm-up，不应进入 steady p90。正式采样默认 30 次，避免 10 个样本下单个离群点通过线性插值显著扭曲 p90。
 
 跨设备 correctness 默认使用 `isapprox(atol=5e-3, rtol=5e-3)`；这是为了容纳 GPU/XLA 不同归约与融合顺序带来的浮点误差。原始最大绝对误差仍写入 TSV。需要严格复现实验时可设置 `LIFEAI_BENCH_ATOL` 和 `LIFEAI_BENCH_RTOL`。
 
@@ -101,6 +104,7 @@ Week 06：GQA、较真实的小型中文语料训练与综合 benchmark
 ```bash
 LIFEAI_BENCH_BACKENDS=xla_gpu \
 LIFEAI_BENCH_XLA_MODE_DECODE_TOKENS=16 \
+LIFEAI_BENCH_WARMUP_STEPS=3 \
 LIFEAI_BENCH_SAMPLES=30 \
 ./scripts/benchmark_week03.sh
 ```
@@ -122,6 +126,7 @@ julia --project=. examples/benchmark_kv_cache.jl
 
 ```bash
 LIFEAI_BENCH_SAMPLES=30 \
+LIFEAI_BENCH_WARMUP_STEPS=3 \
 LIFEAI_BENCH_EMBED_DIM=256 \
 LIFEAI_BENCH_NUM_HEADS=8 \
 LIFEAI_BENCH_NUM_LAYERS=6 \

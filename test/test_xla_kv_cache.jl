@@ -75,6 +75,9 @@ using LifeAI:
     @test modes.no_cache.correctness.passed
     @test modes.dynamic_cache.correctness.passed
     @test modes.static_cache.correctness.passed
+    @test length(modes.no_cache.steady.prefill_samples_seconds) == 1
+    @test length(modes.dynamic_cache.steady.decode_samples_seconds) == 1
+    @test length(modes.static_cache.steady.decode_samples_seconds) == 1
     @test modes.no_cache.executable_count == 2
     @test modes.dynamic_cache.executable_count == 2
     @test modes.static_cache.executable_count == 2

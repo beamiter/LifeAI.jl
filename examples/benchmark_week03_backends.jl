@@ -37,7 +37,8 @@ function benchmark_config()
         "LIFEAI_BENCH_XLA_MODE_DECODE_TOKENS",
         min(decode_tokens, 4),
     )
-    samples = env_int("LIFEAI_BENCH_SAMPLES", 10)
+    warmup_steps = env_int("LIFEAI_BENCH_WARMUP_STEPS", 3)
+    samples = env_int("LIFEAI_BENCH_SAMPLES", 30)
     learning_rate = env_float("LIFEAI_BENCH_LEARNING_RATE", 3.0e-4)
     correctness_atol = env_float("LIFEAI_BENCH_ATOL", 5.0e-3)
     correctness_rtol = env_float("LIFEAI_BENCH_RTOL", 5.0e-3)
@@ -56,6 +57,7 @@ function benchmark_config()
     1 <= xla_mode_decode_tokens <= decode_tokens || error(
         "LIFEAI_BENCH_XLA_MODE_DECODE_TOKENS must be in 1:$decode_tokens",
     )
+    warmup_steps >= 0 || error("LIFEAI_BENCH_WARMUP_STEPS must be non-negative")
     samples > 0 || error("LIFEAI_BENCH_SAMPLES must be positive")
     correctness_atol >= 0 || error("LIFEAI_BENCH_ATOL must be non-negative")
     correctness_rtol >= 0 || error("LIFEAI_BENCH_RTOL must be non-negative")
@@ -72,6 +74,7 @@ function benchmark_config()
         decode_tokens,
         xla_mode_decode_tokens,
         max_seq_len,
+        warmup_steps,
         samples,
         learning_rate,
         correctness_atol,
@@ -175,8 +178,24 @@ function benchmark_training(backend, model, config)
     first_loss_value = host_number(first_loss)
     first_seconds = elapsed_seconds(first_start)
 
-    steady_seconds = Float64[]
     final_loss = first_loss_value
+    post_compile_gc_start = time_ns()
+    GC.gc()
+    post_compile_gc_seconds = elapsed_seconds(post_compile_gc_start)
+
+    warmup_seconds = Float64[]
+    for _ in 1:config.warmup_steps
+        sample_start = time_ns()
+        train_state, loss, _ = train_step!(trainer, train_state, batch)
+        final_loss = host_number(loss)
+        push!(warmup_seconds, elapsed_seconds(sample_start))
+    end
+
+    pre_measure_gc_start = time_ns()
+    GC.gc()
+    pre_measure_gc_seconds = elapsed_seconds(pre_measure_gc_start)
+
+    steady_seconds = Float64[]
     for _ in 1:config.samples
         sample_start = time_ns()
         train_state, loss, _ = train_step!(trainer, train_state, batch)
@@ -189,7 +208,11 @@ function benchmark_training(backend, model, config)
         trainer_seconds,
         state_seconds,
         first_seconds,
+        post_compile_gc_seconds,
+        warmup_seconds,
+        pre_measure_gc_seconds,
         steady=stats,
+        steady_samples=copy(steady_seconds),
         steady_tokens_per_second=tokens_per_step / stats.median,
         tokens_per_step,
         first_loss=first_loss_value,
@@ -304,6 +327,8 @@ function benchmark_eager_kv(backend, model, host_ps, host_st, prompt, tokens, co
         first_decode_seconds,
         prefill=prefill_stats,
         decode=decode_stats,
+        prefill_samples=copy(prefill_seconds),
+        decode_samples=copy(decode_seconds),
         decode_tokens_per_second=length(tokens) / decode_stats.median,
         prefill_max_abs_error=prefill_comparison.max_abs_error,
         decode_max_abs_error=decode_comparison.max_abs_error,
@@ -361,6 +386,8 @@ function benchmark_xla_kv(backend, model, host_ps, host_st, prompt, tokens, conf
         first_decode_seconds,
         prefill=prefill_stats,
         decode=decode_stats,
+        prefill_samples=copy(prefill_seconds),
+        decode_samples=copy(decode_seconds),
         decode_tokens_per_second=length(tokens) / decode_stats.median,
         prefill_max_abs_error=prefill_comparison.max_abs_error,
         decode_max_abs_error=decode_comparison.max_abs_error,
@@ -408,6 +435,15 @@ function add_xla_cache_mode_metrics!(metrics, label, report)
     )
     add_metric!(
         metrics,
+        "$(prefix)_steady_prefill_samples_ms",
+        join(
+            (seconds * 1.0e3 for seconds in report.steady.prefill_samples_seconds),
+            ',',
+        ),
+        "ms",
+    )
+    add_metric!(
+        metrics,
         "$(prefix)_steady_decode_p50_ms_per_token",
         report.steady.decode_p50_seconds_per_token * 1.0e3,
         "ms/token",
@@ -417,6 +453,15 @@ function add_xla_cache_mode_metrics!(metrics, label, report)
         "$(prefix)_steady_decode_p90_ms_per_token",
         report.steady.decode_p90_seconds_per_token * 1.0e3,
         "ms/token",
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_steady_decode_samples_ms",
+        join(
+            (seconds * 1.0e3 for seconds in report.steady.decode_samples_seconds),
+            ',',
+        ),
+        "ms",
     )
     add_metric!(
         metrics,
@@ -466,7 +511,10 @@ function collect_metrics(backend)
         config.vocab_size),
     )
 
-    println("[$backend] training: first step + $(config.samples) steady samples")
+    println(
+        "[$backend] training: first step + $(config.warmup_steps) warm-up + " *
+        "$(config.samples) steady samples",
+    )
     training = benchmark_training(backend, model, config)
     println("[$backend] KV inference: first calls + $(config.samples) steady samples")
     inference = startswith(backend, "xla_") ?
@@ -526,6 +574,7 @@ function collect_metrics(backend)
         config.xla_mode_decode_tokens,
         "tokens",
     )
+    add_metric!(metrics, "warmup_steps", config.warmup_steps, "steps")
     add_metric!(metrics, "samples", config.samples)
     add_metric!(metrics, "learning_rate", config.learning_rate)
     add_metric!(metrics, "correctness_atol", config.correctness_atol)
@@ -538,10 +587,34 @@ function collect_metrics(backend)
     add_metric!(metrics, "training_trainer_setup_ms", training.trainer_seconds * 1.0e3, "ms")
     add_metric!(metrics, "training_state_setup_ms", training.state_seconds * 1.0e3, "ms")
     add_metric!(metrics, "training_first_step_ms", training.first_seconds * 1.0e3, "ms")
+    add_metric!(
+        metrics,
+        "training_post_compile_gc_ms",
+        training.post_compile_gc_seconds * 1.0e3,
+        "ms",
+    )
+    add_metric!(
+        metrics,
+        "training_warmup_samples_ms",
+        join((seconds * 1.0e3 for seconds in training.warmup_seconds), ','),
+        "ms",
+    )
+    add_metric!(
+        metrics,
+        "training_pre_measure_gc_ms",
+        training.pre_measure_gc_seconds * 1.0e3,
+        "ms",
+    )
     add_metric!(metrics, "training_steady_min_ms", training.steady.minimum * 1.0e3, "ms")
     add_metric!(metrics, "training_steady_p50_ms", training.steady.median * 1.0e3, "ms")
     add_metric!(metrics, "training_steady_p90_ms", training.steady.p90 * 1.0e3, "ms")
     add_metric!(metrics, "training_steady_max_ms", training.steady.maximum * 1.0e3, "ms")
+    add_metric!(
+        metrics,
+        "training_steady_samples_ms",
+        join((seconds * 1.0e3 for seconds in training.steady_samples), ','),
+        "ms",
+    )
     add_metric!(
         metrics,
         "training_steady_tokens_per_second",
@@ -579,6 +652,12 @@ function collect_metrics(backend)
     )
     add_metric!(
         metrics,
+        "inference_prefill_steady_samples_ms",
+        join((seconds * 1.0e3 for seconds in inference.prefill_samples), ','),
+        "ms",
+    )
+    add_metric!(
+        metrics,
         "inference_decode_steady_p50_ms_per_token",
         inference.decode.median * 1.0e3 / config.decode_tokens,
         "ms/token",
@@ -588,6 +667,12 @@ function collect_metrics(backend)
         "inference_decode_steady_p90_ms_per_token",
         inference.decode.p90 * 1.0e3 / config.decode_tokens,
         "ms/token",
+    )
+    add_metric!(
+        metrics,
+        "inference_decode_steady_samples_ms",
+        join((seconds * 1.0e3 for seconds in inference.decode_samples), ','),
+        "ms",
     )
     add_metric!(
         metrics,
@@ -665,6 +750,13 @@ function format_metric(metrics, key; digits=2)
     return @sprintf("%.*f", digits, parsed)
 end
 
+function format_metric_ratio(metrics, numerator_key, denominator_key; digits=2)
+    numerator = tryparse(Float64, get(metrics, numerator_key, ""))
+    denominator = tryparse(Float64, get(metrics, denominator_key, ""))
+    (numerator === nothing || denominator === nothing || denominator == 0) && return "—"
+    return @sprintf("%.*f", digits, numerator / denominator)
+end
+
 function read_statuses(directory)
     path = joinpath(directory, "status.tsv")
     isfile(path) || return Dict{String,Tuple{String,String}}()
@@ -731,6 +823,41 @@ function summarize(directory)
                 " | — | — | — | — | — | — | — | — | — |",
             )
         end
+    end
+
+    if !isempty(successful_metrics)
+        println(output)
+        println(output, "## 训练稳态尾延迟")
+        println(output)
+        println(
+            output,
+            "| 后端 | p50 ms | p90 ms | max ms | p90/p50 | 原始样本 |",
+        )
+        println(output, "| --- | ---: | ---: | ---: | ---: | --- |")
+        for backend in SUPPORTED_BACKENDS
+            haskey(successful_metrics, backend) || continue
+            metrics = successful_metrics[backend]
+            println(
+                output,
+                "| ", backend,
+                " | ", format_metric(metrics, "training_steady_p50_ms"),
+                " | ", format_metric(metrics, "training_steady_p90_ms"),
+                " | ", format_metric(metrics, "training_steady_max_ms"),
+                " | ", format_metric_ratio(
+                    metrics,
+                    "training_steady_p90_ms",
+                    "training_steady_p50_ms",
+                ),
+                " | `training_steady_samples_ms` |",
+            )
+        end
+        println(output)
+        println(
+            output,
+            "Cold compile 后先执行 ",
+            get(first(values(successful_metrics)), "warmup_steps", "?"),
+            " 个不计入统计的训练 warm-up step；GC 时间和 warm-up 原始耗时单独写入 TSV。",
+        )
     end
 
     xla_gpu_metrics = get(successful_metrics, "xla_gpu", nothing)
@@ -829,7 +956,8 @@ function summarize(directory)
             "，batch_size=", get(metrics, "batch_size", "?"),
             "；推理：prompt=", get(metrics, "prompt_tokens", "?"),
             "，decode=", get(metrics, "decode_tokens", "?"),
-            "；稳态样本数=", get(metrics, "samples", "?"), "。",
+            "；warm-up steps=", get(metrics, "warmup_steps", "?"),
+            "，稳态样本数=", get(metrics, "samples", "?"), "。",
         )
         println(
             output,
