@@ -4,6 +4,7 @@ using Lux
 using LifeAI:
     GPTModel,
     XLAKVDecoder,
+    benchmark_xla_cache_modes,
     xla_decode_step!,
     xla_prefill!
 
@@ -61,4 +62,24 @@ using LifeAI:
     # Matching prompt shapes reuse the existing prefill executable.
     xla_prefill!(decoder, reshape([2, 4, 6], 3, 1))
     @test length(decoder.prefill_thunks) == 1
+
+    modes = benchmark_xla_cache_modes(
+        model,
+        ps,
+        st,
+        [1, 3],
+        [5];
+        xla_backend="cpu",
+        samples=1,
+    )
+    @test modes.no_cache.correctness.passed
+    @test modes.dynamic_cache.correctness.passed
+    @test modes.static_cache.correctness.passed
+    @test modes.no_cache.executable_count == 2
+    @test modes.dynamic_cache.executable_count == 2
+    @test modes.static_cache.executable_count == 2
+    @test modes.no_cache.theoretical_cache_bytes == 0
+    @test modes.runtime_warmup_seconds >= 0
+    @test modes.dynamic_cache.theoretical_cache_bytes <
+        modes.static_cache.theoretical_cache_bytes
 end

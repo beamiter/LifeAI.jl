@@ -7,6 +7,7 @@ using LifeAI:
     GPTModel,
     TrainerGPT,
     benchmark_kv_cache,
+    benchmark_xla_cache_modes,
     clip_global_gradient_norm,
     evaluate_gpt,
     fit_tokenizer,
@@ -311,4 +312,14 @@ end
     @test report.eager.steady.prefill_seconds >= 0
     @test report.dynamic.steady.decode_seconds >= 0
     @test report.static.steady.decode_seconds >= 0
+
+    @test_throws ArgumentError benchmark_xla_cache_modes(
+        model,
+        ps,
+        st,
+        [1, 3, 5],
+        Int[];
+        xla_backend="cpu",
+        samples=1,
+    )
 end

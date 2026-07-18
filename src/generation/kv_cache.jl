@@ -267,6 +267,32 @@ function _gpt_with_kv_cache(
     return logits, new_cache, new_state
 end
 
+# Small positional wrappers used by the XLA benchmark harness. Dynamic cache
+# shapes are intentionally preserved: each cached length produces a distinct
+# executable, making recompilation costs visible instead of hiding them behind
+# the fixed-shape cache path.
+function _dynamic_gpt_prefill_kernel(model, tokens, ps, st, cache)
+    return _gpt_with_kv_cache(
+        model,
+        tokens,
+        ps,
+        st,
+        cache;
+        start_pos=1,
+    )
+end
+
+function _dynamic_gpt_decode_kernel(model, tokens, ps, st, cache)
+    return _gpt_with_kv_cache(
+        model,
+        tokens,
+        ps,
+        st,
+        cache;
+        start_pos=cache.position + 1,
+    )
+end
+
 function _prefill_token_matrix(prompt_tokens)
     if prompt_tokens isa AbstractVector
         return reshape(Int.(collect(prompt_tokens)), :, 1)

@@ -57,7 +57,7 @@ Week 06：GQA、较真实的小型中文语料训练与综合 benchmark
 | `cpu` | Zygote | CPU | eager 固定形状 KV Cache |
 | `gpu` | Zygote | NVIDIA CUDA GPU | eager 固定形状 KV Cache |
 | `xla_cpu` | Reactant + Enzyme | XLA CPU | 编译后的固定形状 KV Cache |
-| `xla_gpu` | Reactant + Enzyme | XLA GPU | 编译后的固定形状 KV Cache |
+| `xla_gpu` | Reactant + Enzyme | XLA GPU | 主表使用固定形状 KV Cache；附加 no-cache / dynamic / static 对比 |
 
 直接运行完整对比：
 
@@ -77,6 +77,7 @@ Week 06：GQA、较真实的小型中文语料训练与综合 benchmark
 - 训练首步延迟（包含该后端首次编译/执行）、稳态 p50/p90/min/max、tokens/s。
 - KV Cache prefill 首次与稳态延迟。
 - KV Cache 单 token decode 首次与稳态 p50/p90、tokens/s。
+- XLA+GPU no-cache、dynamic cache、static cache 的 cold decode 总时间、稳态延迟/吞吐和 executable 数。
 - 与 host full-forward reference 的 prefill/decode 最大绝对误差。
 - 参数量、理论参数/KV Cache 字节数、进程峰值 RSS。
 - `nvidia-smi` 可用时的轮询峰值 GPU 显存。
@@ -84,6 +85,38 @@ Week 06：GQA、较真实的小型中文语料训练与综合 benchmark
 每个后端必须使用相同模型、输入 shape、随机种子和样本数。脚本默认把后端放进独立 Julia 进程，避免 CUDA、Reactant/XLA 的编译缓存和内存池互相污染。首步与稳态应分别解读，不能把 XLA 编译时间混入 steady-state 吞吐。
 
 跨设备 correctness 默认使用 `isapprox(atol=5e-3, rtol=5e-3)`；这是为了容纳 GPU/XLA 不同归约与融合顺序带来的浮点误差。原始最大绝对误差仍写入 TSV。需要严格复现实验时可设置 `LIFEAI_BENCH_ATOL` 和 `LIFEAI_BENCH_RTOL`。
+
+### XLA+GPU 的三种 Cache 模式
+
+`xla_gpu` 结果会额外生成一张三模式表：
+
+| 模式 | 计算方式 | Shape / executable 特征 |
+| --- | --- | --- |
+| No cache | 每个 token 都对完整增长上下文重新 full forward | 每种 context length 一个 executable |
+| Dynamic cache | 保存 K/V，但通过 `cat` 随 token 增长物理数组 | 每种 cache length 一个 decode executable |
+| Static cache | 预分配 `max_seq_len` K/V，通过逻辑 position 控制有效前缀 | 一个 prefill executable + 一个可复用 decode executable |
+
+由于 no-cache 和 dynamic cache 的 shape 每个 token 都会改变，cold pass 必须为每个位置分别编译。为防止默认 `decode_tokens=64` 意外触发 128 个以上额外编译，三模式对比默认只使用前 4 个 decode token；三种模式内部使用的 token 完全相同。正式测试可以显式放大：
+
+```bash
+LIFEAI_BENCH_BACKENDS=xla_gpu \
+LIFEAI_BENCH_XLA_MODE_DECODE_TOKENS=16 \
+LIFEAI_BENCH_SAMPLES=30 \
+./scripts/benchmark_week03.sh
+```
+
+也可以只运行 KV Cache 示例，不包含训练 benchmark：
+
+```bash
+LIFEAI_BENCH_XLA=true \
+LIFEAI_XLA_BACKEND=gpu \
+LIFEAI_BENCH_XLA_MODE_DECODE_TOKENS=8 \
+julia --project=. examples/benchmark_kv_cache.jl
+```
+
+为避免第一个模式独自承担 Reactant/Lux 初始化成本，三模式开始前会用不同 batch shape 做一次公共 runtime warmup。该时间单独报告，warmup executable 不会被三种目标 workload 复用。
+
+三模式的 cold decode 总时间包含该 decode 序列需要的全部目标 shape 编译和首次执行；steady-state 则复用 cold pass 已生成的所有 executable。每一步都会把 logits materialize 到 host 作为同步边界，以模拟逐 token 生成必须拿到本步结果后才能继续的依赖。
 
 可以用环境变量调整实验规模。例如：
 

@@ -42,14 +42,26 @@ display(report)
 
 if lowercase(get(ENV, "LIFEAI_BENCH_XLA", "false")) in ("1", "true", "yes")
     backend = get(ENV, "LIFEAI_XLA_BACKEND", "gpu")
+    mode_decode_count = parse(
+        Int,
+        get(
+            ENV,
+            "LIFEAI_BENCH_XLA_MODE_DECODE_TOKENS",
+            string(min(length(decode_tokens), 4)),
+        ),
+    )
+    1 <= mode_decode_count <= length(decode_tokens) || error(
+        "LIFEAI_BENCH_XLA_MODE_DECODE_TOKENS must be in " *
+        "1:$(length(decode_tokens))",
+    )
     println()
-    println("Reactant/XLA benchmark ($backend):")
-    xla_report = benchmark_xla_kv_cache(
+    println("Reactant/XLA no-cache/dynamic/static benchmark ($backend):")
+    xla_report = benchmark_xla_cache_modes(
         model,
         ps,
         st,
         prompt,
-        decode_tokens;
+        first(decode_tokens, mode_decode_count);
         xla_backend=backend,
         samples=10,
     )

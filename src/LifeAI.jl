@@ -20,6 +20,7 @@ export LayerKVCache, GPTKVCache, init_kv_cache, prefill, decode_step, generate_c
 export StaticLayerKVCache, StaticGPTKVCache, init_static_kv_cache
 export XLAKVDecoder, xla_prefill!, xla_decode_step!, generate_xla_cached!
 export kv_cache_correctness, benchmark_kv_cache, benchmark_xla_kv_cache
+export benchmark_xla_cache_modes
 
 include("core/rope.jl")
 include("core/attention.jl")
@@ -35,5 +36,6 @@ include("generation/text_generation.jl")
 include("generation/kv_cache.jl")
 include("generation/xla_kv_cache.jl")
 include("generation/kv_benchmark.jl")
+include("generation/xla_cache_modes_benchmark.jl")
 
 end # module LifeAI

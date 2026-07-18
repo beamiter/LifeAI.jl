@@ -33,6 +33,10 @@ function benchmark_config()
     batch_size = env_int("LIFEAI_BENCH_BATCH_SIZE", 8)
     prompt_tokens = env_int("LIFEAI_BENCH_PROMPT_TOKENS", 128)
     decode_tokens = env_int("LIFEAI_BENCH_DECODE_TOKENS", 64)
+    xla_mode_decode_tokens = env_int(
+        "LIFEAI_BENCH_XLA_MODE_DECODE_TOKENS",
+        min(decode_tokens, 4),
+    )
     samples = env_int("LIFEAI_BENCH_SAMPLES", 10)
     learning_rate = env_float("LIFEAI_BENCH_LEARNING_RATE", 3.0e-4)
     correctness_atol = env_float("LIFEAI_BENCH_ATOL", 5.0e-3)
@@ -49,6 +53,9 @@ function benchmark_config()
     batch_size > 0 || error("LIFEAI_BENCH_BATCH_SIZE must be positive")
     prompt_tokens > 0 || error("LIFEAI_BENCH_PROMPT_TOKENS must be positive")
     decode_tokens > 0 || error("LIFEAI_BENCH_DECODE_TOKENS must be positive")
+    1 <= xla_mode_decode_tokens <= decode_tokens || error(
+        "LIFEAI_BENCH_XLA_MODE_DECODE_TOKENS must be in 1:$decode_tokens",
+    )
     samples > 0 || error("LIFEAI_BENCH_SAMPLES must be positive")
     correctness_atol >= 0 || error("LIFEAI_BENCH_ATOL must be non-negative")
     correctness_rtol >= 0 || error("LIFEAI_BENCH_RTOL must be non-negative")
@@ -63,6 +70,7 @@ function benchmark_config()
         batch_size,
         prompt_tokens,
         decode_tokens,
+        xla_mode_decode_tokens,
         max_seq_len,
         samples,
         learning_rate,
@@ -365,6 +373,87 @@ function add_metric!(metrics, name, value, unit="")
     return metrics
 end
 
+function add_xla_cache_mode_metrics!(metrics, label, report)
+    prefix = "xla_gpu_$(label)"
+    add_metric!(metrics, "$(prefix)_setup_ms", report.setup_seconds * 1.0e3, "ms")
+    add_metric!(
+        metrics,
+        "$(prefix)_first_prefill_ms",
+        report.compile_and_first_run.prefill_seconds * 1.0e3,
+        "ms",
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_first_decode_ms_per_token",
+        report.compile_and_first_run.first_decode_seconds * 1.0e3,
+        "ms/token",
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_cold_decode_total_ms",
+        report.compile_and_first_run.decode_total_seconds * 1.0e3,
+        "ms",
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_steady_prefill_p50_ms",
+        report.steady.prefill.p50_seconds * 1.0e3,
+        "ms",
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_steady_prefill_p90_ms",
+        report.steady.prefill.p90_seconds * 1.0e3,
+        "ms",
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_steady_decode_p50_ms_per_token",
+        report.steady.decode_p50_seconds_per_token * 1.0e3,
+        "ms/token",
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_steady_decode_p90_ms_per_token",
+        report.steady.decode_p90_seconds_per_token * 1.0e3,
+        "ms/token",
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_decode_tokens_per_second",
+        report.steady.decode_tokens_per_second,
+        "tokens/s",
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_executable_count",
+        report.executable_count,
+        "executables",
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_theoretical_cache_bytes",
+        report.theoretical_cache_bytes,
+        "bytes",
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_prefill_max_abs_error",
+        report.correctness.prefill_max_abs_error,
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_decode_max_abs_error",
+        report.correctness.decode_max_abs_error,
+    )
+    add_metric!(
+        metrics,
+        "$(prefix)_correctness_passed",
+        report.correctness.passed,
+    )
+    return metrics
+end
+
 function collect_metrics(backend)
     backend in SUPPORTED_BACKENDS ||
         error("backend must be one of: $(join(SUPPORTED_BACKENDS, ", "))")
@@ -383,6 +472,26 @@ function collect_metrics(backend)
     inference = startswith(backend, "xla_") ?
         benchmark_xla_kv(backend, model, host_ps, host_st, prompt, tokens, config) :
         benchmark_eager_kv(backend, model, host_ps, host_st, prompt, tokens, config)
+    xla_cache_modes = if backend == "xla_gpu"
+        mode_tokens = first(tokens, config.xla_mode_decode_tokens)
+        println(
+            "[$backend] no-cache/dynamic/static: " *
+            "$(length(mode_tokens)) decode tokens",
+        )
+        benchmark_xla_cache_modes(
+            model,
+            host_ps,
+            host_st,
+            prompt,
+            mode_tokens;
+            xla_backend="gpu",
+            samples=config.samples,
+            atol=config.correctness_atol,
+            rtol=config.correctness_rtol,
+        )
+    else
+        nothing
+    end
 
     element_bytes = sizeof(Float32)
     parameter_count = Lux.parameterlength(host_ps)
@@ -411,6 +520,12 @@ function collect_metrics(backend)
     add_metric!(metrics, "batch_size", config.batch_size)
     add_metric!(metrics, "prompt_tokens", config.prompt_tokens, "tokens")
     add_metric!(metrics, "decode_tokens", config.decode_tokens, "tokens")
+    add_metric!(
+        metrics,
+        "xla_mode_decode_tokens",
+        config.xla_mode_decode_tokens,
+        "tokens",
+    )
     add_metric!(metrics, "samples", config.samples)
     add_metric!(metrics, "learning_rate", config.learning_rate)
     add_metric!(metrics, "correctness_atol", config.correctness_atol)
@@ -491,6 +606,29 @@ function collect_metrics(backend)
         inference.decode_max_abs_error,
     )
     add_metric!(metrics, "inference_correctness_passed", inference.correctness_passed)
+    if xla_cache_modes !== nothing
+        add_metric!(
+            metrics,
+            "xla_gpu_cache_modes_runtime_warmup_ms",
+            xla_cache_modes.runtime_warmup_seconds * 1.0e3,
+            "ms",
+        )
+        add_xla_cache_mode_metrics!(
+            metrics,
+            "no_cache",
+            xla_cache_modes.no_cache,
+        )
+        add_xla_cache_mode_metrics!(
+            metrics,
+            "dynamic_cache",
+            xla_cache_modes.dynamic_cache,
+        )
+        add_xla_cache_mode_metrics!(
+            metrics,
+            "static_cache",
+            xla_cache_modes.static_cache,
+        )
+    end
     add_metric!(metrics, "process_peak_rss_mb", Sys.maxrss() / 2.0^20, "MiB")
     return metrics
 end
@@ -595,6 +733,81 @@ function summarize(directory)
         end
     end
 
+    xla_gpu_metrics = get(successful_metrics, "xla_gpu", nothing)
+    if xla_gpu_metrics !== nothing &&
+            haskey(xla_gpu_metrics, "xla_gpu_no_cache_executable_count")
+        println(output)
+        println(output, "## XLA+GPU Cache 模式对比")
+        println(output)
+        println(
+            output,
+            "| 模式 | 正确性 | Cold prefill ms | Cold decode 总计 ms | ",
+            "Steady prefill p50 ms | Steady decode p50 ms/token | ",
+            "Decode tokens/s | Executables | Cache KiB |",
+        )
+        println(
+            output,
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        )
+        for (label, title) in (
+            ("no_cache", "No cache"),
+            ("dynamic_cache", "Dynamic cache"),
+            ("static_cache", "Static cache"),
+        )
+            prefix = "xla_gpu_$(label)"
+            cache_bytes = tryparse(
+                Float64,
+                get(xla_gpu_metrics, "$(prefix)_theoretical_cache_bytes", ""),
+            )
+            cache_kib = cache_bytes === nothing ?
+                "—" : @sprintf("%.2f", cache_bytes / 1024)
+            println(
+                output,
+                "| ", title,
+                " | ", get(xla_gpu_metrics, "$(prefix)_correctness_passed", "—"),
+                " | ", format_metric(xla_gpu_metrics, "$(prefix)_first_prefill_ms"),
+                " | ", format_metric(xla_gpu_metrics, "$(prefix)_cold_decode_total_ms"),
+                " | ", format_metric(
+                    xla_gpu_metrics,
+                    "$(prefix)_steady_prefill_p50_ms",
+                ),
+                " | ", format_metric(
+                    xla_gpu_metrics,
+                    "$(prefix)_steady_decode_p50_ms_per_token",
+                ),
+                " | ", format_metric(
+                    xla_gpu_metrics,
+                    "$(prefix)_decode_tokens_per_second";
+                    digits=1,
+                ),
+                " | ", format_metric(
+                    xla_gpu_metrics,
+                    "$(prefix)_executable_count";
+                    digits=0,
+                ),
+                " | ", cache_kib,
+                " |",
+            )
+        end
+        println(output)
+        println(
+            output,
+            "公共 Reactant/Lux runtime warmup：",
+            format_metric(
+                xla_gpu_metrics,
+                "xla_gpu_cache_modes_runtime_warmup_ms",
+            ),
+            " ms（使用不同 batch shape，不复用三模式的目标 executable）。",
+        )
+        println(
+            output,
+            "三模式使用相同的 ",
+            get(xla_gpu_metrics, "xla_mode_decode_tokens", "?"),
+            " 个 decode token。No cache 与 dynamic cache 的 shape 会逐 token ",
+            "变化，因此 cold pass 会为各长度分别编译 executable。",
+        )
+    end
+
     println(output)
     println(output, "## 测试配置")
     println(output)
@@ -635,7 +848,7 @@ function summarize(directory)
     )
     println(
         output,
-        "- 稳态为固定 shape、已预热后的样本分布；推理统一使用固定形状 KV Cache，batch size 为 1。",
+        "- 四后端主表统一使用固定形状 KV Cache；额外的 XLA+GPU 表比较 no-cache、dynamic cache 和 static cache，batch size 均为 1。",
     )
     if !isempty(successful_metrics)
         metrics = first(values(successful_metrics))
