@@ -1,7 +1,41 @@
 using Lux
 using Serialization
 
-const CHECKPOINT_FORMAT_VERSION = 1
+const CHECKPOINT_FORMAT_VERSION = 2
+const _SUPPORTED_CHECKPOINT_FORMAT_VERSIONS = (1, CHECKPOINT_FORMAT_VERSION)
+
+function _migrate_v1_model_config(config::NamedTuple)
+    return merge(
+        config,
+        (;
+            norm_type=:layernorm,
+            mlp_type=:gelu,
+            tie_embeddings=false,
+        ),
+    )
+end
+
+function _migrate_checkpoint_payload(payload::NamedTuple)
+    source_version = Int(payload.format_version)
+
+    if source_version == CHECKPOINT_FORMAT_VERSION
+        return payload, source_version
+    elseif source_version == 1
+        migrated = merge(
+            payload,
+            (;
+                format_version=CHECKPOINT_FORMAT_VERSION,
+                model_config=_migrate_v1_model_config(payload.model_config),
+            ),
+        )
+        return migrated, source_version
+    end
+
+    supported = join(_SUPPORTED_CHECKPOINT_FORMAT_VERSIONS, ", ")
+    throw(ArgumentError(
+        "unsupported checkpoint format version $source_version; supported: $supported",
+    ))
+end
 
 function _tokenizer_payload(tokenizer::Tokenizer)
     return (;
@@ -148,17 +182,14 @@ function load_checkpoint(
 )
     isfile(path) || throw(ArgumentError("checkpoint does not exist: $path"))
 
-    payload = open(path, "r") do io
+    raw_payload = open(path, "r") do io
         deserialize(io)
     end
-    payload isa NamedTuple ||
+    raw_payload isa NamedTuple ||
         throw(ArgumentError("checkpoint payload must be a named tuple"))
-    hasproperty(payload, :format_version) ||
+    hasproperty(raw_payload, :format_version) ||
         throw(ArgumentError("checkpoint has no format version"))
-    payload.format_version == CHECKPOINT_FORMAT_VERSION || throw(ArgumentError(
-        "unsupported checkpoint format version $(payload.format_version); " *
-        "expected $CHECKPOINT_FORMAT_VERSION",
-    ))
+    payload, source_format_version = _migrate_checkpoint_payload(raw_payload)
 
     model = GPTModel(payload.model_config)
     tokenizer = _tokenizer_from_payload(payload.tokenizer)
@@ -191,6 +222,7 @@ function load_checkpoint(
 
     return (;
         format_version=payload.format_version,
+        source_format_version,
         model,
         tokenizer,
         trainer,

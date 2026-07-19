@@ -23,8 +23,18 @@ end
 
 env_int(name, default) = parse(Int, get(ENV, name, string(default)))
 env_float(name, default) = parse(Float64, get(ENV, name, string(default)))
+function env_bool(name, default)
+    value = lowercase(get(ENV, name, string(default)))
+    value in ("1", "true", "yes") && return true
+    value in ("0", "false", "no") && return false
+    error("$name must be true/false, 1/0, or yes/no")
+end
 
 function benchmark_config()
+    profile = get(ENV, "LIFEAI_BENCH_PROFILE", "baseline")
+    norm_type = Symbol(lowercase(get(ENV, "LIFEAI_BENCH_NORM_TYPE", "layernorm")))
+    mlp_type = Symbol(lowercase(get(ENV, "LIFEAI_BENCH_MLP_TYPE", "gelu")))
+    tie_embeddings = env_bool("LIFEAI_BENCH_TIE_EMBEDDINGS", false)
     vocab_size = env_int("LIFEAI_BENCH_VOCAB_SIZE", 512)
     embed_dim = env_int("LIFEAI_BENCH_EMBED_DIM", 128)
     num_heads = env_int("LIFEAI_BENCH_NUM_HEADS", 4)
@@ -61,9 +71,17 @@ function benchmark_config()
     samples > 0 || error("LIFEAI_BENCH_SAMPLES must be positive")
     correctness_atol >= 0 || error("LIFEAI_BENCH_ATOL must be non-negative")
     correctness_rtol >= 0 || error("LIFEAI_BENCH_RTOL must be non-negative")
+    norm_type in (:layernorm, :rmsnorm) ||
+        error("LIFEAI_BENCH_NORM_TYPE must be layernorm or rmsnorm")
+    mlp_type in (:gelu, :swiglu) ||
+        error("LIFEAI_BENCH_MLP_TYPE must be gelu or swiglu")
 
     max_seq_len = max(seq_len, prompt_tokens + decode_tokens)
     return (;
+        profile,
+        norm_type,
+        mlp_type,
+        tie_embeddings,
         vocab_size,
         embed_dim,
         num_heads,
@@ -91,6 +109,9 @@ function build_model(config)
         config.num_layers;
         max_seq_len=config.max_seq_len,
         use_rope=true,
+        norm_type=config.norm_type,
+        mlp_type=config.mlp_type,
+        tie_embeddings=config.tie_embeddings,
     )
 end
 
@@ -551,6 +572,11 @@ function collect_metrics(backend)
     metrics = Tuple{String,String,String}[]
     add_metric!(metrics, "timestamp", Dates.format(now(), dateformat"yyyy-mm-ddTHH:MM:SS"))
     add_metric!(metrics, "backend", backend)
+    add_metric!(metrics, "profile", config.profile)
+    add_metric!(metrics, "norm_type", config.norm_type)
+    add_metric!(metrics, "mlp_type", config.mlp_type)
+    add_metric!(metrics, "tie_embeddings", config.tie_embeddings)
+    add_metric!(metrics, "mlp_hidden_dim", model.mlp_hidden_dim)
     add_metric!(
         metrics,
         "execution_stack",
@@ -775,7 +801,11 @@ end
 function summarize(directory)
     statuses = read_statuses(directory)
     output = IOBuffer()
-    println(output, "# Week 03 backend benchmark")
+    println(
+        output,
+        "# ",
+        get(ENV, "LIFEAI_BENCH_TITLE", "Week 03 backend benchmark"),
+    )
     println(output)
     println(output, "生成时间：", Dates.format(now(), dateformat"yyyy-mm-dd HH:MM:SS"))
     println(output)
@@ -948,6 +978,9 @@ function summarize(directory)
             "，embed=", get(metrics, "embed_dim", "?"),
             "，heads=", get(metrics, "num_heads", "?"),
             "，layers=", get(metrics, "num_layers", "?"),
+            "，norm=", get(metrics, "norm_type", "?"),
+            "，mlp=", get(metrics, "mlp_type", "?"),
+            "，tied=", get(metrics, "tie_embeddings", "?"),
             "，parameters=", get(metrics, "parameter_count", "?"), "。",
         )
         println(

@@ -19,7 +19,7 @@ Structure:
     token ids
       -> token embedding
       -> N × TransformerBlock
-      -> final LayerNorm
+      -> final normalization
       -> language-model head
       -> logits
 
@@ -51,6 +51,9 @@ layer, so no separate learned positional embedding is used.
     is_causal::Bool
     rope_theta::Float32
     norm_epsilon::Float32
+    norm_type::Symbol
+    mlp_type::Symbol
+    tie_embeddings::Bool
 end
 
 function GPTModel(
@@ -59,7 +62,7 @@ function GPTModel(
     num_heads::Int,
     num_layers::Int;
     head_dim=nothing,
-    mlp_ratio::Real=4,
+    mlp_ratio=nothing,
     mlp_hidden_dim=nothing,
     use_bias::Bool=false,
     is_causal::Bool=true,
@@ -67,14 +70,22 @@ function GPTModel(
     max_seq_len::Int=2048,
     rope_theta::Real=10000.0,
     norm_epsilon::Real=1.0f-5,
+    norm_type::Symbol=:layernorm,
+    mlp_type::Symbol=:gelu,
+    tie_embeddings::Bool=false,
 )
     @assert vocab_size > 0 "`vocab_size` must be positive"
     @assert d_model > 0 "`d_model` must be positive"
     @assert num_heads > 0 "`num_heads` must be positive"
     @assert num_layers > 0 "`num_layers` must be positive"
     @assert max_seq_len > 0 "`max_seq_len` must be positive"
-    @assert mlp_ratio > 0 "`mlp_ratio` must be positive"
     @assert norm_epsilon > 0 "`norm_epsilon` must be positive"
+    _validate_norm_type(norm_type)
+    _validate_mlp_type(mlp_type)
+
+    if mlp_ratio !== nothing
+        @assert mlp_ratio > 0 "`mlp_ratio` must be positive"
+    end
 
     resolved_head_dim = if head_dim === nothing
         @assert d_model % num_heads == 0 "`d_model` must be divisible by `num_heads`"
@@ -84,12 +95,12 @@ function GPTModel(
     end
     @assert resolved_head_dim > 0 "`head_dim` must be positive"
 
-    resolved_mlp_hidden_dim = if mlp_hidden_dim === nothing
-        Int(round(d_model * mlp_ratio))
-    else
-        Int(mlp_hidden_dim)
-    end
-    @assert resolved_mlp_hidden_dim > 0 "`mlp_hidden_dim` must be positive"
+    resolved_mlp_hidden_dim = _resolve_mlp_hidden_dim(
+        d_model,
+        mlp_type,
+        mlp_ratio,
+        mlp_hidden_dim,
+    )
 
     token_embedding = Embedding(vocab_size => d_model)
 
@@ -105,18 +116,20 @@ function GPTModel(
             max_seq_len,
             rope_theta,
             norm_epsilon,
+            norm_type,
+            mlp_type,
         ),
         num_layers,
     )...)
 
     # Normalize each token independently over the model/channel dimension.
-    final_norm = LayerNorm(
-        (d_model, 1);
-        epsilon=Float32(norm_epsilon),
-        dims=1,
-    )
+    final_norm = _make_norm(d_model, norm_type, norm_epsilon)
 
-    lm_head = Dense(d_model, vocab_size; use_bias)
+    lm_head = if tie_embeddings
+        TiedOutputProjection(vocab_size, d_model; use_bias)
+    else
+        Dense(d_model, vocab_size; use_bias)
+    end
 
     return GPTModel(
         token_embedding,
@@ -135,6 +148,9 @@ function GPTModel(
         is_causal,
         Float32(rope_theta),
         Float32(norm_epsilon),
+        norm_type,
+        mlp_type,
+        tie_embeddings,
     )
 end
 
@@ -159,11 +175,19 @@ function gpt_config(model::GPTModel)
         max_seq_len=model.max_seq_len,
         rope_theta=model.rope_theta,
         norm_epsilon=model.norm_epsilon,
+        norm_type=model.norm_type,
+        mlp_type=model.mlp_type,
+        tie_embeddings=model.tie_embeddings,
     )
 end
 
 """Rebuild a `GPTModel` from a configuration returned by [`gpt_config`](@ref)."""
 function GPTModel(config::NamedTuple)
+    norm_type = hasproperty(config, :norm_type) ? config.norm_type : :layernorm
+    mlp_type = hasproperty(config, :mlp_type) ? config.mlp_type : :gelu
+    tie_embeddings = hasproperty(config, :tie_embeddings) ?
+        config.tie_embeddings : false
+
     return GPTModel(
         config.vocab_size,
         config.d_model,
@@ -177,7 +201,22 @@ function GPTModel(config::NamedTuple)
         max_seq_len=config.max_seq_len,
         rope_theta=config.rope_theta,
         norm_epsilon=config.norm_epsilon,
+        norm_type,
+        mlp_type,
+        tie_embeddings,
     )
+end
+
+function _project_logits(model::GPTModel, hidden, ps, st_lm_head::NamedTuple)
+    if model.tie_embeddings
+        return model.lm_head(
+            (hidden, ps.token_embedding.weight),
+            ps.lm_head,
+            st_lm_head,
+        )
+    end
+
+    return model.lm_head(hidden, ps.lm_head, st_lm_head)
 end
 
 function _validate_token_ids(tokens::Array{T,N}, vocab_size::Int) where {T<:Integer,N}
@@ -211,7 +250,7 @@ function (model::GPTModel)(tokens, ps, st::NamedTuple)
 
     x, st_blocks = model.blocks(x, ps.blocks, st.blocks)
     x, st_final_norm = model.final_norm(x, ps.final_norm, st.final_norm)
-    logits, st_lm_head = model.lm_head(x, ps.lm_head, st.lm_head)
+    logits, st_lm_head = _project_logits(model, x, ps, st.lm_head)
 
     return (
         logits,

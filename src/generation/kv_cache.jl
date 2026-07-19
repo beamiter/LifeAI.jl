@@ -250,7 +250,7 @@ function _gpt_with_kv_cache(
 
     st_blocks = NamedTuple{keys(st.blocks)}(Tuple(new_block_states))
     x, st_final_norm = model.final_norm(x, ps.final_norm, st.final_norm)
-    logits, st_lm_head = model.lm_head(x, ps.lm_head, st.lm_head)
+    logits, st_lm_head = _project_logits(model, x, ps, st.lm_head)
 
     new_state = (;
         token_embedding=st_token_embedding,

@@ -450,7 +450,7 @@ function _static_gpt_prefill_kernel!(
     st_blocks = NamedTuple{keys(st.blocks)}(st_blocks_tuple)
 
     x, st_final_norm = model.final_norm(x, ps.final_norm, st.final_norm)
-    logits, st_lm_head = model.lm_head(x, ps.lm_head, st.lm_head)
+    logits, st_lm_head = _project_logits(model, x, ps, st.lm_head)
 
     new_state = (;
         token_embedding=st_token_embedding,
@@ -492,7 +492,7 @@ function _static_gpt_decode_kernel!(
     st_blocks = NamedTuple{keys(st.blocks)}(st_blocks_tuple)
 
     x, st_final_norm = model.final_norm(x, ps.final_norm, st.final_norm)
-    logits, st_lm_head = model.lm_head(x, ps.lm_head, st.lm_head)
+    logits, st_lm_head = _project_logits(model, x, ps, st.lm_head)
 
     new_state = (;
         token_embedding=st_token_embedding,

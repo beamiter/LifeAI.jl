@@ -3,8 +3,11 @@ using Random
 using Lux
 using LifeAI:
     GPTModel,
+    TrainerGPT,
     XLAKVDecoder,
     benchmark_xla_cache_modes,
+    init_train_state,
+    train_step!,
     xla_decode_step!,
     xla_prefill!
 
@@ -85,4 +88,65 @@ using LifeAI:
     @test modes.runtime_warmup_seconds >= 0
     @test modes.dynamic_cache.theoretical_cache_bytes <
         modes.static_cache.theoretical_cache_bytes
+end
+
+@testset "Modern GPT components compile for XLA training and static decoding" begin
+    rng = Xoshiro(20260718)
+    model = GPTModel(
+        17,
+        16,
+        2,
+        1;
+        max_seq_len=8,
+        use_rope=true,
+        norm_type=:rmsnorm,
+        mlp_type=:swiglu,
+        tie_embeddings=true,
+    )
+    ps, st = Lux.setup(rng, model)
+    decoder = XLAKVDecoder(
+        model,
+        ps,
+        st;
+        batch_size=1,
+        xla_backend="cpu",
+    )
+
+    prompt = reshape([1, 3, 5], 3, 1)
+    reference_prefill, _ = model(prompt, ps, st)
+    prefill_logits, _, _ = xla_prefill!(decoder, prompt)
+    @test isapprox(
+        Array(prefill_logits),
+        reference_prefill;
+        atol=1.0f-5,
+        rtol=1.0f-4,
+    )
+
+    decode_logits, _, _ = xla_decode_step!(decoder, 7)
+    reference_decode, _ = model(reshape([1, 3, 5, 7], 4, 1), ps, st)
+    @test isapprox(
+        vec(Array(decode_logits)[:, 1, 1]),
+        vec(reference_decode[:, end, 1]);
+        atol=1.0f-5,
+        rtol=1.0f-4,
+    )
+
+    trainer = TrainerGPT(
+        backend=:xla,
+        xla_backend="cpu",
+        learning_rate=1.0f-3,
+        max_grad_norm=1.0f0,
+    )
+    train_state = init_train_state(Xoshiro(20260719), model, trainer)
+    inputs = [1 2; 3 4; 5 6; 7 8]
+    targets = [3 4; 5 6; 7 8; 9 10]
+    train_state, loss, _ = train_step!(
+        trainer,
+        train_state,
+        inputs,
+        targets,
+    )
+
+    @test isfinite(loss)
+    @test train_state.step == 1
 end

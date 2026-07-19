@@ -2,11 +2,11 @@
 
 ## 一句话判断
 
-项目已经形成一个可训练、可生成、可保存恢复、可评估比较，并支持 KV Cache / XLA 路径的最小 decoder-only GPT；当前仍处于模型基础设施阶段，尚未形成 agent loop、multimodal perception 或 embodied control loop。
+项目已经形成一个可训练、可生成、可保存恢复、可评估比较，并支持现代组件、KV Cache / XLA 路径的最小 decoder-only GPT；当前仍处于模型基础设施阶段，尚未形成 agent loop、multimodal perception 或 embodied control loop。
 
 ## 当前活动阶段
 
-[`Week 03 — Reproducible Training and Evaluation`](week03_reproducible_training.md) 已 Closed。[`Week 04 — Modern GPT Building Blocks`](week04_model_modernization.md) 已 Open，正在独立加入并比较 RMSNorm、SwiGLU 与 embedding / LM head 权重共享。
+[`Week 03 — Reproducible Training and Evaluation`](week03_reproducible_training.md) 与 [`Week 04 — Modern GPT Building Blocks`](week04_model_modernization.md) 均已 Closed。当前没有 Open 的 Week；下一建议阶段是 byte-level / BPE Tokenizer 与版本化中文数据管线。
 
 ## 已实现能力
 
@@ -15,8 +15,9 @@
 - scaled dot-product attention：同时保留手写版本与基于 `NNlib.batched_mul` 的批量版本，便于原理对照和正确性验证。
 - Multi-Head Attention：包括 Q/K/V/O 投影、head reshape / merge 和 causal mask。
 - RoPE：支持预计算 cos / sin cache 和增量解码所需的绝对起始位置。
-- TransformerBlock：采用 pre-norm、attention residual 和 MLP residual 结构。
-- GPTModel：包括 token embedding、多层 TransformerBlock、final norm 和 LM head。
+- TransformerBlock：采用 pre-norm、attention residual 和 MLP residual，可独立选择 LayerNorm / RMSNorm 与 GELU / SwiGLU。
+- GPTModel：包括 token embedding、多层 TransformerBlock、final norm 和 LM head；支持 embedding / LM head 单 kernel 权重共享。
+- legacy 默认仍为 LayerNorm + GELU + untied；modern 配置可通过三个独立开关组合，不改变旧调用。
 
 ### 2. 数据与训练
 
@@ -25,7 +26,7 @@
 - 稀疏 next-token cross entropy，不需要构造 dense one-hot target。
 - 基于原始 token stream 的无泄漏 train / validation 划分。
 - token-weighted validation loss 与 perplexity evaluation。
-- 版本化、设备无关的 checkpoint，保存模型配置、Tokenizer、parameters / states、optimizer state、step、训练进度与 RNG。
+- checkpoint format v2：版本化、设备无关，保存模型配置、Tokenizer、parameters / states、optimizer state、step、训练进度与 RNG，并显式迁移 v1 legacy checkpoint。
 - 确定性 checkpoint resume，以及可配置的 global gradient norm clipping。
 - Zygote 常规训练路径。
 - Reactant + Enzyme 的 XLA 训练路径，支持稳定 shape 检查和编译复用。
@@ -61,17 +62,17 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-2026-07-18 复核默认套件，共 654 项测试通过；其中 Week 03 可复现实验测试 57 项，覆盖无泄漏划分、evaluation / perplexity、梯度裁剪、checkpoint / resume 和 KV Cache correctness / benchmark schema。最新本机四后端 benchmark 的 CPU、CUDA GPU、XLA CPU、XLA GPU 均为 `ok` 且 correctness 为 `true`。
+2026-07-19 复核默认套件，共 765 项测试通过；其中 Week 03 专项 57 项、Week 04 专项 111 项。显式设置 `LIFEAI_TEST_XLA=true` 后，Reactant/XLA 专项 30 / 30 通过，加上默认套件共 795 项。
 
-`test/test_xla_kv_cache.jl` 只有设置 `LIFEAI_TEST_XLA=true` 时才会运行，因此默认 654 项通过本身不等价于专项 XLA 测试已覆盖全部硬件路径；默认测试与硬件 benchmark 是两类证据。
+Week 04 的五配置 CPU matrix 全部通过 full / dynamic / static cache correctness；baseline / modern 在 CPU、CUDA GPU、XLA CPU、XLA GPU 的八组 benchmark 全部为 `ok` 且 correctness 为 `true`。默认测试、XLA 专项测试和硬件 benchmark 仍是三类不同证据。
 
 ## 当前边界
 
 以下能力尚未实现，不应从现有 GPT demo 推断为已经具备：
 
 - 面向真实任务和长期运行的模型质量。
-- RMSNorm、SwiGLU、embedding / LM head 权重共享等现代模型组件。
 - byte-level / BPE Tokenizer、版本化真实语料和较大规模训练。
+- 适合 tied embedding 的统一初始化基线、低精度专项与真实规模组件对照。
 - 实验注册、超参数搜索、分布式训练和面向生产的性能评估。
 - 对话状态、工作记忆、长期记忆和记忆检索。
 - 任务规划、工具调用、反思和自主执行循环。
@@ -92,9 +93,9 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 完成记录：Week 03 已于 2026-07-18 Closed；默认测试 654 / 654 通过，四后端基线均完成 correctness 与性能记录。
 
-### Milestone B：推进模型组件、Tokenizer 与中文训练
+### Milestone B：推进模型组件、Tokenizer 与中文训练（进行中）
 
-- 以独立开关和对照实验加入 RMSNorm、SwiGLU、embedding / lm_head 权重共享。
+- 以独立开关和对照实验加入 RMSNorm、SwiGLU、embedding / lm_head 权重共享。（Week 04 已完成）
 - 建立 byte-level baseline，再实现并评估 BPE。
 - 实现 GQA，并复用 KV Cache correctness / benchmark 验证 cache 布局和 decode 收益。
 - 建立来源、清洗、切分和配置可追踪的小型中文语料训练流程。
@@ -113,10 +114,10 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 | 主线 | 当前状态 | 下一关键缺口 |
 | --- | --- | --- |
-| 模型基本组件 | 已形成最小 GPT 与可复现实验闭环 | RMSNorm、SwiGLU、权重共享及独立对照 |
-| 高效训练与推理 | 已有 Zygote / XLA、两类 KV Cache 与四后端基线 | 现代组件兼容、稳定公共接口、真实规模验证 |
+| 模型基本组件 | 已有 legacy / modern 可切换 GPT 与独立对照 | Tokenizer、GQA、初始化与真实规模验证 |
+| 高效训练与推理 | modern 已兼容 Zygote / XLA 与两类 KV Cache | 低精度、稳定公共接口、真实规模验证 |
 | 智能体核心 | 尚未开始 | memory、planning、tools、agent loop |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Week 01—03 已 Closed，Week 04 已 Open | 完成 Week 04 并持续月度总结 |
+| 学习记录 | Week 01—04 已 Closed | Open 下一阶段并持续月度总结 |

@@ -19,17 +19,18 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：语言模型与可复现实验闭环已形成，模型组件现代化正在推进，智能体与具身层尚未开始。**
+**阶段判断：语言模型、可复现实验和现代组件闭环已形成，Tokenizer / 数据升级待开启，智能体与具身层尚未开始。**
 
-[`Week 03 — Reproducible Training and Evaluation`](notes/week03_reproducible_training.md) 已 Closed。当前活动阶段是 [`Week 04 — Modern GPT Building Blocks`](notes/week04_model_modernization.md)，目标是独立加入并比较 RMSNorm、SwiGLU 与 embedding / LM head 权重共享。
+[`Week 03 — Reproducible Training and Evaluation`](notes/week03_reproducible_training.md) 与 [`Week 04 — Modern GPT Building Blocks`](notes/week04_model_modernization.md) 均已 Closed。当前没有 Open 的 Week；下一建议阶段是 byte-level / BPE Tokenizer 与版本化中文数据管线。
 
 目前已经具备：
 
 - 手写与批量 scaled dot-product attention、因果遮罩和 Multi-Head Attention。
 - RoPE、pre-norm TransformerBlock 和 decoder-only GPTModel。
+- 可独立切换的 LayerNorm / RMSNorm、GELU / SwiGLU、untied / tied embedding-output projection；legacy 默认保持不变。
 - 字符级 Tokenizer、DatasetLoader、next-token loss 和训练循环。
 - 无泄漏 train / validation 划分、token-weighted evaluation / perplexity 和 global gradient norm clipping。
-- 版本化 checkpoint、设备无关保存/加载和确定性断点续训。
+- checkpoint v2、设备无关保存/加载、确定性断点续训和 v1 legacy checkpoint 迁移。
 - 基于 Zygote 的常规训练，以及 Reactant/Enzyme 驱动的 XLA 训练路径。
 - greedy、temperature、top-k 文本生成。
 - 动态 KV Cache 的 prefill / decode，以及面向 XLA 的固定形状 KV Cache 和编译后增量解码。
@@ -39,7 +40,7 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 尚未具备：
 
-- 可用于真实任务的预训练模型、现代化模型组件、版本化 Tokenizer 与真实语料训练流程。
+- 可用于真实任务的预训练模型、版本化 Tokenizer 与真实语料训练流程。
 - 长短期记忆、规划、工具使用、反思等完整的 agent loop。
 - 视觉、听觉和传感器输入等多模态感知。
 - 面向仿真或实体机器人的 observation / action 抽象、控制链路与安全边界。
@@ -117,6 +118,26 @@ LIFEAI_TEST_XLA=true julia --project=. -e 'using Pkg; Pkg.test()'
 julia --project=. examples/minigpt.jl
 ```
 
+运行 RMSNorm + SwiGLU + tied embedding 的可恢复训练示例：
+
+```bash
+julia --project=. examples/modern_gpt.jl
+```
+
+也可以直接构建可独立开关的 modern 配置：
+
+```julia
+model = GPTModel(
+    vocab_size,
+    d_model,
+    num_heads,
+    num_layers;
+    norm_type=:rmsnorm,
+    mlp_type=:swiglu,
+    tie_embeddings=true,
+)
+```
+
 没有 NVIDIA GPU 时可以尝试 XLA CPU 后端：
 
 ```bash
@@ -132,3 +153,11 @@ LIFEAI_XLA_BACKEND=cpu julia --project=. examples/minigpt.jl
 脚本会分别记录首编译/首次执行、post-compile warm-up 和 steady-state 指标，并保留逐 iteration 原始耗时，生成 TSV 原始数据与 Markdown 汇总。默认使用 3 个 warm-up step 和 30 个正式样本，避免一次性 runtime settling 扭曲 p90。配置项和指标口径见 [`Week 03 四后端性能对比`](notes/week03_reproducible_training.md#四后端性能对比)。
 
 其中 XLA+GPU 会额外对比 no-cache、dynamic KV Cache 和 static KV Cache，并报告不同 shape 导致的 executable 数量与 cold compilation 总成本。
+
+运行 Week 04 的五配置 CPU 对照，以及 baseline / modern 四后端 benchmark：
+
+```bash
+./scripts/benchmark_week04.sh
+```
+
+该脚本使用三个固定 seed 汇总短程 validation 结果，并将 cold compile、warm-up 与 steady-state 性能分开记录。实验用于验证组件可归因性和后端兼容性，不代表真实模型质量排名。

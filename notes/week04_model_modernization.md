@@ -1,6 +1,8 @@
 # Week 04 — Modern GPT Building Blocks
 
-> 状态：Open
+> 状态：Closed
+>
+> 关闭记录：2026-07-19
 >
 > 依赖基线：[`Week 03 — Reproducible Training and Evaluation`](week03_reproducible_training.md) 已 Closed。
 
@@ -76,14 +78,14 @@ GPTModel(
 
 | 工作项 | 所属主线 | 交付物 | 验收方式 | 状态 |
 | --- | --- | --- | --- | --- |
-| 固化 legacy baseline | 工程 | 配置、参数量与输出结构 fixture | 旧构造默认配置不变，现有 654 项测试继续通过 | 计划中 |
-| RMSNorm | 模型 / 学习 | 可复用 Lux layer、block / final norm 接入和原理记录 | 与手算公式对齐；shape / dtype 正确；梯度有限；epsilon 生效 | 计划中 |
-| SwiGLU | 模型 / 学习 | gated MLP layer、类型化 MLP 构造与宽度策略 | 与手算公式对齐；三投影参数树正确；显式/默认 hidden width 可复现 | 计划中 |
-| embedding / LM head 权重共享 | 模型 | 单一共享 kernel、可选 output bias、统一 projection helper | 无重复 kernel；参数量按预期减少；输入与输出两条梯度汇入共享参数 | 计划中 |
-| 配置与 checkpoint 迁移 | 工程 | `gpt_config` 新字段、checkpoint v2、v1 迁移测试 | legacy checkpoint 恢复 logits；modern checkpoint 可 round-trip / resume | 计划中 |
-| 推理路径兼容 | 模型 / 工程 | full、dynamic、static / XLA 共用的 norm / MLP / projection 语义 | 五组配置的 eager cache 对齐；modern 组合至少一个 XLA backend 编译对齐 | 计划中 |
-| 可控训练与性能实验 | 工程 / 学习 | 五组 CPU A/B 与 baseline-vs-modern 四后端报告 | 固定数据、seed、step、shape；记录参数量、loss、ppl、吞吐、延迟和冷启动 | 计划中 |
-| 示例与文档 | 学习 | modern 配置最小示例、设计取舍与结果记录 | train → validate → checkpoint → resume → cached generate 完整运行 | 计划中 |
+| 固化 legacy baseline | 工程 | 配置、参数量与输出结构 fixture | 旧构造默认配置不变，legacy 测试与新增 fixture 全部通过 | 已验证 |
+| RMSNorm | 模型 / 学习 | 可复用 Lux layer、block / final norm 接入和原理记录 | 与手算公式对齐；shape / dtype 正确；梯度有限；epsilon 生效 | 已验证 |
+| SwiGLU | 模型 / 学习 | gated MLP layer、类型化 MLP 构造与宽度策略 | 与手算公式对齐；三投影参数树正确；显式/默认 hidden width 可复现 | 已验证 |
+| embedding / LM head 权重共享 | 模型 | 单一共享 kernel、可选 output bias、统一 projection helper | 无重复 kernel；参数量按预期减少；输入与输出两条梯度汇入共享参数 | 已验证 |
+| 配置与 checkpoint 迁移 | 工程 | `gpt_config` 新字段、checkpoint v2、v1 迁移测试 | legacy checkpoint 恢复 logits；modern checkpoint 可 round-trip / resume | 已验证 |
+| 推理路径兼容 | 模型 / 工程 | full、dynamic、static / XLA 共用的 norm / MLP / projection 语义 | 五组配置的 eager cache 对齐；modern XLA 训练与解码编译对齐 | 已验证 |
+| 可控训练与性能实验 | 工程 / 学习 | 五组 CPU A/B 与 baseline-vs-modern 四后端报告 | 固定数据、seed、step、shape；记录参数量、loss、ppl、吞吐、延迟和冷启动 | 已完成 |
+| 示例与文档 | 学习 | modern 配置最小示例、设计取舍与结果记录 | train → validate → checkpoint → resume → cached generate 完整运行 | 已验证 |
 
 ## 推进顺序
 
@@ -141,13 +143,70 @@ checkpoint v1/v2 与 cache / XLA 集成
 
 ## 实验与过程记录
 
-批准 Open 后，按推进顺序记录配置、seed、参数量、输入 shape、结果、异常和架构决策。
+### 实现与兼容性
+
+- 新增 `RMSNormLayer`：沿 `dims=1` 计算 root mean square，只有可训练 scale、没有 bias；block 内两个 pre-norm 与 final norm 使用同一 `norm_type`。
+- 新增 `SwiGLU`：独立 gate / up / down 三个投影，使用 `swish(gate) .* up`；未显式指定 hidden width 时采用 `round(Int, 8d / 3)`。
+- 新增 `TiedOutputProjection`：输出投影直接复用 `token_embedding.weight`，参数树中不再存在第二份 kernel；可选 output bias 保留在 `lm_head`。
+- full forward、dynamic KV Cache 和 static / XLA KV Cache 统一调用 `_project_logits`，避免 tied 语义在三条路径分叉。
+- `gpt_config` 新增 `norm_type`、`mlp_type`、`tie_embeddings`。默认值仍为 LayerNorm + GELU + untied，固定 seed 下 legacy 参数树和 logits 与显式 legacy 构造完全一致。
+- checkpoint format 升级为 v2；loader 显式接受 v1，将缺失的新配置迁移为 legacy 默认值。测试验证迁移前后 logits、参数、optimizer state 和 step 一致。
+
+### 自动化验证
+
+2026-07-19 运行：
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.test()'
+LIFEAI_TEST_XLA=true julia --project=. -e 'using Pkg; Pkg.test()'
+```
+
+- 默认测试 765 / 765 通过，其中 Week 04 专项 111 / 111。
+- 显式 Reactant/XLA 专项 30 / 30 通过；加上默认套件共 795 项。
+- Week 04 专项覆盖 RMSNorm / SwiGLU reference formula、异常输入、有限梯度、共享梯度合流、精确参数量差、legacy fixture、五配置 train-step/cache matrix、modern checkpoint round-trip / resume / generation 和 checkpoint v1 → v2 迁移。
+- XLA 专项覆盖 modern 组合的 XLA CPU 训练、固定 shape prefill / decode 和 full-forward logits 对齐。
+- `examples/modern_gpt.jl` 实跑完成 train → validate → save → load → resume → cached generate。
+
+### 五配置 CPU 受控实验
+
+运行 `scripts/benchmark_week04.sh`。单变量层使用 `d_model=32`、4 heads、2 layers、序列 16、batch 4、3 个固定 seed 和 20 个训练 step：
+
+| 配置 | MLP width | 参数量 | Checkpoint KiB | 最终 validation loss | 最终 PPL mean [range] | 训练 tokens/s |
+| --- | ---: | ---: | ---: | ---: | --- | ---: |
+| baseline | 128 | 27520 | 328.0 | 0.5310 | 1.701 [1.666, 1.727] | 36110.1 |
+| rmsnorm_only | 128 | 27360 | 325.7 | 1.1866 | 3.316 [2.681, 3.932] | 40465.2 |
+| swiglu_only | 85 | 27456 | 327.5 | 0.4412 | 1.556 [1.485, 1.621] | 34647.5 |
+| tied_only | 128 | 26208 | 312.5 | 0.2400 | 1.271 [1.244, 1.296] | 39194.2 |
+| modern | 85 | 25984 | 309.7 | 0.9212 | 2.516 [2.412, 2.716] | 38560.0 |
+
+五组配置、全部 seed 的 full / dynamic / static cache correctness 均通过。该实验没有为任一变体调整 optimizer、学习率、训练步数或数据顺序。
+
+结果没有支持“把三个现代组件全部打开就必然改善 validation”的简单结论：短训练中 `tied_only` 最好，`modern` 差于 baseline，`rmsnorm_only` 最差。tied 配置还因复用当前 embedding 初始化而具有更高的初始 PPL。它们是后续初始化与训练策略实验的线索，不是修改本 Week 固定基线来追求更好数字的理由。
+
+### Baseline vs Modern 四后端
+
+性能层使用 vocab 512、`d_model=64`、4 heads、2 layers、训练序列 64、batch 4、prompt 64、decode 16、3 个 warm-up 和 30 个正式样本：
+
+| 配置 | 后端 | correctness | 参数量 | 训练 cold ms | 训练 p50 / p90 ms | 训练 tokens/s | Prefill p50 ms | Decode p50 ms/token |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline | CPU | true | 164480 | 26212.47 | 9.01 / 13.10 | 28401.8 | 0.51 | 0.07 |
+| baseline | CUDA GPU | true | 164480 | 50055.63 | 5.04 / 5.54 | 50843.0 | 0.89 | 0.71 |
+| baseline | XLA CPU | true | 164480 | 131721.54 | 4.25 / 5.78 | 60269.4 | 0.65 | 0.04 |
+| baseline | XLA GPU | true | 164480 | 137435.22 | 2.06 / 2.39 | 123988.1 | 1.27 | 0.40 |
+| modern | CPU | true | 131520 | 26436.31 | 9.46 / 13.55 | 27052.5 | 0.54 | 0.08 |
+| modern | CUDA GPU | true | 131520 | 50125.74 | 5.27 / 6.09 | 48539.3 | 0.99 | 0.74 |
+| modern | XLA CPU | true | 131520 | 122636.78 | 4.10 / 6.33 | 62386.3 | 0.46 | 0.04 |
+| modern | XLA GPU | true | 131520 | 126284.07 | 1.18 / 1.53 | 216736.5 | 0.85 | 0.30 |
+
+modern 在该配置下减少 32960 个参数，约 20.0%。CPU 与 eager CUDA 的稳态训练吞吐略降，XLA CPU 略升，XLA GPU 明显上升；这些差异同时包含 RMSNorm、SwiGLU、权重共享和较小参数树的共同影响。它们只适用于当前 tiny workload 与当前机器，不能外推到真实模型规模。
+
+原始 TSV、逐样本时延和日志保存在被 `.gitignore` 排除的 `benchmark_results/week04-20260718-final/`；关键配置与结果已在本文固化。
 
 ## Close 回顾
 
-- **完成了什么**：
-- **验证证据**：
-- **没有完成及原因**：
-- **最重要的认知变化**：
-- **是否满足 Close 条件**：否，当前为 Open。
-- **带到下一 Week 的问题**：
+- **完成了什么**：以独立配置加入 RMSNorm、SwiGLU 和 embedding / LM head 权重共享；保留 legacy 默认；完成统一输出投影、checkpoint v2 与 v1 迁移、五配置 cache / train matrix、modern XLA 路径、端到端示例和两层 benchmark。
+- **验证证据**：默认测试 765 / 765、Week 04 专项 111 / 111、显式 XLA 专项 30 / 30；五配置全部 cache-correct；baseline/modern 的 CPU、CUDA GPU、XLA CPU、XLA GPU 八组结果全部 `ok` 且 correctness 为 `true`。
+- **没有完成及原因**：没有加入 BPE、GQA、真实语料、低精度专项或重新调参；前三项属于已确认非目标，低精度和调参需要独立变量与更真实训练规模，不应为改善本 Week tiny benchmark 数字而临时扩展范围。
+- **最重要的认知变化**：现代组件的工程价值、参数效率、后端性能和短程 validation 表现是四个不同问题。结构能正确组合且在 XLA GPU 上更快，不代表默认超参数下的 tiny validation 一定更好；初始化也会与权重共享产生直接耦合。
+- **是否满足 Close 条件**：是，Week 04 于 2026-07-19 Closed。
+- **带到下一 Week 的问题**：进入 byte-level / BPE 与中文数据管线前，是否应同时冻结一套适合 tied embedding 的零中心初始化基线；Tokenizer 的 normalization、special token、版本持久化和无泄漏数据边界如何定义。

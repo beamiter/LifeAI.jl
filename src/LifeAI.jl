@@ -3,13 +3,13 @@ module LifeAI
 export MultiHeadAttention
 export manual_scaled_dot_product_attention
 export batched_scaled_dot_product_attention
-export TransformerBlock
+export RMSNormLayer, SwiGLU, TransformerBlock
 export RoPE, apply_rope
 export SamplingSchedule
 export Tokenizer, fit_tokenizer, encode, decode, vocab_size
 export DatasetLoader, num_samples, num_batches
 export split_token_stream, split_text_stream, train_validation_loaders
-export GPTModel, gpt_config
+export GPTModel, TiedOutputProjection, gpt_config
 export TrainerGPT, init_train_state, next_token_loss, next_token_nll_sum
 export global_gradient_norm, clip_global_gradient_norm
 export train_step!, train_gpt!
@@ -24,10 +24,13 @@ export benchmark_xla_cache_modes
 
 include("core/rope.jl")
 include("core/attention.jl")
+include("core/normalization.jl")
+include("core/mlp.jl")
 include("core/transformer.jl")
 include("core/sampling.jl")
 include("data/tokenizer.jl")
 include("data/dataset.jl")
+include("models/output_projection.jl")
 include("models/gpt.jl")
 include("train/train_gpt.jl")
 include("train/evaluation.jl")
