@@ -2,11 +2,11 @@
 
 ## 一句话判断
 
-项目已经形成一个可训练、可生成、可保存恢复、可评估比较，并支持现代组件、KV Cache / XLA 路径的最小 decoder-only GPT；当前仍处于模型基础设施阶段，尚未形成 agent loop、multimodal perception 或 embodied control loop。
+项目已经形成一个可训练、可生成、可保存恢复、可评估比较，并支持现代组件、KV Cache / XLA 路径的最小 decoder-only GPT；Week 05 正在推进 Tokenizer 与中文数据基础设施，尚未形成 agent loop、multimodal perception 或 embodied control loop。
 
 ## 当前活动阶段
 
-[`Week 03 — Reproducible Training and Evaluation`](week03_reproducible_training.md) 与 [`Week 04 — Modern GPT Building Blocks`](week04_model_modernization.md) 均已 Closed。当前没有 Open 的 Week；下一建议阶段是 byte-level / BPE Tokenizer 与版本化中文数据管线。
+[`Week 03 — Reproducible Training and Evaluation`](week03_reproducible_training.md) 与 [`Week 04 — Modern GPT Building Blocks`](week04_model_modernization.md) 均已 Closed。当前活动阶段是 [`Week 05 — Versioned Tokenizers and Chinese Data Pipeline`](week05_tokenizer_data_pipeline.md)，目标是在保持 character tokenizer 与历史 checkpoint 兼容的前提下，建立 byte-level / deterministic byte-BPE、版本化 Tokenizer artifact、文档级无泄漏中文数据管线和 bits-per-byte 对照。Week 05 目前为 Open 计划，不应把目标能力描述为已经实现。
 
 ## 已实现能力
 
@@ -64,14 +64,14 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 2026-07-19 复核默认套件，共 765 项测试通过；其中 Week 03 专项 57 项、Week 04 专项 111 项。显式设置 `LIFEAI_TEST_XLA=true` 后，Reactant/XLA 专项 30 / 30 通过，加上默认套件共 795 项。
 
-Week 04 的五配置 CPU matrix 全部通过 full / dynamic / static cache correctness；baseline / modern 在 CPU、CUDA GPU、XLA CPU、XLA GPU 的八组 benchmark 全部为 `ok` 且 correctness 为 `true`。默认测试、XLA 专项测试和硬件 benchmark 仍是三类不同证据。
+Week 04 的五配置 CPU matrix 全部通过 full / dynamic / static cache correctness；baseline / modern 在 CPU、CUDA GPU、XLA CPU、XLA GPU 的八组 benchmark 全部为 `ok` 且 correctness 为 `true`。默认测试、XLA 专项测试和硬件 benchmark 仍是三类不同证据。Week 05 当前只新增计划与状态文档，尚无新的实现或测试通过数。
 
 ## 当前边界
 
-以下能力尚未实现，不应从现有 GPT demo 推断为已经具备：
+以下能力尚未实现，不应从现有 GPT demo 或 Open 的 Week 05 计划推断为已经具备：
 
 - 面向真实任务和长期运行的模型质量。
-- byte-level / BPE Tokenizer、版本化真实语料和较大规模训练。
+- byte-level / BPE Tokenizer、独立 Tokenizer artifact、版本化真实语料和较大规模训练。
 - 适合 tied embedding 的统一初始化基线、低精度专项与真实规模组件对照。
 - 实验注册、超参数搜索、分布式训练和面向生产的性能评估。
 - 对话状态、工作记忆、长期记忆和记忆检索。
@@ -96,11 +96,13 @@ Week 04 的五配置 CPU matrix 全部通过 full / dynamic / static cache corre
 ### Milestone B：推进模型组件、Tokenizer 与中文训练（进行中）
 
 - 以独立开关和对照实验加入 RMSNorm、SwiGLU、embedding / lm_head 权重共享。（Week 04 已完成）
-- 建立 byte-level baseline，再实现并评估 BPE。
-- 实现 GQA，并复用 KV Cache correctness / benchmark 验证 cache 布局和 decode 收益。
-- 建立来源、清洗、切分和配置可追踪的小型中文语料训练流程。
+- 建立无 OOV、完全可逆的 byte-level baseline，并冻结 special token、normalization 与 1-based id 语义。（Week 05 Open）
+- 实现 deterministic byte-BPE、版本化 Tokenizer artifact、fingerprint 和旧 checkpoint 迁移。（Week 05 Open）
+- 建立来源、许可、checksum、文档级切分和变换配置可追踪的小型中文语料训练流程。（Week 05 Open）
+- 用 bits per byte、raw text throughput 和上下文覆盖率补充 token loss / perplexity，形成跨 Tokenizer 可比较的实验口径。（Week 05 Open）
+- 在 Tokenizer / 数据基线稳定后实现 GQA，并复用 KV Cache correctness / benchmark 验证 cache 布局和 decode 收益。
 
-完成标准：每项结构变化都能与固定 baseline 独立比较，并在版本化 Tokenizer 和中文数据上完成可恢复训练与 validation evaluation。
+完成标准：每项结构或输入变化都能与固定 baseline 独立比较，并在版本化 Tokenizer 和中文数据上完成可恢复训练与 validation evaluation。
 
 ### Milestone C：建立最小有状态智能体闭环
 
@@ -114,10 +116,10 @@ Week 04 的五配置 CPU matrix 全部通过 full / dynamic / static cache corre
 
 | 主线 | 当前状态 | 下一关键缺口 |
 | --- | --- | --- |
-| 模型基本组件 | 已有 legacy / modern 可切换 GPT 与独立对照 | Tokenizer、GQA、初始化与真实规模验证 |
+| 模型基本组件 | 已有 legacy / modern 可切换 GPT 与独立对照 | Week 05 Tokenizer / 数据契约；随后是 GQA、初始化与真实规模验证 |
 | 高效训练与推理 | modern 已兼容 Zygote / XLA 与两类 KV Cache | 低精度、稳定公共接口、真实规模验证 |
 | 智能体核心 | 尚未开始 | memory、planning、tools、agent loop |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Week 01—04 已 Closed | Open 下一阶段并持续月度总结 |
+| 学习记录 | Week 01—04 已 Closed；Week 05 已 Open | 按 Close 条件实现、验证并记录 Tokenizer / 数据实验 |

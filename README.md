@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：语言模型、可复现实验和现代组件闭环已形成，Tokenizer / 数据升级待开启，智能体与具身层尚未开始。**
+**阶段判断：语言模型、可复现实验和现代组件闭环已形成，Week 05 的 Tokenizer / 中文数据基础设施升级已启动，智能体与具身层尚未开始。**
 
-[`Week 03 — Reproducible Training and Evaluation`](notes/week03_reproducible_training.md) 与 [`Week 04 — Modern GPT Building Blocks`](notes/week04_model_modernization.md) 均已 Closed。当前没有 Open 的 Week；下一建议阶段是 byte-level / BPE Tokenizer 与版本化中文数据管线。
+[`Week 03 — Reproducible Training and Evaluation`](notes/week03_reproducible_training.md) 与 [`Week 04 — Modern GPT Building Blocks`](notes/week04_model_modernization.md) 均已 Closed。当前活动阶段是 [`Week 05 — Versioned Tokenizers and Chinese Data Pipeline`](notes/week05_tokenizer_data_pipeline.md)，目标是建立 byte-level / deterministic byte-BPE、版本化 Tokenizer artifact、文档级无泄漏中文数据管线和跨 Tokenizer 可比较的评估口径。
 
 目前已经具备：
 
