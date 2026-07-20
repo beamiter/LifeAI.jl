@@ -28,6 +28,30 @@ function tokenizer_artifact_bytes(tokenizer)
     end
 end
 
+function validation_unknown_statistics(data)
+    total = sum(length(record.token_ids) for record in data.encoded.validation)
+    unknown = if data.tokenizer isa Tokenizer && data.tokenizer.unk_id !== nothing
+        sum(
+            count(==(data.tokenizer.unk_id), record.token_ids) for
+            record in data.encoded.validation
+        )
+    else
+        0
+    end
+    return (;
+        total,
+        unknown,
+        rate=total == 0 ? 0.0 : unknown / total,
+    )
+end
+
+function full_fixture_is_lossless(tokenizer, texts)
+    return all(
+        decode(tokenizer, encode(tokenizer, text)) ==
+        normalize_text(text, tokenizer_config(tokenizer).normalization) for text in texts
+    )
+end
+
 function main(args)
     output_directory = isempty(args) ?
         joinpath(@__DIR__, "..", "benchmark_results", "week05") : args[1]
@@ -46,6 +70,7 @@ function main(args)
     for profile in PROFILES
         data = build_profile(profile, documents)
         statistics = tokenizer_statistics(data.tokenizer, texts)
+        unknown = validation_unknown_statistics(data)
         push!(
             rows,
             (;
@@ -59,6 +84,10 @@ function main(args)
                 tokens_per_byte=statistics.tokens_per_byte,
                 tokens_per_unicode_scalar=statistics.tokens_per_character,
                 bytes_per_token=statistics.bytes_per_token,
+                validation_tokens=unknown.total,
+                validation_unknown_tokens=unknown.unknown,
+                validation_unknown_rate=unknown.rate,
+                full_fixture_lossless=full_fixture_is_lossless(data.tokenizer, texts),
                 tokenizer_fingerprint=tokenizer_fingerprint(data.tokenizer),
                 split_fingerprint=data.split.fingerprint,
             ),
@@ -77,14 +106,14 @@ function main(args)
     open(markdown_path, "w") do io
         println(io, "# Week 05 tokenizer-only matrix")
         println(io)
-        println(io, "All profiles use the same four-document fixture and deterministic split. Byte/BPE are lossless on unseen UTF-8; the character profile retains its explicit unknown-token policy.")
+        println(io, "All profiles use the same four-document fixture and deterministic split. Byte/BPE are lossless on unseen UTF-8; character BPB must be read together with its validation unknown rate.")
         println(io)
-        println(io, "| Profile | Vocab | Artifact KiB | Corpus tokens | Corpus bytes | Unicode scalars | Tokens/byte | Tokens/scalar | Bytes/token |")
-        println(io, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+        println(io, "| Profile | Vocab | Artifact KiB | Corpus tokens | Corpus bytes | Unicode scalars | Tokens/byte | Tokens/scalar | Bytes/token | Validation unk % | Lossless fixture |")
+        println(io, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |")
         for row in rows
             @printf(
                 io,
-                "| %s | %d | %.2f | %d | %d | %d | %.4f | %.4f | %.4f |\n",
+                "| %s | %d | %.2f | %d | %d | %d | %.4f | %.4f | %.4f | %.3f | %s |\n",
                 row.profile,
                 row.vocabulary_size,
                 row.tokenizer_artifact_bytes / 1024,
@@ -94,6 +123,8 @@ function main(args)
                 row.tokens_per_byte,
                 row.tokens_per_unicode_scalar,
                 row.bytes_per_token,
+                100 * row.validation_unknown_rate,
+                row.full_fixture_lossless,
             )
         end
     end
