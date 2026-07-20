@@ -6,14 +6,20 @@ export batched_scaled_dot_product_attention
 export RMSNormLayer, SwiGLU, TransformerBlock
 export RoPE, apply_rope
 export SamplingSchedule
-export Tokenizer, fit_tokenizer, encode, decode, vocab_size
-export DatasetLoader, num_samples, num_batches
+export AbstractTokenizer, Tokenizer, ByteTokenizer, ByteBPETokenizer
+export fit_tokenizer, fit_byte_bpe, encode, decode, decode_bytes, vocab_size
+export normalize_text, special_token_id, token_byte_length, encoded_byte_length
+export tokenizer_config, tokenizer_fingerprint, tokenizer_statistics
+export TOKENIZER_ARTIFACT_VERSION, save_tokenizer, load_tokenizer
+export DatasetLoader, DocumentDatasetLoader, num_samples, num_batches, target_byte_count
 export split_token_stream, split_text_stream, train_validation_loaders
+export TextDocument, load_text_documents, split_documents, build_document_dataset
+export DATASET_ARTIFACT_VERSION, save_dataset_artifact, load_dataset_artifact
 export GPTModel, TiedOutputProjection, gpt_config
 export TrainerGPT, init_train_state, next_token_loss, next_token_nll_sum
 export global_gradient_norm, clip_global_gradient_norm
 export train_step!, train_gpt!
-export evaluate_gpt
+export evaluate_gpt, bits_per_byte
 export CHECKPOINT_FORMAT_VERSION, save_checkpoint, load_checkpoint, resume_gpt!
 export generate
 export LayerKVCache, GPTKVCache, init_kv_cache, prefill, decode_step, generate_cached
@@ -30,6 +36,7 @@ include("core/transformer.jl")
 include("core/sampling.jl")
 include("data/tokenizer.jl")
 include("data/dataset.jl")
+include("data/data_pipeline.jl")
 include("models/output_projection.jl")
 include("models/gpt.jl")
 include("train/train_gpt.jl")
