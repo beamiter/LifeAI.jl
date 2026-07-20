@@ -8,5 +8,6 @@ mkdir -p "${OUTPUT_DIR}"
 cd "${ROOT_DIR}"
 
 julia --project=. examples/benchmark_week05_tokenizers.jl "${OUTPUT_DIR}"
+julia --project=. examples/benchmark_week05_tokenizer_artifacts.jl "${OUTPUT_DIR}"
 
 printf '\nWeek 05 benchmark written to %s\n' "${OUTPUT_DIR}"
