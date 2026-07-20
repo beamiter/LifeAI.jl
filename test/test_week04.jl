@@ -101,7 +101,7 @@ end
 
     @test size(y) == size(x)
     @test eltype(y) == Float32
-    @test y ≈ reference atol=1.0f-6
+    @test y ≈reference atol = 1.0f-6
     @test st_new == st
     @test size(ps.scale) == (4, 1, 1)
     @test Lux.parameterlength(norm) == 4
@@ -134,7 +134,7 @@ end
     reference = _week04_dense_reference(ps.down_proj, hidden)
 
     @test size(y) == size(x)
-    @test y ≈ reference atol=1.0f-6
+    @test y ≈reference atol = 1.0f-6
     @test keys(ps) == (:gate_proj, :up_proj, :down_proj)
     @test keys(st_new) == (:gate_proj, :up_proj, :down_proj)
     @test Lux.parameterlength(mlp) == 3 * 4 * 7 + 2 * 7 + 4
@@ -182,7 +182,7 @@ end
         2,
     ) .+ reshape(ps.bias, :, 1, 1)
 
-    @test logits ≈ reference atol=1.0f-6
+    @test logits ≈reference atol = 1.0f-6
     @test st_new == st
     @test Lux.parameterlength(head) == 7
     @test_throws AssertionError head(
@@ -219,7 +219,7 @@ end
     tied_ps, _ = Lux.setup(Xoshiro(1), tied)
 
     @test Lux.parameterlength(untied_ps) - Lux.parameterlength(tied_ps) ==
-        vocab_size * d_model
+          vocab_size * d_model
     @test !haskey(tied_ps.lm_head, :weight)
     @test haskey(tied_ps.lm_head, :bias)
 
@@ -253,7 +253,7 @@ end
     output_gradient = only(Zygote.gradient(output_objective, shared_embedding))
     input_gradient = only(Zygote.gradient(input_objective, shared_embedding))
 
-    @test shared_gradient ≈ output_gradient .+ input_gradient atol=2.0f-5 rtol=2.0f-4
+    @test shared_gradient ≈ output_gradient .+ input_gradient atol = 2.0f-5 rtol = 2.0f-4
     @test sum(abs, output_gradient) > 0
     @test sum(abs, input_gradient) > 0
 end
@@ -436,7 +436,7 @@ end
             checkpoint.train_state.parameters,
             checkpoint.train_state.states,
         )
-        @test logits_after ≈ logits_before atol=1.0f-6 rtol=1.0f-5
+        @test logits_after ≈ logits_before atol = 1.0f-6 rtol = 1.0f-5
 
         resumed_state, losses = resume_gpt!(
             checkpoint,
@@ -511,7 +511,7 @@ end
             migrated.train_state.parameters,
             migrated.train_state.states,
         )
-        @test migrated_logits ≈ original_logits atol=1.0f-6 rtol=1.0f-5
+        @test migrated_logits ≈ original_logits atol = 1.0f-6 rtol = 1.0f-5
 
         unsupported_path = joinpath(directory, "unsupported.checkpoint")
         open(unsupported_path, "w") do io
