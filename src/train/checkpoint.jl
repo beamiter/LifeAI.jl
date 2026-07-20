@@ -37,22 +37,93 @@ function _migrate_checkpoint_payload(payload::NamedTuple)
     ))
 end
 
+function _checkpoint_special_tokens(tokenizer)
+    return [
+        (; name=entry.name, id=entry.id, text=entry.text) for
+        entry in _ordered_special_tokens(tokenizer)
+    ]
+end
+
 function _tokenizer_payload(tokenizer::Tokenizer)
     return (;
         type=:character,
         id_to_token=copy(tokenizer.id_to_token),
         unk_id=tokenizer.unk_id,
+        fingerprint=tokenizer_fingerprint(tokenizer),
     )
 end
 
-function _tokenizer_from_payload(payload)
-    payload.type === :character ||
-        throw(ArgumentError("unsupported tokenizer type $(repr(payload.type))"))
+function _tokenizer_payload(tokenizer::ByteTokenizer)
+    return (;
+        type=:byte,
+        normalization=tokenizer.normalization,
+        special_tokens=_checkpoint_special_tokens(tokenizer),
+        fingerprint=tokenizer_fingerprint(tokenizer),
+    )
+end
 
-    id_to_token = Char.(collect(payload.id_to_token))
-    token_to_id = Dict(token => id for (id, token) in enumerate(id_to_token))
-    unk_id = payload.unk_id === nothing ? nothing : Int(payload.unk_id)
-    return Tokenizer(token_to_id, id_to_token, unk_id)
+function _tokenizer_payload(tokenizer::ByteBPETokenizer)
+    return (;
+        type=:byte_bpe,
+        normalization=tokenizer.normalization,
+        special_tokens=_checkpoint_special_tokens(tokenizer),
+        merges=copy(tokenizer.merges),
+        trainer_config=deepcopy(tokenizer.trainer_config),
+        corpus_fingerprint=tokenizer.corpus_fingerprint,
+        fingerprint=tokenizer_fingerprint(tokenizer),
+    )
+end
+
+function _checkpoint_special_token_tables(entries)
+    ids = Dict{Symbol,Int}()
+    texts = Dict{Symbol,String}()
+    for entry in entries
+        name = Symbol(entry.name)
+        ids[name] = Int(entry.id)
+        texts[name] = String(entry.text)
+    end
+    _validate_special_token_tables(ids, texts)
+    return ids, texts
+end
+
+function _verify_checkpoint_tokenizer(tokenizer, payload)
+    if hasproperty(payload, :fingerprint)
+        expected = String(payload.fingerprint)
+        actual = tokenizer_fingerprint(tokenizer)
+        expected == actual || throw(ArgumentError(
+            "checkpoint tokenizer fingerprint mismatch: expected $expected, computed $actual",
+        ))
+    end
+    return tokenizer
+end
+
+function _tokenizer_from_payload(payload)
+    tokenizer_type = Symbol(payload.type)
+    tokenizer = if tokenizer_type === :character
+        id_to_token = Char.(collect(payload.id_to_token))
+        token_to_id = Dict(token => id for (id, token) in enumerate(id_to_token))
+        unk_id = payload.unk_id === nothing ? nothing : Int(payload.unk_id)
+        Tokenizer(token_to_id, id_to_token, unk_id)
+    elseif tokenizer_type === :byte
+        ids, texts = _checkpoint_special_token_tables(payload.special_tokens)
+        ByteTokenizer(Symbol(payload.normalization), ids, texts)
+    elseif tokenizer_type === :byte_bpe
+        ids, texts = _checkpoint_special_token_tables(payload.special_tokens)
+        merges = Tuple{Int,Int}[
+            (Int(pair[1]), Int(pair[2])) for pair in payload.merges
+        ]
+        ByteBPETokenizer(
+            Symbol(payload.normalization),
+            ids,
+            texts,
+            merges;
+            trainer_config=payload.trainer_config,
+            corpus_fingerprint=String(payload.corpus_fingerprint),
+        )
+    else
+        throw(ArgumentError("unsupported tokenizer type $(repr(payload.type))"))
+    end
+    return _verify_checkpoint_tokenizer(tokenizer, payload)
 end
 
 function _normalize_progress(progress, step::Int)
@@ -68,17 +139,14 @@ end
 """
     save_checkpoint(path, model, tokenizer, trainer, train_state; kwargs...)
 
-Save a versioned, device-independent experiment checkpoint.
-
-The payload includes architecture configuration, tokenizer vocabulary,
-parameters, Lux states, optimizer rule/state, global step, data progress, RNG,
-training configuration, metrics, and optional metadata. Device arrays are moved
-to the CPU before serialization. The file is replaced atomically.
+Save a versioned, device-independent experiment checkpoint. Character, byte, and
+byte-BPE tokenizers share the same checkpoint API. Existing v1/v2 character payloads
+remain loadable.
 """
 function save_checkpoint(
     path::AbstractString,
     model::GPTModel,
-    tokenizer::Tokenizer,
+    tokenizer::AbstractTokenizer,
     trainer::TrainerGPT,
     train_state;
     rng=nothing,
@@ -88,8 +156,12 @@ function save_checkpoint(
     metadata=NamedTuple(),
 )
     isempty(path) && throw(ArgumentError("checkpoint path must not be empty"))
-    train_state.model === model ||
-        throw(ArgumentError("`train_state.model` must be the supplied `model`"))
+    train_state.model === model || throw(ArgumentError(
+        "`train_state.model` must be the supplied `model`",
+    ))
+    model.vocab_size == vocab_size(tokenizer) || throw(ArgumentError(
+        "model vocabulary size $(model.vocab_size) does not match tokenizer vocabulary size $(vocab_size(tokenizer))",
+    ))
 
     host = Lux.cpu_device()
     payload = (;
@@ -165,10 +237,9 @@ end
     load_checkpoint(path; kwargs...)
 
 Load a checkpoint and rebuild the model, tokenizer, trainer, and Lux train state.
-
 By default trainer settings are restored from the checkpoint. Pass `backend`,
-`device`, `ad`, `return_gradients`, `static_shapes`, or `max_grad_norm` to
-override them for the destination machine.
+`device`, `ad`, `return_gradients`, `static_shapes`, or `max_grad_norm` to override
+them for the destination machine.
 """
 function load_checkpoint(
     path::AbstractString;
@@ -185,14 +256,19 @@ function load_checkpoint(
     raw_payload = open(path, "r") do io
         deserialize(io)
     end
-    raw_payload isa NamedTuple ||
-        throw(ArgumentError("checkpoint payload must be a named tuple"))
-    hasproperty(raw_payload, :format_version) ||
-        throw(ArgumentError("checkpoint has no format version"))
+    raw_payload isa NamedTuple || throw(ArgumentError(
+        "checkpoint payload must be a named tuple",
+    ))
+    hasproperty(raw_payload, :format_version) || throw(ArgumentError(
+        "checkpoint has no format version",
+    ))
     payload, source_format_version = _migrate_checkpoint_payload(raw_payload)
 
     model = GPTModel(payload.model_config)
     tokenizer = _tokenizer_from_payload(payload.tokenizer)
+    model.vocab_size == vocab_size(tokenizer) || throw(ArgumentError(
+        "checkpoint model and tokenizer vocabulary sizes do not match",
+    ))
     saved = payload.trainer_config
 
     resolved_backend = backend === :checkpoint ? saved.backend : backend
@@ -203,10 +279,12 @@ function load_checkpoint(
     resolved_max_grad_norm = max_grad_norm === :checkpoint ?
         saved.max_grad_norm : max_grad_norm
 
-    resolved_return_gradients isa Bool ||
-        throw(ArgumentError("`return_gradients` must be Bool or `:checkpoint`"))
-    resolved_static_shapes isa Bool ||
-        throw(ArgumentError("`static_shapes` must be Bool or `:checkpoint`"))
+    resolved_return_gradients isa Bool || throw(ArgumentError(
+        "`return_gradients` must be Bool or `:checkpoint`",
+    ))
+    resolved_static_shapes isa Bool || throw(ArgumentError(
+        "`static_shapes` must be Bool or `:checkpoint`",
+    ))
 
     trainer = TrainerGPT(;
         optimizer=payload.optimizer,
@@ -250,12 +328,15 @@ function resume_gpt!(
     evaluate_every=nothing,
     callback=nothing,
 )
-    hasproperty(checkpoint, :trainer) ||
-        throw(ArgumentError("checkpoint has no trainer"))
-    hasproperty(checkpoint, :train_state) ||
-        throw(ArgumentError("checkpoint has no train_state"))
-    hasproperty(checkpoint, :progress) ||
-        throw(ArgumentError("checkpoint has no progress"))
+    hasproperty(checkpoint, :trainer) || throw(ArgumentError(
+        "checkpoint has no trainer",
+    ))
+    hasproperty(checkpoint, :train_state) || throw(ArgumentError(
+        "checkpoint has no train_state",
+    ))
+    hasproperty(checkpoint, :progress) || throw(ArgumentError(
+        "checkpoint has no progress",
+    ))
 
     progress = checkpoint.progress
     start_epoch = max(1, Int(progress.epoch))

@@ -1,0 +1,43 @@
+name = "lifeai-week05-chinese-fixture"
+version = "1"
+description = "LifeAI.jl Week 05 可公开再分发的中文数据管线最小语料。文本为项目原创，使用 CC0-1.0。"
+
+[[documents]]
+id = "continuity"
+source_id = "lifeai-week05-authored"
+source_location = "repository://data/fixtures/week05_chinese.toml#continuity"
+license = "CC0-1.0"
+text = """
+生命感来自连续的观察、记忆、反馈和行动。一个长期运行的智能系统不只回答眼前的问题，还要保存必要的状态，区分新的变化与过去的经验，并让下一步行动能够解释。小机器人每天记录环境中的光线、声音和位置变化，也记录自己的动作是否产生了预期结果。它不会把一次偶然成功当成永远正确的规则，而会在重复体验中调整判断。连续性不是简单重复历史，而是在明确边界内保留有用信息、忘记无效噪声，并对新的证据保持开放。
+为了验证这种连续性，实验需要可复现的输入、确定的数据切分和版本化的模型状态。每次训练都记录数据版本、随机种子、配置和评价结果。恢复训练时，系统应当从同一个进度继续，而不是悄悄改变词表、样本顺序或文本规范化策略。只有输入和状态都可追踪，后续关于记忆与适应的结论才具有可信基础。
+"""
+
+[[documents]]
+id = "observation-action"
+source_id = "lifeai-week05-authored"
+source_location = "repository://data/fixtures/week05_chinese.toml#observation-action"
+license = "CC0-1.0"
+text = """
+桌面机器人先观察，再决定是否行动。摄像头看到物体的位置，麦克风接收附近的声音，内部状态记录电量、温度和最近一次动作。观察本身不等于理解，模型需要把不同来源的信息组织成可比较的表示。决定动作之前，系统还要检查安全边界：前方是否有人，桌面边缘是否太近，当前电量是否足够完成任务。动作执行后，新的观察会成为反馈，帮助系统判断预测与现实之间的差异。
+一个最小闭环可以从简单环境开始。机器人接收结构化观察，选择有限动作，然后得到可验证的结果。每条轨迹都保存观察、动作、反馈与时间顺序，以便测试和重放。模型后端可以替换，但观察和动作接口保持稳定。这样既能使用当前的小型语言模型，也能在未来接入视觉模型、外部模型或更完整的多模态系统。
+"""
+
+[[documents]]
+id = "tokenizer-contract"
+source_id = "lifeai-week05-authored"
+source_location = "repository://data/fixtures/week05_chinese.toml#tokenizer-contract"
+license = "CC0-1.0"
+text = """
+Tokenizer 是文本进入模型的契约。字符级方法直观，但词表依赖训练文本；字节级方法可以覆盖任意有效的 UTF-8 文本，不需要未知字符；字节级 BPE 在可逆字节表示之上合并常见片段，从而减少 token 数量并扩大固定上下文能够覆盖的原始文本范围。不同 Tokenizer 的 token 含义和数量不同，因此不能直接把它们的每 token 困惑度当成同一尺度比较。
+可靠的 Tokenizer artifact 应记录算法类型、版本、规范化策略、special token、词表、合并顺序、训练配置和内容指纹。训练集与验证集必须先按文档切分，再只用训练文档拟合词表和 BPE 合并规则。任何只出现在验证文档中的片段都不应影响训练得到的 Tokenizer。编码后的数据也要保存文档边界，避免滑动窗口悄悄跨越两个无关文档并制造虚假的上下文。
+"""
+
+[[documents]]
+id = "evaluation"
+source_id = "lifeai-week05-authored"
+source_location = "repository://data/fixtures/week05_chinese.toml#evaluation"
+license = "CC0-1.0"
+text = """
+评价指标必须说明分母是什么。训练过程可以继续观察每 token 的负对数似然和困惑度，但跨 Tokenizer 比较时，应同时报告每字节负对数似然、bits per byte、原始字节吞吐、字符吞吐和上下文覆盖率。字节归一化指标把不同分词方案映射到共同的原始文本单位，能够减少 token 密度差异带来的误导。参数量和 checkpoint 大小也要单独记录，因为更大的词表会直接改变 embedding 与输出投影的规模。
+短程 tiny corpus 实验主要验证工程正确性和比较方法，不能外推为真实中文模型质量排名。至少使用多个固定随机种子，并把冷启动、编译和稳态执行分开记录。测试应覆盖编码解码、artifact 保存加载、checkpoint 恢复、普通生成、KV Cache 生成以及可用后端上的训练 smoke。只有这些证据同时成立，新的文本入口才算真正接入了完整模型闭环。
+"""

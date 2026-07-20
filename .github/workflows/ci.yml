@@ -17,4 +17,125 @@ jobs:
           version: "1.11"
       - uses: julia-actions/cache@v2
       - name: Instantiate and test
-        run: julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+        run: |
+          set -o pipefail
+          julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()' 2>&1 | tee week05-test.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: week05-test-log
+          path: week05-test.log
+
+  week05-evidence:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.11"
+      - uses: julia-actions/cache@v2
+      - name: Instantiate
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Run Week 05 end-to-end example
+        run: julia --project=. examples/week05_chinese_pipeline.jl
+      - name: Run Week 05 three-seed CPU comparison
+        env:
+          LIFEAI_WEEK05_TRAIN_STEPS: "8"
+          LIFEAI_WEEK05_TOKENIZER_REPETITIONS: "10"
+        run: |
+          set -o pipefail
+          bash scripts/benchmark_week05.sh benchmark_results/week05-ci 2>&1 | tee week05-benchmark.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: week05-evidence
+          path: |
+            benchmark_results/week05-ci
+            week05-benchmark.log
+
+  week05-xla-smoke:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.11"
+      - uses: julia-actions/cache@v2
+      - name: Instantiate
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Run Week 05 XLA CPU smoke
+        run: julia --project=. test/test_week05_xla.jl
+
+  week05-legacy-checkpoint:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: legacy-main
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.11"
+      - uses: julia-actions/cache@v2
+      - name: Generate a real main-branch v2 checkpoint
+        working-directory: legacy-main
+        run: |
+          julia --project=. -e '
+            using Pkg; Pkg.instantiate()
+            using LifeAI, Random
+            text = repeat("abc生命", 24)
+            tokenizer = fit_tokenizer(text; add_unk=true)
+            model = GPTModel(vocab_size(tokenizer), 8, 2, 1; max_seq_len=4)
+            trainer = TrainerGPT(learning_rate=1.0f-3)
+            state = init_train_state(Xoshiro(20260720), model, trainer)
+            ids = encode(tokenizer, text)
+            inputs = reshape(ids[1:8], 4, 2)
+            targets = reshape(ids[2:9], 4, 2)
+            state, _, _ = train_step!(trainer, state, inputs, targets)
+            logits, _ = model(inputs, state.parameters, state.states)
+            open("../legacy-v2-logits.tsv", "w") do io
+                println(io, join(Float64.(vec(logits)), Char(9)))
+            end
+            save_checkpoint(
+                "../legacy-v2.checkpoint",
+                model,
+                tokenizer,
+                trainer,
+                state;
+                progress=(; epoch=1, batch=1),
+            )
+          '
+      - name: Load the real legacy checkpoint with Week 05 code
+        run: |
+          julia --project=. -e '
+            using Pkg; Pkg.instantiate()
+            using LifeAI
+            text = repeat("abc生命", 24)
+            checkpoint = load_checkpoint("legacy-v2.checkpoint"; backend=:zygote)
+            @assert checkpoint.source_format_version == 2
+            @assert checkpoint.train_state.step == 1
+            ids = encode(checkpoint.tokenizer, text)
+            inputs = reshape(ids[1:8], 4, 2)
+            logits, _ = checkpoint.model(
+                inputs,
+                checkpoint.train_state.parameters,
+                checkpoint.train_state.states,
+            )
+            reference = parse.(
+                Float64,
+                split(strip(read("legacy-v2-logits.tsv", String)), Char(9)),
+            )
+            @assert isapprox(
+                Float64.(vec(logits)),
+                reference;
+                atol=1.0e-6,
+                rtol=1.0e-5,
+            )
+          '
