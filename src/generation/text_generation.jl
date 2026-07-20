@@ -50,18 +50,7 @@ end
 """
     generate(model, ps, st, prompt_tokens; kwargs...)
 
-Autoregressively generate token ids.
-
-Keyword arguments:
-
-- `max_new_tokens=100`
-- `temperature=1f0`; use `0` for greedy decoding
-- `top_k=nothing`
-- `rng=Random.default_rng()`
-- `device=get_device(ps)`
-
-The returned token vector includes the prompt. The second return value is the
-updated Lux model state.
+Autoregressively generate token ids. The returned token vector includes the prompt.
 """
 function generate(
     model,
@@ -74,13 +63,15 @@ function generate(
     rng::AbstractRNG=default_rng(),
     device=get_device(ps),
 )
-    max_new_tokens >= 0 ||
-        throw(ArgumentError("`max_new_tokens` must be non-negative"))
+    max_new_tokens >= 0 || throw(ArgumentError(
+        "`max_new_tokens` must be non-negative",
+    ))
 
     generated = Int.(collect(prompt_tokens))
     isempty(generated) && throw(ArgumentError("`prompt_tokens` must not be empty"))
-    all(id -> 1 <= id <= model.vocab_size, generated) ||
-        throw(ArgumentError("prompt token id is outside 1:$(model.vocab_size)"))
+    all(id -> 1 <= id <= model.vocab_size, generated) || throw(ArgumentError(
+        "prompt token id is outside 1:$(model.vocab_size)",
+    ))
 
     st_current = st
     host = cpu_device()
@@ -113,24 +104,84 @@ end
 """
     generate(model, ps, st, tokenizer, prompt; kwargs...)
 
-String convenience overload. Returns `(generated_text, updated_state)`.
+String convenience overload for every `AbstractTokenizer`. Byte-based generation may
+end on an incomplete UTF-8 sequence, so display decoding defaults to `:replace` while
+the underlying token ids and `decode_bytes` remain lossless.
 """
 function generate(
     model,
     ps,
     st,
-    tokenizer::Tokenizer,
+    tokenizer::AbstractTokenizer,
     prompt::AbstractString;
-    kwargs...
+    add_special_tokens::Bool=false,
+    decode_errors::Symbol=:replace,
+    skip_special_tokens::Bool=true,
+    kwargs...,
 )
-    prompt_tokens = encode(tokenizer, prompt)
+    prompt_tokens = encode(tokenizer, prompt; add_special_tokens)
     generated_tokens, st_new = generate(
         model,
         ps,
         st,
         prompt_tokens;
-        kwargs...
+        kwargs...,
     )
 
-    return decode(tokenizer, generated_tokens), st_new
+    return decode(
+        tokenizer,
+        generated_tokens;
+        errors=decode_errors,
+        skip_special_tokens,
+    ), st_new
+end
+
+"""String convenience overload for KV-cached generation with any tokenizer."""
+function generate_cached(
+    model::GPTModel,
+    ps,
+    st::NamedTuple,
+    tokenizer::AbstractTokenizer,
+    prompt::AbstractString;
+    add_special_tokens::Bool=false,
+    decode_errors::Symbol=:replace,
+    skip_special_tokens::Bool=true,
+    kwargs...,
+)
+    generated_tokens, st_new = generate_cached(
+        model,
+        ps,
+        st,
+        encode(tokenizer, prompt; add_special_tokens);
+        kwargs...,
+    )
+    return decode(
+        tokenizer,
+        generated_tokens;
+        errors=decode_errors,
+        skip_special_tokens,
+    ), st_new
+end
+
+"""String convenience overload for compiled KV-cached generation with any tokenizer."""
+function generate_xla_cached!(
+    decoder,
+    tokenizer::AbstractTokenizer,
+    prompt::AbstractString;
+    add_special_tokens::Bool=false,
+    decode_errors::Symbol=:replace,
+    skip_special_tokens::Bool=true,
+    kwargs...,
+)
+    generated_tokens, state = generate_xla_cached!(
+        decoder,
+        encode(tokenizer, prompt; add_special_tokens);
+        kwargs...,
+    )
+    return decode(
+        tokenizer,
+        generated_tokens;
+        errors=decode_errors,
+        skip_special_tokens,
+    ), state
 end
