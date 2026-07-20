@@ -95,8 +95,13 @@ function tokenizer_throughput(tokenizer, documents, repetitions::Int)
     texts = [document.text for document in documents]
     encoded = [encode(tokenizer, text) for text in texts]
     for (text, ids) in zip(texts, encoded)
-        decode(tokenizer, ids) == normalize_text(text, tokenizer_config(tokenizer).normalization) ||
-            error("tokenizer round-trip failed before benchmarking")
+        # Byte tokenizers must be lossless on unseen validation text. The legacy
+        # character baseline deliberately maps unseen characters to <unk>, so it
+        # is measured without pretending that its validation round-trip is exact.
+        if !(tokenizer isa Tokenizer)
+            decode(tokenizer, ids) == normalize_text(text, tokenizer_config(tokenizer).normalization) ||
+                error("byte tokenizer round-trip failed before benchmarking")
+        end
     end
     total_bytes = repetitions * sum(ncodeunits, texts)
 
@@ -122,8 +127,8 @@ function tokenizer_throughput(tokenizer, documents, repetitions::Int)
     encode_sink > 0 || error("tokenizer encode benchmark produced no tokens")
     decode_sink > 0 || error("tokenizer decode benchmark produced no bytes")
     return (;
-        encode_bytes_per_second=total_bytes / max(encode_seconds, eps()),
-        decode_bytes_per_second=total_bytes / max(decode_seconds, eps()),
+        encode_bytes_per_second=total_bytes / max(encode_seconds, eps(Float64)),
+        decode_bytes_per_second=total_bytes / max(decode_seconds, eps(Float64)),
     )
 end
 
@@ -256,8 +261,8 @@ function profile_summary(rows, profile)
     decode_rate = [row.decode_bytes_per_second for row in selected]
     return (;
         profile=String(profile),
-        vocabulary_size=only(unique(row.vocabulary_size for row in selected)),
-        parameter_count=only(unique(row.parameter_count for row in selected)),
+        vocabulary_size=only(unique([row.vocabulary_size for row in selected])),
+        parameter_count=only(unique([row.parameter_count for row in selected])),
         checkpoint_kib=mean(row.checkpoint_bytes for row in selected) / 1024,
         tokens_per_byte=mean(row.tokens_per_byte for row in selected),
         context_bytes=mean(row.context_bytes for row in selected),
