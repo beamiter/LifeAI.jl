@@ -45,8 +45,13 @@ end
     include("test_week04.jl")
 end
 
+@testset "Week 05 tokenizers and Chinese data pipeline" begin
+    include("test_week05.jl")
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA KV cache" begin
         include("test_xla_kv_cache.jl")
+        include("test_week05_xla.jl")
     end
 end
