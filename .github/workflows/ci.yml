@@ -44,7 +44,7 @@ jobs:
         env:
           LIFEAI_WEEK05_TRAIN_STEPS: "8"
           LIFEAI_WEEK05_TOKENIZER_REPETITIONS: "10"
-        run: julia --project=. examples/benchmark_week05_tokenizers.jl benchmark_results/week05-ci
+        run: bash scripts/benchmark_week05.sh benchmark_results/week05-ci
       - uses: actions/upload-artifact@v4
         with:
           name: week05-evidence
