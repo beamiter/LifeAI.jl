@@ -134,4 +134,6 @@ function main(args)
     println("[week05] tokenizer summary: ", abspath(markdown_path))
 end
 
-abspath(PROGRAM_FILE) == @__FILE__ && main(ARGS)
+if abspath(PROGRAM_FILE) == abspath(@__FILE__)
+    main(ARGS)
+end
