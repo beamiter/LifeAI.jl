@@ -1,8 +1,8 @@
 # Week 05 — Versioned Tokenizers and Chinese Data Pipeline
 
-> 状态：Open
+> 状态：Closed
 >
-> 开启记录：2026-07-20
+> 关闭记录：2026-07-21
 >
 > 依赖基线：[`Week 04 — Modern GPT Building Blocks`](week04_model_modernization.md) 已 Closed。
 
@@ -198,9 +198,9 @@ Byte baseline 必须先于 BPE 完成；BPE 的每个 token 都应能展开为 b
 
 ## Close 回顾
 
-- **完成了什么**：
-- **验证证据**：
-- **没有完成及原因**：
-- **最重要的认知变化**：
-- **是否满足 Close 条件**：
-- **带到下一 Week 的问题**：
+- **完成了什么**：建立 `AbstractTokenizer` 统一接口并保留 legacy character `Tokenizer`；实现无 OOV、完全可逆的 `ByteTokenizer` 与确定性 `ByteBPETokenizer`（固定 tie-break、merge ranks、fingerprint）；Tokenizer artifact v1 支持独立 save / load、schema version 与内容指纹校验；建成以 document 为单位的中文数据管线（manifest、许可与 checksum 记录、文档级无泄漏 split、versioned dataset artifact）；`bits_per_byte` 等 byte-normalized 评估接入 validation；三类 Tokenizer 全部打通训练、checkpoint round-trip / resume 和 cached generation；提交许可清晰的中文 fixture、端到端示例和三 seed 跨 tokenizer benchmark。
+- **验证证据**：2026-07-21 默认测试 3859 / 3859 通过，其中 Week 05 专项 3094 项（含随机有效 UTF-8 round-trip 与三 tokenizer integration matrix）；显式 `LIFEAI_TEST_XLA=true` 下 Reactant/XLA 套件 37 / 37（含 Week 05 XLA tokenizer smoke）。三 seed（20260720–22）固定模型对照记录于 `benchmark_results/week05/`：character / byte / byte_bpe 的 tokens per byte 为 0.3717 / 1.0000 / 0.7139，16-token 上下文覆盖 43.0 / 16.0 / 21.0 bytes，final BPB 3.0753 / 8.1890 / 6.7614；byte 与 byte-BPE 对 unseen UTF-8 lossless 且 validation unknown 率为 0，character 为 19.6%。
+- **没有完成及原因**：GQA 未实现，按计划留待 Tokenizer / 数据基线稳定后的 Week 06；未做更大规模真实语料训练，tiny fixture 上的 BPB 数值不外推为中文模型质量结论；SentencePiece unigram、多语言大词表等属于确认非目标。
+- **最重要的认知变化**：跨 Tokenizer 比较必须以 byte-normalized 指标加损失覆盖率共同解读——character 的 BPB 3.08 表面最低，但 19.6% 的 validation unknown 率意味着它把最难预测的内容折叠进 unk，与 lossless tokenizer 不可直接排名；确定性的真正敌人不在 BPE 算法本身，而在 pair tie-break 顺序和序列化布局，二者都必须进入测试与 artifact schema。
+- **是否满足 Close 条件**：是，Week 05 于 2026-07-21 Closed。
+- **带到下一 Week 的问题**：GQA 的 KV cache 布局与 decode 收益如何复用现有三路 correctness matrix 验证；面向 Qwen3 复现，QK-Norm 的确切语义（位置、作用维度）、`gpt_config` 与 HF `config.json` 的字段映射、HF 权重布局与 Julia 列主序的转置约定需要在结构 parity 阶段冻结。
