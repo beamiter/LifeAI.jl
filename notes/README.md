@@ -11,6 +11,7 @@
 - [`week04_model_modernization.md`](week04_model_modernization.md)：Week 04（Closed），RMSNorm、SwiGLU、embedding / LM head 权重共享及独立对照实验。
 - [`week05_tokenizer_data_pipeline.md`](week05_tokenizer_data_pipeline.md)：Week 05（Closed），byte-level / byte-BPE、Tokenizer artifact 版本化与无泄漏中文数据管线。
 - [`week06_gqa_qwen3_parity.md`](week06_gqa_qwen3_parity.md)：Week 06（Closed），GQA、QK-Norm 与 Qwen3 dense 结构 parity，Qwen3 复现三阶段计划第一步。
+- [`week07_hf_weight_loading.md`](week07_hf_weight_loading.md)：Week 07（Open），safetensors / BF16 权重加载、HF config 映射与 Qwen3-0.6B logits / KV-cache 对齐。
 - [`qwen3_hf_config_mapping.md`](qwen3_hf_config_mapping.md)：Qwen3 HF `config.json` 与 `gpt_config` 的字段、权重名与布局映射契约（Week 07 输入）。
 - [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
 - [`monthly/`](monthly/)：月度总结和跨周能力变化。

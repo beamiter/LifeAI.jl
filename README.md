@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：语言模型、可复现实验和现代组件闭环已形成，Week 05 的 Tokenizer / 中文数据基础设施升级已启动，智能体与具身层尚未开始。**
+**阶段判断：最小 GPT 的训练、生成、评估、版本化 Tokenizer 与 Qwen3 dense 结构 parity 已形成；当前正在 Week 07 接入 HuggingFace Qwen3-0.6B 权重并验证 logits / KV Cache 数值一致性，智能体与具身层尚未开始。**
 
-[`Week 03 — Reproducible Training and Evaluation`](notes/week03_reproducible_training.md) 与 [`Week 04 — Modern GPT Building Blocks`](notes/week04_model_modernization.md) 均已 Closed。当前活动阶段是 [`Week 05 — Versioned Tokenizers and Chinese Data Pipeline`](notes/week05_tokenizer_data_pipeline.md)，目标是建立 byte-level / deterministic byte-BPE、版本化 Tokenizer artifact、文档级无泄漏中文数据管线和跨 Tokenizer 可比较的评估口径。
+Week 01—06 均已 Closed。当前活动阶段是 [`Week 07 — HuggingFace Weight Loading and Qwen3 Logits Parity`](notes/week07_hf_weight_loading.md)，目标是安全读取 safetensors / BF16 和 HF config，解决 rotate_half RoPE 与布局差异，并用固定 token-id fixture 对齐 Qwen3-0.6B 的逐层 hidden states、full-forward logits 与 KV-cache decode logits。
 
 目前已经具备：
 
