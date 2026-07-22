@@ -10,7 +10,8 @@
 - [`week03_reproducible_training.md`](week03_reproducible_training.md)：Week 03（Closed），checkpoint、断点续训、validation / perplexity、梯度裁剪与 KV Cache 基线。
 - [`week04_model_modernization.md`](week04_model_modernization.md)：Week 04（Closed），RMSNorm、SwiGLU、embedding / LM head 权重共享及独立对照实验。
 - [`week05_tokenizer_data_pipeline.md`](week05_tokenizer_data_pipeline.md)：Week 05（Closed），byte-level / byte-BPE、Tokenizer artifact 版本化与无泄漏中文数据管线。
-- [`week06_gqa_qwen3_parity.md`](week06_gqa_qwen3_parity.md)：Week 06（Open），GQA、QK-Norm 与 Qwen3 dense 结构 parity，Qwen3 复现三阶段计划第一步。
+- [`week06_gqa_qwen3_parity.md`](week06_gqa_qwen3_parity.md)：Week 06（Closed），GQA、QK-Norm 与 Qwen3 dense 结构 parity，Qwen3 复现三阶段计划第一步。
+- [`qwen3_hf_config_mapping.md`](qwen3_hf_config_mapping.md)：Qwen3 HF `config.json` 与 `gpt_config` 的字段、权重名与布局映射契约（Week 07 输入）。
 - [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
 - [`monthly/`](monthly/)：月度总结和跨周能力变化。
 

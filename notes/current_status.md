@@ -2,18 +2,20 @@
 
 ## 一句话判断
 
-项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer（character / byte / byte-BPE）与文档级无泄漏中文数据管线的最小 decoder-only GPT；当前正朝「复现 Qwen3 系列并从 HuggingFace 加载权重验证」推进，尚未形成 agent loop、multimodal perception 或 embodied control loop。
+项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件（含 GQA 与 QK-Norm，结构上与 Qwen3 dense 同构）、KV Cache / XLA 路径，并具备版本化 Tokenizer（character / byte / byte-BPE）与文档级无泄漏中文数据管线的最小 decoder-only GPT；当前正朝「复现 Qwen3 系列并从 HuggingFace 加载权重验证」推进，尚未形成 agent loop、multimodal perception 或 embodied control loop。
 
 ## 当前活动阶段
 
-[`Week 05 — Versioned Tokenizers and Chinese Data Pipeline`](week05_tokenizer_data_pipeline.md) 已于 2026-07-21 Closed。当前活动阶段是 [`Week 06 — GQA, QK-Norm and Qwen3 Structural Parity`](week06_gqa_qwen3_parity.md)，它是「复现 Qwen3 → HF 权重加载 → 推理验证」三阶段计划的第一步：Week 06 完成结构 parity（GQA、QK-Norm），Week 07 计划完成 safetensors 权重加载与 logits 对齐，Week 08 计划完成 HF tokenizer 导入与 text→text 端到端验证。Week 06 目前为 Open 计划，不应把目标能力描述为已经实现。
+[`Week 06 — GQA, QK-Norm and Qwen3 Structural Parity`](week06_gqa_qwen3_parity.md) 已于 2026-07-22 Closed，「复现 Qwen3 → HF 权重加载 → 推理验证」三阶段计划的第一步（结构 parity）完成。下一阶段是 Week 07：safetensors / bfloat16 权重加载、HF `config.json` 解析与 Qwen3-0.6B logits 对齐（尚未 Open）；随后 Week 08 计划完成 HF tokenizer 导入与 text→text 端到端验证。`notes/qwen3_hf_config_mapping.md` 已固化 config 字段与权重名映射契约，并标注了 RoPE rotate_half vs interleaved 这一 Week 07 必须首先解决的适配点。
 
 ## 已实现能力
 
 ### 1. 模型基本组件
 
-- scaled dot-product attention：同时保留手写版本与基于 `NNlib.batched_mul` 的批量版本，便于原理对照和正确性验证。
+- scaled dot-product attention：同时保留手写版本与基于 `NNlib.batched_mul` 的批量版本（均支持 GQA/MQA 分组），便于原理对照和正确性验证。
 - Multi-Head Attention：包括 Q/K/V/O 投影、head reshape / merge 和 causal mask；`head_dim` 可独立于 `d_model` 配置，`use_bias` 可关闭。
+- GQA / MQA：`num_kv_heads` 独立可配，K/V 投影与 KV cache 按 KV head 数缩减；manual reference、无物化分组实现与 `repeat_kv` 展开三路等价性已测试钉死。
+- QK-Norm（Qwen3 语义）：per-head RMSNorm、独立 q/k scale、位于 head reshape 之后 RoPE 之前，独立开关，关闭时参数树与 legacy 完全一致。
 - RoPE：支持预计算 cos / sin cache、可配置 `rope_theta` 和增量解码所需的绝对起始位置。
 - TransformerBlock：采用 pre-norm、attention residual 和 MLP residual，可独立选择 LayerNorm / RMSNorm 与 GELU / SwiGLU。
 - GPTModel：包括 token embedding、多层 TransformerBlock、final norm 和 LM head；支持 embedding / LM head 单 kernel 权重共享。
@@ -52,16 +54,18 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-2026-07-21 复核默认套件，共 3859 项测试通过；其中 Week 05 专项 3094 项（含随机有效 UTF-8 round-trip 与三 tokenizer integration matrix）。显式设置 `LIFEAI_TEST_XLA=true` 后，Reactant/XLA 套件 37 / 37 通过（含 Week 05 XLA tokenizer smoke）。
+2026-07-22 复核默认套件，共 3971 项测试通过；其中 Week 05 专项 3094 项、Week 06 专项 112 项（GQA 等价性、QK-Norm 语义、三路 cache matrix、checkpoint 兼容与端到端训练生成）。显式设置 `LIFEAI_TEST_XLA=true` 后，Reactant/XLA 套件 46 / 46 通过（含 Week 06 GQA + QK-Norm 编译 smoke 9 项）。
 
-Week 05 三 seed（20260720–22）跨 tokenizer 对照记录于 `benchmark_results/week05/`：character / byte / byte_bpe 的 tokens per byte 为 0.3717 / 1.0000 / 0.7139，final BPB 3.0753 / 8.1890 / 6.7614；byte 与 byte-BPE 对 unseen UTF-8 lossless 且 validation unknown 率为 0，character 为 19.6%（其 BPB 不可与 lossless tokenizer 直接排名）。默认测试、XLA 专项测试和硬件 benchmark 仍是三类不同证据。Week 06 当前只新增计划文档，尚无新的实现或测试通过数。
+Week 05 三 seed（20260720–22）跨 tokenizer 对照记录于 `benchmark_results/week05/`：character / byte / byte_bpe 的 tokens per byte 为 0.3717 / 1.0000 / 0.7139，final BPB 3.0753 / 8.1890 / 6.7614；byte 与 byte-BPE 对 unseen UTF-8 lossless 且 validation unknown 率为 0，character 为 19.6%（其 BPB 不可与 lossless tokenizer 直接排名）。
+
+Week 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定形状下 KV cache 内存严格按 `num_kv_heads / num_heads` 缩减（8 / 4 / 1 heads 对应 1024 / 512 / 128 KiB），dynamic decode 吞吐 2097 / 2484 / 3131 tok/s，全部配置 correctness 为 true。默认测试、XLA 专项测试和硬件 benchmark 仍是三类不同证据。
 
 ## 当前边界
 
-以下能力尚未实现，不应从现有 GPT demo 或 Open 的 Week 06 计划推断为已经具备：
+以下能力尚未实现，不应从现有 GPT demo 或已完成的结构 parity 推断为已经具备：
 
-- GQA / QK-Norm 及与 Qwen3 dense 的结构 parity（Week 06 Open 计划）。
 - safetensors / bfloat16 权重加载、HF `config.json` 解析、HF 参数名映射与 logits 对齐验证（Week 07 计划）。
+- HF Qwen3 的 rotate_half RoPE 模式（当前实现为 interleaved 配对，加载权重前必须适配）。
 - HF `tokenizer.json` 导入、GPT-2 byte↔unicode 映射与 regex pre-tokenization（Week 08 计划）。
 - 面向真实任务和长期运行的模型质量；较大规模真实语料训练。
 - 适合 tied embedding 的统一初始化基线、低精度专项与真实规模组件对照。
@@ -87,8 +91,8 @@ Week 05 三 seed（20260720–22）跨 tokenizer 对照记录于 `benchmark_resu
 
 ### Milestone B'：复现 Qwen3 并以 HF 权重验证（进行中）
 
-- 实现 GQA 与 QK-Norm，使模型结构与 Qwen3 dense 同构；复用 KV Cache correctness / benchmark 验证 cache 布局与 decode 收益。（Week 06 Open）
-- 实现 safetensors / bfloat16 权重加载、HF `config.json` 解析与参数名映射；用 token-id fixture 对齐 Qwen3-0.6B 逐层 hidden states 与 logits。（Week 07 计划）
+- 实现 GQA 与 QK-Norm，使模型结构与 Qwen3 dense 同构；复用 KV Cache correctness / benchmark 验证 cache 布局与 decode 收益。（Week 06 已完成，2026-07-22 Closed）
+- 解决 RoPE rotate_half 适配，实现 safetensors / bfloat16 权重加载、HF `config.json` 解析与参数名映射；用 token-id fixture 对齐 Qwen3-0.6B 逐层 hidden states 与 logits。（Week 07 计划）
 - 导入 HF `tokenizer.json`（byte-level BPE、byte↔unicode 映射、regex pre-tokenization、special tokens），完成 text→text 端到端一致性验证。（Week 08 计划）
 
 完成标准：LifeAI.jl 加载 Qwen3-0.6B 官方权重后，在明确容差策略下 logits 与 HF transformers 参考一致，并能用 KV Cache 完成生成。
@@ -105,10 +109,10 @@ Week 05 三 seed（20260720–22）跨 tokenizer 对照记录于 `benchmark_resu
 
 | 主线 | 当前状态 | 下一关键缺口 |
 | --- | --- | --- |
-| 模型基本组件 | legacy / modern 可切换 GPT；三类版本化 Tokenizer 与中文数据管线 | Week 06 GQA / QK-Norm；随后 HF 权重加载与 Qwen3 验证 |
-| 高效训练与推理 | modern 已兼容 Zygote / XLA 与两类 KV Cache | GQA cache 布局、bfloat16 / 低精度、真实规模验证 |
+| 模型基本组件 | Qwen3 dense 同构结构（GQA / QK-Norm）；三类版本化 Tokenizer 与中文数据管线 | Week 07 HF 权重加载与 logits 对齐；rotate_half RoPE 适配 |
+| 高效训练与推理 | modern / GQA 已兼容 Zygote / XLA 与两类 KV Cache；cache 内存按 KV heads 缩减 | bfloat16 / 低精度、真实规模验证 |
 | 智能体核心 | 尚未开始 | memory、planning、tools、agent loop |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Week 01—05 已 Closed；Week 06 已 Open | 按 Close 条件实现、验证并记录 GQA / Qwen3 parity |
+| 学习记录 | Week 01—06 已 Closed | Open Week 07：safetensors 权重加载与 Qwen3-0.6B logits 对齐 |

@@ -3,6 +3,7 @@ module LifeAI
 export MultiHeadAttention
 export manual_scaled_dot_product_attention
 export batched_scaled_dot_product_attention
+export repeat_kv
 export RMSNormLayer, SwiGLU, TransformerBlock
 export RoPE, apply_rope
 export SamplingSchedule

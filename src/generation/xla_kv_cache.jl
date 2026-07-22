@@ -10,7 +10,7 @@ import Reactant
 Preallocated key/value storage for one Transformer layer. Both tensors keep a
 fixed physical shape:
 
-    (head_dim, num_heads, max_seq_len, batch)
+    (head_dim, num_kv_heads, max_seq_len, batch)
 
 Only the prefix selected by `StaticGPTKVCache.position` is logically valid.
 """
@@ -70,7 +70,7 @@ function init_static_kv_cache(
     layers = map(_model_blocks(model)) do block
         shape = (
             block.attn.head_dim,
-            block.attn.num_heads,
+            block.attn.num_kv_heads,
             model.max_seq_len,
             batch_size,
         )
@@ -102,7 +102,7 @@ function _validate_static_kv_cache(model::GPTModel, cache::StaticGPTKVCache)
     for (block, layer_cache) in zip(_model_blocks(model), cache.layers)
         expected_shape = (
             block.attn.head_dim,
-            block.attn.num_heads,
+            block.attn.num_kv_heads,
             cache.max_seq_len,
             cache.batch_size,
         )
@@ -149,18 +149,30 @@ function _scaled_dot_product_attention_valid_prefix(
     valid_length,
 )
     D, H, Tq, B = size(q)
-    _, _, Tk, _ = size(k)
-    HB = H * B
+    _, Hk, Tk, _ = size(k)
+    @assert H % Hk == 0
+    groups = H ÷ Hk
+    HkB = Hk * B
 
-    q3 = reshape(permutedims(Float32.(q), (3, 1, 2, 4)), Tq, D, HB)
-    k3 = reshape(permutedims(Float32.(k), (1, 3, 2, 4)), D, Tk, HB)
-    v3 = reshape(permutedims(Float32.(v), (3, 1, 2, 4)), Tk, D, HB)
+    # Fold query-head groups into the row dimension (see
+    # `_grouped_scaled_dot_product_attention`); groups == 1 reduces to the
+    # original full-head layout.
+    q3 = if groups == 1
+        reshape(permutedims(Float32.(q), (3, 1, 2, 4)), Tq, D, HkB)
+    else
+        qp = permutedims(Float32.(q), (3, 1, 2, 4))
+        q5 = reshape(qp, Tq, D, groups, Hk, B)
+        reshape(permutedims(q5, (1, 3, 2, 4, 5)), Tq * groups, D, HkB)
+    end
+    k3 = reshape(permutedims(Float32.(k), (1, 3, 2, 4)), D, Tk, HkB)
+    v3 = reshape(permutedims(Float32.(v), (3, 1, 2, 4)), Tk, D, HkB)
 
     scores = batched_mul(q3, k3) .* inv(sqrt(Float32(D)))
 
     # `valid_length` is an XLA-tracked scalar during compiled decoding. The
     # physical cache shape stays constant while this mask exposes only the
-    # already-written prefix.
+    # already-written prefix. The mask depends only on the key position, so it
+    # broadcasts unchanged over grouped query rows.
     key_positions_host = reshape(Int32.(collect(1:Tk)), 1, Tk, 1)
     key_positions = similar(scores, Int32, 1, Tk, 1)
     copyto!(key_positions, key_positions_host)
@@ -169,7 +181,15 @@ function _scaled_dot_product_attention_valid_prefix(
 
     weights = softmax(scores; dims=2)
     context3 = batched_mul(weights, v3)
-    context = permutedims(reshape(context3, Tq, D, H, B), (2, 3, 1, 4))
+    context = if groups == 1
+        permutedims(reshape(context3, Tq, D, H, B), (2, 3, 1, 4))
+    else
+        context5 = permutedims(
+            reshape(context3, Tq, groups, D, Hk, B),
+            (3, 2, 4, 1, 5),
+        )
+        reshape(context5, D, H, Tq, B)
+    end
 
     return eltype(q).(context)
 end
@@ -188,8 +208,13 @@ function _static_attention_prefill!(
     values, st_v_proj = attn.v_proj(x, ps.v_proj, st.v_proj)
 
     queries = reshape(queries, attn.head_dim, attn.num_heads, num_tokens, batch_size)
-    keys = reshape(keys, attn.head_dim, attn.num_heads, num_tokens, batch_size)
-    values = reshape(values, attn.head_dim, attn.num_heads, num_tokens, batch_size)
+    keys = reshape(keys, attn.head_dim, attn.num_kv_heads, num_tokens, batch_size)
+    values = reshape(values, attn.head_dim, attn.num_kv_heads, num_tokens, batch_size)
+
+    if attn.use_qk_norm
+        queries = _apply_qk_norm(queries, ps.q_norm.scale, attn.qk_norm_epsilon)
+        keys = _apply_qk_norm(keys, ps.k_norm.scale, attn.qk_norm_epsilon)
+    end
 
     if attn.use_rope
         queries = apply_rope(
@@ -248,8 +273,13 @@ function _static_attention_decode!(
     values, st_v_proj = attn.v_proj(x, ps.v_proj, st.v_proj)
 
     queries = reshape(queries, attn.head_dim, attn.num_heads, 1, batch_size)
-    keys = reshape(keys, attn.head_dim, attn.num_heads, 1, batch_size)
-    values = reshape(values, attn.head_dim, attn.num_heads, 1, batch_size)
+    keys = reshape(keys, attn.head_dim, attn.num_kv_heads, 1, batch_size)
+    values = reshape(values, attn.head_dim, attn.num_kv_heads, 1, batch_size)
+
+    if attn.use_qk_norm
+        queries = _apply_qk_norm(queries, ps.q_norm.scale, attn.qk_norm_epsilon)
+        keys = _apply_qk_norm(keys, ps.k_norm.scale, attn.qk_norm_epsilon)
+    end
 
     if attn.use_rope
         queries = _apply_rope_single_position(

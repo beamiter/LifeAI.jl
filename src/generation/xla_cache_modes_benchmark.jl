@@ -345,7 +345,7 @@ function _benchmark_xla_dynamic_cache(
     element_bytes = sizeof(_parameter_cache_eltype(ps_xla))
     final_length = length(prompt) + length(tokens)
     cache_bytes =
-        2 * model.num_layers * model.head_dim * model.num_heads *
+        2 * model.num_layers * model.head_dim * model.num_kv_heads *
         final_length * element_bytes
 
     return (;
@@ -437,7 +437,7 @@ function _benchmark_xla_static_cache(
 
     element_bytes = sizeof(decoder.cache_eltype)
     cache_bytes =
-        2 * model.num_layers * model.head_dim * model.num_heads *
+        2 * model.num_layers * model.head_dim * model.num_kv_heads *
         model.max_seq_len * element_bytes
 
     return (;

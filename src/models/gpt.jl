@@ -45,6 +45,7 @@ layer, so no separate learned positional embedding is used.
     use_rope::Bool
 
     # Keep every constructor option needed to reproduce the exact architecture.
+    num_kv_heads::Int
     head_dim::Int
     mlp_hidden_dim::Int
     use_bias::Bool
@@ -54,6 +55,8 @@ layer, so no separate learned positional embedding is used.
     norm_type::Symbol
     mlp_type::Symbol
     tie_embeddings::Bool
+    use_qk_norm::Bool
+    qk_norm_epsilon::Float32
 end
 
 function GPTModel(
@@ -61,12 +64,15 @@ function GPTModel(
     d_model::Int,
     num_heads::Int,
     num_layers::Int;
+    num_kv_heads::Int=num_heads,
     head_dim=nothing,
     mlp_ratio=nothing,
     mlp_hidden_dim=nothing,
     use_bias::Bool=false,
     is_causal::Bool=true,
     use_rope::Bool=true,
+    use_qk_norm::Bool=false,
+    qk_norm_epsilon::Real=1.0f-6,
     max_seq_len::Int=2048,
     rope_theta::Real=10000.0,
     norm_epsilon::Real=1.0f-5,
@@ -77,9 +83,12 @@ function GPTModel(
     @assert vocab_size > 0 "`vocab_size` must be positive"
     @assert d_model > 0 "`d_model` must be positive"
     @assert num_heads > 0 "`num_heads` must be positive"
+    @assert num_kv_heads > 0 "`num_kv_heads` must be positive"
+    @assert num_heads % num_kv_heads == 0 "`num_heads` must be divisible by `num_kv_heads`"
     @assert num_layers > 0 "`num_layers` must be positive"
     @assert max_seq_len > 0 "`max_seq_len` must be positive"
     @assert norm_epsilon > 0 "`norm_epsilon` must be positive"
+    @assert qk_norm_epsilon > 0 "`qk_norm_epsilon` must be positive"
     _validate_norm_type(norm_type)
     _validate_mlp_type(mlp_type)
 
@@ -108,11 +117,14 @@ function GPTModel(
         _ -> TransformerBlock(
             d_model,
             num_heads;
+            num_kv_heads,
             head_dim=resolved_head_dim,
             mlp_hidden_dim=resolved_mlp_hidden_dim,
             use_bias,
             is_causal,
             use_rope,
+            use_qk_norm,
+            qk_norm_epsilon,
             max_seq_len,
             rope_theta,
             norm_epsilon,
@@ -142,6 +154,7 @@ function GPTModel(
         num_layers,
         max_seq_len,
         use_rope,
+        num_kv_heads,
         resolved_head_dim,
         resolved_mlp_hidden_dim,
         use_bias,
@@ -151,6 +164,8 @@ function GPTModel(
         norm_type,
         mlp_type,
         tie_embeddings,
+        use_qk_norm,
+        Float32(qk_norm_epsilon),
     )
 end
 
@@ -166,12 +181,15 @@ function gpt_config(model::GPTModel)
         vocab_size=model.vocab_size,
         d_model=model.d_model,
         num_heads=model.num_heads,
+        num_kv_heads=model.num_kv_heads,
         num_layers=model.num_layers,
         head_dim=model.head_dim,
         mlp_hidden_dim=model.mlp_hidden_dim,
         use_bias=model.use_bias,
         is_causal=model.is_causal,
         use_rope=model.use_rope,
+        use_qk_norm=model.use_qk_norm,
+        qk_norm_epsilon=model.qk_norm_epsilon,
         max_seq_len=model.max_seq_len,
         rope_theta=model.rope_theta,
         norm_epsilon=model.norm_epsilon,
@@ -188,16 +206,27 @@ function GPTModel(config::NamedTuple)
     tie_embeddings = hasproperty(config, :tie_embeddings) ?
         config.tie_embeddings : false
 
+    # Pre-Week-06 configs carry no GQA / QK-norm fields; the defaults reproduce
+    # the exact legacy architecture (full KV heads, no QK normalization).
+    num_kv_heads = hasproperty(config, :num_kv_heads) ?
+        Int(config.num_kv_heads) : Int(config.num_heads)
+    use_qk_norm = hasproperty(config, :use_qk_norm) ? config.use_qk_norm : false
+    qk_norm_epsilon = hasproperty(config, :qk_norm_epsilon) ?
+        config.qk_norm_epsilon : 1.0f-6
+
     return GPTModel(
         config.vocab_size,
         config.d_model,
         config.num_heads,
         config.num_layers;
+        num_kv_heads,
         head_dim=config.head_dim,
         mlp_hidden_dim=config.mlp_hidden_dim,
         use_bias=config.use_bias,
         is_causal=config.is_causal,
         use_rope=config.use_rope,
+        use_qk_norm,
+        qk_norm_epsilon,
         max_seq_len=config.max_seq_len,
         rope_theta=config.rope_theta,
         norm_epsilon=config.norm_epsilon,

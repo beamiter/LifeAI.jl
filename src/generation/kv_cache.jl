@@ -8,7 +8,10 @@ Cached key and value tensors for one Transformer layer.
 
 Both tensors use the layout:
 
-    (head_dim, num_heads, cached_tokens, batch)
+    (head_dim, num_kv_heads, cached_tokens, batch)
+
+Under GQA `num_kv_heads < num_heads`, so the cache is proportionally smaller
+than the query-head count suggests.
 
 An empty cache stores `nothing` for both tensors. The first prefill call adopts
 its element type and device from the projected keys and values.
@@ -121,8 +124,13 @@ function _attention_with_kv_cache(
     values, st_v_proj = attn.v_proj(x, ps.v_proj, st.v_proj)
 
     queries = reshape(queries, attn.head_dim, attn.num_heads, num_tokens, batch_size)
-    keys = reshape(keys, attn.head_dim, attn.num_heads, num_tokens, batch_size)
-    values = reshape(values, attn.head_dim, attn.num_heads, num_tokens, batch_size)
+    keys = reshape(keys, attn.head_dim, attn.num_kv_heads, num_tokens, batch_size)
+    values = reshape(values, attn.head_dim, attn.num_kv_heads, num_tokens, batch_size)
+
+    if attn.use_qk_norm
+        queries = _apply_qk_norm(queries, ps.q_norm.scale, attn.qk_norm_epsilon)
+        keys = _apply_qk_norm(keys, ps.k_norm.scale, attn.qk_norm_epsilon)
+    end
 
     if attn.use_rope
         queries = apply_rope(
@@ -139,6 +147,7 @@ function _attention_with_kv_cache(
         )
     end
 
+    # Under GQA the cache stores only num_kv_heads heads per layer.
     new_cache = _append_kv(cache, keys, values)
 
     # Prefill computes several queries at once and therefore needs the causal

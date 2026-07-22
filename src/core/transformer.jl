@@ -33,9 +33,12 @@ RMSNorm, while `mlp_type` selects GELU or SwiGLU.
 
     d_model::Int
     num_heads::Int
+    num_kv_heads::Int
     mlp_hidden_dim::Int
     is_causal::Bool
     use_rope::Bool
+    use_qk_norm::Bool
+    qk_norm_epsilon::Float32
     norm_type::Symbol
     mlp_type::Symbol
     norm_epsilon::Float32
@@ -120,12 +123,15 @@ end
 function TransformerBlock(
     d_model::Int,
     num_heads::Int;
+    num_kv_heads::Int=num_heads,
     head_dim=nothing,
     mlp_ratio=nothing,
     mlp_hidden_dim=nothing,
     use_bias::Bool=false,
     is_causal::Bool=true,
     use_rope::Bool=false,
+    use_qk_norm::Bool=false,
+    qk_norm_epsilon::Real=1.0f-6,
     max_seq_len::Int=2048,
     rope_theta::Real=10000.0,
     norm_epsilon::Real=1.0f-5,
@@ -153,10 +159,13 @@ function TransformerBlock(
     attn = MultiHeadAttention(
         d_model,
         num_heads;
+        num_kv_heads,
         head_dim,
         use_bias,
         is_causal,
         use_rope,
+        use_qk_norm,
+        qk_norm_epsilon,
         max_seq_len,
         rope_theta,
     )
@@ -175,9 +184,12 @@ function TransformerBlock(
         mlp,
         d_model,
         num_heads,
+        num_kv_heads,
         resolved_mlp_hidden_dim,
         is_causal,
         use_rope,
+        use_qk_norm,
+        Float32(qk_norm_epsilon),
         norm_type,
         mlp_type,
         Float32(norm_epsilon),

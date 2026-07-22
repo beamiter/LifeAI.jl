@@ -303,7 +303,7 @@ function benchmark_kv_cache(
     element_bytes = sizeof(_parameter_cache_eltype(ps))
     final_tokens = size(prompt, 1) + length(tokens)
     per_token_cache_bytes =
-        2 * model.num_layers * model.head_dim * model.num_heads * element_bytes
+        2 * model.num_layers * model.head_dim * model.num_kv_heads * element_bytes
     theoretical_dynamic_bytes = per_token_cache_bytes * final_tokens
     theoretical_static_bytes = per_token_cache_bytes * model.max_seq_len
 

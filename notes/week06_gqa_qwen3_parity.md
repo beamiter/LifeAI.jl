@@ -1,8 +1,8 @@
 # Week 06 — GQA, QK-Norm and Qwen3 Structural Parity
 
-> 状态：Open
+> 状态：Closed
 >
-> 开启记录：2026-07-21
+> 关闭记录：2026-07-22
 >
 > 依赖基线：[`Week 05 — Versioned Tokenizers and Chinese Data Pipeline`](week05_tokenizer_data_pipeline.md) 已 Closed。
 >
@@ -61,16 +61,16 @@ gpt_config(...; n_kv_heads=n_heads, use_qk_norm=false, ...)
 
 | 工作项 | 所属主线 | 交付物 | 验收方式 | 状态 |
 | --- | --- | --- | --- | --- |
-| 冻结 MHA 回归 fixture | 工程 | 现有配置下 attention 输出与 checkpoint logits fixture | 固定 seed 下新代码对旧配置输出逐元素不变 | 计划中 |
-| GQA reference 实现 | 模型 / 学习 | 显式 repeat-KV 的参考实现与语义测试 | `n_kv_heads==n_heads` 精确等于 MHA；MQA（`n_kv_heads=1`）边界正确 | 计划中 |
-| GQA 高效实现 | 模型 | 分组广播实现、K/V 投影缩减 | 与 reference 逐元素一致；参数量按预期减少 | 计划中 |
-| QK-Norm | 模型 / 学习 | per-head RMSNorm、独立 q/k scale、位置在 RoPE 前 | 与手写 reference 一致；关闭时输出不变 | 计划中 |
-| KV Cache 适配 | 模型 / 工程 | 动态 / 静态 cache 按 `n_kv_heads` 存储 | full / dynamic / static 三路 correctness matrix 覆盖 GQA + QK-Norm 配置 | 计划中 |
-| checkpoint 与迁移 | 工程 | 新 config 字段、旧 checkpoint 缺省迁移 | 旧 checkpoint 恢复 logits 不变；新配置 round-trip / resume / generate | 计划中 |
-| XLA 路径 | 工程 | GQA + QK-Norm 的 Reactant 训练与静态 cache 生成 | XLA smoke：shape 稳定、与 CPU 结果一致 | 计划中 |
-| qwen3_shape 端到端 | 学习 / 工程 | 缩小的 Qwen3 同构配置（GQA + QK-Norm + 全部 modern 开关）示例 | train → validate → save → load → resume → cached generate 全通 | 计划中 |
-| GQA benchmark | 工程 | cache 内存与 decode 吞吐对照脚本 | 固定配置下报告 KV cache 大小减半与 decode 收益；correctness 为 true | 计划中 |
-| HF config 契约草案 | 工程 / 数据 | `gpt_config` ↔ HF `config.json` 字段映射文档 | 字段覆盖 Qwen3-0.6B config；歧义项（layout、dtype）显式标注 | 计划中 |
+| 冻结 MHA 回归 fixture | 工程 | 现有配置下 attention 输出与 checkpoint logits fixture | 固定 seed 下新代码对旧配置输出逐元素不变 | 已完成 |
+| GQA reference 实现 | 模型 / 学习 | 显式 repeat-KV 的参考实现与语义测试 | `n_kv_heads==n_heads` 精确等于 MHA；MQA（`n_kv_heads=1`）边界正确 | 已完成 |
+| GQA 高效实现 | 模型 | 分组广播实现、K/V 投影缩减 | 与 reference 逐元素一致；参数量按预期减少 | 已完成 |
+| QK-Norm | 模型 / 学习 | per-head RMSNorm、独立 q/k scale、位置在 RoPE 前 | 与手写 reference 一致；关闭时输出不变 | 已完成 |
+| KV Cache 适配 | 模型 / 工程 | 动态 / 静态 cache 按 `n_kv_heads` 存储 | full / dynamic / static 三路 correctness matrix 覆盖 GQA + QK-Norm 配置 | 已完成 |
+| checkpoint 与迁移 | 工程 | 新 config 字段、旧 checkpoint 缺省迁移 | 旧 checkpoint 恢复 logits 不变；新配置 round-trip / resume / generate | 已完成 |
+| XLA 路径 | 工程 | GQA + QK-Norm 的 Reactant 训练与静态 cache 生成 | XLA smoke：shape 稳定、与 CPU 结果一致 | 已完成 |
+| qwen3_shape 端到端 | 学习 / 工程 | 缩小的 Qwen3 同构配置（GQA + QK-Norm + 全部 modern 开关）示例 | train → validate → save → load → resume → cached generate 全通 | 已完成 |
+| GQA benchmark | 工程 | cache 内存与 decode 吞吐对照脚本 | 固定配置下报告 KV cache 大小减半与 decode 收益；correctness 为 true | 已完成 |
+| HF config 契约草案 | 工程 / 数据 | `gpt_config` ↔ HF `config.json` 字段映射文档 | 字段覆盖 Qwen3-0.6B config；歧义项（layout、dtype）显式标注 | 已完成 |
 
 ## 推进顺序
 
@@ -133,11 +133,31 @@ GQA benchmark + HF config 契约草案
 
 按推进顺序记录 reference 公式、等价性测试结果、cache 形状断言、checkpoint 迁移证据、XLA smoke 输出和 benchmark 数据。所有对照先写清比较单位与固定变量。
 
+### 2026-07-21 实施记录
+
+1. **回归 fixture**：将 HEAD 版本 `attention.jl` 加载到隔离模块，与新实现在相同 seed 下对比：默认配置（`num_kv_heads=num_heads`、`use_qk_norm=false`）参数树 `==`、前向输出逐元素 `==`。测试中另以字面量冻结 legacy 初始化流（`test/test_week06.jl`）。
+2. **GQA 语义**：`manual_scaled_dot_product_attention` 扩展为循环 reference（`kv = (h-1) ÷ groups + 1`）；`repeat_kv`（`repeat(; inner)` 连续展开）与 HF `repeat_kv` 布局一致；高效路径 `_grouped_scaled_dot_product_attention` 把 query group 折入行维，不物化重复 K/V。三路在 `(H, Hk) ∈ {(4,4),(4,2),(4,1),(8,2),(6,3),(8,1)}` × causal on/off 下逐元素一致（atol 1e-5），另用常量签名测试钉死 head→KV 路由。
+3. **QK-Norm**：per-head RMSNorm（`head_dim` 维、独立 q/k scale、RoPE 之前），与手写 reference 一致；关闭时参数树与 legacy 完全相同（`initialparameters` 覆盖保持 RNG 流逐字段顺序不变）。
+4. **KV cache**：动态 / 静态 cache 只存 `num_kv_heads` 份 K/V（测试断言形状）；`_scaled_dot_product_attention_valid_prefix` 支持分组，groups=1 走原路径。gqa / gqa+qk_norm / mqa+qk_norm 三配置全部通过 full / dynamic / static correctness matrix。
+5. **checkpoint**：config 新增 `num_kv_heads`、`use_qk_norm`、`qk_norm_epsilon`；`GPTModel(config::NamedTuple)` 对缺失字段取 legacy 默认值，旧 config 重建后 logits 逐元素不变；GQA checkpoint round-trip / resume / cached generation 通过。
+6. **XLA smoke**（CPU 后端）：GQA + QK-Norm 编译 prefill / decode 与 CPU eager 逐位置一致（atol 1e-3）、编译生成与 `:xla` 训练 3 步 loss 下降，9 / 9 通过。
+7. **benchmark**（CPU，d_model=128、8 heads、head_dim=16、4 层、prompt 64、decode 64、5 samples）：
+
+   | profile | KV heads | params | static cache | dynamic decode tok/s |
+   | --- | ---: | ---: | ---: | ---: |
+   | mha_baseline | 8 | 819840 | 1024.0 KiB | 2097.5 |
+   | gqa_half | 4 | 754304 | 512.0 KiB | 2484.2 |
+   | gqa_half_qk_norm | 4 | 754432 | 512.0 KiB | 2498.8 |
+   | mqa | 1 | 705280 | 128.0 KiB | 3131.2 |
+
+   cache 内存严格按 `num_kv_heads / num_heads` 缩减，correctness 全部为 true；完整数据见 `benchmark_results/week06/`。
+8. **HF 契约草案**：`notes/qwen3_hf_config_mapping.md` 覆盖 Qwen3-0.6B 全部结构字段、权重名映射与歧义项；过程中确认一个 Week 07 关键风险：HF Qwen3 RoPE 使用 rotate_half（前半/后半配对），LifeAI `apply_rope` 使用相邻配对（interleaved），两者不等价，权重加载时必须做模式适配或 head_dim 维 permutation。
+
 ## Close 回顾
 
-- **完成了什么**：
-- **验证证据**：
-- **没有完成及原因**：
-- **最重要的认知变化**：
-- **是否满足 Close 条件**：
-- **带到下一 Week 的问题**：
+- **完成了什么**：实现 GQA（`num_kv_heads` 独立于 `num_heads`）与 Qwen3 语义的 QK-Norm（per-head RMSNorm、独立 q/k scale、RoPE 之前），二者均为缺省关闭的独立开关；动态 / 静态 KV cache 只存 `num_kv_heads` 份 K/V；checkpoint config 新增三字段并对旧 config 缺省迁移；三路 correctness matrix、XLA 训练 / 生成路径、benchmark 体系全部覆盖新配置；交付缩小版 qwen3_shape 端到端示例、GQA benchmark（`benchmark_results/week06/`）与 HF `config.json` 字段映射契约草案（`notes/qwen3_hf_config_mapping.md`）。
+- **验证证据**：2026-07-22 默认测试 3971 / 3971 通过（Week 06 专项 112 项）；显式 XLA 套件 46 / 46（含 Week 06 GQA + QK-Norm smoke 9 项，编译 prefill / decode / 生成 / 训练与 CPU eager 一致）。回归证据：HEAD 版旧 `MultiHeadAttention` 加载到隔离模块，与新实现相同 seed 下参数树 `==`、输出逐元素 `==`；真实 Week 03 / Week 04 checkpoint 文件经新代码加载后 `num_kv_heads=num_heads`、`use_qk_norm=false`，forward 与 cached generation 正常。GQA 语义：manual reference / 无物化分组实现 / repeat_kv 展开三路在 6 组 head 组合 × causal on/off 下逐元素一致。benchmark：KV cache 内存严格按 `num_kv_heads / num_heads` 缩减（8→4→1 heads 对应 1024→512→128 KiB），dynamic decode 吞吐 2097→2484→3131 tok/s，correctness 全部为 true。
+- **没有完成及原因**：未加载真实 HF 权重、未实现 safetensors / bfloat16 读取（Week 07 范围）；未导入 HF tokenizer.json（Week 08 范围）；CUDA GPU / XLA GPU 上的 GQA benchmark 未单独执行，CPU 数据已足以验证 cache 布局与吞吐趋势，GPU 对照留给 Week 07 加载真实权重后一并做。
+- **最重要的认知变化**：结构 parity 的关键不在"实现了同名组件"，而在钉死每一处排列约定——head→KV 路由、head 切分顺序、QK-Norm 的作用维度与位置都必须用 reference 测试固定，否则 Week 07 权重对不上时无法归因。写 HF 契约草案时发现的 RoPE 配对差异（HF rotate_half vs 本仓库 interleaved）证明了这类文档的价值：这是一个不写映射就一定会踩、且 logits 全错但 shape 全对的陷阱。
+- **是否满足 Close 条件**：是，Week 06 于 2026-07-22 Closed。
+- **带到下一 Week 的问题**：RoPE rotate_half 与 interleaved 的适配方案（新增模式 vs 权重 permutation）需要在 Week 07 一开始决定并用逐层 fixture 验证；safetensors 读取、bf16→f32 转换与 HF 参数名映射的实现顺序；logits 对齐的容差策略（以 HF float32 参考为基准）；`max_seq_len` 相对 `max_position_embeddings` 的取值策略。
