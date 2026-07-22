@@ -312,6 +312,9 @@ end
     @test report.eager.steady.prefill_seconds >= 0
     @test report.dynamic.steady.decode_seconds >= 0
     @test report.static.steady.decode_seconds >= 0
+    @test length(report.eager.samples) == 1
+    @test length(report.dynamic.samples) == 1
+    @test length(report.static.samples) == 1
 
     @test_throws ArgumentError benchmark_xla_cache_modes(
         model,

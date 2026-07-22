@@ -252,6 +252,29 @@ function _steady_summary(runs, decode_token_count::Int)
     )
 end
 
+function _timing_samples(runs)
+    return Tuple((;
+        prefill_seconds=run.prefill_seconds,
+        decode_seconds=run.decode_seconds,
+    ) for run in runs)
+end
+
+function _benchmark_sample_runs(runner, samples::Int)
+    runs = NamedTuple[]
+    for _ in 1:samples
+        # A sample should not retain the previous sample's cache. Collecting
+        # outside the timing windows prevents cross-sample cache allocations
+        # from becoming an accidental GC benchmark.
+        GC.gc(false)
+        run = runner()
+        push!(runs, (;
+            prefill_seconds=run.prefill_seconds,
+            decode_seconds=run.decode_seconds,
+        ))
+    end
+    return runs
+end
+
 """
     benchmark_kv_cache(model, ps, st, prompt_tokens, decode_tokens; samples=5)
 
@@ -283,22 +306,22 @@ function benchmark_kv_cache(
     _validate_generation_ids(prompt, model.vocab_size)
     _validate_generation_ids(tokens, model.vocab_size)
 
+    GC.gc(false)
     eager_warmup = _run_eager_timing(model, ps, st, prompt, tokens, device)
+    GC.gc(false)
     dynamic_warmup = _run_dynamic_timing(model, ps, st, prompt, tokens, device)
+    GC.gc(false)
     static_warmup = _run_static_timing(model, ps, st, prompt, tokens, device)
 
-    eager_runs = [
+    eager_runs = _benchmark_sample_runs(samples) do
         _run_eager_timing(model, ps, st, prompt, tokens, device)
-        for _ in 1:samples
-    ]
-    dynamic_runs = [
+    end
+    dynamic_runs = _benchmark_sample_runs(samples) do
         _run_dynamic_timing(model, ps, st, prompt, tokens, device)
-        for _ in 1:samples
-    ]
-    static_runs = [
+    end
+    static_runs = _benchmark_sample_runs(samples) do
         _run_static_timing(model, ps, st, prompt, tokens, device)
-        for _ in 1:samples
-    ]
+    end
 
     element_bytes = sizeof(_parameter_cache_eltype(ps))
     final_tokens = size(prompt, 1) + length(tokens)
@@ -319,6 +342,7 @@ function benchmark_kv_cache(
         eager=(;
             warmup=eager_warmup,
             steady=_steady_summary(eager_runs, length(tokens)),
+            samples=_timing_samples(eager_runs),
         ),
         dynamic=(;
             warmup=(;
@@ -326,6 +350,7 @@ function benchmark_kv_cache(
                 decode_seconds=dynamic_warmup.decode_seconds,
             ),
             steady=_steady_summary(dynamic_runs, length(tokens)),
+            samples=_timing_samples(dynamic_runs),
             theoretical_cache_bytes=theoretical_dynamic_bytes,
             observed_summarysize=Base.summarysize(dynamic_warmup.cache),
         ),
@@ -335,6 +360,7 @@ function benchmark_kv_cache(
                 decode_seconds=static_warmup.decode_seconds,
             ),
             steady=_steady_summary(static_runs, length(tokens)),
+            samples=_timing_samples(static_runs),
             theoretical_cache_bytes=theoretical_static_bytes,
             observed_summarysize=Base.summarysize(static_warmup.cache),
         ),

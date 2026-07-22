@@ -202,7 +202,7 @@ end
         @test results[:dynamic].stop_reason == :length
         @test results[:dynamic].completion == decode(tokenizer, results[:dynamic].generated_ids; errors=:replace)
         @test_throws ArgumentError generate_hf_text(bundle, ""; max_new_tokens=1)
-        @test_throws ArgumentError generate_hf_text(bundle, "hi"; strategy=:sample)
+        @test_throws ArgumentError generate_hf_text(bundle, "hi"; strategy=:unknown)
         @test_throws ArgumentError generate_hf_text(bundle, "hi"; cache=:xla)
     end
 end

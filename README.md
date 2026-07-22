@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：最小 GPT 的训练、生成、评估与版本化 Tokenizer 已形成；Qwen3 dense 结构、HuggingFace 权重/tokenizer 加载及 Qwen3-0.6B text→text / KV Cache 数值一致性均已验证，智能体与具身层尚未开始。**
+**阶段判断：最小 GPT 的训练、生成、评估与版本化 Tokenizer 已形成；Qwen3-0.6B 的结构、权重、tokenizer 与 greedy text→text 已对齐，当前正把复现推进到官方采样语义、长位置 correctness 和真实推理性能。**
 
-Week 01—08 均已 Closed，当前没有 Open 的 Week。[`Week 08 — HuggingFace Qwen3 Tokenizer and Text-to-Text Parity`](notes/week08_hf_tokenizer_text_parity.md) 已完成严格 Qwen3 tokenizer、基础 chat template，以及 text→greedy generation→text parity；Week 06—08 的结构→权重/logits→tokenizer/text 三阶段复现现已闭环。
+Week 01—08 均已 Closed；[`Week 09 — Qwen3 Sampling Fidelity and Real Inference Performance`](notes/week09_qwen3_sampling_performance.md) 已 Open。Week 08 完成结构→权重/logits→tokenizer/text 的 greedy 复现闭环，Week 09 继续验证官方 temperature/top-k/top-p 生成路径、长位置 RoPE 和真实模型 cache 性能。
 
 目前已经具备：
 
@@ -32,7 +32,7 @@ Week 01—08 均已 Closed，当前没有 Open 的 Week。[`Week 08 — HuggingF
 - 无泄漏 train / validation 划分、token-weighted evaluation / perplexity 和 global gradient norm clipping。
 - checkpoint v2、设备无关保存/加载、确定性断点续训和 v1 legacy checkpoint 迁移。
 - 基于 Zygote 的常规训练，以及 Reactant/Enzyme 驱动的 XLA 训练路径。
-- greedy、temperature、top-k 文本生成。
+- greedy、temperature、top-k、top-p 文本生成；Qwen3 可严格读取官方 generation config，并支持固定 uniform 流的可重放采样。
 - 动态 KV Cache 的 prefill / decode，以及面向 XLA 的固定形状 KV Cache 和编译后增量解码。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
 - 严格的 Qwen3 dense config 校验、BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
@@ -44,6 +44,7 @@ Week 01—08 均已 Closed，当前没有 Open 的 Week。[`Week 08 — HuggingF
 
 尚未具备：
 
+- Qwen3 sampled HF reference 与 CPU 基线已完成；长位置 HF fixture、CUDA/XLA 真实模型性能和 native BF16 仍在 Week 09/后续专项推进。
 - 通用 Jinja、tools/tool-role chat template 与 agent tool loop；可用于真实任务的模型质量仍未评估。
 - 长短期记忆、规划、工具使用、反思等完整的 agent loop。
 - 视觉、听觉和传感器输入等多模态感知。
@@ -51,6 +52,8 @@ Week 01—08 均已 Closed，当前没有 Open 的 Week。[`Week 08 — HuggingF
 - 在线或持续学习机制。
 
 更详细的能力盘点、验证范围与建议里程碑见 [`notes/current_status.md`](notes/current_status.md)。
+
+本机大模型权重与真实 reference 固定存放在 `/home/yj/models/`，不使用易清理的 `/tmp`，也不提交进仓库；当前 Qwen3-0.6B 的完整 revision、checksum 和恢复命令见 [`notes/local_model_assets.md`](notes/local_model_assets.md)。
 
 ## 演进路线
 

@@ -104,8 +104,13 @@ function week08_tokenizer_payloads()
     )
     generation_config = Dict{String,Any}(
         "bos_token_id" => 258,
+        "do_sample" => true,
         "eos_token_id" => [260, 258],
         "pad_token_id" => 258,
+        "temperature" => 0.6,
+        "top_k" => 20,
+        "top_p" => 0.95,
+        "transformers_version" => "4.51.0",
     )
     return (; tokenizer, tokenizer_config, generation_config)
 end

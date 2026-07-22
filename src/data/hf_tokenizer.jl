@@ -16,6 +16,18 @@ struct HFAddedToken
     special::Bool
 end
 
+"""Validated sampling and stop-token settings from Qwen3 `generation_config.json`."""
+struct HFQwen3GenerationConfig
+    bos_id::Int
+    eos_ids::Vector{Int}
+    pad_id::Int
+    do_sample::Bool
+    temperature::Float32
+    top_k::Int
+    top_p::Float32
+    transformers_version::String
+end
+
 """A strict, imported HuggingFace Qwen3 byte-level BPE tokenizer."""
 struct HFQwen3Tokenizer <: AbstractTokenizer
     vocabulary::Dict{String,Int}
@@ -32,6 +44,7 @@ struct HFQwen3Tokenizer <: AbstractTokenizer
     eos_id::Union{Nothing,Int}
     eos_ids::Vector{Int}
     pad_id::Union{Nothing,Int}
+    generation::HFQwen3GenerationConfig
     model_max_length::Int
     chat_template::String
     revision::String
@@ -342,6 +355,20 @@ function _hf_generation_id(value, total_vocabulary::Int, name::AbstractString)
 end
 
 function _hf_validate_generation_config(config, total_vocabulary::Int)
+    allowed_fields = Set([
+        "bos_token_id",
+        "do_sample",
+        "eos_token_id",
+        "pad_token_id",
+        "temperature",
+        "top_k",
+        "top_p",
+        "transformers_version",
+    ])
+    unknown_fields = setdiff(Set(String.(collect(keys(config)))), allowed_fields)
+    isempty(unknown_fields) || throw(ArgumentError(
+        "unsupported generation_config.json fields: $(join(sort!(collect(unknown_fields)), ", "))",
+    ))
     bos_id = _hf_generation_id(_hf_required(config, "bos_token_id", "generation_config.json"), total_vocabulary, "bos_token_id")
     pad_id = _hf_generation_id(_hf_required(config, "pad_token_id", "generation_config.json"), total_vocabulary, "pad_token_id")
     raw_eos = _hf_required(config, "eos_token_id", "generation_config.json")
@@ -351,7 +378,36 @@ function _hf_validate_generation_config(config, total_vocabulary::Int)
     ))
     eos_ids = [_hf_generation_id(value, total_vocabulary, "eos_token_id") for value in values]
     length(unique(eos_ids)) == length(eos_ids) || throw(ArgumentError("duplicate eos_token_id"))
-    return bos_id, eos_ids, pad_id
+    do_sample = _hf_required(config, "do_sample", "generation_config.json")
+    do_sample isa Bool || throw(ArgumentError("do_sample must be boolean"))
+    temperature = _hf_required(config, "temperature", "generation_config.json")
+    temperature isa Real && isfinite(temperature) && temperature > 0 || throw(ArgumentError(
+        "temperature must be a finite positive number",
+    ))
+    top_k = _hf_required(config, "top_k", "generation_config.json")
+    top_k isa Integer && top_k > 0 || throw(ArgumentError("top_k must be a positive integer"))
+    top_p = _hf_required(config, "top_p", "generation_config.json")
+    top_p isa Real && isfinite(top_p) && 0 < top_p <= 1 || throw(ArgumentError(
+        "top_p must be in (0, 1]",
+    ))
+    transformers_version = _hf_required(
+        config,
+        "transformers_version",
+        "generation_config.json",
+    )
+    transformers_version isa AbstractString && !isempty(transformers_version) || throw(
+        ArgumentError("transformers_version must be a non-empty string"),
+    )
+    return HFQwen3GenerationConfig(
+        bos_id,
+        eos_ids,
+        pad_id,
+        do_sample,
+        Float32(temperature),
+        Int(top_k),
+        Float32(top_p),
+        String(transformers_version),
+    )
 end
 
 function _hf_qwen3_tokenizer_from_json(
@@ -392,17 +448,17 @@ function _hf_qwen3_tokenizer_from_json(
             added_by_content,
             model_vocabulary_size,
         )
-    generation_bos, eos_ids, generation_pad = _hf_validate_generation_config(
+    generation = _hf_validate_generation_config(
         generation_config_json,
         total_vocabulary,
     )
-    tokenizer_bos === nothing || tokenizer_bos == generation_bos || throw(ArgumentError(
+    tokenizer_bos === nothing || tokenizer_bos == generation.bos_id || throw(ArgumentError(
         "tokenizer and generation BOS ids conflict",
     ))
-    tokenizer_pad == generation_pad || throw(ArgumentError(
+    tokenizer_pad == generation.pad_id || throw(ArgumentError(
         "tokenizer and generation PAD ids conflict",
     ))
-    tokenizer_eos in eos_ids || throw(ArgumentError(
+    tokenizer_eos in generation.eos_ids || throw(ArgumentError(
         "tokenizer EOS id is absent from generation eos_token_id",
     ))
     compiled_pattern = try
@@ -421,10 +477,11 @@ function _hf_qwen3_tokenizer_from_json(
         added_tokens,
         added_by_content,
         special_ids,
-        generation_bos,
+        generation.bos_id,
         tokenizer_eos,
-        eos_ids,
-        generation_pad,
+        generation.eos_ids,
+        generation.pad_id,
+        generation,
         model_max_length,
         chat_template,
         String(revision),
@@ -468,6 +525,26 @@ end
 _normalization_mode(::HFQwen3Tokenizer) = :nfc
 vocab_size(tokenizer::HFQwen3Tokenizer) = length(tokenizer.id_to_token)
 Base.length(tokenizer::HFQwen3Tokenizer) = vocab_size(tokenizer)
+
+"""
+    hf_generation_config(tokenizer)
+
+Return the validated Qwen3 generation settings with LifeAI's public 1-based
+token ids. Mutable vectors are copied so callers cannot alter the tokenizer.
+"""
+function hf_generation_config(tokenizer::HFQwen3Tokenizer)
+    config = tokenizer.generation
+    return (;
+        bos_id=config.bos_id,
+        eos_ids=copy(config.eos_ids),
+        pad_id=config.pad_id,
+        do_sample=config.do_sample,
+        temperature=config.temperature,
+        top_k=config.top_k,
+        top_p=config.top_p,
+        transformers_version=config.transformers_version,
+    )
+end
 
 function special_token_id(tokenizer::HFQwen3Tokenizer, name)
     symbol = Symbol(name)
@@ -666,6 +743,11 @@ function tokenizer_config(tokenizer::HFQwen3Tokenizer)
         merge_count=length(tokenizer.merge_ranks),
         added_token_count=length(tokenizer.added_tokens),
         eos_ids=copy(tokenizer.eos_ids),
+        do_sample=tokenizer.generation.do_sample,
+        temperature=tokenizer.generation.temperature,
+        top_k=tokenizer.generation.top_k,
+        top_p=tokenizer.generation.top_p,
+        transformers_version=tokenizer.generation.transformers_version,
         model_max_length=tokenizer.model_max_length,
         revision=tokenizer.revision,
         tokenizer_sha256=tokenizer.tokenizer_sha256,

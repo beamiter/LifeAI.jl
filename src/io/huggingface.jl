@@ -659,7 +659,8 @@ function load_hf_qwen3_bundle(
     vocab_size(tokenizer) <= loaded.model.vocab_size || throw(ArgumentError(
         "tokenizer vocabulary exceeds the Qwen3 model embedding vocabulary",
     ))
-    return merge(loaded, (; tokenizer))
+    generation_config = hf_generation_config(tokenizer)
+    return merge(loaded, (; tokenizer, generation_config))
 end
 
 """

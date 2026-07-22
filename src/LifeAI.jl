@@ -8,7 +8,8 @@ export RMSNormLayer, SwiGLU, TransformerBlock
 export RoPE, apply_rope
 export SamplingSchedule
 export AbstractTokenizer, Tokenizer, ByteTokenizer, ByteBPETokenizer
-export HFQwen3Tokenizer, hf_byte_unicode_alphabet, load_hf_qwen3_tokenizer
+export HFQwen3Tokenizer, HFQwen3GenerationConfig
+export hf_byte_unicode_alphabet, load_hf_qwen3_tokenizer, hf_generation_config
 export hf_qwen3_pretokenize, apply_qwen3_chat_template
 export fit_tokenizer, fit_byte_bpe, encode, decode, decode_bytes, vocab_size
 export normalize_text, special_token_id, token_byte_length, encoded_byte_length

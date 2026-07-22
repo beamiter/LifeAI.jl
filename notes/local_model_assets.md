@@ -1,0 +1,74 @@
+# 本地模型资产与持久化约定
+
+大模型权重、HuggingFace 下载缓存和真实 reference 不放在 `/tmp`，也不提交到 LifeAI.jl 仓库。当前机器统一使用：
+
+```text
+/home/yj/models/huggingface/<organization>/<model>/<revision>/
+```
+
+每个 revision 自包含配置、tokenizer 和权重；LifeAI 生成的真实 reference 放在模型 revision 目录内的 `lifeai-references/<week-or-purpose>/`。仓库只保存生成/验证脚本、checksum、可重复命令和小型 benchmark 结果。
+
+## 当前 Qwen3-0.6B 资产
+
+固定 revision：
+
+```text
+c1899de289a04d12100db370d81485cdf75e47ca
+```
+
+模型目录：
+
+```text
+/home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca/
+```
+
+Week 09 sampled reference：
+
+```text
+/home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca/lifeai-references/week09-sampling/
+```
+
+### 文件校验和
+
+| 文件 | SHA256 |
+| --- | --- |
+| `config.json` | `660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd` |
+| `tokenizer.json` | `aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4` |
+| `tokenizer_config.json` | `d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101` |
+| `generation_config.json` | `2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2` |
+| `model.safetensors` | `f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b` |
+| Week 09 `reference.json` | `b879c6f8203ec1d45134534b0f9f6185e6db0d78415f3989e757fc1a9caf64d1` |
+| Week 09 `reference.safetensors` | `0d3d2ed57f7edcb820a376979489dbac27951d3714a3bf39c410d25b7c3d6581` |
+
+## 恢复下载
+
+使用 `/home/yj/projects/jwm/.venv` 中的 HuggingFace CLI，下载目标 revision 的五个必要文件：
+
+```bash
+/home/yj/projects/jwm/.venv/bin/hf download Qwen/Qwen3-0.6B \
+  config.json tokenizer.json tokenizer_config.json generation_config.json model.safetensors \
+  --revision c1899de289a04d12100db370d81485cdf75e47ca \
+  --local-dir /home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca
+```
+
+`--local-dir` 内的 `.cache/huggingface/` 保存下载元数据和断点续传状态；不要把该目录移动到 `/tmp`。
+
+## Week 09 reference 与验证
+
+```bash
+/home/yj/projects/jwm/.venv/bin/python scripts/export_qwen3_sampling_reference.py \
+  --model-dir /home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca \
+  --output-dir /home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca/lifeai-references/week09-sampling \
+  --revision c1899de289a04d12100db370d81485cdf75e47ca
+
+julia --project=. --startup-file=no scripts/verify_qwen3_sampling_parity.jl \
+  /home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca \
+  /home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca/lifeai-references/week09-sampling
+```
+
+## 维护边界
+
+- `/home/yj/models/` 是本机持久资产目录，不是 Git 仓库的一部分；系统备份策略需要单独覆盖它。
+- 每个实验必须记录 model id、完整 revision、文件 checksum、reference 环境版本和计算 dtype。
+- 删除或替换某个 revision 前，先确认没有 weekly reference、benchmark 或 checkpoint 指向它。
+- 仓库内的 `artifacts/` 与该模型目录没有关系；保持用户已有内容不受自动 staging 影响。
