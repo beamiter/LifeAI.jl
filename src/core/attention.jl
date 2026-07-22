@@ -21,6 +21,7 @@ using Random: AbstractRNG
     is_causal::Bool
 
     use_rope::Bool
+    rope_style::Symbol
     rope
 
     use_qk_norm::Bool
@@ -39,10 +40,12 @@ function MultiHeadAttention(
     qk_norm_epsilon::Real=1.0f-6,
     max_seq_len::Int=2048,
     rope_theta::Real=10000.0,
+    rope_style::Symbol=:interleaved,
 )
     @assert num_kv_heads > 0 "`num_kv_heads` must be positive"
     @assert num_heads % num_kv_heads == 0 "`num_heads` must be divisible by `num_kv_heads`"
     @assert qk_norm_epsilon > 0 "`qk_norm_epsilon` must be positive"
+    _validate_rope_style(rope_style)
 
     if head_dim === nothing
         @assert d_in % num_heads == 0 "`d_in` must be divisible by `num_heads`"
@@ -58,6 +61,7 @@ function MultiHeadAttention(
             head_dim;
             max_seq_len,
             theta=rope_theta,
+            style=rope_style,
         )
     else
         rope = nothing
@@ -76,6 +80,7 @@ function MultiHeadAttention(
         kv_dim,
         is_causal,
         use_rope,
+        rope_style,
         rope,
         use_qk_norm,
         Float32(qk_norm_epsilon),
@@ -167,8 +172,18 @@ function (attn::MultiHeadAttention)(x, ps, st::NamedTuple)
     # 2.5 RoPE:
     #     只作用在 Q/K 上，不作用在 V 上。
     if attn.use_rope
-        queries = apply_rope(queries, st.rope_cos_cache, st.rope_sin_cache)
-        keys = apply_rope(keys, st.rope_cos_cache, st.rope_sin_cache)
+        queries = apply_rope(
+            queries,
+            st.rope_cos_cache,
+            st.rope_sin_cache;
+            rope_style=attn.rope_style,
+        )
+        keys = apply_rope(
+            keys,
+            st.rope_cos_cache,
+            st.rope_sin_cache;
+            rope_style=attn.rope_style,
+        )
     end
 
     # 3. scaled dot-product attention

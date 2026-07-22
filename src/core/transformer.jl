@@ -37,6 +37,7 @@ RMSNorm, while `mlp_type` selects GELU or SwiGLU.
     mlp_hidden_dim::Int
     is_causal::Bool
     use_rope::Bool
+    rope_style::Symbol
     use_qk_norm::Bool
     qk_norm_epsilon::Float32
     norm_type::Symbol
@@ -134,6 +135,7 @@ function TransformerBlock(
     qk_norm_epsilon::Real=1.0f-6,
     max_seq_len::Int=2048,
     rope_theta::Real=10000.0,
+    rope_style::Symbol=:interleaved,
     norm_epsilon::Real=1.0f-5,
     norm_type::Symbol=:layernorm,
     mlp_type::Symbol=:gelu,
@@ -168,6 +170,7 @@ function TransformerBlock(
         qk_norm_epsilon,
         max_seq_len,
         rope_theta,
+        rope_style,
     )
 
     mlp = _make_mlp(
@@ -188,6 +191,7 @@ function TransformerBlock(
         resolved_mlp_hidden_dim,
         is_causal,
         use_rope,
+        rope_style,
         use_qk_norm,
         Float32(qk_norm_epsilon),
         norm_type,

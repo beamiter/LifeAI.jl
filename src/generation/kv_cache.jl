@@ -138,12 +138,14 @@ function _attention_with_kv_cache(
             st.rope_cos_cache,
             st.rope_sin_cache;
             start_pos,
+            rope_style=attn.rope_style,
         )
         keys = apply_rope(
             keys,
             st.rope_cos_cache,
             st.rope_sin_cache;
             start_pos,
+            rope_style=attn.rope_style,
         )
     end
 

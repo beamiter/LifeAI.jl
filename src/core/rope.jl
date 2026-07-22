@@ -20,6 +20,7 @@ struct RoPE
     head_dim::Int
     max_seq_len::Int
     theta::Float32
+    style::Symbol
     inv_freq::Vector{Float32}
     cos_cache::Matrix{Float32}
     sin_cache::Matrix{Float32}
@@ -29,10 +30,12 @@ function RoPE(
     head_dim::Int;
     max_seq_len::Int=2048,
     theta::Real=10000.0,
+    style::Symbol=:interleaved,
 )
     @assert iseven(head_dim) "`head_dim` must be even for RoPE"
     @assert max_seq_len > 0 "`max_seq_len` must be positive"
     @assert theta > 0 "`theta` must be positive"
+    _validate_rope_style(style)
 
     theta32 = Float32(theta)
     half_dim = head_dim ÷ 2
@@ -64,10 +67,18 @@ function RoPE(
         head_dim,
         max_seq_len,
         theta32,
+        style,
         inv_freq,
         cos_cache,
         sin_cache,
     )
+end
+
+function _validate_rope_style(style::Symbol)
+    style in (:interleaved, :rotate_half) || throw(ArgumentError(
+        "`rope_style` must be `:interleaved` or `:rotate_half`; got $(repr(style))",
+    ))
+    return style
 end
 
 """
@@ -116,16 +127,17 @@ function apply_rope!(
 
             for h in 1:H
                 for pair in 1:half_dim
-                    i = 2 * pair - 1
+                    i = rope.style === :interleaved ? 2 * pair - 1 : pair
+                    j = rope.style === :interleaved ? i + 1 : pair + half_dim
 
                     c = cos_cache[pair, pos_idx]
                     s = sin_cache[pair, pos_idx]
 
                     x1 = x[i, h, t, b]
-                    x2 = x[i + 1, h, t, b]
+                    x2 = x[j, h, t, b]
 
                     y[i, h, t, b]     = x1 * c - x2 * s
-                    y[i + 1, h, t, b] = x1 * s + x2 * c
+                    y[j, h, t, b] = x1 * s + x2 * c
                 end
             end
         end
@@ -139,6 +151,7 @@ function apply_rope(
     cos_cache,
     sin_cache;
     start_pos::Int=1,
+    rope_style::Symbol=:interleaved,
 )
     D, H, T, B = size(x)
 
@@ -147,15 +160,20 @@ function apply_rope(
     @assert size(cos_cache, 1) == D ÷ 2 "RoPE cache head_dim does not match input"
     @assert start_pos >= 1 "`start_pos` must be >= 1"
     @assert start_pos + T - 1 <= size(cos_cache, 2) "`x` exceeds RoPE cache length"
+    _validate_rope_style(rope_style)
 
     half_dim = D ÷ 2
 
     # The caches are model states, so Reactant moves them onto the XLA device
     # before tracing. This avoids host-to-device transfers inside the compiled
     # train step and mirrors the cache handling used by the Lux Qwen example.
-    x_pairs = reshape(x, 2, half_dim, H, T, B)
-    x1 = selectdim(x_pairs, 1, 1)
-    x2 = selectdim(x_pairs, 1, 2)
+    x1, x2 = if rope_style === :interleaved
+        x_pairs = reshape(x, 2, half_dim, H, T, B)
+        selectdim(x_pairs, 1, 1), selectdim(x_pairs, 1, 2)
+    else
+        x_halves = reshape(x, half_dim, 2, H, T, B)
+        selectdim(x_halves, 2, 1), selectdim(x_halves, 2, 2)
+    end
 
     positions = start_pos:(start_pos + T - 1)
     cos_values = reshape(eltype(x).(cos_cache[:, positions]), half_dim, 1, T, 1)
@@ -164,13 +182,16 @@ function apply_rope(
     y1 = x1 .* cos_values .- x2 .* sin_values
     y2 = x1 .* sin_values .+ x2 .* cos_values
 
-    y_pairs = cat(
-        reshape(y1, 1, half_dim, H, T, B),
-        reshape(y2, 1, half_dim, H, T, B);
-        dims=1,
-    )
+    if rope_style === :interleaved
+        y_pairs = cat(
+            reshape(y1, 1, half_dim, H, T, B),
+            reshape(y2, 1, half_dim, H, T, B);
+            dims=1,
+        )
+        return reshape(y_pairs, D, H, T, B)
+    end
 
-    return reshape(y_pairs, D, H, T, B)
+    return cat(y1, y2; dims=1)
 end
 
 function apply_rope(
@@ -184,7 +205,7 @@ function apply_rope(
     cos_cache = device(eltype(x).(rope.cos_cache))
     sin_cache = device(eltype(x).(rope.sin_cache))
 
-    return apply_rope(x, cos_cache, sin_cache; start_pos)
+    return apply_rope(x, cos_cache, sin_cache; start_pos, rope_style=rope.style)
 end
 
 function apply_rope_threaded!(
@@ -211,16 +232,17 @@ function apply_rope_threaded!(
 
             for h in 1:H
                 for pair in 1:half_dim
-                    i = 2 * pair - 1
+                    i = rope.style === :interleaved ? 2 * pair - 1 : pair
+                    j = rope.style === :interleaved ? i + 1 : pair + half_dim
 
                     c = cos_cache[pair, pos_idx]
                     s = sin_cache[pair, pos_idx]
 
                     x1 = x[i, h, t, b]
-                    x2 = x[i + 1, h, t, b]
+                    x2 = x[j, h, t, b]
 
                     y[i, h, t, b]     = x1 * c - x2 * s
-                    y[i + 1, h, t, b] = x1 * s + x2 * c
+                    y[j, h, t, b] = x1 * s + x2 * c
                 end
             end
         end

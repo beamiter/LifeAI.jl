@@ -1,8 +1,10 @@
 # Week 07 — HuggingFace Weight Loading and Qwen3 Logits Parity
 
-> 状态：Open
+> 状态：Closed
 >
 > 开启记录：2026-07-22
+>
+> 关闭记录：2026-07-22
 >
 > 依赖基线：[`Week 06 — GQA, QK-Norm and Qwen3 Structural Parity`](week06_gqa_qwen3_parity.md) 已 Closed。
 >
@@ -64,16 +66,16 @@ parameters = load_hf_qwen3_parameters(model, tensors)
 
 | 工作项 | 所属主线 | 交付物 | 验收方式 | 状态 |
 | --- | --- | --- | --- | --- |
-| RoPE rotate_half | 模型 / 工程 | 可配置 `rope_style`，覆盖 eager 与两类 cache/XLA 调用 | 与手写/HF reference 一致；interleaved legacy fixture 逐元素不变 | 计划中 |
-| HF config 解析 | 模型 / 工程 | `config.json` → `GPTModel` / `gpt_config`，含严格能力校验 | Qwen3 缩小 config 映射正确；不支持字段立即报错 | 计划中 |
-| safetensors 基础读取 | 工程 / 学习 | header、offset、shape、BF16/F32、单文件与 index 分片读取 | 合成文件逐元素还原；损坏/越界/重叠/错误 dtype 被拒绝 | 计划中 |
-| HF 参数映射 | 模型 / 工程 | embedding、28 层 attention/MLP/norm、final norm、tied/untied head → Lux 参数树 | 每类 tensor 使用非对称数值 fixture 验证 shape 与前向语义；missing/unexpected 为错误 | 计划中 |
-| token-id 边界 | 模型 / 工程 | 0-based HF ids → 1-based LifeAI ids 的显式 helper | 边界 0 / vocab-1 正确，负数/越界拒绝；logits vocabulary 轴对应关系写入测试 | 计划中 |
-| HF reference fixture | 学习 / 工程 | 固定 token ids、逐层 hidden states、final norm、logits 与 cache decode 参考数据/导出说明 | fixture 可离线复现，记录 transformers/model revision 与 dtype 口径 | 计划中 |
-| Qwen3-0.6B 对齐 | 模型 / 工程 | 真实模型 opt-in integration test 与示例 | 逐层 hidden states、full logits 在记录的 atol/rtol 内一致 | 计划中 |
-| KV Cache 对齐 | 模型 / 工程 | HF 与 LifeAI prefill/decode reference | full / dynamic / static 的逐位置 logits 一致，下一 token argmax 一致 | 计划中 |
-| checkpoint 与回归 | 工程 | `rope_style` config 迁移、加载后 checkpoint round-trip | Week 01—06 默认测试通过；旧 checkpoint logits 不变 | 计划中 |
-| 内存与运行记录 | 工程 | BF16→F32 加载峰值、模型参数量、首次/稳态推理记录 | 不保留无必要的完整权重副本；结果写入本 Week 实施记录 | 计划中 |
+| RoPE rotate_half | 模型 / 工程 | 可配置 `rope_style`，覆盖 eager 与两类 cache/XLA 调用 | 与手写/HF reference 一致；interleaved legacy fixture 逐元素不变 | 已完成 |
+| HF config 解析 | 模型 / 工程 | `config.json` → `GPTModel` / `gpt_config`，含严格能力校验 | Qwen3 缩小 config 映射正确；不支持字段立即报错 | 已完成 |
+| safetensors 基础读取 | 工程 / 学习 | header、offset、shape、BF16/F32、单文件与 index 分片读取 | 合成文件逐元素还原；损坏/越界/重叠/错误 dtype 被拒绝 | 已完成 |
+| HF 参数映射 | 模型 / 工程 | embedding、28 层 attention/MLP/norm、final norm、tied/untied head → Lux 参数树 | 每类 tensor 使用非对称数值 fixture 验证 shape 与前向语义；missing/unexpected 为错误 | 已完成 |
+| token-id 边界 | 模型 / 工程 | 0-based HF ids → 1-based LifeAI ids 的显式 helper | 边界 0 / vocab-1 正确，负数/越界拒绝；logits vocabulary 轴对应关系写入测试 | 已完成 |
+| HF reference fixture | 学习 / 工程 | 固定 token ids、逐层 hidden states、final norm、logits 与 cache decode 参考数据/导出说明 | fixture 可离线复现，记录 transformers/model revision 与 dtype 口径 | 已完成 |
+| Qwen3-0.6B 对齐 | 模型 / 工程 | 真实模型 opt-in integration test 与示例 | 逐层 hidden states、full logits 在记录的 atol/rtol 内一致 | 已完成 |
+| KV Cache 对齐 | 模型 / 工程 | HF 与 LifeAI prefill/decode reference | full / dynamic / static 的逐位置 logits 一致，下一 token argmax 一致 | 已完成 |
+| checkpoint 与回归 | 工程 | `rope_style` config 迁移、加载后 checkpoint round-trip | Week 01—06 默认测试通过；旧 checkpoint logits 不变 | 已完成 |
+| 内存与运行记录 | 工程 | BF16→F32 加载峰值、模型参数量、首次/稳态推理记录 | 不保留无必要的完整权重副本；结果写入本 Week 实施记录 | 已完成 |
 
 ## 推进顺序
 
@@ -137,13 +139,49 @@ KV-cache decode 对齐 + checkpoint round-trip
 
 ## 实验与过程记录
 
-按推进顺序记录 reference 版本、固定 token ids、tensor shape、首次数值分叉层、最大/平均绝对误差、容差、cache 位置与加载内存。每次只改变一个布局或语义假设，避免最终 logits 对不上时同时猜测多个原因。
+### 实现结果
+
+- 新增严格的 Qwen3 dense `config.json` 校验、BF16/F32 safetensors 单文件/分片读取、完整 HF→Lux 参数映射、显式 token-id 边界转换与一站式模型加载接口。
+- RoPE 新增 `:rotate_half`，并贯通 eager、dynamic KV Cache、static KV Cache 和 XLA；历史默认继续使用 `:interleaved`，旧 checkpoint 缺失字段时按该默认迁移。
+- tied / untied LM head 均被严格验证；官方 tied checkpoint 若保存重复 `lm_head.weight`，只在它与 embedding 完全一致时接受并丢弃副本。
+- reference 导出脚本固定捕获 embedding、28 个 block、final hidden、full logits 与单 token decode logits；验证脚本逐阶段输出 max-abs、mean-abs 和 argmax 一致性。
+
+### 真实模型口径与结果
+
+- 模型：`Qwen/Qwen3-0.6B`，revision `c1899de289a04d12100db370d81485cdf75e47ca`；`model.safetensors` 为 1,503,300,328 bytes，SHA-256 `f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b`。
+- reference：Transformers 4.51.0、PyTorch 2.7.1+cpu、权重存储 BF16、计算 Float32；prefill token ids（0-based）为 `[1, 9707, 13, 151643, 100, 42, 151645, 2]`，decode token id 为 `17`。
+- embedding max-abs 为 0；block 0 / 1 为 `1.505e-6` / `3.219e-6`，中后层最高出现在 block 27，为 `4.8828125e-3`、mean-abs `2.00318e-5`。
+- final hidden max/mean-abs 为 `7.43866e-5` / `4.18224e-6`；full logits 为 `5.67436e-5` / `4.48526e-6`；dynamic 与 static decode logits 均为 `4.48227e-5` / `6.40858e-6`。所有比较的下一 token argmax 均一致。
+- 测试按不同阶段使用明确的 `atol` / `rtol`：embedding `2e-4 / 0`；blocks `2e-3 / 2e-4`；final hidden `2e-3 / 2e-4`；logits 与 cache decode `5e-3 / 5e-4`。block 27 的 max-abs 大于纯 `atol`，但对应元素满足相对误差项；35 项真实集成断言全部通过。
+- 模型参数树包含 596,049,920 个 Float32 参数；官方 tied checkpoint 保存 311 个 tensor、751,632,384 个 BF16 元素，其中额外的 155,582,464 个元素来自重复 `lm_head.weight`。加载器验证它与 embedding 完全相等后只保留一个语义副本。
+- BF16→Float32 真实加载用时 9.44 s，Julia 累计分配约 8.63 GB；包含 reference 对齐过程的进程峰值 RSS 为 5,799,440 KiB（约 5.53 GiB）。映射完成后释放源 tensor 字典，参数树不长期保留第二份完整权重。
+
+### 复现与回归
+
+真实模型/reference 不进入仓库；本地准备好模型后可复现：
+
+```bash
+python scripts/export_qwen3_reference.py \
+  --model-dir /path/to/Qwen3-0.6B \
+  --output-dir /tmp/lifeai_qwen3-reference
+
+LIFEAI_QWEN3_MODEL_DIR=/path/to/Qwen3-0.6B \
+LIFEAI_QWEN3_REFERENCE_DIR=/tmp/lifeai_qwen3-reference \
+julia --project=. scripts/verify_qwen3_parity.jl
+```
+
+2026-07-22 验证记录：
+
+- 默认 `Pkg.test()`：4025 / 4025 通过，其中 Week 07 离线专项 54 / 54。
+- `LIFEAI_TEST_XLA=true Pkg.test()`：默认套件再次通过，Reactant/XLA 49 / 49 通过；新增 rotate_half Qwen3 full/decode smoke 3 项。
+- 设置真实模型与 reference 路径后，Qwen3-0.6B opt-in integration 35 / 35 通过。
+- 默认测试完全离线；损坏 header/offset/shape、错误 dtype、缺失/多余/重复/shape mismatch 权重和不支持 config 均有 fail-closed 测试。
 
 ## Close 回顾
 
-- **完成了什么**：待 Close。
-- **验证证据**：待 Close。
-- **没有完成及原因**：待 Close。
-- **最重要的认知变化**：待 Close。
-- **是否满足 Close 条件**：否，当前为 Open。
-- **带到下一 Week 的问题**：HF tokenizer 导入与 text→text 端到端一致性（Week 08）。
+- **完成了什么**：打通 Qwen3 config、safetensors、参数映射、rotate_half RoPE、0-based token 边界以及 full/dynamic/static 推理链路；真实 Qwen3-0.6B 从 embedding 到 logits 与 HF Float32 reference 对齐。
+- **验证证据**：默认 4025 / 4025、XLA 49 / 49、真实模型 integration 35 / 35；逐层、final hidden、full logits 和两种 cache decode 的误差与 argmax 均有记录。
+- **没有完成及原因**：未导入 HF tokenizer，也未提交真实权重/reference 大文件；前者按计划属于 Week 08，后者由仓库体积与默认离线测试边界决定。
+- **最重要的认知变化**：权重“shape 对上”远远不够；rotate_half、行/列主序的语义重建、tied 重复权重和 0/1-based token 边界都必须分别用数值 fixture 钉死。逐层 reference 能把最终 logits 的问题准确定位到第一次分叉，而不是靠放宽最终容差猜测。
+- **是否满足 Close 条件**：是。全部约定条件已完成并于 2026-07-22 关闭 Week 07。
+- **带到下一 Week 的问题**：HF tokenizer 导入与 text→text 端到端一致性（Week 08）；Week 08 尚未 Open。

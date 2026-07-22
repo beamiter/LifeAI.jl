@@ -51,6 +51,7 @@ layer, so no separate learned positional embedding is used.
     use_bias::Bool
     is_causal::Bool
     rope_theta::Float32
+    rope_style::Symbol
     norm_epsilon::Float32
     norm_type::Symbol
     mlp_type::Symbol
@@ -75,6 +76,7 @@ function GPTModel(
     qk_norm_epsilon::Real=1.0f-6,
     max_seq_len::Int=2048,
     rope_theta::Real=10000.0,
+    rope_style::Symbol=:interleaved,
     norm_epsilon::Real=1.0f-5,
     norm_type::Symbol=:layernorm,
     mlp_type::Symbol=:gelu,
@@ -127,6 +129,7 @@ function GPTModel(
             qk_norm_epsilon,
             max_seq_len,
             rope_theta,
+            rope_style,
             norm_epsilon,
             norm_type,
             mlp_type,
@@ -160,6 +163,7 @@ function GPTModel(
         use_bias,
         is_causal,
         Float32(rope_theta),
+        rope_style,
         Float32(norm_epsilon),
         norm_type,
         mlp_type,
@@ -192,6 +196,7 @@ function gpt_config(model::GPTModel)
         qk_norm_epsilon=model.qk_norm_epsilon,
         max_seq_len=model.max_seq_len,
         rope_theta=model.rope_theta,
+        rope_style=model.rope_style,
         norm_epsilon=model.norm_epsilon,
         norm_type=model.norm_type,
         mlp_type=model.mlp_type,
@@ -213,6 +218,7 @@ function GPTModel(config::NamedTuple)
     use_qk_norm = hasproperty(config, :use_qk_norm) ? config.use_qk_norm : false
     qk_norm_epsilon = hasproperty(config, :qk_norm_epsilon) ?
         config.qk_norm_epsilon : 1.0f-6
+    rope_style = hasproperty(config, :rope_style) ? config.rope_style : :interleaved
 
     return GPTModel(
         config.vocab_size,
@@ -229,6 +235,7 @@ function GPTModel(config::NamedTuple)
         qk_norm_epsilon,
         max_seq_len=config.max_seq_len,
         rope_theta=config.rope_theta,
+        rope_style,
         norm_epsilon=config.norm_epsilon,
         norm_type,
         mlp_type,

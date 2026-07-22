@@ -120,26 +120,34 @@ function _apply_rope_single_position(
     cos_cache,
     sin_cache,
     position,
+    rope_style::Symbol,
 )
     D, H, _, B = size(x)
     half_dim = D ÷ 2
 
-    x_pairs = reshape(x, 2, half_dim, H, 1, B)
-    x1 = selectdim(x_pairs, 1, 1)
-    x2 = selectdim(x_pairs, 1, 2)
+    x1, x2 = if rope_style === :interleaved
+        x_pairs = reshape(x, 2, half_dim, H, 1, B)
+        selectdim(x_pairs, 1, 1), selectdim(x_pairs, 1, 2)
+    else
+        x_halves = reshape(x, half_dim, 2, H, 1, B)
+        selectdim(x_halves, 2, 1), selectdim(x_halves, 2, 2)
+    end
 
     cos_values = reshape(eltype(x).(cos_cache[:, position]), half_dim, 1, 1, 1)
     sin_values = reshape(eltype(x).(sin_cache[:, position]), half_dim, 1, 1, 1)
 
     y1 = x1 .* cos_values .- x2 .* sin_values
     y2 = x1 .* sin_values .+ x2 .* cos_values
-    y_pairs = cat(
-        reshape(y1, 1, half_dim, H, 1, B),
-        reshape(y2, 1, half_dim, H, 1, B);
-        dims=1,
-    )
+    if rope_style === :interleaved
+        y_pairs = cat(
+            reshape(y1, 1, half_dim, H, 1, B),
+            reshape(y2, 1, half_dim, H, 1, B);
+            dims=1,
+        )
+        return reshape(y_pairs, D, H, 1, B)
+    end
 
-    return reshape(y_pairs, D, H, 1, B)
+    return cat(y1, y2; dims=1)
 end
 
 function _scaled_dot_product_attention_valid_prefix(
@@ -222,12 +230,14 @@ function _static_attention_prefill!(
             st.rope_cos_cache,
             st.rope_sin_cache;
             start_pos=1,
+            rope_style=attn.rope_style,
         )
         keys = apply_rope(
             keys,
             st.rope_cos_cache,
             st.rope_sin_cache;
             start_pos=1,
+            rope_style=attn.rope_style,
         )
     end
 
@@ -287,12 +297,14 @@ function _static_attention_decode!(
             st.rope_cos_cache,
             st.rope_sin_cache,
             write_position,
+            attn.rope_style,
         )
         keys = _apply_rope_single_position(
             keys,
             st.rope_cos_cache,
             st.rope_sin_cache,
             write_position,
+            attn.rope_style,
         )
     end
 

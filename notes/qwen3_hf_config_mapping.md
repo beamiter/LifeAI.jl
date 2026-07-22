@@ -1,6 +1,6 @@
-# Qwen3 HF config.json ↔ LifeAI.jl gpt_config 映射契约（草案）
+# Qwen3 HF config.json ↔ LifeAI.jl gpt_config 映射契约
 
-> 状态：Week 06 交付的契约草案，作为 Week 07 权重加载的输入。
+> 状态：Week 06 冻结输入契约；Week 07 已实现并通过真实 Qwen3-0.6B 数值验证。
 >
 > 参照对象：HuggingFace `Qwen/Qwen3-0.6B` 的 `config.json`（`Qwen3ForCausalLM` /
 > `model_type: qwen3`）。字段值以 0.6B 为例，规则适用于全部 Qwen3 dense 型号。
@@ -35,13 +35,13 @@
 - KV 分组语义：query head `h` 使用 KV head `(h-1) ÷ (num_heads ÷ num_kv_heads) + 1`
   （与 HF `repeat_kv` 的连续展开一致；已用 reference 测试钉死）。
 
-## 权重名映射（Week 07 待实现）
+## 权重名映射（Week 07 已实现）
 
 | HF 参数名 | LifeAI 参数树路径 | 布局说明 |
 | --- | --- | --- |
-| `model.embed_tokens.weight` | `ps.token_embedding.weight` | HF `(vocab, hidden)` 行主序 ↔ Julia `(hidden, vocab)` 列主序：**数值内存布局一致，需按语义转置核对** |
+| `model.embed_tokens.weight` | `ps.token_embedding.weight` | 格式层先还原 HF `(vocab, hidden)` 语义数组；映射层再转为 embedding 所需的 `(hidden, vocab)` |
 | `model.layers.{i}.input_layernorm.weight` | `ps.blocks.layer_{i+1}.norm1.scale` | `(hidden,)`；LifeAI 存 `(hidden,1,1)`，需 reshape |
-| `model.layers.{i}.self_attn.q_proj.weight` | `ps.blocks.layer_{i+1}.attn.q_proj.weight` | HF `(out,in)` 行主序 → Julia Dense `(out,in)` 列主序：**需转置拷贝**，Week 07 用单元测试逐案钉死 |
+| `model.layers.{i}.self_attn.q_proj.weight` | `ps.blocks.layer_{i+1}.attn.q_proj.weight` | 格式层已从行主序字节重建 `(out,in)` 语义数组；Lux Dense 同为 `(out,in)`，映射层直接使用 |
 | `model.layers.{i}.self_attn.k_proj.weight` | `…attn.k_proj.weight` | 同上；out = `num_kv_heads * head_dim` |
 | `model.layers.{i}.self_attn.v_proj.weight` | `…attn.v_proj.weight` | 同上 |
 | `model.layers.{i}.self_attn.o_proj.weight` | `…attn.o_proj.weight` | 同上；in = `num_heads * head_dim` |
@@ -52,23 +52,23 @@
 | `model.layers.{i}.mlp.up_proj.weight` | `…mlp.up_proj.weight` | SwiGLU up |
 | `model.layers.{i}.mlp.down_proj.weight` | `…mlp.down_proj.weight` | SwiGLU down |
 | `model.norm.weight` | `ps.final_norm.scale` | final RMSNorm |
-| `lm_head.weight`（untied 型号） | `ps.lm_head.weight` | tied 型号复用 `embed_tokens` |
+| `lm_head.weight`（untied 型号） | `ps.lm_head.weight` | tied 型号复用 `embed_tokens`；若 safetensors 仍保存重复 `lm_head.weight`，加载器验证其与 embedding 完全相同后丢弃重复副本 |
 
 ## 显式标注的歧义与风险项
 
-1. **转置约定**：PyTorch `nn.Linear.weight` 是 `(out_features, in_features)` 行主序；
-   Julia/Lux `Dense.weight` 是 `(out, in)` 列主序。同名 shape 但内存序不同，
-   加载时每类权重都必须有数值级 fixture 测试（给定输入 → 双方输出一致），
-   不允许只对 shape。
+1. **转置约定**：PyTorch `nn.Linear.weight` 与 Julia/Lux `Dense.weight` 的语义
+   shape 都是 `(out, in)`，但文件行主序与 Julia 数组列主序不同。safetensors
+   格式层负责从文件字节重建语义数组，参数层不得对 Dense 再次转置；embedding
+   因模型接口要求 `(hidden, vocab)` 才在参数层转置。每类权重均已有非对称数值
+   fixture，避免只凭 shape 判断。
 2. **head 切分顺序**：HF Q/K/V 投影输出按 head-major 排列
    （head h 占据 `(h-1)*head_dim+1 : h*head_dim` 行）；LifeAI 的
    `reshape(·, head_dim, num_heads, …)` 假设相同排列——已与 repeat_kv
    语义一起在 Week 06 测试中钉死，Week 07 直接沿用。
-3. **RoPE 配对约定**：HF Qwen3 使用 rotate_half（前半/后半配对），LifeAI
-   `apply_rope` 使用相邻偶奇配对（interleaved）。**两者不等价**，Week 07
-   必须做以下二选一并用逐层 fixture 验证：(a) LifeAI 增加 rotate_half 模式；
-   (b) 加载 q/k 权重与 q_norm 时按 permutation 重排 head_dim 维。
-   这是最可能导致 logits 对不上的单点。
+3. **RoPE 配对约定**：HF Qwen3 使用 rotate_half（前半/后半配对），历史
+   LifeAI 默认使用相邻偶奇配对（interleaved），两者不等价。Week 07 已选择
+   在模型与三类推理路径中增加 `rope_style=:rotate_half`，并用逐层 HF fixture
+   验证；legacy config 和 checkpoint 继续默认 `:interleaved`。
 4. **dtype**：bf16 权重转 Float32 后与 HF bf16 推理存在固有数值差；对齐
    验证应以 HF float32 参考跑（`torch_dtype=float32`）为基准，并记录容差。
 5. **`max_seq_len`**：加载时可小于 `max_position_embeddings`，但必须

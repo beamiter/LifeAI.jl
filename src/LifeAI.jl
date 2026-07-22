@@ -17,6 +17,8 @@ export split_token_stream, split_text_stream, train_validation_loaders
 export TextDocument, load_text_documents, split_documents, build_document_dataset
 export DATASET_ARTIFACT_VERSION, save_dataset_artifact, load_dataset_artifact
 export GPTModel, TiedOutputProjection, gpt_config
+export load_hf_qwen3_config, load_safetensors, load_hf_qwen3_parameters
+export load_hf_qwen3_model, hf_token_ids, hf_qwen3_forward_trace
 export TrainerGPT, init_train_state, next_token_loss, next_token_nll_sum
 export global_gradient_norm, clip_global_gradient_norm
 export train_step!, train_gpt!
@@ -40,6 +42,7 @@ include("data/dataset.jl")
 include("data/data_pipeline.jl")
 include("models/output_projection.jl")
 include("models/gpt.jl")
+include("io/huggingface.jl")
 include("train/train_gpt.jl")
 include("train/evaluation.jl")
 include("train/checkpoint.jl")

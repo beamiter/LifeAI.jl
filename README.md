@@ -19,14 +19,14 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：最小 GPT 的训练、生成、评估、版本化 Tokenizer 与 Qwen3 dense 结构 parity 已形成；当前正在 Week 07 接入 HuggingFace Qwen3-0.6B 权重并验证 logits / KV Cache 数值一致性，智能体与具身层尚未开始。**
+**阶段判断：最小 GPT 的训练、生成、评估与版本化 Tokenizer 已形成；Qwen3 dense 结构、HuggingFace 权重加载及 Qwen3-0.6B logits / KV Cache 数值一致性均已验证，智能体与具身层尚未开始。**
 
-Week 01—06 均已 Closed。当前活动阶段是 [`Week 07 — HuggingFace Weight Loading and Qwen3 Logits Parity`](notes/week07_hf_weight_loading.md)，目标是安全读取 safetensors / BF16 和 HF config，解决 rotate_half RoPE 与布局差异，并用固定 token-id fixture 对齐 Qwen3-0.6B 的逐层 hidden states、full-forward logits 与 KV-cache decode logits。
+Week 01—07 均已 Closed，当前没有 Open 的 Week。[`Week 07 — HuggingFace Weight Loading and Qwen3 Logits Parity`](notes/week07_hf_weight_loading.md) 已完成 safetensors / BF16、HF config、rotate_half RoPE 与参数布局适配，并用固定 token-id fixture 对齐 Qwen3-0.6B 的逐层 hidden states、full-forward logits 与 KV-cache decode logits；下一阶段计划为 Week 08 的 HF tokenizer 与 text→text parity。
 
 目前已经具备：
 
 - 手写与批量 scaled dot-product attention、因果遮罩和 Multi-Head Attention。
-- RoPE、pre-norm TransformerBlock 和 decoder-only GPTModel。
+- 支持 legacy interleaved 与 HF rotate_half 配对的 RoPE、pre-norm TransformerBlock 和 decoder-only GPTModel。
 - 可独立切换的 LayerNorm / RMSNorm、GELU / SwiGLU、untied / tied embedding-output projection；legacy 默认保持不变。
 - 字符级 Tokenizer、DatasetLoader、next-token loss 和训练循环。
 - 无泄漏 train / validation 划分、token-weighted evaluation / perplexity 和 global gradient norm clipping。
@@ -35,12 +35,14 @@ Week 01—06 均已 Closed。当前活动阶段是 [`Week 07 — HuggingFace Wei
 - greedy、temperature、top-k 文本生成。
 - 动态 KV Cache 的 prefill / decode，以及面向 XLA 的固定形状 KV Cache 和编译后增量解码。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
+- 严格的 Qwen3 dense config 校验、BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
+- Qwen3-0.6B 逐层 hidden states、full logits、dynamic/static cache decode 的真实 HF reference parity；真实权重测试显式 opt-in，默认测试保持离线。
 - 围绕 Attention、RoPE、prefill/decode 和 KV Cache 的 Pluto 可视化学习笔记。
 - 默认测试套件全部通过；Reactant/XLA 专项测试需显式启用。
 
 尚未具备：
 
-- 可用于真实任务的预训练模型、版本化 Tokenizer 与真实语料训练流程。
+- HF `tokenizer.json` 导入与任意 text→text 端到端一致性；可用于真实任务的模型质量仍未评估。
 - 长短期记忆、规划、工具使用、反思等完整的 agent loop。
 - 视觉、听觉和传感器输入等多模态感知。
 - 面向仿真或实体机器人的 observation / action 抽象、控制链路与安全边界。
@@ -82,6 +84,7 @@ Open Week → 执行与验证 → 满足 Close 条件 → 复盘并更新状态 
 src/
 ├── core/          # Attention、RoPE、Transformer、sampling
 ├── data/          # Tokenizer 与 DatasetLoader
+├── io/            # HuggingFace config / safetensors 权重加载
 ├── models/        # GPT 模型
 ├── train/         # Zygote / Reactant-XLA 训练
 └── generation/    # 文本生成、动态与固定形状 KV Cache
