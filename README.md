@@ -21,7 +21,7 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 **阶段判断：最小 GPT 的训练、生成、评估与版本化 Tokenizer 已形成；Qwen3 dense 结构、HuggingFace 权重加载及 Qwen3-0.6B logits / KV Cache 数值一致性均已验证，智能体与具身层尚未开始。**
 
-Week 01—07 均已 Closed，当前没有 Open 的 Week。[`Week 07 — HuggingFace Weight Loading and Qwen3 Logits Parity`](notes/week07_hf_weight_loading.md) 已完成 safetensors / BF16、HF config、rotate_half RoPE 与参数布局适配，并用固定 token-id fixture 对齐 Qwen3-0.6B 的逐层 hidden states、full-forward logits 与 KV-cache decode logits；下一阶段计划为 Week 08 的 HF tokenizer 与 text→text parity。
+Week 01—07 均已 Closed。当前活动阶段是 [`Week 08 — HuggingFace Qwen3 Tokenizer and Text-to-Text Parity`](notes/week08_hf_tokenizer_text_parity.md)，目标是严格导入 Qwen3 的 byte-unicode、regex、BPE 与 added/special token 语义，支持基础 chat template，并把 Week 07 已验证的 token-id→logits 路径推进为 text→greedy generation→text 端到端一致性。
 
 目前已经具备：
 
