@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：最小 GPT 的训练、生成、评估与版本化 Tokenizer 已形成；Qwen3 dense 结构、HuggingFace 权重加载及 Qwen3-0.6B logits / KV Cache 数值一致性均已验证，智能体与具身层尚未开始。**
+**阶段判断：最小 GPT 的训练、生成、评估与版本化 Tokenizer 已形成；Qwen3 dense 结构、HuggingFace 权重/tokenizer 加载及 Qwen3-0.6B text→text / KV Cache 数值一致性均已验证，智能体与具身层尚未开始。**
 
-Week 01—07 均已 Closed。当前活动阶段是 [`Week 08 — HuggingFace Qwen3 Tokenizer and Text-to-Text Parity`](notes/week08_hf_tokenizer_text_parity.md)，目标是严格导入 Qwen3 的 byte-unicode、regex、BPE 与 added/special token 语义，支持基础 chat template，并把 Week 07 已验证的 token-id→logits 路径推进为 text→greedy generation→text 端到端一致性。
+Week 01—08 均已 Closed，当前没有 Open 的 Week。[`Week 08 — HuggingFace Qwen3 Tokenizer and Text-to-Text Parity`](notes/week08_hf_tokenizer_text_parity.md) 已完成严格 Qwen3 tokenizer、基础 chat template，以及 text→greedy generation→text parity；Week 06—08 的结构→权重/logits→tokenizer/text 三阶段复现现已闭环。
 
 目前已经具备：
 
@@ -37,12 +37,14 @@ Week 01—07 均已 Closed。当前活动阶段是 [`Week 08 — HuggingFace Qwe
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
 - 严格的 Qwen3 dense config 校验、BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
 - Qwen3-0.6B 逐层 hidden states、full logits、dynamic/static cache decode 的真实 HF reference parity；真实权重测试显式 opt-in，默认测试保持离线。
+- 严格的 Qwen3 HF tokenizer：NFC、目标 regex、ByteLevel、imported BPE、added/special tokens、artifact/checkpoint 与 provenance fingerprint。
+- 无 tools 的 Qwen3 基础 chat template，以及 full/dynamic/static/XLA 的真实 greedy text-generation parity。
 - 围绕 Attention、RoPE、prefill/decode 和 KV Cache 的 Pluto 可视化学习笔记。
 - 默认测试套件全部通过；Reactant/XLA 专项测试需显式启用。
 
 尚未具备：
 
-- HF `tokenizer.json` 导入与任意 text→text 端到端一致性；可用于真实任务的模型质量仍未评估。
+- 通用 Jinja、tools/tool-role chat template 与 agent tool loop；可用于真实任务的模型质量仍未评估。
 - 长短期记忆、规划、工具使用、反思等完整的 agent loop。
 - 视觉、听觉和传感器输入等多模态感知。
 - 面向仿真或实体机器人的 observation / action 抽象、控制链路与安全边界。

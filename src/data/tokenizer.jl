@@ -818,6 +818,13 @@ function load_tokenizer(path::AbstractString)
             trainer_config=_trainer_from_artifact(payload["trainer"]),
             corpus_fingerprint=String(payload["corpus_fingerprint"]),
         )
+    elseif tokenizer_type == "hf_qwen3_bpe"
+        _hf_qwen3_tokenizer_from_json(
+            String(hex2bytes(payload["tokenizer_json_hex"])),
+            String(hex2bytes(payload["tokenizer_config_json_hex"])),
+            String(hex2bytes(payload["generation_config_json_hex"]));
+            revision=String(get(payload, "revision", "")),
+        )
     else
         throw(ArgumentError("unsupported tokenizer artifact type $(repr(tokenizer_type))"))
     end
@@ -829,3 +836,6 @@ function load_tokenizer(path::AbstractString)
     ))
     return tokenizer
 end
+
+_model_tokenizer_vocab_compatible(model_vocab_size::Int, tokenizer::AbstractTokenizer) =
+    model_vocab_size == vocab_size(tokenizer)

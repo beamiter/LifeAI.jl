@@ -8,6 +8,8 @@ export RMSNormLayer, SwiGLU, TransformerBlock
 export RoPE, apply_rope
 export SamplingSchedule
 export AbstractTokenizer, Tokenizer, ByteTokenizer, ByteBPETokenizer
+export HFQwen3Tokenizer, hf_byte_unicode_alphabet, load_hf_qwen3_tokenizer
+export hf_qwen3_pretokenize, apply_qwen3_chat_template
 export fit_tokenizer, fit_byte_bpe, encode, decode, decode_bytes, vocab_size
 export normalize_text, special_token_id, token_byte_length, encoded_byte_length
 export tokenizer_config, tokenizer_fingerprint, tokenizer_statistics
@@ -19,6 +21,7 @@ export DATASET_ARTIFACT_VERSION, save_dataset_artifact, load_dataset_artifact
 export GPTModel, TiedOutputProjection, gpt_config
 export load_hf_qwen3_config, load_safetensors, load_hf_qwen3_parameters
 export load_hf_qwen3_model, hf_token_ids, hf_qwen3_forward_trace
+export load_hf_qwen3_bundle, generate_hf_text
 export TrainerGPT, init_train_state, next_token_loss, next_token_nll_sum
 export global_gradient_norm, clip_global_gradient_norm
 export train_step!, train_gpt!
@@ -38,6 +41,7 @@ include("core/mlp.jl")
 include("core/transformer.jl")
 include("core/sampling.jl")
 include("data/tokenizer.jl")
+include("data/hf_tokenizer.jl")
 include("data/dataset.jl")
 include("data/data_pipeline.jl")
 include("models/output_projection.jl")
@@ -49,6 +53,7 @@ include("train/checkpoint.jl")
 include("generation/text_generation.jl")
 include("generation/kv_cache.jl")
 include("generation/xla_kv_cache.jl")
+include("generation/hf_text_generation.jl")
 include("generation/kv_benchmark.jl")
 include("generation/xla_cache_modes_benchmark.jl")
 

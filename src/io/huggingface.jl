@@ -642,6 +642,27 @@ function load_hf_qwen3_model(
 end
 
 """
+    load_hf_qwen3_bundle(model_dir; max_seq_len=2048, revision="", ...)
+
+Load a local Qwen3 model and its exact HuggingFace tokenizer files as one
+text-generation bundle. The tokenizer may define fewer ids than the padded
+embedding vocabulary, but every defined tokenizer id must fit the model.
+"""
+function load_hf_qwen3_bundle(
+    model_dir::AbstractString;
+    max_seq_len=2048,
+    weight_dtype::Type=Float32,
+    revision::AbstractString="",
+)
+    tokenizer = load_hf_qwen3_tokenizer(model_dir; revision)
+    loaded = load_hf_qwen3_model(model_dir; max_seq_len, weight_dtype)
+    vocab_size(tokenizer) <= loaded.model.vocab_size || throw(ArgumentError(
+        "tokenizer vocabulary exceeds the Qwen3 model embedding vocabulary",
+    ))
+    return merge(loaded, (; tokenizer))
+end
+
+"""
     hf_qwen3_forward_trace(model, tokens, ps, st)
 
 Run an eager Qwen3 forward pass while returning the embedding output, every

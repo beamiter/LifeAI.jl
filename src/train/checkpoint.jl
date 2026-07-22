@@ -74,6 +74,17 @@ function _tokenizer_payload(tokenizer::ByteBPETokenizer)
     )
 end
 
+function _tokenizer_payload(tokenizer::HFQwen3Tokenizer)
+    return (;
+        type=:hf_qwen3_bpe,
+        revision=tokenizer.revision,
+        raw_tokenizer_json=tokenizer.raw_tokenizer_json,
+        raw_tokenizer_config_json=tokenizer.raw_tokenizer_config_json,
+        raw_generation_config_json=tokenizer.raw_generation_config_json,
+        fingerprint=tokenizer_fingerprint(tokenizer),
+    )
+end
+
 function _checkpoint_special_token_tables(entries)
     ids = Dict{Symbol,Int}()
     texts = Dict{Symbol,String}()
@@ -120,6 +131,13 @@ function _tokenizer_from_payload(payload)
             trainer_config=payload.trainer_config,
             corpus_fingerprint=String(payload.corpus_fingerprint),
         )
+    elseif tokenizer_type === :hf_qwen3_bpe
+        _hf_qwen3_tokenizer_from_json(
+            String(payload.raw_tokenizer_json),
+            String(payload.raw_tokenizer_config_json),
+            String(payload.raw_generation_config_json);
+            revision=String(payload.revision),
+        )
     else
         throw(ArgumentError("unsupported tokenizer type $(repr(payload.type))"))
     end
@@ -139,9 +157,9 @@ end
 """
     save_checkpoint(path, model, tokenizer, trainer, train_state; kwargs...)
 
-Save a versioned, device-independent experiment checkpoint. Character, byte, and
-byte-BPE tokenizers share the same checkpoint API. Existing v1/v2 character payloads
-remain loadable.
+Save a versioned, device-independent experiment checkpoint. Character, byte,
+byte-BPE, and imported Qwen3 tokenizers share the same checkpoint API. Existing
+v1/v2 character payloads remain loadable.
 """
 function save_checkpoint(
     path::AbstractString,
@@ -159,8 +177,8 @@ function save_checkpoint(
     train_state.model === model || throw(ArgumentError(
         "`train_state.model` must be the supplied `model`",
     ))
-    model.vocab_size == vocab_size(tokenizer) || throw(ArgumentError(
-        "model vocabulary size $(model.vocab_size) does not match tokenizer vocabulary size $(vocab_size(tokenizer))",
+    _model_tokenizer_vocab_compatible(model.vocab_size, tokenizer) || throw(ArgumentError(
+        "model vocabulary size $(model.vocab_size) is incompatible with tokenizer vocabulary size $(vocab_size(tokenizer))",
     ))
 
     host = Lux.cpu_device()
@@ -266,8 +284,8 @@ function load_checkpoint(
 
     model = GPTModel(payload.model_config)
     tokenizer = _tokenizer_from_payload(payload.tokenizer)
-    model.vocab_size == vocab_size(tokenizer) || throw(ArgumentError(
-        "checkpoint model and tokenizer vocabulary sizes do not match",
+    _model_tokenizer_vocab_compatible(model.vocab_size, tokenizer) || throw(ArgumentError(
+        "checkpoint model and tokenizer vocabulary sizes are incompatible",
     ))
     saved = payload.trainer_config
 
