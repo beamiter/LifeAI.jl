@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3-0.6B 与经典 GPT-2 124M 两种真实 decoder 架构的官方 checkpoint 推理复现闭环均已完成；共享 `GPTModel` 已用两套不同 position、norm、MLP、attention、权重布局和 tokenizer 约定验证。**
+**阶段判断：Qwen3-0.6B 与经典 GPT-2 124M 两种真实 decoder 架构的官方 checkpoint 推理复现闭环均已完成；Qwen3 0.6B—32B 六个官方 dense 尺寸的 config、完整 topology、精确参数量、tied/untied head 与宽 attention contract 已完成 Week 11 验证。**
 
-Week 01—10 均已 Closed；[`Week 10 — GPT-2 Architecture, HuggingFace Weights and Text Parity`](notes/week10_gpt2_hf_parity.md) 已于 2026-07-23 完成。`openai-community/gpt2` 124M 的 learned absolute position、GELU-New、Conv1D/fused-QKV 权重映射、byte-level BPE、逐层 logits、KV cache、text-to-text parity 与 CPU/CUDA 性能均有冻结证据。
+Week 01—11 均已 Closed；[`Week 11 — Qwen3 Dense Family Completion`](notes/week11_qwen3_dense_family.md) 已补齐六个官方 dense family member 的显式规格与离线结构证据。Week 10 的 GPT-2 历史内容保持关闭，不与本阶段混写。
 
 目前已经具备：
 
@@ -35,7 +35,7 @@ Week 01—10 均已 Closed；[`Week 10 — GPT-2 Architecture, HuggingFace Weigh
 - greedy、temperature、top-k、top-p 文本生成；Qwen3 可严格读取官方 generation config，并支持固定 uniform 流的可重放采样。
 - 动态 KV Cache 的 prefill / decode，以及面向 XLA 的固定形状 KV Cache 和编译后增量解码。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
-- 严格的 Qwen3 dense config 校验、BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
+- 六个官方 Qwen3 dense 规格的 immutable revision/config checksum、自动识别、显式 variant 校验、精确参数量；严格的 BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
 - Qwen3-0.6B 逐层 hidden states、full logits、dynamic/static cache decode 的真实 HF reference parity；真实权重测试显式 opt-in，默认测试保持离线。
 - Qwen3-0.6B 的 16-step 官方 sampled reference parity、position 40,959 独立 Transformers RoPE fixture，以及 CPU/CUDA/Reactant-XLA GPU 真实推理 benchmark。
 - 严格的 Qwen3 HF tokenizer：NFC、目标 regex、ByteLevel、imported BPE、added/special tokens、artifact/checkpoint 与 provenance fingerprint。
@@ -49,7 +49,7 @@ Week 01—10 均已 Closed；[`Week 10 — GPT-2 Architecture, HuggingFace Weigh
 尚未具备：
 
 - GPT-2 的 WebText 从零训练、论文 zero-shot quality、Medium/Large/XL、cross-attention 与分类 head 未复现；当前完成的是 124M 官方 checkpoint 的 Float32 推理/架构复现。
-- Qwen3 native BF16、量化、完整 40K 真实模型 dense forward、其他 dense 尺寸与 MoE；当前真实推理仍是 BF16 storage → Float32 parameters/compute。
+- Qwen3 native BF16、量化、完整 40K 真实模型 dense forward、1.7B—32B 真实权重逐层 parity 与 MoE；当前真实推理仍只在 0.6B 上完成 BF16 storage → Float32 parameters/compute 验证。
 - 通用 Jinja、tools/tool-role chat template 与 agent tool loop；可用于真实任务的模型质量仍未评估。
 - 长短期记忆、规划、工具使用、反思等完整的 agent loop。
 - 视觉、听觉和传感器输入等多模态感知。
@@ -58,7 +58,7 @@ Week 01—10 均已 Closed；[`Week 10 — GPT-2 Architecture, HuggingFace Weigh
 
 更详细的能力盘点、验证范围与建议里程碑见 [`notes/current_status.md`](notes/current_status.md)。
 
-本机大模型权重与真实 reference 固定存放在 `/home/yj/models/`，不使用易清理的 `/tmp`，也不提交进仓库；Qwen3-0.6B 与 GPT-2 124M 的完整 revision、checksum 和恢复命令见 [`notes/local_model_assets.md`](notes/local_model_assets.md)。
+本机大模型权重与真实 reference 固定存放在 `/home/yj/models/`，不使用易清理的 `/tmp`，也不提交进仓库；Qwen3-0.6B 与 GPT-2 124M 的完整资产和恢复命令见 [`notes/local_model_assets.md`](notes/local_model_assets.md)，六个 Qwen3 dense config 规格见 [`Week 11`](notes/week11_qwen3_dense_family.md)。
 
 ## 演进路线
 
@@ -150,6 +150,24 @@ model = GPTModel(
     tie_embeddings=true,
 )
 ```
+
+查看或严格选择 Qwen3 dense family member：
+
+```julia
+for spec in qwen3_dense_specs()
+    println(spec.model_id, ": ", qwen3_dense_parameter_count(spec))
+end
+
+bundle = load_hf_qwen3_bundle(
+    "/path/to/Qwen3-4B";
+    variant=:qwen3_4b,
+    revision=qwen3_dense_spec(:qwen3_4b).revision,
+    max_seq_len=256,
+)
+```
+
+`variant` 会校验所有架构 shape，但不会下载文件。当前真实逐层/logits/text
+reference 仍只覆盖 0.6B；其他尺寸的结构支持不等同于已加载巨型权重实跑。
 
 加载冻结的 GPT-2 124M 并执行 greedy generation：
 

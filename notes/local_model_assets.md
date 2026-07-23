@@ -48,6 +48,25 @@ Week 09 long-position RoPE reference：
 | Week 09 RoPE `reference.json` | `2158095b305ced45cc7c9d03ddb0cb9f77d246fde9f66dbe1aa9d31062799fb5` |
 | Week 09 RoPE `reference.safetensors` | `3e42d148d9553ff691751c02c306b4f8f12c687f4743cb9c443ad296af996c65` |
 
+## Week 11 Qwen3 dense family config reference
+
+Week 11 只冻结 1.7B—32B 的官方 config contract，没有把这些巨型权重下载到
+`/home/yj/models/`。六个 config 的不可变 revision 与 SHA256 为：
+
+| model | revision | `config.json` SHA256 |
+| --- | --- | --- |
+| Qwen3-0.6B | `c1899de289a04d12100db370d81485cdf75e47ca` | `660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd` |
+| Qwen3-1.7B | `70d244cc86ccca08cf5af4e1e306ecf908b1ad5e` | `1ddb5b89ebc90dcb417a45c213d818577e65976454d29385c8f6140771d95197` |
+| Qwen3-4B | `1cfa9a7208912126459214e8b04321603b3df60c` | `8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a` |
+| Qwen3-8B | `b968826d9c46dd6066d109eabc6255188de91218` | `f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30` |
+| Qwen3-14B | `40c069824f4251a91eefaf281ebe4c544efd3e18` | `e73c3664ca09b10a673fef0c22e8a6b456201d49bd4713c9691f775720e8857a` |
+| Qwen3-32B | `9216db5781bf21249d130ec9da846c4624c16137` | `97e295b63283935788fac5e4f8860862a56d4089538cafc93f0431f2ebe483bb` |
+
+同一 reference 的小型离线副本位于
+`test/fixtures/week11_qwen3_dense_family/specs.json`。未来若下载其他尺寸权重，
+仍应遵守本页顶部的持久目录布局，并为真实逐层 reference 单独记录模型权重和
+分片 index checksum。
+
 ## 恢复下载
 
 使用 `/home/yj/projects/jwm/.venv` 中的 HuggingFace CLI，下载目标 revision 的五个必要文件：

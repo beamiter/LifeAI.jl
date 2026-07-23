@@ -5,6 +5,233 @@ using Random: Xoshiro
 const _SAFETENSORS_MAX_HEADER_BYTES = 100_000_000
 const _SAFETENSORS_DTYPES = Dict("BF16" => 2, "F32" => 4)
 
+"""
+    Qwen3DenseSpec
+
+Frozen architecture and provenance metadata for one official Qwen3 dense
+checkpoint family member. `max_position_embeddings` is the checkpoint's native
+RoPE limit; a loader may still choose a smaller runtime `max_seq_len`.
+"""
+struct Qwen3DenseSpec
+    variant::Symbol
+    model_id::String
+    revision::String
+    config_sha256::String
+    vocab_size::Int
+    d_model::Int
+    mlp_hidden_dim::Int
+    num_layers::Int
+    num_heads::Int
+    num_kv_heads::Int
+    head_dim::Int
+    rms_norm_epsilon::Float32
+    rope_theta::Float32
+    max_position_embeddings::Int
+    tie_embeddings::Bool
+end
+
+const _QWEN3_DENSE_SPECS = (
+    Qwen3DenseSpec(
+        :qwen3_0_6b,
+        "Qwen/Qwen3-0.6B",
+        "c1899de289a04d12100db370d81485cdf75e47ca",
+        "660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd",
+        151_936,
+        1_024,
+        3_072,
+        28,
+        16,
+        8,
+        128,
+        1.0f-6,
+        1.0f6,
+        40_960,
+        true,
+    ),
+    Qwen3DenseSpec(
+        :qwen3_1_7b,
+        "Qwen/Qwen3-1.7B",
+        "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+        "1ddb5b89ebc90dcb417a45c213d818577e65976454d29385c8f6140771d95197",
+        151_936,
+        2_048,
+        6_144,
+        28,
+        16,
+        8,
+        128,
+        1.0f-6,
+        1.0f6,
+        40_960,
+        true,
+    ),
+    Qwen3DenseSpec(
+        :qwen3_4b,
+        "Qwen/Qwen3-4B",
+        "1cfa9a7208912126459214e8b04321603b3df60c",
+        "8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a",
+        151_936,
+        2_560,
+        9_728,
+        36,
+        32,
+        8,
+        128,
+        1.0f-6,
+        1.0f6,
+        40_960,
+        true,
+    ),
+    Qwen3DenseSpec(
+        :qwen3_8b,
+        "Qwen/Qwen3-8B",
+        "b968826d9c46dd6066d109eabc6255188de91218",
+        "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30",
+        151_936,
+        4_096,
+        12_288,
+        36,
+        32,
+        8,
+        128,
+        1.0f-6,
+        1.0f6,
+        40_960,
+        false,
+    ),
+    Qwen3DenseSpec(
+        :qwen3_14b,
+        "Qwen/Qwen3-14B",
+        "40c069824f4251a91eefaf281ebe4c544efd3e18",
+        "e73c3664ca09b10a673fef0c22e8a6b456201d49bd4713c9691f775720e8857a",
+        151_936,
+        5_120,
+        17_408,
+        40,
+        40,
+        8,
+        128,
+        1.0f-6,
+        1.0f6,
+        40_960,
+        false,
+    ),
+    Qwen3DenseSpec(
+        :qwen3_32b,
+        "Qwen/Qwen3-32B",
+        "9216db5781bf21249d130ec9da846c4624c16137",
+        "97e295b63283935788fac5e4f8860862a56d4089538cafc93f0431f2ebe483bb",
+        151_936,
+        5_120,
+        25_600,
+        64,
+        64,
+        8,
+        128,
+        1.0f-6,
+        1.0f6,
+        40_960,
+        false,
+    ),
+)
+
+"""Return the frozen Week 11 specifications for all six official Qwen3 dense sizes."""
+qwen3_dense_specs() = _QWEN3_DENSE_SPECS
+
+function _qwen3_variant_key(value)
+    if value isa Symbol
+        any(spec -> spec.variant === value, _QWEN3_DENSE_SPECS) && return value
+    end
+    text = lowercase(String(value))
+    text = replace(text, "qwen/" => "", "qwen3-" => "", "." => "_", "-" => "_")
+    startswith(text, "qwen3_") && (text = text[7:end])
+    return Symbol("qwen3_" * text)
+end
+
+"""
+    qwen3_dense_spec(variant)
+
+Look up an official dense-family specification by canonical symbol, model id,
+or short size such as `"4B"`.
+"""
+function qwen3_dense_spec(variant::Union{Symbol,AbstractString})
+    key = _qwen3_variant_key(variant)
+    for spec in _QWEN3_DENSE_SPECS
+        spec.variant === key && return spec
+    end
+    supported = join((String(spec.variant) for spec in _QWEN3_DENSE_SPECS), ", ")
+    throw(ArgumentError(
+        "unknown Qwen3 dense variant $(repr(variant)); supported variants: $supported",
+    ))
+end
+
+function _qwen3_dense_spec(
+    vocab_size,
+    d_model,
+    mlp_hidden_dim,
+    num_layers,
+    num_heads,
+    num_kv_heads,
+    head_dim,
+    rms_norm_epsilon,
+    rope_theta,
+    max_position_embeddings,
+    tie_embeddings,
+)
+    for spec in _QWEN3_DENSE_SPECS
+        values = (
+            spec.vocab_size,
+            spec.d_model,
+            spec.mlp_hidden_dim,
+            spec.num_layers,
+            spec.num_heads,
+            spec.num_kv_heads,
+            spec.head_dim,
+            spec.rms_norm_epsilon,
+            spec.rope_theta,
+            spec.max_position_embeddings,
+            spec.tie_embeddings,
+        )
+        values == (
+            vocab_size,
+            d_model,
+            mlp_hidden_dim,
+            num_layers,
+            num_heads,
+            num_kv_heads,
+            head_dim,
+            Float32(rms_norm_epsilon),
+            Float32(rope_theta),
+            max_position_embeddings,
+            tie_embeddings,
+        ) && return spec
+    end
+    return nothing
+end
+
+"""
+    qwen3_dense_parameter_count(spec)
+
+Return the exact number of trainable scalar parameters implied by an official
+Qwen3 dense specification, including an untied LM head when present.
+"""
+function qwen3_dense_parameter_count(spec::Qwen3DenseSpec)
+    query_dim = spec.num_heads * spec.head_dim
+    kv_dim = spec.num_kv_heads * spec.head_dim
+    embedding = spec.vocab_size * spec.d_model
+    attention = 2 * query_dim * spec.d_model +
+        2 * kv_dim * spec.d_model +
+        2 * spec.head_dim
+    mlp = 3 * spec.d_model * spec.mlp_hidden_dim
+    norms = 2 * spec.d_model
+    final_norm = spec.d_model
+    lm_head = spec.tie_embeddings ? 0 : embedding
+    return embedding +
+        spec.num_layers * (attention + mlp + norms) +
+        final_norm +
+        lm_head
+end
+
 function _json_object(path::AbstractString)
     isfile(path) || throw(ArgumentError("JSON file does not exist: $path"))
     value = try
@@ -35,14 +262,18 @@ function _required_bool(object, name::AbstractString, path::AbstractString)
 end
 
 """
-    load_hf_qwen3_config(path; max_seq_len=nothing)
+    load_hf_qwen3_config(path; max_seq_len=nothing, variant=nothing)
 
 Parse and validate a HuggingFace Qwen3 dense `config.json`, returning the
-version-stable `NamedTuple` accepted by `GPTModel(config)`.
+version-stable `NamedTuple` accepted by `GPTModel(config)`. When `variant` is
+provided, all architecture-defining fields must exactly match that frozen
+official dense-family member. Without it, compatible custom dense configs
+remain supported and `qwen3_variant` is `nothing`.
 """
 function load_hf_qwen3_config(
     path::AbstractString;
     max_seq_len=nothing,
+    variant=nothing,
 )
     config = _json_object(path)
 
@@ -122,6 +353,26 @@ function load_hf_qwen3_config(
         "`rope_theta` must be positive in $path",
     ))
     tie_embeddings = _required_bool(config, "tie_word_embeddings", path)
+    dense_spec = _qwen3_dense_spec(
+        vocab_size,
+        d_model,
+        mlp_hidden_dim,
+        num_layers,
+        num_heads,
+        num_kv_heads,
+        head_dim,
+        rms_norm_eps,
+        rope_theta,
+        max_positions,
+        tie_embeddings,
+    )
+    if variant !== nothing
+        expected = qwen3_dense_spec(variant)
+        dense_spec === expected || throw(ArgumentError(
+            "Qwen3 config in $path does not match requested variant " *
+            "$(expected.variant)",
+        ))
+    end
 
     return (;
         vocab_size,
@@ -143,6 +394,8 @@ function load_hf_qwen3_config(
         norm_type=:rmsnorm,
         mlp_type=:swiglu,
         tie_embeddings,
+        source_max_seq_len=max_positions,
+        qwen3_variant=dense_spec === nothing ? nothing : dense_spec.variant,
     )
 end
 
@@ -613,20 +866,28 @@ function hf_token_ids(ids::AbstractArray{T}; vocab_size=nothing) where {T<:Integ
 end
 
 """
-    load_hf_qwen3_model(model_dir; max_seq_len=2048, weight_dtype=Float32)
+    load_hf_qwen3_model(
+        model_dir;
+        max_seq_len=2048,
+        weight_dtype=Float32,
+        variant=nothing,
+    )
 
 Load a local HuggingFace Qwen3 dense model directory into a `GPTModel`, Lux
 parameter tree, and Lux state tree. This function never downloads files.
+Pass `variant` to require an exact official Week 11 dense-family shape.
 """
 function load_hf_qwen3_model(
     model_dir::AbstractString;
     max_seq_len=2048,
     weight_dtype::Type=Float32,
+    variant=nothing,
 )
     isdir(model_dir) || throw(ArgumentError("model directory does not exist: $model_dir"))
     config = load_hf_qwen3_config(
         joinpath(model_dir, "config.json");
         max_seq_len,
+        variant,
     )
     model = GPTModel(config)
     tensors = load_safetensors(model_dir; target_dtype=weight_dtype)
@@ -638,11 +899,26 @@ function load_hf_qwen3_model(
     empty!(tensors)
     GC.gc(false)
     states = Lux.initialstates(Xoshiro(0), model)
-    return (; model, parameters, states, config, source=abspath(model_dir))
+    dense_spec = config.qwen3_variant === nothing ?
+        nothing : qwen3_dense_spec(config.qwen3_variant)
+    return (;
+        model,
+        parameters,
+        states,
+        config,
+        variant=dense_spec,
+        source=abspath(model_dir),
+    )
 end
 
 """
-    load_hf_qwen3_bundle(model_dir; max_seq_len=2048, revision="", ...)
+    load_hf_qwen3_bundle(
+        model_dir;
+        max_seq_len=2048,
+        revision="",
+        variant=nothing,
+        ...,
+    )
 
 Load a local Qwen3 model and its exact HuggingFace tokenizer files as one
 text-generation bundle. The tokenizer may define fewer ids than the padded
@@ -653,9 +929,15 @@ function load_hf_qwen3_bundle(
     max_seq_len=2048,
     weight_dtype::Type=Float32,
     revision::AbstractString="",
+    variant=nothing,
 )
     tokenizer = load_hf_qwen3_tokenizer(model_dir; revision)
-    loaded = load_hf_qwen3_model(model_dir; max_seq_len, weight_dtype)
+    loaded = load_hf_qwen3_model(
+        model_dir;
+        max_seq_len,
+        weight_dtype,
+        variant,
+    )
     vocab_size(tokenizer) <= loaded.model.vocab_size || throw(ArgumentError(
         "tokenizer vocabulary exceeds the Qwen3 model embedding vocabulary",
     ))

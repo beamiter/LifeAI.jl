@@ -71,6 +71,10 @@ end
     include("test_week10.jl")
 end
 
+@testset "Week 11 Qwen3 dense family completion" begin
+    include("test_week11.jl")
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA KV cache" begin
         include("test_xla_kv_cache.jl")
@@ -79,5 +83,6 @@ if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
         include("test_week07_xla.jl")
         include("test_week08_xla.jl")
         include("test_week10_xla.jl")
+        include("test_week11_xla.jl")
     end
 end

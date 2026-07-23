@@ -1,9 +1,27 @@
 # Qwen3 HF config.json ↔ LifeAI.jl gpt_config 映射契约
 
-> 状态：Week 06 冻结输入契约；Week 07 已实现并通过真实 Qwen3-0.6B 数值验证。
+> 状态：Week 06 冻结输入契约；Week 07 已实现并通过真实 Qwen3-0.6B 数值验证；Week 11 已冻结并离线覆盖六个官方 dense 尺寸。
 >
 > 参照对象：HuggingFace `Qwen/Qwen3-0.6B` 的 `config.json`（`Qwen3ForCausalLM` /
 > `model_type: qwen3`）。字段值以 0.6B 为例，规则适用于全部 Qwen3 dense 型号。
+
+## Week 11 官方 dense family 规格
+
+| variant | hidden / Q width | MLP | layers | Q / KV heads | tied | 参数量 |
+| --- | ---: | ---: | ---: | ---: | --- | ---: |
+| 0.6B | 1,024 / 2,048 | 3,072 | 28 | 16 / 8 | 是 | 596,049,920 |
+| 1.7B | 2,048 / 2,048 | 6,144 | 28 | 16 / 8 | 是 | 1,720,574,976 |
+| 4B | 2,560 / 4,096 | 9,728 | 36 | 32 / 8 | 是 | 4,022,468,096 |
+| 8B | 4,096 / 4,096 | 12,288 | 36 | 32 / 8 | 否 | 8,190,735,360 |
+| 14B | 5,120 / 5,120 | 17,408 | 40 | 40 / 8 | 否 | 14,768,307,200 |
+| 32B | 5,120 / 8,192 | 25,600 | 64 | 64 / 8 | 否 | 32,762,123,264 |
+
+`Q width = num_attention_heads * head_dim`。0.6B、4B、32B 证明 attention
+内部宽度不能从 residual hidden size 推导；8B+ 则覆盖独立 `lm_head.weight`。
+六个冻结 config 的 `head_dim=128`、`num_key_value_heads=8`、
+`max_position_embeddings=40960`。公开 API `qwen3_dense_specs()` 保存各模型
+immutable revision 与 config SHA256；默认测试使用
+`test/fixtures/week11_qwen3_dense_family/specs.json`，不联网。
 
 ## 结构字段映射
 

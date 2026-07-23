@@ -105,6 +105,16 @@ function LuxCore.initialparameters(rng::AbstractRNG, attn::MultiHeadAttention)
     ))
 end
 
+function LuxCore.parameterlength(attn::MultiHeadAttention)
+    projection_count =
+        LuxCore.parameterlength(attn.q_proj) +
+        LuxCore.parameterlength(attn.k_proj) +
+        LuxCore.parameterlength(attn.v_proj) +
+        LuxCore.parameterlength(attn.o_proj)
+    qk_norm_count = attn.use_qk_norm ? 2 * attn.head_dim : 0
+    return projection_count + qk_norm_count
+end
+
 """
     _apply_qk_norm(x, scale, epsilon)
 

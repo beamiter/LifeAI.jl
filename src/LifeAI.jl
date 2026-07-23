@@ -22,6 +22,8 @@ export split_token_stream, split_text_stream, train_validation_loaders
 export TextDocument, load_text_documents, split_documents, build_document_dataset
 export DATASET_ARTIFACT_VERSION, save_dataset_artifact, load_dataset_artifact
 export GPTModel, TiedOutputProjection, gpt_config
+export Qwen3DenseSpec, qwen3_dense_specs, qwen3_dense_spec
+export qwen3_dense_parameter_count
 export load_hf_qwen3_config, load_safetensors, load_hf_qwen3_parameters
 export load_hf_qwen3_model, hf_token_ids, hf_qwen3_forward_trace
 export load_hf_qwen3_bundle, generate_hf_text

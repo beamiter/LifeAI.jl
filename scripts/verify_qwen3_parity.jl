@@ -1,6 +1,7 @@
 #!/usr/bin/env julia
 
 using JSON3
+using Lux
 using Statistics: mean
 using LifeAI
 
@@ -39,6 +40,16 @@ function report(name, actual, expected)
 end
 
 println("model_revision\t", metadata["revision"])
+println(
+    "dense_variant\t",
+    loaded.variant === nothing ? "custom" : String(loaded.variant.variant),
+)
+println(
+    "parameter_count\t",
+    loaded.variant === nothing ?
+        Lux.parameterlength(loaded.model) :
+        qwen3_dense_parameter_count(loaded.variant),
+)
 println("transformers_version\t", metadata["transformers_version"])
 println("torch_version\t", metadata["torch_version"])
 println("load_seconds\t", loaded_timing.time)
