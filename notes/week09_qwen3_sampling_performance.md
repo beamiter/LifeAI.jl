@@ -1,18 +1,22 @@
 # Week 09 — Qwen3 Sampling Fidelity and Real Inference Performance
 
-> 状态：Open
+> 状态：Closed
 >
 > 开启记录：2026-07-22
+>
+> 关闭记录：2026-07-23
 >
 > 依赖基线：[`Week 08 — HuggingFace Qwen3 Tokenizer and Text-to-Text Parity`](week08_hf_tokenizer_text_parity.md) 已 Closed。
 >
 > 近期主线：继续复现经典/SOTA 模型与论文，以可定位的数值验证和可重复的性能实验积累 LifeAI.jl 的模型组建、推理与框架能力。
 
-## Open：核心问题
+## 核心问题与结论
 
 > 在 Week 06—08 已完成 Qwen3-0.6B 结构、权重、tokenizer 与 greedy text-to-text parity 后，能否进一步严格复现官方实际推荐的 temperature → top-k → top-p 采样语义，并以长位置 correctness 和真实模型 benchmark 回答“结果是否对、代价是多少、瓶颈在哪里”？
 
 Qwen3 官方 `generation_config.json` 默认启用采样，而不是 greedy：thinking 模式使用 `temperature=0.6`、`top_k=20`、`top_p=0.95`。Week 08 的 greedy 对齐适合隔离模型数值正确性，但不能代替真实推荐生成路径。Week 09 因此把验收推进到三层：过滤后的候选 mask / logits / probabilities、固定随机流下的逐 token 结果、真实 Qwen3-0.6B 的 prefill/decode 时间与 cache 内存。
+
+结论是可以：16-step 官方 sampled reference 的 token、候选集合、停止状态和文本完全一致；position 40,959 的 Qwen3 rotate-half RoPE 已由 Transformers 4.51.0 独立 fixture 验证；CPU、CUDA 与 Reactant-XLA GPU 均完成真实 0.6B correctness/benchmark。所有结果继续遵守 BF16 storage → Float32 compute 边界，不宣称 native BF16 已验证。
 
 ## 已确认的执行边界
 
@@ -64,11 +68,11 @@ replayed = generate_hf_text(
 | top-p 采样核心 | 模型 / 工程 | temperature/top-k/top-p 分布与显式 uniform categorical | 手算 fixture、top-k tie、top-p 边界、非法输入测试 | 已完成 |
 | 三路 sampled generation | 模型 / 工程 | full/dynamic/static 支持 `:sample` / `:config` 与采样 trace | 固定 uniforms 下三路 token 完全相同、概率和为 1 | 已完成（离线） |
 | HF sampled reference | 模型 / 学习 | Python exporter + Julia verifier，保存逐步 raw/filtered/probability reference | 固定 uniforms 下候选 mask 与 token 精确一致，数值在冻结容差内 | 已完成 |
-| 长位置 RoPE | 模型 / 工程 | position 0/2048/32767/40959 的 rotate-half fixture | 公式、范数、边界与 HF reference 对齐 | 已完成离线公式测试，待 HF fixture |
-| 真实 cache correctness matrix | 模型 / 工程 | 多 prompt length 的 full/dynamic/static logits 与 sampled token 对照 | 记录 max-abs、argmax/candidate/token、容差和首次分叉 | 已完成 CPU 16/64/256-token matrix |
+| 长位置 RoPE | 模型 / 工程 | position 0/2048/32767/40959 的 rotate-half fixture | 公式、范数、边界与 HF reference 对齐 | 已完成 |
+| 真实 cache correctness matrix | 模型 / 工程 | 多 prompt length 的 full/dynamic/static logits 与 sampled token 对照 | 记录 max-abs、argmax/candidate/token、容差和首次分叉 | 已完成 CPU/CUDA 16/64/256 与 XLA 16+2 |
 | Qwen3-0.6B CPU benchmark | 框架 / 工程 | load、prefill、decode、tok/s、RSS、理论/观测 cache bytes 原始记录 | 固定线程、warm-up、样本数和 prompt/decode 长度，可重复运行 | 已完成 |
-| 加速器可行性 | 框架 / 工程 | CUDA / Reactant-XLA 能力与失败边界记录 | 可用则给同步后 steady-state；不可用则记录硬件/编译阻塞，不伪造结果 | CUDA 设备已确认，真实 benchmark 待执行 |
-| 文档与复盘 | 学习 | 结论、瓶颈、失败、下一模型/论文选择标准 | 所有结论能指向命令、reference 或 benchmark 原始文件 | 进行中 |
+| 加速器可行性 | 框架 / 工程 | CUDA / Reactant-XLA 能力与失败边界记录 | 可用则给同步后 steady-state；不可用则记录硬件/编译阻塞，不伪造结果 | 已完成 |
+| 文档与复盘 | 学习 | 结论、瓶颈、失败、下一模型/论文选择标准 | 所有结论能指向命令、reference 或 benchmark 原始文件 | 已完成 |
 
 ## Close 条件
 
@@ -113,11 +117,19 @@ replayed = generate_hf_text(
 - CUDA.jl 报告 `functional=true`，设备为 NVIDIA GeForce RTX 5080、16.59 GB、compute capability 12.0、driver/runtime 13.3；`nvidia-smi` 在当前宿主接口下无法通信，因此后续 CUDA 结果必须以 CUDA.jl 同步执行和显存记录为准。
 - 完整默认测试 `4135 / 4135` 通过，其中 Week 09 离线专项 `46 / 46`，Week 03 benchmark contract 新增 3 项 raw-sample 测试；本次未重跑 XLA 专项，因为尚未新增 XLA sampling kernel 或真实加速器路径。
 
+### 2026-07-23：长位置 HF fixture、加速器实测与 Close
+
+- 新增独立 `export_qwen3_rope_reference.py`，直接调用 Transformers 4.51.0 的 `Qwen3RotaryEmbedding` 与 `apply_rotary_pos_emb`，冻结 position 0/2048/32767/40959 的 input/cos/sin/rotated 张量。reference 持久副本位于模型目录 `lifeai-references/week09-rope/`，仓库内保留同 checksum 的小型默认测试 fixture；长位置专项 `30 / 30` 通过。
+- RTX 5080 CUDA Float32 实测使用 16/64/256-token prompt、8 decode tokens、3 个 steady-state samples，并在每次模型调用后将 logits 物化到 host 同步。dynamic decode 为 `86.06 / 84.60 / 67.30 tok/s`，static 为 `81.55 / 82.17 / 81.99 tok/s`；256-token 时相对 full recompute 分别为 `9.27× / 11.29×`。三组 cache correctness 全通过，decode global max-abs `9.918213e-5`。
+- Reactant-XLA GPU 使用真实 0.6B、16-token prompt、2-token decode、3 samples 完成静态 cache 编译与执行。prefill/decode cold compile + first run 为 `64.745 / 24.771 s`，steady decode `137.89 tok/s`；相对 CPU Float32 reference 的 prefill/decode max-abs 为 `0.0160928 / 0.0115070`，在冻结的 `atol=2e-2, rtol=5e-3` 下通过，并且 prefill 与每个 decode step 的 argmax 全一致。XLA 初始化时建立 11.59 GiB BFC allocator，说明当前 Float32 路径的显存固定成本很高。
+- 加速器脚本统一记录设备、revision、load/transfer/setup、同步边界、raw samples、cache bytes 与 correctness。原始结果为 [`qwen3_0.6b_cuda.json`](../benchmark_results/week09/qwen3_0.6b_cuda.json) 和 [`qwen3_0.6b_xla_gpu.json`](../benchmark_results/week09/qwen3_0.6b_xla_gpu.json)，汇总见 [`benchmark_results/week09/summary.md`](../benchmark_results/week09/summary.md)。
+- 最终默认测试 `4156 / 4156`、真实 sampled integration `86 / 86`、显式 Reactant-XLA 专项 `52 / 52` 全部通过。默认 Week 09 专项由 `46` 项增至 `67` 项，新增的 21 项来自独立 HF RoPE fixture。
+
 ## Close 回顾
 
-- **完成了什么**：官方 sampled reference、固定 uniform replay、真实 16-step integration，以及 16/64/256-token CPU cache correctness/benchmark 已完成；Week 尚未 Close。
-- **验证证据**：sampled integration 86 / 86；默认测试 4135 / 4135；benchmark 原始 JSON、summary、revision 与 checksum 均已记录。
-- **没有完成及原因**：position 40,959 尚缺独立 Transformers RoPE fixture；RTX 5080 已由 CUDA.jl 确认可用，但真实 Qwen3 CUDA benchmark 尚未执行，Reactant-XLA 真实 0.6B 可行性也需单独评估。
-- **最重要的认知变化**：Week 08 的 greedy 是强 correctness probe，但官方推荐路径是 sampling；“logits 对齐”必须继续推进到 logits processor 和概率分布，才能覆盖真实使用方式。
-- **是否满足 Close 条件**：否，Week 09 保持 Open。
-- **带到下一 Week 的问题**：待 Close 后决定 native BF16/量化性能专项、Qwen3 MoE，或切换到下一篇经典模型论文复现。
+- **完成了什么**：官方 generation config 与 temperature→top-k→top-p 采样、固定 uniform 跨框架 replay、16-step HF sampled parity、40,959 长位置 HF RoPE reference，以及真实 0.6B CPU/CUDA/XLA cache correctness 和性能基线均已完成。
+- **验证证据**：默认测试 `4156 / 4156`；sampled integration `86 / 86`；Reactant-XLA 专项 `52 / 52`；CPU/CUDA/XLA 原始 JSON、revision、fixture 和 checksum 均已记录。
+- **没有完成及原因**：没有 Week 09 Close 阻塞项。native BF16、量化、完整 40K 真实模型 dense forward、其他尺寸与 MoE 从一开始就不属于本 Week 范围，不能从本次 Float32 结果外推。
+- **最重要的认知变化**：greedy logits parity 只是强 correctness probe；真实复现必须继续覆盖 logits processor、概率分布、随机流和停止语义。性能上，CUDA eager 仍明显受逐 token host materialization 与 full-vocabulary projection 影响；XLA steady-state 很快，但 cold compile 与 11.59 GiB allocator 是不可忽略的成本。
+- **是否满足 Close 条件**：是。所有预先定义的 Close 条件均有代码、fixture、测试或原始 benchmark 证据，Week 09 于 2026-07-23 Closed。
+- **带到下一 Week 的问题**：在近期“持续复现经典/SOTA 模型和论文”的主线下，下一步可在 native BF16/量化性能专项、Qwen3 MoE，或另一类经典架构复现之间选择；尚未自动 Open Week 10。

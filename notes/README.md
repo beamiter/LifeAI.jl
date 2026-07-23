@@ -14,7 +14,7 @@
 - [`week06_gqa_qwen3_parity.md`](week06_gqa_qwen3_parity.md)：Week 06（Closed），GQA、QK-Norm 与 Qwen3 dense 结构 parity，Qwen3 复现三阶段计划第一步。
 - [`week07_hf_weight_loading.md`](week07_hf_weight_loading.md)：Week 07（Closed），safetensors / BF16 权重加载、HF config 映射与 Qwen3-0.6B logits / KV-cache 对齐。
 - [`week08_hf_tokenizer_text_parity.md`](week08_hf_tokenizer_text_parity.md)：Week 08（Closed），HuggingFace Qwen3 tokenizer 导入、基础 chat template 与 text→text greedy generation parity，Qwen3 三阶段复现闭环。
-- [`week09_qwen3_sampling_performance.md`](week09_qwen3_sampling_performance.md)：Week 09（Open），Qwen3 官方 temperature/top-k/top-p 采样 fidelity、长位置 correctness 与真实推理性能基线。
+- [`week09_qwen3_sampling_performance.md`](week09_qwen3_sampling_performance.md)：Week 09（Closed），Qwen3 官方 temperature/top-k/top-p 采样 fidelity、40,959 长位置 HF RoPE reference 与真实 CPU/CUDA/XLA 推理基线。
 - [`qwen3_hf_config_mapping.md`](qwen3_hf_config_mapping.md)：Qwen3 HF `config.json` 与 `gpt_config` 的字段、权重名与布局映射契约（Week 07 已实现并验证）。
 - [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
 - [`monthly/`](monthly/)：月度总结和跨周能力变化。

@@ -1,0 +1,77 @@
+{
+    "schema_version": 1,
+    "recorded_at": "2026-07-23T17:07:09.382",
+    "backend": "xla_gpu",
+    "model_source": "/home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca",
+    "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+    "julia_version": "1.12.6",
+    "cpu_model": "Intel(R) Core(TM) Ultra 7 270K Plus",
+    "cpu_target": "arrowlake-s",
+    "logical_cpus": 24,
+    "julia_threads": 1,
+    "blas_threads": 12,
+    "samples": 3,
+    "synchronization": "materialize logits on host after every timed model call",
+    "dtype_contract": "BF16 safetensors storage -> Float32 parameters/compute",
+    "max_seq_len": 18,
+    "load_seconds": 11.838337314,
+    "rss_after_load_bytes": 6588375040,
+    "process_peak_rss_bytes": 7751835648,
+    "device": {
+        "name": "NVIDIA GeForce RTX 5080",
+        "capability": "12.0.0",
+        "driver_version": "13.3.0",
+        "runtime_version": "13.3.0",
+        "total_memory_bytes": 16587751424,
+        "free_memory_bytes_before_load": 15835332608
+    },
+    "setup": {
+        "decoder_setup_seconds": 2.182090327,
+        "free_memory_bytes_after_setup": 3372089344
+    },
+    "model": {
+        "vocab_size": 151936,
+        "d_model": 1024,
+        "num_layers": 28,
+        "num_heads": 16,
+        "num_kv_heads": 8,
+        "head_dim": 128
+    },
+    "results": [
+        {
+            "prompt_tokens": 16,
+            "decode_tokens": 2,
+            "correctness": {
+                "passed": true,
+                "prefill_max_abs": 0.016092777,
+                "decode_max_abs": 0.011507034,
+                "prefill_argmax_passed": true,
+                "decode_argmax_passed": true,
+                "atol": 0.02,
+                "rtol": 0.005
+            },
+            "setup_seconds": 2.182090327,
+            "compile_and_first_run": {
+                "prefill_seconds": 64.74495693,
+                "decode_seconds": 24.770788771
+            },
+            "steady": {
+                "prefill_seconds": 0.015025245,
+                "decode_seconds": 0.014504348,
+                "decode_tokens_per_second": 137.88968659604691,
+                "prefill_samples": [
+                    0.011487518,
+                    0.015233335,
+                    0.015025245
+                ],
+                "decode_samples": [
+                    0.018075014,
+                    0.014504348,
+                    0.013162274
+                ]
+            },
+            "executable_count": 2,
+            "theoretical_cache_bytes": 4128768
+        }
+    ]
+}

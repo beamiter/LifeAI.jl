@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：最小 GPT 的训练、生成、评估与版本化 Tokenizer 已形成；Qwen3-0.6B 的结构、权重、tokenizer 与 greedy text→text 已对齐，当前正把复现推进到官方采样语义、长位置 correctness 和真实推理性能。**
+**阶段判断：最小 GPT 的训练、生成、评估与版本化 Tokenizer 已形成；Qwen3-0.6B 的结构、权重、tokenizer、greedy/sampled text generation、长位置 RoPE 与 CPU/CUDA/XLA 推理基线均已完成可复现验证。**
 
-Week 01—08 均已 Closed；[`Week 09 — Qwen3 Sampling Fidelity and Real Inference Performance`](notes/week09_qwen3_sampling_performance.md) 已 Open。Week 08 完成结构→权重/logits→tokenizer/text 的 greedy 复现闭环，Week 09 继续验证官方 temperature/top-k/top-p 生成路径、长位置 RoPE 和真实模型 cache 性能。
+Week 01—09 均已 Closed；[`Week 09 — Qwen3 Sampling Fidelity and Real Inference Performance`](notes/week09_qwen3_sampling_performance.md) 于 2026-07-23 完成官方 temperature/top-k/top-p 生成路径、position 40,959 独立 HF RoPE reference，以及真实模型 CPU/CUDA/XLA cache correctness 和性能记录。当前尚未 Open Week 10。
 
 目前已经具备：
 
@@ -37,6 +37,7 @@ Week 01—08 均已 Closed；[`Week 09 — Qwen3 Sampling Fidelity and Real Infe
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
 - 严格的 Qwen3 dense config 校验、BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
 - Qwen3-0.6B 逐层 hidden states、full logits、dynamic/static cache decode 的真实 HF reference parity；真实权重测试显式 opt-in，默认测试保持离线。
+- Qwen3-0.6B 的 16-step 官方 sampled reference parity、position 40,959 独立 Transformers RoPE fixture，以及 CPU/CUDA/Reactant-XLA GPU 真实推理 benchmark。
 - 严格的 Qwen3 HF tokenizer：NFC、目标 regex、ByteLevel、imported BPE、added/special tokens、artifact/checkpoint 与 provenance fingerprint。
 - 无 tools 的 Qwen3 基础 chat template，以及 full/dynamic/static/XLA 的真实 greedy text-generation parity。
 - 围绕 Attention、RoPE、prefill/decode 和 KV Cache 的 Pluto 可视化学习笔记。
@@ -44,7 +45,7 @@ Week 01—08 均已 Closed；[`Week 09 — Qwen3 Sampling Fidelity and Real Infe
 
 尚未具备：
 
-- Qwen3 sampled HF reference 与 CPU 基线已完成；长位置 HF fixture、CUDA/XLA 真实模型性能和 native BF16 仍在 Week 09/后续专项推进。
+- Qwen3 native BF16、量化、完整 40K 真实模型 dense forward、其他 dense 尺寸与 MoE；当前真实推理仍是 BF16 storage → Float32 parameters/compute。
 - 通用 Jinja、tools/tool-role chat template 与 agent tool loop；可用于真实任务的模型质量仍未评估。
 - 长短期记忆、规划、工具使用、反思等完整的 agent loop。
 - 视觉、听觉和传感器输入等多模态感知。

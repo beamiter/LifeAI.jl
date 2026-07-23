@@ -159,23 +159,62 @@ end
 end
 
 @testset "Qwen3 long-position rotate-half RoPE" begin
-    rope = RoPE(128; max_seq_len=40_960, theta=1_000_000.0, style=:rotate_half)
-    input = reshape(Float32.(range(-1, 1; length=128)), 128, 1, 1, 1)
+    fixture_dir = joinpath(@__DIR__, "fixtures", "week09_qwen3_rope")
+    reference = JSON3.read(read(joinpath(fixture_dir, "reference.json"), String))
+    tensors = load_safetensors(joinpath(fixture_dir, "reference.safetensors"))
+    positions = Int.(reference["positions_0_based"])
+    head_dim = Int(reference["head_dim"])
+    rope = RoPE(
+        head_dim;
+        max_seq_len=Int(reference["max_position_embeddings"]),
+        theta=Float64(reference["rope_theta"]),
+        style=:rotate_half,
+    )
+    input = tensors["input"]
+    expected_cos = tensors["cos"]
+    expected_sin = tensors["sin"]
+    expected_rotated = tensors["rotated"]
+
+    @test String(reference["revision"]) ==
+          "c1899de289a04d12100db370d81485cdf75e47ca"
+    @test String(reference["transformers_version"]) == "4.51.0"
+    @test String(reference["rope_style"]) == "rotate_half"
+    @test positions == [0, 2_048, 32_767, 40_959]
+    @test size(input) == (length(positions), head_dim)
+
+    for (column, position) in enumerate(positions)
+        actual = apply_rope(
+            reshape(input[column, :], head_dim, 1, 1, 1),
+            rope;
+            start_pos=position + 1,
+        )
+        @test vec(actual) ≈ expected_rotated[column, :] atol = 2.0f-5 rtol = 2.0f-5
+        @test rope.cos_cache[:, position + 1] ≈
+              expected_cos[column, 1:(head_dim ÷ 2)] atol = 2.0f-5 rtol = 2.0f-5
+        @test rope.sin_cache[:, position + 1] ≈
+              expected_sin[column, 1:(head_dim ÷ 2)] atol = 2.0f-5 rtol = 2.0f-5
+        @test sum(abs2, actual) ≈
+              sum(abs2, input[column, :]) atol = 1.0f-5 rtol = 1.0f-6
+    end
+
+    formula_input = reshape(Float32.(range(-1, 1; length=head_dim)), head_dim, 1, 1, 1)
     for start_pos in (1, 2_049, 32_768, 40_960)
-        actual = apply_rope(input, rope; start_pos)
-        expected = similar(input)
+        actual = apply_rope(formula_input, rope; start_pos)
+        expected = similar(formula_input)
         position = Float32(start_pos - 1)
-        for pair in 1:64
+        for pair in 1:(head_dim ÷ 2)
             angle = position * rope.inv_freq[pair]
-            first = input[pair, 1, 1, 1]
-            second = input[pair + 64, 1, 1, 1]
+            first = formula_input[pair, 1, 1, 1]
+            second = formula_input[pair + head_dim ÷ 2, 1, 1, 1]
             expected[pair, 1, 1, 1] = first * cos(angle) - second * sin(angle)
-            expected[pair + 64, 1, 1, 1] = first * sin(angle) + second * cos(angle)
+            expected[pair + head_dim ÷ 2, 1, 1, 1] =
+                first * sin(angle) + second * cos(angle)
         end
         @test actual ≈ expected atol = 1.0f-6 rtol = 1.0f-6
-        @test sum(abs2, actual) ≈ sum(abs2, input) atol = 1.0f-5 rtol = 1.0f-6
+        @test sum(abs2, actual) ≈
+              sum(abs2, formula_input) atol = 1.0f-5 rtol = 1.0f-6
     end
-    @test_throws AssertionError apply_rope(input, rope; start_pos=40_961)
+    @test_throws AssertionError apply_rope(formula_input, rope; start_pos=40_961)
 end
 
 @testset "sampled Qwen3 cache matrix with frozen uniforms" begin
