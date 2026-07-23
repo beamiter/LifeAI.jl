@@ -1,5 +1,6 @@
 using Lux
 using ConcreteStructs
+using Random: AbstractRNG
 
 """
     GPTModel(vocab_size, d_model, num_heads, num_layers; kwargs...)
@@ -23,8 +24,9 @@ Structure:
       -> language-model head
       -> logits
 
-When `use_rope=true`, position information is injected inside every attention
-layer, so no separate learned positional embedding is used.
+`position_embedding_type` selects RoPE, no position encoding, or a learned
+absolute position table. Learned positions are added once after token embedding
+and use the cache's absolute decode position.
 """
 @concrete struct GPTModel <: AbstractLuxContainerLayer{(
     :token_embedding,
@@ -33,6 +35,9 @@ layer, so no separate learned positional embedding is used.
     :lm_head,
 )}
     token_embedding
+    # Excluded from the automatic child tuple. Custom Lux initialization adds
+    # it only for learned-absolute models, preserving legacy parameter trees.
+    position_embedding
     blocks
     final_norm
     lm_head
@@ -43,12 +48,14 @@ layer, so no separate learned positional embedding is used.
     num_layers::Int
     max_seq_len::Int
     use_rope::Bool
+    position_embedding_type::Symbol
 
     # Keep every constructor option needed to reproduce the exact architecture.
     num_kv_heads::Int
     head_dim::Int
     mlp_hidden_dim::Int
     use_bias::Bool
+    lm_head_bias::Bool
     is_causal::Bool
     rope_theta::Float32
     rope_style::Symbol
@@ -70,8 +77,10 @@ function GPTModel(
     mlp_ratio=nothing,
     mlp_hidden_dim=nothing,
     use_bias::Bool=false,
+    lm_head_bias::Bool=use_bias,
     is_causal::Bool=true,
     use_rope::Bool=true,
+    position_embedding_type::Symbol=(use_rope ? :rope : :none),
     use_qk_norm::Bool=false,
     qk_norm_epsilon::Real=1.0f-6,
     max_seq_len::Int=2048,
@@ -93,6 +102,14 @@ function GPTModel(
     @assert qk_norm_epsilon > 0 "`qk_norm_epsilon` must be positive"
     _validate_norm_type(norm_type)
     _validate_mlp_type(mlp_type)
+    position_embedding_type in (:none, :rope, :learned_absolute) ||
+        throw(ArgumentError(
+            "`position_embedding_type` must be `:none`, `:rope`, or " *
+            "`:learned_absolute`; got $(repr(position_embedding_type))",
+        ))
+    (position_embedding_type === :rope) == use_rope || throw(ArgumentError(
+        "`use_rope` must be true exactly when `position_embedding_type=:rope`",
+    ))
 
     if mlp_ratio !== nothing
         @assert mlp_ratio > 0 "`mlp_ratio` must be positive"
@@ -114,6 +131,7 @@ function GPTModel(
     )
 
     token_embedding = Embedding(vocab_size => d_model)
+    position_embedding = Embedding(max_seq_len => d_model)
 
     blocks = Chain(ntuple(
         _ -> TransformerBlock(
@@ -141,13 +159,14 @@ function GPTModel(
     final_norm = _make_norm(d_model, norm_type, norm_epsilon)
 
     lm_head = if tie_embeddings
-        TiedOutputProjection(vocab_size, d_model; use_bias)
+        TiedOutputProjection(vocab_size, d_model; use_bias=lm_head_bias)
     else
-        Dense(d_model, vocab_size; use_bias)
+        Dense(d_model, vocab_size; use_bias=lm_head_bias)
     end
 
     return GPTModel(
         token_embedding,
+        position_embedding,
         blocks,
         final_norm,
         lm_head,
@@ -157,10 +176,12 @@ function GPTModel(
         num_layers,
         max_seq_len,
         use_rope,
+        position_embedding_type,
         num_kv_heads,
         resolved_head_dim,
         resolved_mlp_hidden_dim,
         use_bias,
+        lm_head_bias,
         is_causal,
         Float32(rope_theta),
         rope_style,
@@ -190,8 +211,10 @@ function gpt_config(model::GPTModel)
         head_dim=model.head_dim,
         mlp_hidden_dim=model.mlp_hidden_dim,
         use_bias=model.use_bias,
+        lm_head_bias=model.lm_head_bias,
         is_causal=model.is_causal,
         use_rope=model.use_rope,
+        position_embedding_type=model.position_embedding_type,
         use_qk_norm=model.use_qk_norm,
         qk_norm_epsilon=model.qk_norm_epsilon,
         max_seq_len=model.max_seq_len,
@@ -219,6 +242,10 @@ function GPTModel(config::NamedTuple)
     qk_norm_epsilon = hasproperty(config, :qk_norm_epsilon) ?
         config.qk_norm_epsilon : 1.0f-6
     rope_style = hasproperty(config, :rope_style) ? config.rope_style : :interleaved
+    position_embedding_type = hasproperty(config, :position_embedding_type) ?
+        config.position_embedding_type : (config.use_rope ? :rope : :none)
+    lm_head_bias = hasproperty(config, :lm_head_bias) ?
+        config.lm_head_bias : config.use_bias
 
     return GPTModel(
         config.vocab_size,
@@ -229,8 +256,10 @@ function GPTModel(config::NamedTuple)
         head_dim=config.head_dim,
         mlp_hidden_dim=config.mlp_hidden_dim,
         use_bias=config.use_bias,
+        lm_head_bias,
         is_causal=config.is_causal,
         use_rope=config.use_rope,
+        position_embedding_type,
         use_qk_norm,
         qk_norm_epsilon,
         max_seq_len=config.max_seq_len,
@@ -241,6 +270,52 @@ function GPTModel(config::NamedTuple)
         mlp_type,
         tie_embeddings,
     )
+end
+
+function LuxCore.initialparameters(rng::AbstractRNG, model::GPTModel)
+    base = (;
+        token_embedding=LuxCore.initialparameters(rng, model.token_embedding),
+        blocks=LuxCore.initialparameters(rng, model.blocks),
+        final_norm=LuxCore.initialparameters(rng, model.final_norm),
+        lm_head=LuxCore.initialparameters(rng, model.lm_head),
+    )
+    model.position_embedding_type === :learned_absolute || return base
+    return merge(base, (;
+        position_embedding=LuxCore.initialparameters(rng, model.position_embedding),
+    ))
+end
+
+function LuxCore.initialstates(rng::AbstractRNG, model::GPTModel)
+    return (;
+        token_embedding=LuxCore.initialstates(rng, model.token_embedding),
+        blocks=LuxCore.initialstates(rng, model.blocks),
+        final_norm=LuxCore.initialstates(rng, model.final_norm),
+        lm_head=LuxCore.initialstates(rng, model.lm_head),
+    )
+end
+
+function LuxCore.parameterlength(model::GPTModel)
+    count = LuxCore.parameterlength(model.token_embedding) +
+        LuxCore.parameterlength(model.blocks) +
+        LuxCore.parameterlength(model.final_norm) +
+        LuxCore.parameterlength(model.lm_head)
+    model.position_embedding_type === :learned_absolute &&
+        (count += LuxCore.parameterlength(model.position_embedding))
+    return count
+end
+
+function _add_position_embedding(model::GPTModel, x, ps, start_pos)
+    model.position_embedding_type === :learned_absolute || return x
+    seq_len = size(x, 2)
+    stop_pos = start_pos + seq_len - 1
+    position_values = ps.position_embedding.weight[:, start_pos:stop_pos]
+    return x .+ reshape(position_values, model.d_model, seq_len, 1)
+end
+
+function _add_single_position_embedding(model::GPTModel, x, ps, position)
+    model.position_embedding_type === :learned_absolute || return x
+    values = ps.position_embedding.weight[:, position]
+    return x .+ reshape(values, model.d_model, 1, 1)
 end
 
 function _project_logits(model::GPTModel, hidden, ps, st_lm_head::NamedTuple)
@@ -283,6 +358,7 @@ function (model::GPTModel)(tokens, ps, st::NamedTuple)
         ps.token_embedding,
         st.token_embedding,
     )
+    x = _add_position_embedding(model, x, ps, 1)
 
     x, st_blocks = model.blocks(x, ps.blocks, st.blocks)
     x, st_final_norm = model.final_norm(x, ps.final_norm, st.final_norm)

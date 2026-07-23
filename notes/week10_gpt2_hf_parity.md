@@ -1,8 +1,10 @@
 # Week 10 — GPT-2 Architecture, HuggingFace Weights and Text Parity
 
-> 状态：Open
+> 状态：Closed
 >
 > 开启记录：2026-07-23
+>
+> 关闭记录：2026-07-23
 >
 > 依赖基线：[`Week 09 — Qwen3 Sampling Fidelity and Real Inference Performance`](week09_qwen3_sampling_performance.md) 已 Closed。
 >
@@ -68,15 +70,15 @@ result = generate_hf_text(
 
 | 工作项 | 所属主线 | 交付物 | 验收方式 | 状态 |
 | --- | --- | --- | --- | --- |
-| 冻结 checkpoint 与论文契约 | 模型 / 学习 | model id、revision、文件清单/checksum、架构差异说明 | 与 HF config、Transformers 实现和 GPT-2 论文逐项核对 | 计划中 |
-| learned absolute position | 模型 / 工程 | token + position embedding、full/cache 绝对位置 | 手算 fixture；full/prefill/decode position 完全一致；越界失败 | 计划中 |
-| GPT-2 激活与 bias 契约 | 模型 / 工程 | GELU-New、LayerNorm eps、attention/MLP bias 配置 | 与 PyTorch 小张量 reference 对齐；legacy/Qwen 回归不变 | 计划中 |
-| GPT-2 config 与权重导入 | 模型 / 工程 | strict config parser、Conv1D split/transpose、tied LM head | missing/unexpected/shape/dtype/layout 错误 fail closed | 计划中 |
-| GPT-2 tokenizer | 数据 / 工程 | regex、byte-to-unicode、BPE、special token、decode | ASCII/Unicode/空白/控制字符 corpus 的 ids/spans/bytes 与 HF 一致 | 计划中 |
-| 逐层 HF reference | 模型 / 学习 | Python exporter + Julia verifier | embedding、12 blocks、final hidden、logits 在冻结容差内 | 计划中 |
-| KV cache 与 greedy parity | 模型 / 工程 | full/dynamic/static，按条件覆盖 XLA | 多 prompt 的逐步 logits/argmax/token/stop/text 一致 | 计划中 |
-| 真实性能基线 | 框架 / 工程 | 124M load/prefill/decode/cache 原始记录 | 固定 prompt、decode、同步边界和 samples；correctness 必须先通过 | 计划中 |
-| 文档与复盘 | 学习 | 架构映射、实验失败、结论与下一模型选择标准 | 所有结论可追溯到代码、reference、测试或原始数据 | 计划中 |
+| 冻结 checkpoint 与论文契约 | 模型 / 学习 | model id、revision、文件清单/checksum、架构差异说明 | 与 HF config、Transformers 实现和 GPT-2 论文逐项核对 | 已完成 |
+| learned absolute position | 模型 / 工程 | token + position embedding、full/cache 绝对位置 | 手算 fixture；full/prefill/decode position 完全一致；越界失败 | 已完成 |
+| GPT-2 激活与 bias 契约 | 模型 / 工程 | GELU-New、LayerNorm eps、attention/MLP bias 配置 | 与 PyTorch 小张量 reference 对齐；legacy/Qwen 回归不变 | 已完成 |
+| GPT-2 config 与权重导入 | 模型 / 工程 | strict config parser、Conv1D split/transpose、tied LM head | missing/unexpected/shape/dtype/layout 错误 fail closed | 已完成 |
+| GPT-2 tokenizer | 数据 / 工程 | regex、byte-to-unicode、BPE、special token、decode | ASCII/Unicode/空白/控制字符 corpus 的 ids/spans/bytes 与 HF 一致 | 已完成 |
+| 逐层 HF reference | 模型 / 学习 | Python exporter + Julia verifier | embedding、12 blocks、final hidden、logits 在冻结容差内 | 已完成 |
+| KV cache 与 greedy parity | 模型 / 工程 | full/dynamic/static，按条件覆盖 XLA | 多 prompt 的逐步 logits/argmax/token/stop/text 一致 | 已完成 |
+| 真实性能基线 | 框架 / 工程 | 124M load/prefill/decode/cache 原始记录 | 固定 prompt、decode、同步边界和 samples；correctness 必须先通过 | 已完成 |
+| 文档与复盘 | 学习 | 架构映射、实验失败、结论与下一模型选择标准 | 所有结论可追溯到代码、reference、测试或原始数据 | 已完成 |
 
 ## 推进顺序
 
@@ -141,11 +143,60 @@ CPU/CUDA/XLA 据实验证 + Close 复盘
 - 选择 GPT-2 124M 而不是立即扩大 Qwen3 尺寸：它能以较低下载/运行成本引入 learned absolute position、GELU-New、带 bias fused QKV Conv1D 和不同 byte-level BPE，能更直接检验多架构组装能力。
 - 本阶段先 Open 计划，尚未下载 GPT-2、冻结 revision、修改模型代码或生成 reference；计划项均保持“计划中”。
 
+### 2026-07-23：实现、验证与 Close
+
+- 冻结 `openai-community/gpt2` revision
+  `607a30d783dfa663caf39e06633721c8d4cfcd7e`，七个必要文件与 reference
+  均放在 `/home/yj/models/huggingface/openai-community/gpt2/<revision>/`；
+  完整 SHA256 见
+  [`benchmark_results/week10/summary.md`](../benchmark_results/week10/summary.md)。
+- `GPTModel` 新增显式 `position_embedding_type` 与独立 `lm_head_bias`；
+  learned position 只在目标模型的参数树中出现，legacy/Qwen 默认参数/state
+  tree 保持不变。full、dynamic、static 与 XLA decode 均使用同一绝对位置。
+- 新增精确 GELU-New。独立 PyTorch fixture 的五个输入对齐；实现过程中先后
+  暴露 CUDA fused Dense 不接受 host-style array broadcast、Reactant traced
+  scalar 不属于 `AbstractFloat` 两个后端边界，最终改为通用 scalar formula
+  加数组广播入口，CPU、CUDA、XLA 均通过。
+- 新增隔离的 GPT-2 config/weight/tokenizer adapter。HF fused
+  `c_attn (in, 3*out)` 显式按列 split Q/K/V 并 transpose；所有 Conv1D、
+  LayerNorm bias、position/token embedding、tied head 和 12 个 causal
+  buffers 都被完整校验，missing/unexpected/shape/revision/checksum 错误
+  fail closed。
+- Transformers Float32 parity：10 组 tokenizer corpus 全通过；embedding
+  max-abs `0`，12 blocks 最大 `4.8828125e-4`，final hidden
+  `7.05719e-5`，full logits `1.0681152e-4`。full/dynamic/static 的 8-step
+  greedy ids 与文本完全相同，step logits 最大 `1.2207031e-4`。
+- CPU 16/64/256 prompt dynamic decode 为
+  `58.71 / 55.76 / 33.86 tok/s`；CUDA dynamic 为
+  `352.13 / 339.24 / 269.92 tok/s`，CUDA static 为
+  `329.42 / 339.46 / 321.67 tok/s`。所有 correctness 先于计时通过，
+  cold/warm-up/steady samples、RSS/cache bytes 与同步口径保存在
+  [`benchmark_results/week10/`](../benchmark_results/week10/)。
+- 默认测试 `4193 / 4193` 通过；Week 10 真实 GPT-2 integration
+  `82 / 82` 通过；learned-position/GELU-New XLA 同构 smoke `4 / 4`
+  通过。真实 124M XLA 吞吐未执行，也未写成已验证。
+
 ## Close 回顾
 
-- **完成了什么**：待 Close 时填写。
-- **验证证据**：待 Close 时填写。
-- **没有完成及原因**：待 Close 时填写。
-- **最重要的认知变化**：待 Close 时填写。
-- **是否满足 Close 条件**：否，Week 10 刚刚 Open。
-- **带到下一 Week 的问题**：待 Close 时填写。
+- **完成了什么**：在共享 `GPTModel` 上加入 learned absolute position、
+  GELU-New 和更精确的 bias 契约；完成 GPT-2 124M 严格 config/权重/tokenizer
+  导入、逐层 HF parity、三类 cache greedy parity、CPU/CUDA 性能与 XLA
+  同构 smoke，没有复制一套孤立 GPT-2 runtime。
+- **验证证据**：默认/真实/XLA 测试分别为 `4193 / 4193`、`82 / 82`、
+  `4 / 4`；冻结 parity JSON `passed=true`，逐层误差、8-step logits、
+  CPU/CUDA 原始 samples 与 SHA256 均保存在
+  [`benchmark_results/week10/`](../benchmark_results/week10/)。
+- **没有完成及原因**：没有执行 WebText 从零训练、zero-shot 论文指标、
+  GPT-2 Medium/Large/XL 或真实 124M XLA 性能；它们属于训练/扩模/专项性能，
+  不是本 Week 官方 124M checkpoint 推理复现的范围。
+- **最重要的认知变化**：第二个架构证明共享 decoder 主干足以承载很不相同的
+  GPT 家族，真正高风险的差异集中在 position、激活、bias ownership、
+  历史权重布局和 tokenizer。后端兼容也要求激活函数以 scalar tracing
+  contract 编写，CPU 数值正确并不等于 CUDA/XLA 可编译。
+- **是否满足 Close 条件**：是。冻结资产、组件 fixture、严格 loader、
+  10 组 tokenizer、真实逐层/logits、三路 8-step generation、默认回归、
+  XLA smoke、三档 CPU/CUDA benchmark 与复盘全部完成。
+- **带到下一 Week 的问题**：近期仍以经典/SOTA 模型与论文复现为核心。下一
+  模型应优先选择能引入新共享能力的架构差异（例如 encoder-decoder、
+  state-space/linear attention、MoE 或视觉 Transformer），并继续使用
+  “冻结 reference → 逐组件/layout → 逐层 → cache/text → 性能”的验收顺序。

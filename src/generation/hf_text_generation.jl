@@ -83,7 +83,8 @@ end
 """
     generate_hf_text(bundle, prompt; cache=:dynamic, max_new_tokens=32, ...)
 
-Generate from a bundle returned by `load_hf_qwen3_bundle`. `strategy=:config`
+Generate from a bundle returned by `load_hf_qwen3_bundle` or
+`load_hf_gpt2_bundle`. `strategy=:config`
 uses the validated official sampling settings; `sample_uniforms` can freeze the
 categorical draws independently of the Julia/PyTorch RNG implementation. The
 result contains prompt/new/all token ids, decoded text, stop reason, and a
@@ -115,8 +116,8 @@ function generate_hf_text(
     ))
     model = bundle.model
     tokenizer = bundle.tokenizer
-    tokenizer isa HFQwen3Tokenizer || throw(ArgumentError(
-        "generate_hf_text requires an HFQwen3Tokenizer bundle",
+    tokenizer isa Union{HFQwen3Tokenizer,HFGPT2Tokenizer} || throw(ArgumentError(
+        "generate_hf_text requires an imported HuggingFace tokenizer bundle",
     ))
     generation_config = hasproperty(bundle, :generation_config) ?
         bundle.generation_config : hf_generation_config(tokenizer)

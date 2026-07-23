@@ -1,0 +1,184 @@
+{
+    "schema_version": 1,
+    "model_id": "openai-community/gpt2",
+    "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+    "model_source": "/home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e",
+    "reference_source": "/home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e/lifeai_week10_reference",
+    "transformers_versions": {
+        "python": "3.12.13",
+        "torch": "2.7.1+cpu",
+        "transformers": "4.51.0",
+        "tokenizers": "0.21.4",
+        "safetensors": "0.5.3"
+    },
+    "tokenizer": {
+        "passed": true,
+        "case_count": 10,
+        "cases": [
+            {
+                "text": "Hello, world!",
+                "ids_passed": true,
+                "decoded_passed": true,
+                "decoded_skip_special_passed": true,
+                "bytes_passed": true,
+                "spans_passed": true
+            },
+            {
+                "text": "Hello, 世界",
+                "ids_passed": true,
+                "decoded_passed": true,
+                "decoded_skip_special_passed": true,
+                "bytes_passed": true,
+                "spans_passed": true
+            },
+            {
+                "text": "  multiple   spaces",
+                "ids_passed": true,
+                "decoded_passed": true,
+                "decoded_skip_special_passed": true,
+                "bytes_passed": true,
+                "spans_passed": true
+            },
+            {
+                "text": "line one\nline two\r\n",
+                "ids_passed": true,
+                "decoded_passed": true,
+                "decoded_skip_special_passed": true,
+                "bytes_passed": true,
+                "spans_passed": true
+            },
+            {
+                "text": "\tindent\u0000\u0001",
+                "ids_passed": true,
+                "decoded_passed": true,
+                "decoded_skip_special_passed": true,
+                "bytes_passed": true,
+                "spans_passed": true
+            },
+            {
+                "text": "café naïve",
+                "ids_passed": true,
+                "decoded_passed": true,
+                "decoded_skip_special_passed": true,
+                "bytes_passed": true,
+                "spans_passed": true
+            },
+            {
+                "text": "emoji: 🧬🚀",
+                "ids_passed": true,
+                "decoded_passed": true,
+                "decoded_skip_special_passed": true,
+                "bytes_passed": true,
+                "spans_passed": true
+            },
+            {
+                "text": "can't I'll we've",
+                "ids_passed": true,
+                "decoded_passed": true,
+                "decoded_skip_special_passed": true,
+                "bytes_passed": true,
+                "spans_passed": true
+            },
+            {
+                "text": " trailing   ",
+                "ids_passed": true,
+                "decoded_passed": true,
+                "decoded_skip_special_passed": true,
+                "bytes_passed": true,
+                "spans_passed": true
+            },
+            {
+                "text": "<|endoftext|>",
+                "ids_passed": true,
+                "decoded_passed": true,
+                "decoded_skip_special_passed": true,
+                "bytes_passed": true,
+                "spans_passed": true
+            }
+        ]
+    },
+    "forward": {
+        "passed": true,
+        "embedding_max_abs": 0,
+        "block_max_abs": [
+            4.5776367e-5,
+            0.00012207031,
+            0.00048828125,
+            6.1035156e-5,
+            0.00024414062,
+            0.00024414062,
+            0.00024414062,
+            0.00024414062,
+            0.00024414062,
+            0.00024414062,
+            0.00024414062,
+            0.00045776367
+        ],
+        "final_hidden_max_abs": 7.05719e-5,
+        "logits_max_abs": 0.00010681152,
+        "tolerance": {
+            "embedding": 0,
+            "block": 0.0005,
+            "final_hidden": 0.0001,
+            "logits": 0.00015
+        }
+    },
+    "generation": {
+        "passed": true,
+        "steps": 8,
+        "modes": [
+            {
+                "mode": "full",
+                "ids_passed": true,
+                "completion_passed": true,
+                "text_passed": true,
+                "step_max_abs": 0.00012207031,
+                "step_errors": [
+                    0.00010681152,
+                    0.00012207031,
+                    9.1552734e-5,
+                    0.00010681152,
+                    0.00011444092,
+                    0.00010681152,
+                    7.6293945e-5,
+                    9.918213e-5
+                ]
+            },
+            {
+                "mode": "dynamic",
+                "ids_passed": true,
+                "completion_passed": true,
+                "text_passed": true,
+                "step_max_abs": 0.00012207031,
+                "step_errors": [
+                    0.00010681152,
+                    0.00012207031,
+                    9.1552734e-5,
+                    0.00012207031,
+                    9.1552734e-5,
+                    0.00010681152,
+                    5.340576e-5,
+                    0.00010681152
+                ]
+            },
+            {
+                "mode": "static",
+                "ids_passed": true,
+                "completion_passed": true,
+                "text_passed": true,
+                "step_max_abs": 0.00012207031,
+                "step_errors": [
+                    0.00010681152,
+                    0.00012207031,
+                    0.00010681152,
+                    0.00010681152,
+                    9.918213e-5,
+                    9.1552734e-5,
+                    5.722046e-5,
+                    0.00010681152
+                ]
+            }
+        ]
+    },
+    "passed": true
+}

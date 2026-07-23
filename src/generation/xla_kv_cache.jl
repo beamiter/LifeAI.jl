@@ -481,6 +481,7 @@ function _static_gpt_prefill_kernel!(
         ps.token_embedding,
         st.token_embedding,
     )
+    x = _add_position_embedding(model, x, ps, 1)
 
     x, st_blocks_tuple, layer_caches = _static_blocks_prefill!(
         _model_blocks(model),
@@ -521,6 +522,12 @@ function _static_gpt_decode_kernel!(
         tokens,
         ps.token_embedding,
         st.token_embedding,
+    )
+    x = _add_single_position_embedding(
+        model,
+        x,
+        ps,
+        cache.position + one(cache.position),
     )
 
     x, st_blocks_tuple, layer_caches = _static_blocks_decode!(

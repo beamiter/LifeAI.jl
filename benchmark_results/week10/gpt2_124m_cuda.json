@@ -1,0 +1,287 @@
+{
+    "schema_version": 1,
+    "recorded_at": "2026-07-23T21:31:50.082",
+    "backend": "cuda",
+    "model_id": "openai-community/gpt2",
+    "model_source": "/home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e",
+    "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+    "file_checksums": {
+        "config_json": "0daed7749b4f02b8f76240d5444551d7b08712dab4d0adb8239c56ba823bb7b4",
+        "generation_config_json": "ed0b32ac72c0f5f44a719abb2d7786ea5146c871f83717b7f2018065954de02b",
+        "tokenizer_json": "8414cab924d8b9b33013f0d221c5862f365ee9be39c5c2bfae8a5a9e970478a6",
+        "tokenizer_config_json": "5e04eb606e3a1583530a42e36c2a6b6615c86f34fe77e44d9ddeb43ff940931f",
+        "vocab_json": "196139668be63f3b5d6574427317ae82f612a97c5d1cdaf36ed2256dbf636783",
+        "merges_txt": "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5",
+        "model_safetensors": "248dfc3911869ec493c76e65bf2fcf7f615828b0254c12b473182f0f81d3a707"
+    },
+    "julia_version": "1.12.6",
+    "julia_threads": 1,
+    "blas_threads": 12,
+    "samples": 3,
+    "synchronization": "Every timed model call materializes the last logits on the host through the shared benchmark harness; CUDA synchronization is therefore inside the measured inference boundary.",
+    "dtype_contract": "F32 safetensors storage -> Float32 parameters/compute",
+    "max_seq_len": 264,
+    "load_seconds": 6.777958427,
+    "rss_after_load_bytes": 4174577664,
+    "process_peak_rss_bytes": 4459855872,
+    "device": {
+        "name": "NVIDIA GeForce RTX 5080",
+        "capability": "12.0.0",
+        "driver_version": "13.3.0",
+        "runtime_version": "13.3.0",
+        "total_memory_bytes": 16587751424,
+        "free_memory_bytes_before_load": 15765340160
+    },
+    "setup": {
+        "parameter_transfer_seconds": 2.585170658,
+        "used_memory_bytes_after_transfer": 495424512,
+        "cached_memory_bytes_after_transfer": 503316480,
+        "free_memory_bytes_after_transfer": 15261958144
+    },
+    "model": {
+        "parameter_count": 124439808,
+        "vocab_size": 50257,
+        "d_model": 768,
+        "num_layers": 12,
+        "num_heads": 12,
+        "head_dim": 64,
+        "position_embedding_type": "learned_absolute",
+        "mlp_type": "gelu_new"
+    },
+    "results": [
+        {
+            "prompt_tokens": 16,
+            "decode_tokens": 8,
+            "correctness": {
+                "passed": true,
+                "dynamic_prefill_max_abs": 0,
+                "static_prefill_max_abs": 0,
+                "dynamic_decode_max_abs": 0.00033569336,
+                "static_decode_max_abs": 0.000289917
+            },
+            "eager": {
+                "warmup_prefill_seconds": 0.020599711,
+                "warmup_decode_seconds": 0.055564067,
+                "steady_prefill_seconds": 0.003924743,
+                "steady_decode_seconds": 0.049856282,
+                "steady_decode_tokens_per_second": 160.46122332186744,
+                "samples": [
+                    {
+                        "prefill_seconds": 0.003974696,
+                        "decode_seconds": 0.051345765
+                    },
+                    {
+                        "prefill_seconds": 0.003924743,
+                        "decode_seconds": 0.049856282
+                    },
+                    {
+                        "prefill_seconds": 0.003853449,
+                        "decode_seconds": 0.049734547
+                    }
+                ]
+            },
+            "dynamic": {
+                "warmup_prefill_seconds": 0.003904785,
+                "warmup_decode_seconds": 0.023042483,
+                "steady_prefill_seconds": 0.00383871,
+                "steady_decode_seconds": 0.022719151,
+                "steady_decode_tokens_per_second": 352.12583427963483,
+                "samples": [
+                    {
+                        "prefill_seconds": 0.003977318,
+                        "decode_seconds": 0.022624593
+                    },
+                    {
+                        "prefill_seconds": 0.00383871,
+                        "decode_seconds": 0.024029996
+                    },
+                    {
+                        "prefill_seconds": 0.003812482,
+                        "decode_seconds": 0.022719151
+                    }
+                ],
+                "theoretical_cache_bytes": 1769472,
+                "observed_summarysize": 4280
+            },
+            "static": {
+                "warmup_prefill_seconds": 0.003783262,
+                "warmup_decode_seconds": 0.0221331,
+                "steady_prefill_seconds": 0.00385804,
+                "steady_decode_seconds": 0.024285465,
+                "steady_decode_tokens_per_second": 329.4151460554698,
+                "samples": [
+                    {
+                        "prefill_seconds": 0.004053944,
+                        "decode_seconds": 0.025181054
+                    },
+                    {
+                        "prefill_seconds": 0.00377892,
+                        "decode_seconds": 0.024225161
+                    },
+                    {
+                        "prefill_seconds": 0.00385804,
+                        "decode_seconds": 0.024285465
+                    }
+                ],
+                "theoretical_cache_bytes": 19464192,
+                "observed_summarysize": 4288
+            }
+        },
+        {
+            "prompt_tokens": 64,
+            "decode_tokens": 8,
+            "correctness": {
+                "passed": true,
+                "dynamic_prefill_max_abs": 0,
+                "static_prefill_max_abs": 0,
+                "dynamic_decode_max_abs": 0.0004196167,
+                "static_decode_max_abs": 0.00032043457
+            },
+            "eager": {
+                "warmup_prefill_seconds": 0.007231429,
+                "warmup_decode_seconds": 0.127853232,
+                "steady_prefill_seconds": 0.007273783,
+                "steady_decode_seconds": 0.096440819,
+                "steady_decode_tokens_per_second": 82.95242702159135,
+                "samples": [
+                    {
+                        "prefill_seconds": 0.00791735,
+                        "decode_seconds": 0.110612476
+                    },
+                    {
+                        "prefill_seconds": 0.007273783,
+                        "decode_seconds": 0.095514674
+                    },
+                    {
+                        "prefill_seconds": 0.006985646,
+                        "decode_seconds": 0.096440819
+                    }
+                ]
+            },
+            "dynamic": {
+                "warmup_prefill_seconds": 0.007566003,
+                "warmup_decode_seconds": 0.023595063,
+                "steady_prefill_seconds": 0.007301498,
+                "steady_decode_seconds": 0.023582293,
+                "steady_decode_tokens_per_second": 339.23757965351376,
+                "samples": [
+                    {
+                        "prefill_seconds": 0.007301498,
+                        "decode_seconds": 0.022351474
+                    },
+                    {
+                        "prefill_seconds": 0.007057347,
+                        "decode_seconds": 0.023582293
+                    },
+                    {
+                        "prefill_seconds": 0.008222126,
+                        "decode_seconds": 0.024617131
+                    }
+                ],
+                "theoretical_cache_bytes": 5308416,
+                "observed_summarysize": 4280
+            },
+            "static": {
+                "warmup_prefill_seconds": 0.011657994,
+                "warmup_decode_seconds": 0.025217949,
+                "steady_prefill_seconds": 0.007659445,
+                "steady_decode_seconds": 0.02356672,
+                "steady_decode_tokens_per_second": 339.461749450072,
+                "samples": [
+                    {
+                        "prefill_seconds": 0.011729544,
+                        "decode_seconds": 0.02356672
+                    },
+                    {
+                        "prefill_seconds": 0.007659445,
+                        "decode_seconds": 0.023738916
+                    },
+                    {
+                        "prefill_seconds": 0.00701513,
+                        "decode_seconds": 0.023364082
+                    }
+                ],
+                "theoretical_cache_bytes": 19464192,
+                "observed_summarysize": 4288
+            }
+        },
+        {
+            "prompt_tokens": 256,
+            "decode_tokens": 8,
+            "correctness": {
+                "passed": true,
+                "dynamic_prefill_max_abs": 0,
+                "static_prefill_max_abs": 0,
+                "dynamic_decode_max_abs": 0.00061035156,
+                "static_decode_max_abs": 0.00061035156
+            },
+            "eager": {
+                "warmup_prefill_seconds": 0.038455187,
+                "warmup_decode_seconds": 0.354292789,
+                "steady_prefill_seconds": 0.038743137,
+                "steady_decode_seconds": 0.343996014,
+                "steady_decode_tokens_per_second": 23.256083426594586,
+                "samples": [
+                    {
+                        "prefill_seconds": 0.038743137,
+                        "decode_seconds": 0.345571737
+                    },
+                    {
+                        "prefill_seconds": 0.038698177,
+                        "decode_seconds": 0.343930319
+                    },
+                    {
+                        "prefill_seconds": 0.038839286,
+                        "decode_seconds": 0.343996014
+                    }
+                ]
+            },
+            "dynamic": {
+                "warmup_prefill_seconds": 0.038475229,
+                "warmup_decode_seconds": 0.030703292,
+                "steady_prefill_seconds": 0.039294781,
+                "steady_decode_seconds": 0.029638607,
+                "steady_decode_tokens_per_second": 269.9182184911727,
+                "samples": [
+                    {
+                        "prefill_seconds": 0.038681554,
+                        "decode_seconds": 0.029638607
+                    },
+                    {
+                        "prefill_seconds": 0.039377869,
+                        "decode_seconds": 0.029930677
+                    },
+                    {
+                        "prefill_seconds": 0.039294781,
+                        "decode_seconds": 0.028882129
+                    }
+                ],
+                "theoretical_cache_bytes": 19464192,
+                "observed_summarysize": 4280
+            },
+            "static": {
+                "warmup_prefill_seconds": 0.038777272,
+                "warmup_decode_seconds": 0.024675923,
+                "steady_prefill_seconds": 0.040239588,
+                "steady_decode_seconds": 0.024870045,
+                "steady_decode_tokens_per_second": 321.67211599335667,
+                "samples": [
+                    {
+                        "prefill_seconds": 0.042872839,
+                        "decode_seconds": 0.025812443
+                    },
+                    {
+                        "prefill_seconds": 0.040239588,
+                        "decode_seconds": 0.024870045
+                    },
+                    {
+                        "prefill_seconds": 0.039274485,
+                        "decode_seconds": 0.024815647
+                    }
+                ],
+                "theoretical_cache_bytes": 19464192,
+                "observed_summarysize": 4288
+            }
+        }
+    ]
+}

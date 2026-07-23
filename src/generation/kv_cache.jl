@@ -241,6 +241,7 @@ function _gpt_with_kv_cache(
         ps.token_embedding,
         st.token_embedding,
     )
+    x = _add_position_embedding(model, x, ps, start_pos)
 
     blocks = Tuple(values(model.blocks.layers))
     block_parameters = Tuple(values(ps.blocks))

@@ -825,6 +825,13 @@ function load_tokenizer(path::AbstractString)
             String(hex2bytes(payload["generation_config_json_hex"]));
             revision=String(get(payload, "revision", "")),
         )
+    elseif tokenizer_type == "hf_gpt2_bpe"
+        _gpt2_tokenizer_from_json(
+            String(hex2bytes(payload["tokenizer_json_hex"])),
+            String(hex2bytes(payload["tokenizer_config_json_hex"])),
+            String(hex2bytes(payload["generation_config_json_hex"]));
+            revision=String(get(payload, "revision", "")),
+        )
     else
         throw(ArgumentError("unsupported tokenizer artifact type $(repr(tokenizer_type))"))
     end

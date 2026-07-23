@@ -5,7 +5,7 @@
 ## 索引
 
 - [`current_status.md`](current_status.md)：最新项目状态、能力边界和近期里程碑。
-- [`local_model_assets.md`](local_model_assets.md)：本机持久模型目录约定、Qwen3 revision/checksum 与 reference 复现命令。
+- [`local_model_assets.md`](local_model_assets.md)：本机持久模型目录约定、Qwen3/GPT-2 revision/checksum 与 reference 复现命令。
 - [`week01_transformer.md`](week01_transformer.md)：Week 01，项目骨架、Attention、RoPE 与 Transformer 基础。
 - [`week02_gpt_xla_kv_cache.md`](week02_gpt_xla_kv_cache.md)：Week 02，最小 GPT、XLA 训练与 KV Cache 增量推理。
 - [`week03_reproducible_training.md`](week03_reproducible_training.md)：Week 03（Closed），checkpoint、断点续训、validation / perplexity、梯度裁剪与 KV Cache 基线。
@@ -15,7 +15,7 @@
 - [`week07_hf_weight_loading.md`](week07_hf_weight_loading.md)：Week 07（Closed），safetensors / BF16 权重加载、HF config 映射与 Qwen3-0.6B logits / KV-cache 对齐。
 - [`week08_hf_tokenizer_text_parity.md`](week08_hf_tokenizer_text_parity.md)：Week 08（Closed），HuggingFace Qwen3 tokenizer 导入、基础 chat template 与 text→text greedy generation parity，Qwen3 三阶段复现闭环。
 - [`week09_qwen3_sampling_performance.md`](week09_qwen3_sampling_performance.md)：Week 09（Closed），Qwen3 官方 temperature/top-k/top-p 采样 fidelity、40,959 长位置 HF RoPE reference 与真实 CPU/CUDA/XLA 推理基线。
-- [`week10_gpt2_hf_parity.md`](week10_gpt2_hf_parity.md)：Week 10（Open），经典 GPT-2 124M 的 learned absolute position、HF Conv1D 权重、byte-level BPE、逐层 logits 与 text parity。
+- [`week10_gpt2_hf_parity.md`](week10_gpt2_hf_parity.md)：Week 10（Closed），经典 GPT-2 124M 的 learned absolute position、HF Conv1D 权重、byte-level BPE、逐层 logits、cache/text parity 与 CPU/CUDA 基线。
 - [`qwen3_hf_config_mapping.md`](qwen3_hf_config_mapping.md)：Qwen3 HF `config.json` 与 `gpt_config` 的字段、权重名与布局映射契约（Week 07 已实现并验证）。
 - [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
 - [`monthly/`](monthly/)：月度总结和跨周能力变化。

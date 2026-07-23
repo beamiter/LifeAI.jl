@@ -81,6 +81,52 @@ julia --project=. --startup-file=no scripts/verify_qwen3_sampling_parity.jl \
 
 仓库内 `test/fixtures/week09_qwen3_rope/` 保留上述 RoPE reference 的同 checksum 小型副本，使 position 0/2048/32767/40959 的独立 Transformers 对照可进入默认离线测试；它不是模型权重或下载缓存。
 
+## 当前 GPT-2 124M 资产
+
+模型与 immutable revision：
+
+```text
+openai-community/gpt2
+607a30d783dfa663caf39e06633721c8d4cfcd7e
+```
+
+模型目录：
+
+```text
+/home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e/
+```
+
+Week 10 Transformers reference：
+
+```text
+/home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e/lifeai_week10_reference/
+```
+
+文件与 reference SHA256 见
+[`benchmark_results/week10/summary.md`](../benchmark_results/week10/summary.md)；
+`load_hf_gpt2_bundle` 也内置同一 revision/checksum 契约并默认 fail closed。
+
+### 恢复下载与 reference
+
+```bash
+/home/yj/projects/jwm/.venv/bin/hf download openai-community/gpt2 \
+  config.json generation_config.json tokenizer.json tokenizer_config.json \
+  vocab.json merges.txt model.safetensors \
+  --revision 607a30d783dfa663caf39e06633721c8d4cfcd7e \
+  --local-dir /home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e
+
+/home/yj/projects/jwm/.venv/bin/python scripts/export_gpt2_reference.py \
+  --model-dir /home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e \
+  --revision 607a30d783dfa663caf39e06633721c8d4cfcd7e \
+  --output-dir /home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e/lifeai_week10_reference \
+  --steps 8
+
+julia --project=. --startup-file=no scripts/verify_gpt2_parity.jl \
+  /home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e \
+  /home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e/lifeai_week10_reference \
+  benchmark_results/week10/gpt2_124m_parity.json
+```
+
 ## 维护边界
 
 - `/home/yj/models/` 是本机持久资产目录，不是 Git 仓库的一部分；系统备份策略需要单独覆盖它。

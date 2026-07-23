@@ -85,6 +85,17 @@ function _tokenizer_payload(tokenizer::HFQwen3Tokenizer)
     )
 end
 
+function _tokenizer_payload(tokenizer::HFGPT2Tokenizer)
+    return (;
+        type=:hf_gpt2_bpe,
+        revision=tokenizer.revision,
+        raw_tokenizer_json=tokenizer.raw_tokenizer_json,
+        raw_tokenizer_config_json=tokenizer.raw_tokenizer_config_json,
+        raw_generation_config_json=tokenizer.raw_generation_config_json,
+        fingerprint=tokenizer_fingerprint(tokenizer),
+    )
+end
+
 function _checkpoint_special_token_tables(entries)
     ids = Dict{Symbol,Int}()
     texts = Dict{Symbol,String}()
@@ -133,6 +144,13 @@ function _tokenizer_from_payload(payload)
         )
     elseif tokenizer_type === :hf_qwen3_bpe
         _hf_qwen3_tokenizer_from_json(
+            String(payload.raw_tokenizer_json),
+            String(payload.raw_tokenizer_config_json),
+            String(payload.raw_generation_config_json);
+            revision=String(payload.revision),
+        )
+    elseif tokenizer_type === :hf_gpt2_bpe
+        _gpt2_tokenizer_from_json(
             String(payload.raw_tokenizer_json),
             String(payload.raw_tokenizer_config_json),
             String(payload.raw_generation_config_json);

@@ -19,15 +19,15 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3-0.6B 的结构、权重、tokenizer、greedy/sampled generation、长位置 RoPE 与 CPU/CUDA/XLA 推理闭环已完成；当前开始用经典 GPT-2 124M 检验 LifeAI.jl 的第二架构组装与 HF 复现能力。**
+**阶段判断：Qwen3-0.6B 与经典 GPT-2 124M 两种真实 decoder 架构的官方 checkpoint 推理复现闭环均已完成；共享 `GPTModel` 已用两套不同 position、norm、MLP、attention、权重布局和 tokenizer 约定验证。**
 
-Week 01—09 均已 Closed；[`Week 10 — GPT-2 Architecture, HuggingFace Weights and Text Parity`](notes/week10_gpt2_hf_parity.md) 已于 2026-07-23 Open。本阶段以 `openai-community/gpt2` 124M 为目标，计划完成 learned absolute position、GELU-New、GPT-2 Conv1D/fused-QKV 权重映射、byte-level BPE、逐层 logits、KV cache 与 text-to-text parity。
+Week 01—10 均已 Closed；[`Week 10 — GPT-2 Architecture, HuggingFace Weights and Text Parity`](notes/week10_gpt2_hf_parity.md) 已于 2026-07-23 完成。`openai-community/gpt2` 124M 的 learned absolute position、GELU-New、Conv1D/fused-QKV 权重映射、byte-level BPE、逐层 logits、KV cache、text-to-text parity 与 CPU/CUDA 性能均有冻结证据。
 
 目前已经具备：
 
 - 手写与批量 scaled dot-product attention、因果遮罩和 Multi-Head Attention。
-- 支持 legacy interleaved 与 HF rotate_half 配对的 RoPE、pre-norm TransformerBlock 和 decoder-only GPTModel。
-- 可独立切换的 LayerNorm / RMSNorm、GELU / SwiGLU、untied / tied embedding-output projection；legacy 默认保持不变。
+- 支持 legacy interleaved 与 HF rotate_half 配对的 RoPE、learned absolute position、pre-norm TransformerBlock 和 decoder-only GPTModel。
+- 可独立切换的 LayerNorm / RMSNorm、GELU / GELU-New / SwiGLU、projection bias / LM-head bias、untied / tied embedding-output projection；legacy 默认保持不变。
 - 字符级 Tokenizer、DatasetLoader、next-token loss 和训练循环。
 - 无泄漏 train / validation 划分、token-weighted evaluation / perplexity 和 global gradient norm clipping。
 - checkpoint v2、设备无关保存/加载、确定性断点续训和 v1 legacy checkpoint 迁移。
@@ -40,12 +40,15 @@ Week 01—09 均已 Closed；[`Week 10 — GPT-2 Architecture, HuggingFace Weigh
 - Qwen3-0.6B 的 16-step 官方 sampled reference parity、position 40,959 独立 Transformers RoPE fixture，以及 CPU/CUDA/Reactant-XLA GPU 真实推理 benchmark。
 - 严格的 Qwen3 HF tokenizer：NFC、目标 regex、ByteLevel、imported BPE、added/special tokens、artifact/checkpoint 与 provenance fingerprint。
 - 无 tools 的 Qwen3 基础 chat template，以及 full/dynamic/static/XLA 的真实 greedy text-generation parity。
+- 严格的 GPT-2 config、Float32 safetensors、Conv1D/fused-QKV 映射与 GPT-2 byte-level BPE adapter；冻结 revision/checksum 不匹配时 fail closed。
+- GPT-2 124M 的 10 组 tokenizer corpus、embedding、12 层 residual、final hidden、full logits 与 full/dynamic/static 8-step greedy text 均通过 Transformers reference parity。
+- GPT-2 124M 的 16/64/256-token CPU/CUDA correctness 与 steady-state benchmark，以及 learned-position/GELU-New XLA 同构 smoke。
 - 围绕 Attention、RoPE、prefill/decode 和 KV Cache 的 Pluto 可视化学习笔记。
 - 默认测试套件全部通过；Reactant/XLA 专项测试需显式启用。
 
 尚未具备：
 
-- GPT-2 目前只有 Week 10 计划，尚未冻结 checkpoint revision、下载权重或完成任何 parity；不能从已有 Qwen3 支持推断 GPT-2 已可加载。
+- GPT-2 的 WebText 从零训练、论文 zero-shot quality、Medium/Large/XL、cross-attention 与分类 head 未复现；当前完成的是 124M 官方 checkpoint 的 Float32 推理/架构复现。
 - Qwen3 native BF16、量化、完整 40K 真实模型 dense forward、其他 dense 尺寸与 MoE；当前真实推理仍是 BF16 storage → Float32 parameters/compute。
 - 通用 Jinja、tools/tool-role chat template 与 agent tool loop；可用于真实任务的模型质量仍未评估。
 - 长短期记忆、规划、工具使用、反思等完整的 agent loop。
@@ -55,7 +58,7 @@ Week 01—09 均已 Closed；[`Week 10 — GPT-2 Architecture, HuggingFace Weigh
 
 更详细的能力盘点、验证范围与建议里程碑见 [`notes/current_status.md`](notes/current_status.md)。
 
-本机大模型权重与真实 reference 固定存放在 `/home/yj/models/`，不使用易清理的 `/tmp`，也不提交进仓库；当前 Qwen3-0.6B 的完整 revision、checksum 和恢复命令见 [`notes/local_model_assets.md`](notes/local_model_assets.md)。
+本机大模型权重与真实 reference 固定存放在 `/home/yj/models/`，不使用易清理的 `/tmp`，也不提交进仓库；Qwen3-0.6B 与 GPT-2 124M 的完整 revision、checksum 和恢复命令见 [`notes/local_model_assets.md`](notes/local_model_assets.md)。
 
 ## 演进路线
 
@@ -145,6 +148,23 @@ model = GPTModel(
     norm_type=:rmsnorm,
     mlp_type=:swiglu,
     tie_embeddings=true,
+)
+```
+
+加载冻结的 GPT-2 124M 并执行 greedy generation：
+
+```julia
+bundle = load_hf_gpt2_bundle(
+    "/home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e";
+    revision="607a30d783dfa663caf39e06633721c8d4cfcd7e",
+    max_seq_len=256,
+)
+result = generate_hf_text(
+    bundle,
+    "The meaning of life is";
+    strategy=:greedy,
+    cache=:dynamic,
+    max_new_tokens=8,
 )
 ```
 

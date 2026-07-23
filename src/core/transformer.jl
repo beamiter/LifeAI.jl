@@ -3,6 +3,22 @@ using ConcreteStructs
 using NNlib: gelu
 
 """
+    gelu_new(x)
+
+GPT-2's exact tanh-approximate GELU (`NewGELUActivation` in Transformers).
+The constants and operation order intentionally follow the reference formula.
+"""
+function gelu_new(x)
+    return 0.5f0 * x * (
+        1.0f0 + tanh(
+            sqrt(2.0f0 / Float32(pi)) * (x + 0.044715f0 * x * x * x),
+        )
+    )
+end
+
+gelu_new(x::AbstractArray) = gelu_new.(x)
+
+"""
     TransformerBlock(d_model, num_heads; kwargs...)
 
 A configurable GPT-style pre-norm Transformer block.
@@ -18,7 +34,7 @@ Structure:
 
 The attention layer follows the existing `MultiHeadAttention` implementation and can
 optionally enable RoPE on Q/K. `norm_type` independently selects LayerNorm or
-RMSNorm, while `mlp_type` selects GELU or SwiGLU.
+RMSNorm, while `mlp_type` selects GELU, GPT-2 GELU-New, or SwiGLU.
 """
 @concrete struct TransformerBlock <: AbstractLuxContainerLayer{(
     :norm1,
@@ -53,8 +69,8 @@ function _validate_norm_type(norm_type::Symbol)
 end
 
 function _validate_mlp_type(mlp_type::Symbol)
-    mlp_type in (:gelu, :swiglu) || throw(ArgumentError(
-        "`mlp_type` must be `:gelu` or `:swiglu`; got $(repr(mlp_type))",
+    mlp_type in (:gelu, :gelu_new, :swiglu) || throw(ArgumentError(
+        "`mlp_type` must be `:gelu`, `:gelu_new`, or `:swiglu`; got $(repr(mlp_type))",
     ))
     return mlp_type
 end
@@ -78,7 +94,7 @@ function _resolve_mlp_hidden_dim(
     end
 
     ratio = if mlp_ratio === nothing
-        mlp_type === :gelu ? 4 : 8 / 3
+        mlp_type in (:gelu, :gelu_new) ? 4 : 8 / 3
     else
         mlp_ratio
     end
@@ -115,8 +131,9 @@ function _make_mlp(
         use_bias,
     )
 
+    activation = mlp_type === :gelu_new ? gelu_new : gelu
     return Chain(
-        Dense(d_model, mlp_hidden_dim, gelu; use_bias),
+        Dense(d_model, mlp_hidden_dim, activation; use_bias),
         Dense(mlp_hidden_dim, d_model; use_bias),
     )
 end

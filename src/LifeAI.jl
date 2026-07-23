@@ -4,13 +4,15 @@ export MultiHeadAttention
 export manual_scaled_dot_product_attention
 export batched_scaled_dot_product_attention
 export repeat_kv
-export RMSNormLayer, SwiGLU, TransformerBlock
+export RMSNormLayer, SwiGLU, TransformerBlock, gelu_new
 export RoPE, apply_rope
 export SamplingSchedule
 export AbstractTokenizer, Tokenizer, ByteTokenizer, ByteBPETokenizer
 export HFQwen3Tokenizer, HFQwen3GenerationConfig
+export HFGPT2Tokenizer, HFGPT2GenerationConfig
 export hf_byte_unicode_alphabet, load_hf_qwen3_tokenizer, hf_generation_config
 export hf_qwen3_pretokenize, apply_qwen3_chat_template
+export load_hf_gpt2_tokenizer, hf_gpt2_pretokenize
 export fit_tokenizer, fit_byte_bpe, encode, decode, decode_bytes, vocab_size
 export normalize_text, special_token_id, token_byte_length, encoded_byte_length
 export tokenizer_config, tokenizer_fingerprint, tokenizer_statistics
@@ -23,6 +25,8 @@ export GPTModel, TiedOutputProjection, gpt_config
 export load_hf_qwen3_config, load_safetensors, load_hf_qwen3_parameters
 export load_hf_qwen3_model, hf_token_ids, hf_qwen3_forward_trace
 export load_hf_qwen3_bundle, generate_hf_text
+export load_hf_gpt2_config, load_hf_gpt2_parameters, load_hf_gpt2_model
+export load_hf_gpt2_bundle, hf_gpt2_forward_trace
 export TrainerGPT, init_train_state, next_token_loss, next_token_nll_sum
 export global_gradient_norm, clip_global_gradient_norm
 export train_step!, train_gpt!
@@ -43,11 +47,13 @@ include("core/transformer.jl")
 include("core/sampling.jl")
 include("data/tokenizer.jl")
 include("data/hf_tokenizer.jl")
+include("data/hf_gpt2_tokenizer.jl")
 include("data/dataset.jl")
 include("data/data_pipeline.jl")
 include("models/output_projection.jl")
 include("models/gpt.jl")
 include("io/huggingface.jl")
+include("io/hf_gpt2.jl")
 include("train/train_gpt.jl")
 include("train/evaluation.jl")
 include("train/checkpoint.jl")

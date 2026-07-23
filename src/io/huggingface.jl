@@ -683,6 +683,7 @@ function hf_qwen3_forward_trace(
         ps.token_embedding,
         st.token_embedding,
     )
+    x = _add_position_embedding(model, x, ps, 1)
     embedding = x
     block_outputs = Any[]
     state_values = Any[]
