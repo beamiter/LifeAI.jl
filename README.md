@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：最小 GPT 的训练、生成、评估与版本化 Tokenizer 已形成；Qwen3-0.6B 的结构、权重、tokenizer、greedy/sampled text generation、长位置 RoPE 与 CPU/CUDA/XLA 推理基线均已完成可复现验证。**
+**阶段判断：Qwen3-0.6B 的结构、权重、tokenizer、greedy/sampled generation、长位置 RoPE 与 CPU/CUDA/XLA 推理闭环已完成；当前开始用经典 GPT-2 124M 检验 LifeAI.jl 的第二架构组装与 HF 复现能力。**
 
-Week 01—09 均已 Closed；[`Week 09 — Qwen3 Sampling Fidelity and Real Inference Performance`](notes/week09_qwen3_sampling_performance.md) 于 2026-07-23 完成官方 temperature/top-k/top-p 生成路径、position 40,959 独立 HF RoPE reference，以及真实模型 CPU/CUDA/XLA cache correctness 和性能记录。当前尚未 Open Week 10。
+Week 01—09 均已 Closed；[`Week 10 — GPT-2 Architecture, HuggingFace Weights and Text Parity`](notes/week10_gpt2_hf_parity.md) 已于 2026-07-23 Open。本阶段以 `openai-community/gpt2` 124M 为目标，计划完成 learned absolute position、GELU-New、GPT-2 Conv1D/fused-QKV 权重映射、byte-level BPE、逐层 logits、KV cache 与 text-to-text parity。
 
 目前已经具备：
 
@@ -45,6 +45,7 @@ Week 01—09 均已 Closed；[`Week 09 — Qwen3 Sampling Fidelity and Real Infe
 
 尚未具备：
 
+- GPT-2 目前只有 Week 10 计划，尚未冻结 checkpoint revision、下载权重或完成任何 parity；不能从已有 Qwen3 支持推断 GPT-2 已可加载。
 - Qwen3 native BF16、量化、完整 40K 真实模型 dense forward、其他 dense 尺寸与 MoE；当前真实推理仍是 BF16 storage → Float32 parameters/compute。
 - 通用 Jinja、tools/tool-role chat template 与 agent tool loop；可用于真实任务的模型质量仍未评估。
 - 长短期记忆、规划、工具使用、反思等完整的 agent loop。
