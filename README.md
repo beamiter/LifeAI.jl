@@ -21,7 +21,7 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 **阶段判断：Qwen3-0.6B 与经典 GPT-2 124M 两种真实 decoder 架构的官方 checkpoint 推理复现闭环均已完成；Qwen3 0.6B—32B 六个官方 dense 尺寸的 config、完整 topology、精确参数量、tied/untied head 与宽 attention contract 已完成 Week 11 验证。**
 
-Week 01—11 均已 Closed；[`Week 11 — Qwen3 Dense Family Completion`](notes/week11_qwen3_dense_family.md) 已补齐六个官方 dense family member 的显式规格与离线结构证据。Week 10 的 GPT-2 历史内容保持关闭，不与本阶段混写。
+Week 01—11 均已 Closed；当前活动阶段为 [`Week 12 — Qwen3 Dense Family Real-Weight Parity`](notes/week12_qwen3_dense_real_weights.md)，目标是把真实权重逐层 parity 从 0.6B 扩展到 30 GiB RAM 内可 Float32 实跑的 1.7B 与 4B，实测分片 safetensors index 与 `Q width == hidden` 两条真实加载分支；8B+ 保持明确的内存边界。Week 11 的六尺寸结构 contract 与 Week 10 的 GPT-2 历史内容保持关闭，不与本阶段混写。
 
 目前已经具备：
 

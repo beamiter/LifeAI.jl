@@ -6,7 +6,9 @@
 
 ## 当前活动阶段
 
-[`Week 11 — Qwen3 Dense Family Completion`](week11_qwen3_dense_family.md) 已于 2026-07-23 Closed。六个官方 dense family member 的 immutable spec、严格 variant 识别、完整 topology、精确参数量、tied/untied LM head 与宽 attention 路径均已进入默认测试。Week 10 保持历史不变；1.7B—32B 的真实巨型权重未下载或伪装成已验证。
+[`Week 12 — Qwen3 Dense Family Real-Weight Parity`](week12_qwen3_dense_real_weights.md) 已于 2026-07-24 Open。目标：把真实 checkpoint 逐层 parity 从 0.6B 扩展到当前机器可 Float32 实跑的 1.7B 与 4B，真实覆盖分片 safetensors index 与 `Q width == hidden` 两条此前只有合成/单点证据的加载路径；8B/14B/32B 因 30 GiB RAM 下 Float32 全量加载出界，保持显式边界。
+
+[`Week 11 — Qwen3 Dense Family Completion`](week11_qwen3_dense_family.md) 已于 2026-07-23 Closed。六个官方 dense family member 的 immutable spec、严格 variant 识别、完整 topology、精确参数量、tied/untied LM head 与宽 attention 路径均已进入默认测试。
 
 ## 已实现能力
 
@@ -155,6 +157,17 @@ Week 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定形�
 完成标准已满足：六个官方尺寸均有 immutable config fixture、完整 topology
 和精确参数量；untied + 宽 attention 的缩小 32B 形态通过三路 cache，默认
 全套 `4284 / 4284` 通过。
+
+### Milestone B''''': 真实权重 parity 扩展到可实跑的 family 尺寸（进行中）
+
+- 下载 1.7B / 4B 冻结 revision 完整资产并记录全文件 checksum。（Week 12）
+- 用同一 token-id fixture 生成 Transformers Float32 reference，验证逐层
+  hidden、logits 与 dynamic/static decode 对齐；4B 走真实分片 index，
+  1.7B 覆盖 `Q width == hidden` 真实分支。（Week 12）
+- 尺寸相关 loader bug 修复并回归 0.6B / GPT-2 既有 parity。（Week 12）
+
+完成标准：两个尺寸在显式容差内逐层对齐且 argmax 一致；opt-in integration
+与离线 checksum fixture 进入默认测试；8B+ 不可实跑的边界保持明确。
 
 ### Milestone C：建立最小有状态智能体闭环（后移）
 
