@@ -6,6 +6,8 @@
 
 ## 当前活动阶段
 
+[`Week 14 — Qwen3 Native BF16 Mixed-Precision Compute`](week14_qwen3_bf16_compute.md) 已于 2026-07-25 Open。目标：镜像 Transformers 4.51.0 的 BF16 混合精度语义（RMSNorm/softmax/RoPE 表 F32，线性层 BF16 + F32 累加）实现独立 BF16 推理路径，0.6B—8B 与 HF BF16 逐层对齐且 greedy token 序列一致，8B 以 15.3 GiB BF16 首次全量驻留生成；不改动既有 F32 / 流式 / XLA 路径。
+
 [`Week 13 — Qwen3 Streamed Loading and 8B/14B/32B Real-Weight Parity`](week13_qwen3_streamed_large_weights.md) 已于 2026-07-25 Closed。流式 / 逐层 safetensors 加载（与 in-memory 路径逐位一致）让 8B / 14B / 32B 在峰值 ≤ 8.9 GiB 内完成真实权重逐层 parity，untied LM head 获得真实证据；Qwen3 dense family 六尺寸的真实权重验证闭环就此完成。
 
 [`Week 12 — Qwen3 Dense Family Real-Weight Parity`](week12_qwen3_dense_real_weights.md) 已于 2026-07-25 Closed。1.7B 与 4B 真实权重经分片 safetensors index 加载并在显式容差内完成逐层 hidden/logits/dynamic/static decode parity，loader 零改动一次通过；tied embedding 的三个官方尺寸（0.6B/1.7B/4B）全部实跑。8B/14B/32B 因 Float32 全量加载需 30.5—122.1 GiB、超出本机 30 GiB RAM，保持显式未验证边界。
