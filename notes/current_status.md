@@ -6,6 +6,8 @@
 
 ## 当前活动阶段
 
+[`Week 13 — Qwen3 Streamed Loading and 8B/14B/32B Real-Weight Parity`](week13_qwen3_streamed_large_weights.md) 已于 2026-07-25 Open。目标：实现流式 / 逐层 safetensors 加载与逐层 forward/decode，在 30 GiB RAM 上完成 8B / 14B / 32B（全部 untied LM head）真实权重逐层 parity；流式路径必须与 in-memory 路径逐位一致，Python reference 用 accelerate disk offload 保持 Float32 同口径。
+
 [`Week 12 — Qwen3 Dense Family Real-Weight Parity`](week12_qwen3_dense_real_weights.md) 已于 2026-07-25 Closed。1.7B 与 4B 真实权重经分片 safetensors index 加载并在显式容差内完成逐层 hidden/logits/dynamic/static decode parity，loader 零改动一次通过；tied embedding 的三个官方尺寸（0.6B/1.7B/4B）全部实跑。8B/14B/32B 因 Float32 全量加载需 30.5—122.1 GiB、超出本机 30 GiB RAM，保持显式未验证边界。
 
 ## 已实现能力
