@@ -1,8 +1,10 @@
 # Week 12 — Qwen3 Dense Family Real-Weight Parity
 
-> 状态：Open
+> 状态：Closed
 >
 > 开启记录：2026-07-24
+>
+> 关闭记录：2026-07-25
 >
 > 依赖基线：[`Week 11 — Qwen3 Dense Family Completion`](week11_qwen3_dense_family.md) 已 Closed，保持历史内容不变。
 >
@@ -72,13 +74,13 @@ Float32 全量加载的内存上限，属于后续低精度 / 流式加载工作
 
 ## 验证分层
 
-| 证据层 | 目标状态 |
+| 证据层 | 最终状态 |
 | --- | --- |
-| 1.7B / 4B 资产 revision 与全文件 checksum | 冻结进 notes 与离线 fixture |
-| 真实分片 safetensors index 加载 | 4B 实跑覆盖 |
+| 1.7B / 4B 资产 revision 与全文件 checksum | 已冻结进 notes 与离线 fixture |
+| 真实分片 safetensors index 加载 | 1.7B（2 分片）与 4B（3 分片）均实跑覆盖 |
 | `Q width == hidden` 真实权重分支 | 1.7B 实跑覆盖 |
-| 逐层 hidden / logits / decode parity | 1.7B、4B 在显式容差内全部对齐 |
-| 0.6B 与 GPT-2 既有 parity | 回归不变 |
+| 逐层 hidden / logits / decode parity | 两尺寸全部在显式容差内，argmax 全一致 |
+| 0.6B 与 GPT-2 既有 parity | 默认全套无回归；本周零 src 改动 |
 | 8B / 14B / 32B 真实权重 | 明确不可实跑，保持边界陈述 |
 
 ## Close 条件
@@ -112,3 +114,65 @@ Float32 全量加载的内存上限，属于后续低精度 / 流式加载工作
 - 冻结资源边界：30 GiB RAM 下 Float32 全量加载上限为 4B；8B+ 明确出界。
 - 计划复用 Week 07 的 export / verify 脚本与 token-id fixture，不新造
   验证口径。
+
+### 2026-07-25：下载、reference 与逐层 parity
+
+- 按冻结 revision 下载 1.7B（2 分片，约 4.1 GB）与 4B（3 分片，约
+  8.0 GB）完整资产；`config.json` SHA256 与 Week 11 冻结值逐字节一致，
+  tokenizer 三件套与 0.6B 资产字节相同。两个 checkpoint 都是分片
+  safetensors——1.7B 也实跑 index 路径，比计划多覆盖一次。
+- `export_qwen3_reference.py`（Transformers 4.51.0 / torch 2.7.1+cpu、
+  BF16 存储 → Float32 计算）对两个尺寸生成同一 token-id fixture 的
+  逐层 reference，存入各 revision 目录 `lifeai-references/week12-parity/`。
+- `verify_qwen3_parity.jl` 结果（max-abs，全部 stage argmax 一致）：
+  - **1.7B**：variant 识别 `qwen3_1_7b`，参数量 1,720,574,976 精确一致；
+    embedding 0.0，28 层 block 最大 `4.88e-3`（mean 均 ≤ `6.01e-5`），
+    final hidden `1.72e-4`，full logits `9.35e-5`，dynamic/static decode
+    均 `3.05e-5`；加载 19.9 s。
+  - **4B**：variant 识别 `qwen3_4b`，参数量 4,022,468,096 精确一致；
+    embedding 0.0，36 层 block 最大 `5.13e-3`（末层大激活下的 BF16
+    舍入，mean `1.08e-5`），final hidden `1.07e-4`，full logits
+    `3.53e-5`，dynamic/static decode 均 `2.00e-5`；真实分片 index 加载
+    32.0 s，进程峰值内存在 30 GiB 内。
+- **无需修改任何 src 代码**：loader 对两个新尺寸一次通过。Week 11 修复
+  的 QK-Norm 参数计数与钉死的宽 attention/tied 分支已经覆盖了这两个
+  尺寸会触发的差异；本周把该结论从结构证据升级为真实权重证据。
+- 冻结容差（对实测值约 2 倍以上余量）进入离线 fixture：blocks `1e-2`、
+  final hidden / logits `5e-4`、decode `2e-4`、embedding `1e-4`。
+- 新增 `test/test_week12.jl`：离线 asset contract（revision/checksum 与
+  Week 11 specs 交叉核对、分片清单、parity 结果小于容差）默认运行；
+  `LIFEAI_QWEN3_1_7B_MODEL_DIR` / `LIFEAI_QWEN3_4B_MODEL_DIR` opt-in
+  integration 重算文件尺寸、variant、参数量与全部 parity 断言。
+
+### 2026-07-25：验证与 Close
+
+- 带两个 integration 的完整套件：Week 12 专项 `209 / 209` 通过（离线
+  85 项 + 1.7B integration 57 项 + 4B integration 67 项），其余各周
+  全部通过。
+- 默认全套（离线）`4369 / 4369` 通过，其中 Week 12 离线专项 `85 / 85`；
+  Week 05—11 计数与 Close 时完全一致，无回归。
+- 本周零 src 代码改动，只新增测试与 fixture；既有 Reactant/XLA 专项
+  测的是未变化的 src 路径，不受影响。
+- opt-in integration 双尺寸串行运行 1 分 40 秒（含 4B 16 GiB Float32
+  加载），单进程峰值内存在 30 GiB 内。
+
+## Close 回顾
+
+- **完成了什么**：把真实 checkpoint 逐层 parity 从 0.6B 扩展到 1.7B 与
+  4B，真实覆盖分片 safetensors index（两种分片数）与
+  `Q width == hidden` 分支；tied embedding 的三个官方尺寸全部实跑；
+  资产、reference、容差与 parity 结果全部冻结进离线 fixture 与 opt-in
+  integration。
+- **验证证据**：两尺寸逐层 max-abs（1.7B logits `9.35e-5`、4B logits
+  `3.53e-5`，decode ≤ `3.05e-5`）、argmax 全一致；默认全套
+  `4369 / 4369`，opt-in `209 / 209`。
+- **没有完成及原因**：8B/14B/32B 真实权重与 untied LM head 的真实实跑
+  仍未执行——Float32 全量加载需要 30.5—122.1 GiB，超出本机 30 GiB
+  RAM；这属于后续低精度 / 流式加载工作，不用 shape 证据冒充。
+- **最重要的认知变化**：担心的"只在其他尺寸暴露的 loader bug"没有出现
+  ——Week 11 的结构 contract（QK-Norm 参数计数、宽 attention、tied
+  分支钉死）已经提前消化了这两个尺寸的差异点，本周的价值是把这个结论
+  从"结构推断"升级为"真实权重证据"，并留下可复跑的验证闭环。
+- **是否满足 Close 条件**：是。资产 checksum、双尺寸容差内逐层对齐、
+  variant 识别与精确参数量、默认测试接入与无回归、8B+ 边界陈述均已
+  落实。

@@ -1,0 +1,154 @@
+{
+ "source": "official Hugging Face checkpoints, verified layer-wise on this machine",
+ "frozen_at": "2026-07-25",
+ "reference_environment": {
+  "transformers_version": "4.51.0",
+  "torch_version": "2.7.1+cpu",
+  "weight_storage_dtype": "bfloat16",
+  "compute_dtype": "float32"
+ },
+ "token_ids_0_based": [
+  1,
+  9707,
+  13,
+  151643,
+  100,
+  42,
+  151645,
+  2
+ ],
+ "decode_token_id_0_based": 17,
+ "tolerances": {
+  "embedding_max_abs": 0.0001,
+  "blocks_max_abs": 0.01,
+  "final_hidden_max_abs": 0.0005,
+  "logits_max_abs": 0.0005,
+  "decode_max_abs": 0.0002
+ },
+ "models": [
+  {
+   "variant": "qwen3_1_7b",
+   "model_id": "Qwen/Qwen3-1.7B",
+   "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+   "config_sha256": "1ddb5b89ebc90dcb417a45c213d818577e65976454d29385c8f6140771d95197",
+   "parameter_count": 1720574976,
+   "files": [
+    {
+     "name": "config.json",
+     "size": 726,
+     "sha256": "1ddb5b89ebc90dcb417a45c213d818577e65976454d29385c8f6140771d95197"
+    },
+    {
+     "name": "tokenizer.json",
+     "size": 11422654,
+     "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    },
+    {
+     "name": "tokenizer_config.json",
+     "size": 9732,
+     "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    },
+    {
+     "name": "generation_config.json",
+     "size": 239,
+     "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+    },
+    {
+     "name": "model.safetensors.index.json",
+     "size": 25605,
+     "sha256": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d"
+    },
+    {
+     "name": "model-00001-of-00002.safetensors",
+     "size": 3441185608,
+     "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5"
+    },
+    {
+     "name": "model-00002-of-00002.safetensors",
+     "size": 622329984,
+     "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9"
+    }
+   ],
+   "weight_shards": [
+    "model-00001-of-00002.safetensors",
+    "model-00002-of-00002.safetensors"
+   ],
+   "parity": {
+    "embedding_max_abs": 0.0,
+    "blocks_max_abs": 0.0048828125,
+    "final_hidden_max_abs": 0.00017166138,
+    "logits_max_abs": 9.346008e-05,
+    "dynamic_decode_max_abs": 3.0517578e-05,
+    "static_decode_max_abs": 3.0517578e-05,
+    "argmax_equal": true,
+    "transformers_version": "4.51.0",
+    "torch_version": "2.7.1+cpu"
+   }
+  },
+  {
+   "variant": "qwen3_4b",
+   "model_id": "Qwen/Qwen3-4B",
+   "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+   "config_sha256": "8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a",
+   "parameter_count": 4022468096,
+   "files": [
+    {
+     "name": "config.json",
+     "size": 726,
+     "sha256": "8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a"
+    },
+    {
+     "name": "tokenizer.json",
+     "size": 11422654,
+     "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    },
+    {
+     "name": "tokenizer_config.json",
+     "size": 9732,
+     "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    },
+    {
+     "name": "generation_config.json",
+     "size": 239,
+     "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+    },
+    {
+     "name": "model.safetensors.index.json",
+     "size": 32819,
+     "sha256": "6dc0981b8829fead746441f68f38f24c5ca4a3a66351f652c26c6df0efc43ab2"
+    },
+    {
+     "name": "model-00001-of-00003.safetensors",
+     "size": 3957900840,
+     "sha256": "328a91d3122359d5547f9d79521205bc0a46e1f79a792dfe650e99fc2d651223"
+    },
+    {
+     "name": "model-00002-of-00003.safetensors",
+     "size": 3987450520,
+     "sha256": "6cd087b316306a68c562436b5492edbcf6e16c6dba3a1308279caa5a58e21ca5"
+    },
+    {
+     "name": "model-00003-of-00003.safetensors",
+     "size": 99630640,
+     "sha256": "e4bf436957184f4eeb86a80e9db394503f1f56446b2e6b7edeac5b81470f4ca1"
+    }
+   ],
+   "weight_shards": [
+    "model-00001-of-00003.safetensors",
+    "model-00002-of-00003.safetensors",
+    "model-00003-of-00003.safetensors"
+   ],
+   "parity": {
+    "embedding_max_abs": 0.0,
+    "blocks_max_abs": 0.005126953,
+    "final_hidden_max_abs": 0.00010681152,
+    "logits_max_abs": 3.528595e-05,
+    "dynamic_decode_max_abs": 2.002716e-05,
+    "static_decode_max_abs": 2.002716e-05,
+    "argmax_equal": true,
+    "transformers_version": "4.51.0",
+    "torch_version": "2.7.1+cpu"
+   }
+  }
+ ]
+}

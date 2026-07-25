@@ -48,10 +48,73 @@ Week 09 long-position RoPE reference：
 | Week 09 RoPE `reference.json` | `2158095b305ced45cc7c9d03ddb0cb9f77d246fde9f66dbe1aa9d31062799fb5` |
 | Week 09 RoPE `reference.safetensors` | `3e42d148d9553ff691751c02c306b4f8f12c687f4743cb9c443ad296af996c65` |
 
+## 当前 Qwen3-1.7B 与 Qwen3-4B 资产（Week 12）
+
+Week 12 下载了 1.7B 与 4B 的完整权重资产，目录遵循顶部约定：
+
+```text
+/home/yj/models/huggingface/Qwen/Qwen3-1.7B/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e/
+/home/yj/models/huggingface/Qwen/Qwen3-4B/1cfa9a7208912126459214e8b04321603b3df60c/
+```
+
+Week 12 逐层 parity reference 位于各自 revision 目录内的
+`lifeai-references/week12-parity/`。两个 revision 的
+`tokenizer.json`、`tokenizer_config.json`、`generation_config.json` 与
+0.6B 资产字节相同（SHA256 一致）。
+
+### Qwen3-1.7B 文件校验和
+
+| 文件 | SHA256 |
+| --- | --- |
+| `config.json` | `1ddb5b89ebc90dcb417a45c213d818577e65976454d29385c8f6140771d95197` |
+| `model.safetensors.index.json` | `0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d` |
+| `model-00001-of-00002.safetensors` | `169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5` |
+| `model-00002-of-00002.safetensors` | `912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9` |
+
+### Qwen3-4B 文件校验和
+
+| 文件 | SHA256 |
+| --- | --- |
+| `config.json` | `8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a` |
+| `model.safetensors.index.json` | `6dc0981b8829fead746441f68f38f24c5ca4a3a66351f652c26c6df0efc43ab2` |
+| `model-00001-of-00003.safetensors` | `328a91d3122359d5547f9d79521205bc0a46e1f79a792dfe650e99fc2d651223` |
+| `model-00002-of-00003.safetensors` | `6cd087b316306a68c562436b5492edbcf6e16c6dba3a1308279caa5a58e21ca5` |
+| `model-00003-of-00003.safetensors` | `e4bf436957184f4eeb86a80e9db394503f1f56446b2e6b7edeac5b81470f4ca1` |
+
+同一 reference 的离线副本（含 parity 结果）位于
+`test/fixtures/week12_qwen3_dense_real_weights/assets.json`。
+
+### 恢复下载与 reference
+
+```bash
+/home/yj/projects/jwm/.venv/bin/hf download Qwen/Qwen3-1.7B \
+  config.json tokenizer.json tokenizer_config.json generation_config.json \
+  model.safetensors.index.json \
+  model-00001-of-00002.safetensors model-00002-of-00002.safetensors \
+  --revision 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e \
+  --local-dir /home/yj/models/huggingface/Qwen/Qwen3-1.7B/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+
+/home/yj/projects/jwm/.venv/bin/hf download Qwen/Qwen3-4B \
+  config.json tokenizer.json tokenizer_config.json generation_config.json \
+  model.safetensors.index.json \
+  model-00001-of-00003.safetensors model-00002-of-00003.safetensors \
+  model-00003-of-00003.safetensors \
+  --revision 1cfa9a7208912126459214e8b04321603b3df60c \
+  --local-dir /home/yj/models/huggingface/Qwen/Qwen3-4B/1cfa9a7208912126459214e8b04321603b3df60c
+
+# 各尺寸 reference 与 parity（MODEL_DIR 换成上面两个目录之一）
+/home/yj/projects/jwm/.venv/bin/python scripts/export_qwen3_reference.py \
+  MODEL_DIR MODEL_DIR/lifeai-references/week12-parity --revision REVISION
+
+julia --project=. --startup-file=no scripts/verify_qwen3_parity.jl \
+  MODEL_DIR MODEL_DIR/lifeai-references/week12-parity
+```
+
 ## Week 11 Qwen3 dense family config reference
 
-Week 11 只冻结 1.7B—32B 的官方 config contract，没有把这些巨型权重下载到
-`/home/yj/models/`。六个 config 的不可变 revision 与 SHA256 为：
+Week 11 只冻结 1.7B—32B 的官方 config contract；Week 12 下载了其中 1.7B
+与 4B 的完整权重（见上节），8B/14B/32B 仍无本地权重。六个 config 的
+不可变 revision 与 SHA256 为：
 
 | model | revision | `config.json` SHA256 |
 | --- | --- | --- |
