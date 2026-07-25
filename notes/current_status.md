@@ -6,6 +6,8 @@
 
 ## 当前活动阶段
 
+[`Week 15 — Qwen3 BF16 CUDA / XLA Accelerated Inference`](week15_qwen3_bf16_accel.md) 已于 2026-07-26 Open。目标：以设备通用的向量化 BF16 前向（同一混合精度契约）落地 CUDA eager 与 Reactant/XLA 编译推理，0.6B—4B 在 RTX 5080 上完成 parity/greedy/吞吐验证；两道能力闸门（CUDA BF16 原语、Reactant BF16 编译）已实测通过；8B GPU 驻留超出 16.3 GiB VRAM 保持边界。
+
 [`Week 14 — Qwen3 Native BF16 Mixed-Precision Compute`](week14_qwen3_bf16_compute.md) 已于 2026-07-26 Closed。独立 BF16 推理路径逐算子镜像 Transformers 4.51.0 混合精度语义；0.6B/1.7B/4B/8B 与 HF BF16 逐层对齐、argmax 零失配、16 步 greedy token 序列完全一致；参数常驻内存减半，8B 完成本机首个 >4B 全量驻留 greedy 生成（峰值 RSS 19.0 GiB）。既有 F32 / 流式 / XLA 路径零改动。
 
 [`Week 13 — Qwen3 Streamed Loading and 8B/14B/32B Real-Weight Parity`](week13_qwen3_streamed_large_weights.md) 已于 2026-07-25 Closed。流式 / 逐层 safetensors 加载（与 in-memory 路径逐位一致）让 8B / 14B / 32B 在峰值 ≤ 8.9 GiB 内完成真实权重逐层 parity，untied LM head 获得真实证据；Qwen3 dense family 六尺寸的真实权重验证闭环就此完成。
