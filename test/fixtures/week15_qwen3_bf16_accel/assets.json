@@ -1,0 +1,99 @@
+{
+ "source": "vectorized BF16 path on RTX 5080 (CUDA eager + Reactant XLA) vs HF BF16",
+ "frozen_at": "2026-07-26",
+ "token_ids_0_based": [
+  1,
+  9707,
+  13,
+  151643,
+  100,
+  42,
+  151645,
+  2
+ ],
+ "decode_token_id_0_based": 17,
+ "greedy_steps": 16,
+ "tolerances": {
+  "embedding_max_abs": 0.001,
+  "blocks_scaled_max_abs": 0.05,
+  "final_hidden_max_abs": 4.0,
+  "logits_max_abs": 2.0,
+  "decode_max_abs": 2.0
+ },
+ "cuda_models": [
+  {
+   "variant": "qwen3_0_6b",
+   "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+   "parameter_count": 596049920,
+   "gpu_name": "NVIDIA GeForce RTX 5080",
+   "parity": {
+    "embedding_max_abs": 0.0,
+    "blocks_max_abs": 11.0,
+    "blocks_scaled_max_abs": 0.00877193,
+    "final_hidden_max_abs": 2.625,
+    "logits_max_abs": 0.6875,
+    "dynamic_decode_max_abs": 0.49609375,
+    "argmax_equal": true,
+    "greedy_match": true,
+    "gpu_tree_gib": 1.124,
+    "vram_used_gib": 8.256,
+    "cold_seconds": 18.1,
+    "warm_greedy_seconds": 1.04,
+    "warm_tokens_per_second": 15.33
+   }
+  },
+  {
+   "variant": "qwen3_1_7b",
+   "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+   "parameter_count": 1720574976,
+   "gpu_name": "NVIDIA GeForce RTX 5080",
+   "parity": {
+    "embedding_max_abs": 0.0,
+    "blocks_max_abs": 32.0,
+    "blocks_scaled_max_abs": 0.0131579,
+    "final_hidden_max_abs": 0.625,
+    "logits_max_abs": 0.84375,
+    "dynamic_decode_max_abs": 0.48046875,
+    "argmax_equal": true,
+    "greedy_match": true,
+    "gpu_tree_gib": 3.233,
+    "vram_used_gib": 8.668,
+    "cold_seconds": 18.7,
+    "warm_greedy_seconds": 1.13,
+    "warm_tokens_per_second": 14.12
+   }
+  },
+  {
+   "variant": "qwen3_4b",
+   "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+   "parameter_count": 4022468096,
+   "gpu_name": "NVIDIA GeForce RTX 5080",
+   "parity": {
+    "embedding_max_abs": 0.0,
+    "blocks_max_abs": 6.0,
+    "blocks_scaled_max_abs": 0.00474684,
+    "final_hidden_max_abs": 1.0,
+    "logits_max_abs": 0.265625,
+    "dynamic_decode_max_abs": 0.1875,
+    "argmax_equal": true,
+    "greedy_match": true,
+    "gpu_tree_gib": 7.5,
+    "vram_used_gib": 12.133,
+    "cold_seconds": 19.9,
+    "warm_greedy_seconds": 1.98,
+    "warm_tokens_per_second": 8.07
+   }
+  }
+ ],
+ "xla_prefill": {
+  "variant": "qwen3_0_6b",
+  "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+  "compile_seconds": 44.8,
+  "first_exec_seconds": 1.724,
+  "steady_exec_seconds": 0.0014,
+  "logits_max_abs": 0.578125,
+  "logits_mean_abs": 0.061312243,
+  "logits_argmax_equal": true,
+  "greedy_first_token_equal": true
+ }
+}

@@ -193,6 +193,25 @@ julia --project=. --startup-file=no --heap-size-hint=2G -e \
 （实测 125/125 通过）；不带 hint 时 GC 滞后会在共享内存机器上触发
 OOM KILL。
 
+## Week 15 CUDA / XLA BF16 验证
+
+复用 Week 14 的 `week14-bf16-parity` reference（不重复导出）。注意加载
+顺序：**脚本必须先 `using LuxCUDA` / `using Reactant` 再 `using
+LifeAI`**，否则 cuDNN 初始化失败。
+
+```bash
+# CUDA eager（0.6B/1.7B/4B；8B BF16 树 15.3 GiB 超出 16.3 GiB VRAM）
+julia --project=. --startup-file=no scripts/verify_qwen3_bf16_cuda.jl \
+  MODEL_DIR MODEL_DIR/lifeai-references/week14-bf16-parity
+
+# Reactant XLA BF16 编译 prefill（0.6B）
+julia --project=. --startup-file=no scripts/verify_qwen3_bf16_xla.jl \
+  MODEL_DIR MODEL_DIR/lifeai-references/week14-bf16-parity
+```
+
+CUDA opt-in 测试（`Pkg.test` 内可三尺寸同进程，累计 GPU 树 ≈ 11.9 GiB）：
+`LIFEAI_QWEN3_BF16_CUDA_0_6B/1_7B/4B_MODEL_DIR`。
+
 ## Week 11 Qwen3 dense family config reference
 
 Week 11 冻结全部六个官方 config contract；Week 12 下载 1.7B/4B 权重，

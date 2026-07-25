@@ -1,8 +1,10 @@
 # Week 15 — Qwen3 BF16 CUDA / XLA Accelerated Inference
 
-> 状态：Open
+> 状态：Closed
 >
 > 开启记录：2026-07-26
+>
+> 关闭记录：2026-07-26
 >
 > 依赖基线：[`Week 14 — Qwen3 Native BF16 Mixed-Precision Compute`](week14_qwen3_bf16_compute.md) 已 Closed，保持历史内容不变。
 >
@@ -65,14 +67,14 @@
 
 ## 验证分层
 
-| 证据层 | 目标状态 |
+| 证据层 | 最终状态 |
 | --- | --- |
-| 向量化 BF16 路径 vs Week 14 CPU 循环路径 | 合成模型默认离线对照 |
-| CUDA BF16 逐层 / logits / decode parity | 0.6B/1.7B/4B 在 BF16 量级容差内 |
-| CUDA BF16 greedy 16 步 vs HF BF16 | 完全一致，或逐 token 一致率量测后冻结 |
-| CUDA BF16 decode 吞吐 / VRAM | 实测记录并对照 CPU |
-| XLA BF16 编译 prefill parity | 0.6B 通过并记录编译/执行耗时 |
-| 既有 CPU BF16 / F32 / 流式 / XLA F32 路径 | 零改动，无回归 |
+| 向量化 BF16 路径 vs Week 14 CPU 循环路径 | **逐位相同**（合成 tied/untied + 真实 0.6B，默认离线覆盖） |
+| CUDA BF16 逐层 / logits / decode parity | 0.6B/1.7B/4B 全部在 BF16 量级容差内，argmax 零失配 |
+| CUDA BF16 greedy 16 步 vs HF BF16 | 三尺寸全部完全一致（无近平局翻转） |
+| CUDA BF16 decode 吞吐 / VRAM | 15.3 / 14.1 / 8.1 tok/s，VRAM ≤ 12.1 GiB，对照 CPU 33—92× |
+| XLA BF16 编译 prefill parity | 0.6B 通过：编译 44.8 s、steady 1.36 ms、argmax/greedy 首 token 一致 |
+| 既有 CPU BF16 / F32 / 流式 / XLA F32 路径 | 零改动，默认全套无回归 |
 
 ## Close 条件
 
@@ -103,3 +105,69 @@
 - 两道能力闸门（CUDA BF16 原语、Reactant BF16 编译与转换写法）在
   Open 前实测通过，结论记入本页。
 - 资源边界冻结：GPU 驻留上限 4B（7.49 GiB / 16.3 GiB VRAM）；8B 出界。
+
+### 2026-07-26：实现与全量验证
+
+- 新增 `src/models/bf16_accel.jl`：设备通用向量化 BF16 前向
+  `hf_qwen3_bf16_accel_forward`，只用 broadcast / `batched_mul` /
+  gather / 归约；两处 CPU 专用分派保住契约——线性层走 Week 14 分块
+  F32 kernel，batched matmul 在 CPU 上显式 F32 gemm + BF16 舍入
+  （通用 fallback 会以 BF16 累加，实测曾导致 greedy 漂移）。
+- **CPU 上向量化路径与 Week 14 循环路径逐位相同**（trace、decode、
+  greedy 全部 `==`，真实 0.6B 与合成 tied/untied 模型均验证）——
+  向量化重写没有引入任何数值变化。
+- 两个环境坑记录：(1) cuDNN 库在 LifeAI 之后加载会 `libcudnn_cnn.so`
+  初始化失败，脚本必须先 `using LuxCUDA` 再 `using LifeAI`；测试内
+  改用纯 `CUDA.cu` 移树（CUDA 是硬依赖，无需 cuDNN）。(2) Reactant
+  traced 数组 eltype 是 `TracedRNumber{BFloat16}`，签名不能写死
+  `AbstractArray{BFloat16}`。
+- **CUDA eager 三尺寸全部通过**（RTX 5080，vs Week 14 HF BF16
+  reference，argmax 零失配，16 步 greedy 全部完全一致）：
+
+  | variant | logits max/mean | GPU 树 | VRAM 峰值 | warm 16-token | tok/s | vs CPU BF16 |
+  | --- | --- | ---: | ---: | ---: | ---: | ---: |
+  | 0.6B | 0.688 / 0.075 | 1.12 GiB | 8.3 GiB | 1.04 s | 15.3 | ≈ 33× |
+  | 1.7B | 0.844 / 0.057 | 3.23 GiB | 8.7 GiB | 1.13 s | 14.1 | ≈ 69× |
+  | 4B | 0.266 / 0.037 | 7.50 GiB | 12.1 GiB | 1.98 s | 8.1 | ≈ 92× |
+
+- **Reactant XLA BF16 编译通过**（0.6B prefill 全前向）：编译 44.8 s，
+  首执行 1.72 s，**steady 1.36 ms**；logits max-abs 0.578（mean
+  0.061），argmax 与 greedy 首 token 与 HF 一致，两次执行逐位相同。
+- 全部结果冻结进 `test/fixtures/week15_qwen3_bf16_accel/assets.json`
+  （容差沿用 Week 14：logits/decode 2.0、blocks scaled 5e-2）。
+
+### 2026-07-26：验证与 Close
+
+- 默认离线全套 `4792 / 4792` 通过（Week 15 离线专项 `63 / 63`：
+  batched matmul 契约、向量化 vs 循环逐位一致、CUDA/XLA 资产
+  contract）；Week 05—14 计数与各自 Close 时一致，无回归。
+- CUDA opt-in（三尺寸同进程 `Pkg.test`）：Week 15 专项 `173 / 173`
+  通过。第一次运行暴露 world-age 坑：在测试函数内 `Base.require`
+  动态加载 CUDA 后，函数体内后续泛型调用仍在旧 world——修复为文件
+  顶层按需 `using CUDA`，积分函数在其后定义。
+- XLA BF16 由独立脚本验证（`scripts/verify_qwen3_bf16_xla.jl`），
+  结果冻结进 fixture 并由离线 contract 校验。
+
+## Close 回顾
+
+- **完成了什么**：BF16 推理落地 GPU——设备通用向量化路径（CPU 上与
+  Week 14 循环路径逐位相同）在 RTX 5080 上以原生 BF16 张量核运行；
+  0.6B/1.7B/4B CUDA parity 与 16 步 greedy 全部与 HF BF16 一致；
+  Reactant XLA BF16 编译 prefill 通过。推理验证的主战场从 CPU 移到
+  CUDA/XLA。
+- **验证证据**：CUDA 三尺寸 argmax 零失配、greedy 完全一致、吞吐
+  15.3/14.1/8.1 tok/s（CPU 的 33/69/92 倍）、VRAM ≤ 12.1 GiB；XLA
+  steady 1.36 ms/prefill 且两次执行逐位相同；默认全套 `4792 / 4792`、
+  CUDA opt-in `173 / 173`。
+- **没有完成及原因**：8B GPU 驻留（15.26 GiB > 16.3 GiB VRAM 无余量）
+  与 XLA 完整生成闭环（固定形状 decode 编译）留待后续；量化、
+  sampling replay、长上下文 GPU 优化按计划未做。
+- **最重要的认知变化**：其一，同一套混合精度契约可以"一份实现、三种
+  执行形态"（CPU 仿真、CUDA eager、XLA 编译），前提是只用设备友好
+  原语并显式控制每一次舍入；其二，通用 fallback 是数值契约的隐形
+  杀手——CPU batched matmul 默默用 BF16 累加直接改变 greedy 输出，
+  分派边界必须显式钉死；其三，加载顺序（cuDNN）、traced eltype、
+  world age 这类工程细节在 GPU 栈里比数值本身更容易咬人，全部记入
+  可复现命令。
+- **是否满足 Close 条件**：是。逐位对照、CUDA parity/greedy/吞吐、
+  XLA prefill、默认与 opt-in 回归、文档边界均已落实。

@@ -87,6 +87,10 @@ end
     include("test_week14.jl")
 end
 
+@testset "Week 15 Qwen3 BF16 CUDA/XLA acceleration" begin
+    include("test_week15.jl")
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA KV cache" begin
         include("test_xla_kv_cache.jl")
