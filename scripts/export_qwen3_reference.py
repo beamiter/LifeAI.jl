@@ -21,6 +21,18 @@ def parse_args():
     parser.add_argument("--revision", default="local")
     parser.add_argument("--token-ids", type=int, nargs="+", default=DEFAULT_TOKEN_IDS)
     parser.add_argument("--decode-token-id", type=int, default=DEFAULT_DECODE_TOKEN_ID)
+    parser.add_argument(
+        "--offload-dir",
+        type=Path,
+        default=None,
+        help="enable accelerate disk offload for models whose Float32 "
+        "parameters exceed host RAM; Float32 compute semantics are unchanged",
+    )
+    parser.add_argument(
+        "--max-cpu-memory",
+        default="12GiB",
+        help="CPU weight budget when --offload-dir is set",
+    )
     return parser.parse_args()
 
 
@@ -28,12 +40,20 @@ def main():
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_dir,
+    load_kwargs: dict = dict(
         local_files_only=True,
         torch_dtype=torch.float32,
         low_cpu_mem_usage=True,
     )
+    if args.offload_dir is not None:
+        args.offload_dir.mkdir(parents=True, exist_ok=True)
+        load_kwargs.update(
+            device_map="auto",
+            max_memory={"cpu": args.max_cpu_memory},
+            offload_folder=str(args.offload_dir),
+            offload_state_dict=True,
+        )
+    model = AutoModelForCausalLM.from_pretrained(args.model_dir, **load_kwargs)
     model.eval()
 
     block_outputs = [None] * len(model.model.layers)
@@ -88,6 +108,7 @@ def main():
         "torch_version": torch.__version__,
         "weight_storage_dtype": "bfloat16",
         "compute_dtype": "float32",
+        "disk_offload": args.offload_dir is not None,
         "token_ids_0_based": args.token_ids,
         "decode_token_id_0_based": args.decode_token_id,
     }

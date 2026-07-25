@@ -2,11 +2,11 @@
 
 ## 一句话判断
 
-项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3-0.6B 与 GPT-2 124M 两种真实架构的结构、权重、tokenizer、生成和性能均已有独立 reference，Qwen3 0.6B—32B 六个官方 dense 尺寸有显式 config/topology/参数量 family contract，其中 0.6B / 1.7B / 4B 三个尺寸的真实权重已完成逐层 parity 实跑。
+项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3-0.6B 与 GPT-2 124M 两种真实架构的结构、权重、tokenizer、生成和性能均已有独立 reference，Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**——0.6B—4B 全量加载，8B—32B 经流式 / 逐层加载在 30 GiB RAM 内完成（32B 峰值仅 8.9 GiB）。
 
 ## 当前活动阶段
 
-[`Week 13 — Qwen3 Streamed Loading and 8B/14B/32B Real-Weight Parity`](week13_qwen3_streamed_large_weights.md) 已于 2026-07-25 Open。目标：实现流式 / 逐层 safetensors 加载与逐层 forward/decode，在 30 GiB RAM 上完成 8B / 14B / 32B（全部 untied LM head）真实权重逐层 parity；流式路径必须与 in-memory 路径逐位一致，Python reference 用 accelerate disk offload 保持 Float32 同口径。
+[`Week 13 — Qwen3 Streamed Loading and 8B/14B/32B Real-Weight Parity`](week13_qwen3_streamed_large_weights.md) 已于 2026-07-25 Closed。流式 / 逐层 safetensors 加载（与 in-memory 路径逐位一致）让 8B / 14B / 32B 在峰值 ≤ 8.9 GiB 内完成真实权重逐层 parity，untied LM head 获得真实证据；Qwen3 dense family 六尺寸的真实权重验证闭环就此完成。
 
 [`Week 12 — Qwen3 Dense Family Real-Weight Parity`](week12_qwen3_dense_real_weights.md) 已于 2026-07-25 Closed。1.7B 与 4B 真实权重经分片 safetensors index 加载并在显式容差内完成逐层 hidden/logits/dynamic/static decode parity，loader 零改动一次通过；tied embedding 的三个官方尺寸（0.6B/1.7B/4B）全部实跑。8B/14B/32B 因 Float32 全量加载需 30.5—122.1 GiB、超出本机 30 GiB RAM，保持显式未验证边界。
 
@@ -23,7 +23,8 @@
 - TransformerBlock：采用 pre-norm、attention residual 和 MLP residual，可独立选择 LayerNorm / RMSNorm 与 GELU / GELU-New / SwiGLU。
 - GPTModel：包括 token/可选 position embedding、多层 TransformerBlock、final norm 和 LM head；支持 embedding / LM head 单 kernel 权重共享，并可分离 projection bias 与 LM-head bias。
 - legacy 默认仍为 LayerNorm + GELU + untied；modern 配置可通过独立开关组合，不改变旧调用。
-- HuggingFace Qwen3 dense 导入：冻结 0.6B / 1.7B / 4B / 8B / 14B / 32B 六个官方规格与 config checksum，可自动识别或显式要求 variant；严格解析 config，读取 BF16/F32 safetensors 单文件或 index 分片，完整映射 embedding、attention、QK-Norm、MLP、final norm 与 tied/untied LM head；missing、unexpected、duplicate、shape/dtype/config 错误均 fail closed。0.6B（单文件）、1.7B（2 分片）、4B（3 分片）三个真实 checkpoint 均已实跑逐层 parity。
+- HuggingFace Qwen3 dense 导入：冻结 0.6B / 1.7B / 4B / 8B / 14B / 32B 六个官方规格与 config checksum，可自动识别或显式要求 variant；严格解析 config，读取 BF16/F32 safetensors 单文件或 index 分片，完整映射 embedding、attention、QK-Norm、MLP、final norm 与 tied/untied LM head；missing、unexpected、duplicate、shape/dtype/config 错误均 fail closed。六个真实 checkpoint 全部实跑逐层 parity：0.6B—4B 全量加载，8B—32B 流式加载。
+- 流式 safetensors 加载（Week 13）：`open_safetensors_reader` header-only 索引 + `read_safetensors_tensor` 按需读取 + `stream_hf_qwen3_forward` 逐层 trace 与 dynamic decode；embedding 按 token 行从磁盘 gather，单层参数映射与 in-memory loader 共用；与全量路径逐位一致（合成 fixture 与真实 0.6B 验证），32B 峰值 RSS 8.9 GiB。
 - HuggingFace GPT-2 导入：冻结 revision/checksum，严格映射 learned position、LayerNorm bias、fused QKV 与 HF Conv1D `(in, out)`，验证 causal buffers 与 tied LM head；完整 context 参数量 124,439,808。
 - 显式 `hf_token_ids` 处理 HF 0-based 到 LifeAI 1-based 边界；逐层 trace 与 reference 脚本可验证 embedding、每个 block、final hidden、full logits 和 cache decode logits。`Lux.parameterlength` 已包含自定义 Q/K-Norm scale，六个 dense topology 的精确参数量与冻结 reference 一致。
 
@@ -67,7 +68,9 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-2026-07-25 复核默认套件，共 `4369 / 4369` 项测试通过；其中 Week 05 专项 3094 项、Week 06 专项 112 项、Week 07 离线专项 54 项、Week 08 离线专项 61 项、Week 09 离线专项 67 项、Week 10 离线专项 37 项、Week 11 专项 91 项、Week 12 离线专项 85 项。历史 Reactant/XLA 专项 `52 / 52` 通过；Week 10 learned-position/GELU-New 同构 XLA smoke 与 Week 11 untied + 宽 attention XLA smoke 均曾另行复核 `4 / 4` 通过（Week 12 零 src 改动，不影响该结论）。
+2026-07-25 复核默认套件，共 `4652 / 4652` 项测试通过；其中 Week 05 专项 3094 项、Week 06 专项 112 项、Week 07 离线专项 54 项、Week 08 离线专项 61 项、Week 09 离线专项 67 项、Week 10 离线专项 37 项、Week 11 专项 91 项、Week 12 离线专项 85 项、Week 13 离线专项 283 项。历史 Reactant/XLA 专项 `52 / 52` 通过；Week 10 与 Week 11 的 XLA smoke 均曾另行复核 `4 / 4` 通过（Week 12/13 未改动 XLA 路径）。
+
+Week 13 的离线 `283 / 283` 覆盖流式 reader 严格性（44 项）、流式 vs in-memory 逐位一致（23 项）与 8B/14B/32B 资产/parity contract；带 `LIFEAI_QWEN3_8B/14B/32B_MODEL_DIR` 的 opt-in 全套 `689 / 689` 通过（integration 406 项，重算逐层流式 parity）。8B/14B/32B 流式峰值 RSS 分别 6.94 / 8.84 / 8.87 GiB（对照 Float32 全量 30.51 / 55.02 / 122.06 GiB），logits max-abs ≤ `3.05e-5`，decode ≤ `4.01e-5`，argmax 全一致。注意 opt-in 协议：tied 尺寸与 streamed 尺寸的 integration 必须分两个 `Pkg.test` 进程运行（同进程堆累积会 OOM）。block 级中间激活用尺度感知容差（scaled ≤ 1e-5，实测最差 6.9e-7），归一化输出用绝对容差。
 
 Week 11 的 `91 / 91` 包含：六个 frozen config 的 revision/checksum、自动识别、错配/RoPE 语义漂移/MoE 拒绝，六套完整 depth/width topology 和精确参数量共 80 项；untied LM head、`Q width > hidden`、GQA dynamic/static cache 的缩小 32B 形态共 11 项。
 
@@ -95,7 +98,7 @@ Week 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定形�
 
 - GPT-2 的 WebText 从零训练、论文 zero-shot quality、其他尺寸和非 causal-LM heads；Week 10 只完成 124M 官方 checkpoint 的 Float32 推理/架构复现。
 - 通用 Jinja chat template、Qwen3 tools/tool-role 分支、JSON schema 工具注入与 agent tool loop；Week 08 只完成已冻结的无 tools 基础 chat 子集。
-- Qwen3 native BF16 compute、量化、完整 40K 真实模型运行、8B—32B 真实 checkpoint 的逐层/logits/text parity（Float32 全量加载需 30.5—122.1 GiB，超出本机 30 GiB RAM）与 MoE；当前 BF16 仅为权重存储格式，计算为 Float32。untied LM head 仍只有缩小模型证据；1.7B/4B 已有权重/logits parity 但未做 text 端到端、sampling replay 或 benchmark。
+- Qwen3 native BF16 compute、量化、完整 40K 真实模型运行与 MoE；当前 BF16 仅为权重存储格式，计算为 Float32。1.7B—32B 已有权重/logits/decode parity，但未做 text 端到端、sampling replay 或 benchmark；8B—32B 的静态 KV cache 与 XLA 路径仍需全量参数驻留，未在流式模式下提供。
 - Qwen3 128K YaRN / RoPE scaling；六个冻结 checkpoint 的原生 `max_position_embeddings` 均为 40,960，非空 `rope_scaling` 仍 fail closed。
 - 面向真实任务和长期运行的模型质量；较大规模真实语料训练。
 - 适合 tied embedding 的统一初始化基线、低精度专项与真实规模组件对照。
@@ -170,6 +173,19 @@ Week 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定形�
 `4369 / 4369`，opt-in `209 / 209`）；离线 checksum/parity fixture 进入
 默认测试；8B+ 不可实跑的边界保持明确。
 
+### Milestone B'''''': 流式加载完成 8B/14B/32B 真实权重验证（已完成）
+
+- header-only safetensors 索引、按需单 tensor 读取与逐层流式
+  forward/decode，与 in-memory 路径逐位一致。（Week 13 已完成）
+- accelerate disk offload 生成 Float32 同口径 reference；8B/14B/32B
+  逐层 parity 全部通过，untied LM head 获真实证据。（Week 13 已完成）
+- 尺度感知 block 容差与分进程测试协议进入默认套件与文档。（Week 13
+  已完成）
+
+完成标准已满足：六尺寸真实权重逐层验证闭环完成（默认全套
+`4652 / 4652`，week13 opt-in `689 / 689`）；32B 峰值 RSS 8.9 GiB 实测
+记录在案。
+
 ### Milestone C：建立最小有状态智能体闭环（后移）
 
 - 定义与具体机器人无关的 `Observation`、`Action`、`Memory` 和 policy / model 接口。
@@ -182,10 +198,10 @@ Week 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定形�
 
 | 主线 | 当前状态 | 下一关键缺口 |
 | --- | --- | --- |
-| 模型基本组件 | Qwen3 六尺寸 dense family contract、0.6B/1.7B/4B 真实权重 parity 与 GPT-2 真实 parity；HF config / safetensors（单文件与分片）/ tokenizer；RoPE / learned position；五类版本化 Tokenizer 与中文数据管线 | 8B+ 真实权重所需的低精度/流式加载，或下一经典/SOTA 架构 |
+| 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环（0.6B—4B 全量、8B—32B 流式）与 GPT-2 真实 parity；流式 safetensors 逐层加载；HF config / tokenizer；五类版本化 Tokenizer 与中文数据管线 | native BF16 / 低精度 compute、大尺寸生成级支持，或下一经典/SOTA 架构 |
 | 高效训练与推理 | modern / GQA / rotate_half 已兼容 Zygote / XLA 与两类 KV Cache；Qwen3-0.6B CPU/CUDA/XLA decode 已真实验证 | 低精度、device-resident sampling 与更长上下文优化 |
 | 智能体核心 | 尚未开始；Qwen3 基础 chat 输入已可作为模型后端 | conversation state、memory、planning、tools、agent loop |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Week 01—12 已 Closed | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏 |
+| 学习记录 | Week 01—13 已 Closed | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏 |

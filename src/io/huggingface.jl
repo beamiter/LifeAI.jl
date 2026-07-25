@@ -711,15 +711,91 @@ function _format_tensor_names(names)
 end
 
 """
+    _qwen3_block_parameters(model, tensors, layer)
+
+Map one HuggingFace Qwen3 decoder layer (0-based `layer`) into the Lux block
+parameter tree. `tensors` only needs `haskey` and `getindex`, so the same
+mapping serves the in-memory state dict and the streamed reader.
+"""
+function _qwen3_block_parameters(
+    model::GPTModel,
+    tensors::AbstractDict,
+    layer::Int,
+)
+    d_model = model.d_model
+    q_dim = model.num_heads * model.head_dim
+    kv_dim = model.num_kv_heads * model.head_dim
+    hidden_dim = model.mlp_hidden_dim
+    prefix = "model.layers.$layer"
+    norm1 = (; scale=reshape(_expect_tensor(
+        tensors,
+        "$prefix.input_layernorm.weight",
+        (d_model,),
+    ), d_model, 1, 1))
+    attn = (;
+        q_proj=(; weight=_expect_tensor(
+            tensors,
+            "$prefix.self_attn.q_proj.weight",
+            (q_dim, d_model),
+        )),
+        k_proj=(; weight=_expect_tensor(
+            tensors,
+            "$prefix.self_attn.k_proj.weight",
+            (kv_dim, d_model),
+        )),
+        v_proj=(; weight=_expect_tensor(
+            tensors,
+            "$prefix.self_attn.v_proj.weight",
+            (kv_dim, d_model),
+        )),
+        o_proj=(; weight=_expect_tensor(
+            tensors,
+            "$prefix.self_attn.o_proj.weight",
+            (d_model, q_dim),
+        )),
+        q_norm=(; scale=_expect_tensor(
+            tensors,
+            "$prefix.self_attn.q_norm.weight",
+            (model.head_dim,),
+        )),
+        k_norm=(; scale=_expect_tensor(
+            tensors,
+            "$prefix.self_attn.k_norm.weight",
+            (model.head_dim,),
+        )),
+    )
+    norm2 = (; scale=reshape(_expect_tensor(
+        tensors,
+        "$prefix.post_attention_layernorm.weight",
+        (d_model,),
+    ), d_model, 1, 1))
+    mlp = (;
+        gate_proj=(; weight=_expect_tensor(
+            tensors,
+            "$prefix.mlp.gate_proj.weight",
+            (hidden_dim, d_model),
+        )),
+        up_proj=(; weight=_expect_tensor(
+            tensors,
+            "$prefix.mlp.up_proj.weight",
+            (hidden_dim, d_model),
+        )),
+        down_proj=(; weight=_expect_tensor(
+            tensors,
+            "$prefix.mlp.down_proj.weight",
+            (d_model, hidden_dim),
+        )),
+    )
+    return (; norm1, attn, norm2, mlp)
+end
+
+"""
     load_hf_qwen3_parameters(model, tensors)
 
 Map a complete, Float32 HuggingFace Qwen3 state dict into the Lux parameter
 tree. Missing and unexpected tensors are rejected before any tree is returned.
 """
-function load_hf_qwen3_parameters(
-    model::GPTModel,
-    tensors::AbstractDict,
-)
+function _qwen3_validate_semantics(model::GPTModel)
     model.norm_type === :rmsnorm || throw(ArgumentError("Qwen3 requires RMSNorm"))
     model.mlp_type === :swiglu || throw(ArgumentError("Qwen3 requires SwiGLU"))
     model.use_qk_norm || throw(ArgumentError("Qwen3 requires QK-Norm"))
@@ -727,9 +803,11 @@ function load_hf_qwen3_parameters(
         "Qwen3 requires rotate_half RoPE",
     ))
     model.use_bias && throw(ArgumentError("Qwen3 weight loading requires bias-free projections"))
+    return nothing
+end
 
+function _qwen3_validate_tensor_names(model::GPTModel, actual_names::Set{String})
     expected_names = _qwen3_expected_tensor_names(model)
-    actual_names = Set(String.(collect(keys(tensors))))
     allowed_names = model.tie_embeddings ?
         union(expected_names, Set(["lm_head.weight"])) : expected_names
     missing = setdiff(expected_names, actual_names)
@@ -740,11 +818,17 @@ function load_hf_qwen3_parameters(
     isempty(unexpected) || throw(ArgumentError(
         "unexpected HuggingFace tensors: $(_format_tensor_names(unexpected))",
     ))
+    return nothing
+end
+
+function load_hf_qwen3_parameters(
+    model::GPTModel,
+    tensors::AbstractDict,
+)
+    _qwen3_validate_semantics(model)
+    _qwen3_validate_tensor_names(model, Set(String.(collect(keys(tensors)))))
 
     d_model = model.d_model
-    q_dim = model.num_heads * model.head_dim
-    kv_dim = model.num_kv_heads * model.head_dim
-    hidden_dim = model.mlp_hidden_dim
 
     embedding_hf = _expect_tensor(
         tensors,
@@ -764,68 +848,7 @@ function load_hf_qwen3_parameters(
     token_embedding = (; weight=permutedims(embedding_hf, (2, 1)))
 
     block_values = ntuple(model.num_layers) do julia_layer
-        layer = julia_layer - 1
-        prefix = "model.layers.$layer"
-        norm1 = (; scale=reshape(_expect_tensor(
-            tensors,
-            "$prefix.input_layernorm.weight",
-            (d_model,),
-        ), d_model, 1, 1))
-        attn = (;
-            q_proj=(; weight=_expect_tensor(
-                tensors,
-                "$prefix.self_attn.q_proj.weight",
-                (q_dim, d_model),
-            )),
-            k_proj=(; weight=_expect_tensor(
-                tensors,
-                "$prefix.self_attn.k_proj.weight",
-                (kv_dim, d_model),
-            )),
-            v_proj=(; weight=_expect_tensor(
-                tensors,
-                "$prefix.self_attn.v_proj.weight",
-                (kv_dim, d_model),
-            )),
-            o_proj=(; weight=_expect_tensor(
-                tensors,
-                "$prefix.self_attn.o_proj.weight",
-                (d_model, q_dim),
-            )),
-            q_norm=(; scale=_expect_tensor(
-                tensors,
-                "$prefix.self_attn.q_norm.weight",
-                (model.head_dim,),
-            )),
-            k_norm=(; scale=_expect_tensor(
-                tensors,
-                "$prefix.self_attn.k_norm.weight",
-                (model.head_dim,),
-            )),
-        )
-        norm2 = (; scale=reshape(_expect_tensor(
-            tensors,
-            "$prefix.post_attention_layernorm.weight",
-            (d_model,),
-        ), d_model, 1, 1))
-        mlp = (;
-            gate_proj=(; weight=_expect_tensor(
-                tensors,
-                "$prefix.mlp.gate_proj.weight",
-                (hidden_dim, d_model),
-            )),
-            up_proj=(; weight=_expect_tensor(
-                tensors,
-                "$prefix.mlp.up_proj.weight",
-                (hidden_dim, d_model),
-            )),
-            down_proj=(; weight=_expect_tensor(
-                tensors,
-                "$prefix.mlp.down_proj.weight",
-                (d_model, hidden_dim),
-            )),
-        )
-        return (; norm1, attn, norm2, mlp)
+        return _qwen3_block_parameters(model, tensors, julia_layer - 1)
     end
     block_names = Tuple(Symbol("layer_$layer") for layer in 1:model.num_layers)
     blocks = NamedTuple{block_names}(block_values)

@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 的真实权重验证已覆盖 0.6B / 1.7B / 4B 三个官方尺寸（含单文件与 2/3 分片 safetensors、`Q width == hidden` 与 `Q width > hidden` 真实分支），GPT-2 124M 推理复现闭环保持完成；8B—32B 因 Float32 全量加载超出 30 GiB RAM 保持显式未验证边界。**
+**阶段判断：Qwen3 dense family 六个官方尺寸（0.6B—32B）的真实权重逐层 parity 全部完成——0.6B/1.7B/4B 全量加载，8B/14B/32B 经流式 / 逐层加载在 30 GiB RAM 内验证（32B 峰值仅 8.9 GiB）；GPT-2 124M 推理复现闭环保持完成。**
 
-Week 01—12 均已 Closed；[`Week 12 — Qwen3 Dense Family Real-Weight Parity`](notes/week12_qwen3_dense_real_weights.md) 把真实 checkpoint 逐层 parity 从 0.6B 扩展到 1.7B 与 4B，loader 零改动一次通过，1.7B/4B 的资产 checksum、容差与实测 parity 已冻结进默认离线测试与 opt-in integration。Week 11 的六尺寸结构 contract 与 Week 10 的 GPT-2 历史内容保持关闭，不与本阶段混写。
+Week 01—13 均已 Closed；[`Week 13 — Qwen3 Streamed Loading and 8B/14B/32B Real-Weight Parity`](notes/week13_qwen3_streamed_large_weights.md) 以 header-only safetensors 索引与逐层流式 forward/decode（与全量路径逐位一致）补齐了最后三个 untied 尺寸的真实权重证据。Week 11/12 的 contract 与 tied 尺寸 parity、Week 10 的 GPT-2 历史内容保持关闭，不与本阶段混写。
 
 目前已经具备：
 
@@ -58,7 +58,7 @@ Week 01—12 均已 Closed；[`Week 12 — Qwen3 Dense Family Real-Weight Parity
 
 更详细的能力盘点、验证范围与建议里程碑见 [`notes/current_status.md`](notes/current_status.md)。
 
-本机大模型权重与真实 reference 固定存放在 `/home/yj/models/`，不使用易清理的 `/tmp`，也不提交进仓库；Qwen3-0.6B/1.7B/4B 与 GPT-2 124M 的完整资产和恢复命令见 [`notes/local_model_assets.md`](notes/local_model_assets.md)，六个 Qwen3 dense config 规格见 [`Week 11`](notes/week11_qwen3_dense_family.md)。
+本机大模型权重与真实 reference 固定存放在 `/home/yj/models/`，不使用易清理的 `/tmp`，也不提交进仓库；Qwen3 六尺寸（0.6B—32B）与 GPT-2 124M 的完整资产和恢复命令见 [`notes/local_model_assets.md`](notes/local_model_assets.md)，六个 Qwen3 dense config 规格见 [`Week 11`](notes/week11_qwen3_dense_family.md)。
 
 ## 演进路线
 

@@ -18,7 +18,7 @@
 - [`week10_gpt2_hf_parity.md`](week10_gpt2_hf_parity.md)：Week 10（Closed），经典 GPT-2 124M 的 learned absolute position、HF Conv1D 权重、byte-level BPE、逐层 logits、cache/text parity 与 CPU/CUDA 基线。
 - [`week11_qwen3_dense_family.md`](week11_qwen3_dense_family.md)：Week 11（Closed），冻结并显式覆盖 Qwen3 0.6B—32B 六个 dense 尺寸的 config/topology/参数量、tied/untied head 与宽 attention contract。
 - [`week12_qwen3_dense_real_weights.md`](week12_qwen3_dense_real_weights.md)：Week 12（Closed），1.7B / 4B 真实权重经分片 safetensors 完成逐层 parity，loader 零改动一次通过；tied 三尺寸全部实跑，8B+ 保持内存边界。
-- [`week13_qwen3_streamed_large_weights.md`](week13_qwen3_streamed_large_weights.md)：Week 13（Open），流式 / 逐层加载突破 30 GiB RAM 限制，完成 8B / 14B / 32B（untied LM head）真实权重逐层 parity。
+- [`week13_qwen3_streamed_large_weights.md`](week13_qwen3_streamed_large_weights.md)：Week 13（Closed），流式 / 逐层加载（与全量路径逐位一致）完成 8B / 14B / 32B 真实权重逐层 parity，32B 峰值 8.9 GiB；Qwen3 dense 六尺寸真实验证闭环完成。
 - [`qwen3_hf_config_mapping.md`](qwen3_hf_config_mapping.md)：Qwen3 HF `config.json` 与 `gpt_config` 的字段、权重名与布局映射契约（Week 07 已实现并验证）。
 - [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
 - [`monthly/`](monthly/)：月度总结和跨周能力变化。
