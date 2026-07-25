@@ -28,6 +28,7 @@ export load_hf_qwen3_config, load_safetensors, load_hf_qwen3_parameters
 export load_hf_qwen3_model, hf_token_ids, hf_qwen3_forward_trace
 export HFSafetensorsReader, open_safetensors_reader, read_safetensors_tensor
 export stream_hf_qwen3_forward
+export hf_qwen3_bf16_forward
 export load_hf_qwen3_bundle, generate_hf_text
 export load_hf_gpt2_config, load_hf_gpt2_parameters, load_hf_gpt2_model
 export load_hf_gpt2_bundle, hf_gpt2_forward_trace
@@ -64,6 +65,7 @@ include("train/checkpoint.jl")
 include("generation/text_generation.jl")
 include("generation/kv_cache.jl")
 include("io/hf_streaming.jl")
+include("models/bf16_inference.jl")
 include("generation/xla_kv_cache.jl")
 include("generation/hf_text_generation.jl")
 include("generation/kv_benchmark.jl")

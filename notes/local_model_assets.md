@@ -164,6 +164,35 @@ julia --project=. --startup-file=no scripts/verify_qwen3_streamed_parity.jl \
 `LIFEAI_QWEN3_8B/14B/32B_MODEL_DIR`（流式）必须分两个 `Pkg.test` 进程
 运行；五个 integration 同进程会因 Julia 堆跨 testset 累积被 OOM KILL。
 
+## Week 14 BF16 reference 与验证
+
+Week 14 的 HF BF16 逐层 reference（含 16 步 greedy token）位于四个
+revision 目录的 `lifeai-references/week14-bf16-parity/`：
+
+```bash
+/home/yj/projects/jwm/.venv/bin/python scripts/export_qwen3_reference.py \
+  MODEL_DIR MODEL_DIR/lifeai-references/week14-bf16-parity --revision REVISION \
+  --compute-dtype bfloat16 --greedy-steps 16
+
+julia --project=. --startup-file=no scripts/verify_qwen3_bf16_parity.jl \
+  MODEL_DIR MODEL_DIR/lifeai-references/week14-bf16-parity
+```
+
+BF16 opt-in 进程协议：`LIFEAI_QWEN3_BF16_0_6B/1_7B/4B_MODEL_DIR` 可在
+一次 `Pkg.test` 内同进程运行；8B（参数树 15.3 GiB，峰值 ≈ 19 GiB）
+连"完整套件 + 8B integration"都可能在共享内存的机器上越界，必须用
+独立的测试文件进程：
+
+```bash
+LIFEAI_QWEN3_BF16_8B_MODEL_DIR=/home/yj/models/huggingface/Qwen/Qwen3-8B/b968826d9c46dd6066d109eabc6255188de91218 \
+julia --project=. --startup-file=no --heap-size-hint=2G -e \
+  'using Test, JSON3, Lux; import LifeAI; include("test/test_week14.jl")'
+```
+
+`--heap-size-hint=2G` 必需：它强制激进 GC，把峰值 RSS 压到 ≈ 18.5 GiB
+（实测 125/125 通过）；不带 hint 时 GC 滞后会在共享内存机器上触发
+OOM KILL。
+
 ## Week 11 Qwen3 dense family config reference
 
 Week 11 冻结全部六个官方 config contract；Week 12 下载 1.7B/4B 权重，

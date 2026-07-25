@@ -1,3 +1,4 @@
+using BFloat16s: BFloat16
 using JSON3
 using Lux
 using Random: Xoshiro
@@ -422,7 +423,7 @@ function _checked_element_count(shape::Vector{Int}, name::AbstractString)
     return count
 end
 
-function _semantic_array(values::Vector{Float32}, shape::Vector{Int})
+function _semantic_array(values::AbstractVector, shape::Vector{Int})
     isempty(shape) && return reshape(values, ())
     length(shape) == 1 && return reshape(values, shape[1])
     stored = reshape(values, Tuple(reverse(shape)))
@@ -432,15 +433,31 @@ end
 function _decode_safetensors_values(
     raw::Vector{UInt8},
     dtype::String,
-    shape::Vector{Int},
+    shape::Vector{Int};
+    target_dtype::Type=Float32,
 )
-    values = if dtype == "F32"
-        copy(reinterpret(Float32, raw))
-    elseif dtype == "BF16"
-        bits = reinterpret(UInt16, raw)
-        [reinterpret(Float32, UInt32(value) << 16) for value in bits]
+    values = if target_dtype === Float32
+        if dtype == "F32"
+            copy(reinterpret(Float32, raw))
+        elseif dtype == "BF16"
+            bits = reinterpret(UInt16, raw)
+            [reinterpret(Float32, UInt32(value) << 16) for value in bits]
+        else
+            throw(ArgumentError("unsupported safetensors dtype `$dtype`"))
+        end
+    elseif target_dtype === BFloat16
+        if dtype == "BF16"
+            # Bit-exact: BF16 storage is adopted without a Float32 round trip.
+            copy(reinterpret(BFloat16, reinterpret(UInt16, raw)))
+        elseif dtype == "F32"
+            BFloat16.(reinterpret(Float32, raw))
+        else
+            throw(ArgumentError("unsupported safetensors dtype `$dtype`"))
+        end
     else
-        throw(ArgumentError("unsupported safetensors dtype `$dtype`"))
+        throw(ArgumentError(
+            "safetensors loading supports target_dtype Float32 or BFloat16",
+        ))
     end
     return _semantic_array(values, shape)
 end
@@ -554,8 +571,8 @@ function _load_safetensors_file(
     path::AbstractString;
     target_dtype::Type=Float32,
 )
-    target_dtype === Float32 || throw(ArgumentError(
-        "Week 07 safetensors loading only supports target_dtype=Float32",
+    target_dtype in (Float32, BFloat16) || throw(ArgumentError(
+        "safetensors loading only supports target_dtype Float32 or BFloat16",
     ))
     isfile(path) || throw(ArgumentError("safetensors file does not exist: $path"))
     entries, data_base = _safetensors_entries(path)
@@ -571,7 +588,8 @@ function _load_safetensors_file(
             tensors[entry.name] = _decode_safetensors_values(
                 raw,
                 entry.dtype,
-                entry.shape,
+                entry.shape;
+                target_dtype,
             )
         end
     end
@@ -676,8 +694,8 @@ function _expect_tensor(
     size(tensor) == expected_shape || throw(DimensionMismatch(
         "HuggingFace tensor `$name` has shape $(size(tensor)); expected $expected_shape",
     ))
-    eltype(tensor) === Float32 || throw(ArgumentError(
-        "HuggingFace tensor `$name` must contain Float32 values after loading",
+    eltype(tensor) in (Float32, BFloat16) || throw(ArgumentError(
+        "HuggingFace tensor `$name` must contain Float32 or BFloat16 values after loading",
     ))
     return tensor
 end
@@ -899,6 +917,9 @@ end
 Load a local HuggingFace Qwen3 dense model directory into a `GPTModel`, Lux
 parameter tree, and Lux state tree. This function never downloads files.
 Pass `variant` to require an exact official Week 11 dense-family shape.
+`weight_dtype=BFloat16` keeps BF16 storage bits untouched and halves resident
+parameter memory; the resulting tree is consumed by `hf_qwen3_bf16_forward`
+(the Float32 forward paths expect `weight_dtype=Float32`).
 """
 function load_hf_qwen3_model(
     model_dir::AbstractString;

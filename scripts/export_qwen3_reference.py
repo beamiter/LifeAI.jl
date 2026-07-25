@@ -33,16 +33,31 @@ def parse_args():
         default="12GiB",
         help="CPU weight budget when --offload-dir is set",
     )
+    parser.add_argument(
+        "--compute-dtype",
+        choices=("float32", "bfloat16"),
+        default="float32",
+        help="model dtype; reference tensors are saved in this dtype",
+    )
+    parser.add_argument(
+        "--greedy-steps",
+        type=int,
+        default=0,
+        help="record N greedy continuation token ids from a fresh prefill",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    compute_dtype = (
+        torch.bfloat16 if args.compute_dtype == "bfloat16" else torch.float32
+    )
 
     load_kwargs: dict = dict(
         local_files_only=True,
-        torch_dtype=torch.float32,
+        torch_dtype=compute_dtype,
         low_cpu_mem_usage=True,
     )
     if args.offload_dir is not None:
@@ -62,7 +77,7 @@ def main():
     def capture_block(index):
         def hook(_module, _inputs, output):
             value = output[0] if isinstance(output, tuple) else output
-            block_outputs[index] = value.detach().to(torch.float32).cpu().contiguous()
+            block_outputs[index] = value.detach().to(compute_dtype).cpu().contiguous()
 
         return hook
 
@@ -89,11 +104,36 @@ def main():
             return_dict=True,
         )
 
+        # The decode pass above mutates the prefill cache, so the greedy
+        # continuation runs from its own fresh prefill.
+        greedy_ids = []
+        if args.greedy_steps > 0:
+            greedy_outputs = model(
+                input_ids=input_ids,
+                use_cache=True,
+                return_dict=True,
+            )
+            past = greedy_outputs.past_key_values
+            logits = greedy_outputs.logits[:, -1, :]
+            for _ in range(args.greedy_steps):
+                next_id = int(torch.argmax(logits, dim=-1)[0])
+                greedy_ids.append(next_id)
+                if len(greedy_ids) == args.greedy_steps:
+                    break
+                step_outputs = model(
+                    input_ids=torch.tensor([[next_id]], dtype=torch.long),
+                    past_key_values=past,
+                    use_cache=True,
+                    return_dict=True,
+                )
+                past = step_outputs.past_key_values
+                logits = step_outputs.logits[:, -1, :]
+
     tensors = {
-        "embedding": outputs.hidden_states[0].detach().to(torch.float32).cpu().contiguous(),
-        "final_hidden": outputs.hidden_states[-1].detach().to(torch.float32).cpu().contiguous(),
-        "logits": outputs.logits.detach().to(torch.float32).cpu().contiguous(),
-        "decode_logits": decode_outputs.logits.detach().to(torch.float32).cpu().contiguous(),
+        "embedding": outputs.hidden_states[0].detach().to(compute_dtype).cpu().contiguous(),
+        "final_hidden": outputs.hidden_states[-1].detach().to(compute_dtype).cpu().contiguous(),
+        "logits": outputs.logits.detach().to(compute_dtype).cpu().contiguous(),
+        "decode_logits": decode_outputs.logits.detach().to(compute_dtype).cpu().contiguous(),
     }
     for index, value in enumerate(block_outputs):
         if value is None:
@@ -107,11 +147,13 @@ def main():
         "transformers_version": __import__("transformers").__version__,
         "torch_version": torch.__version__,
         "weight_storage_dtype": "bfloat16",
-        "compute_dtype": "float32",
+        "compute_dtype": args.compute_dtype,
         "disk_offload": args.offload_dir is not None,
         "token_ids_0_based": args.token_ids,
         "decode_token_id_0_based": args.decode_token_id,
     }
+    if args.greedy_steps > 0:
+        metadata["greedy_token_ids_0_based"] = greedy_ids
     (args.output_dir / "reference.json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
