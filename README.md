@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 六个官方尺寸真实权重逐层 parity 全闭环；native BF16 推理完成并落地 GPU——0.6B/1.7B/4B 在 RTX 5080 上 CUDA BF16 parity 与 greedy 全对、吞吐 8—15 tok/s（CPU 的 33—92 倍），Reactant XLA BF16 编译 prefill 通过；推理验证主战场已从 CPU 移至 CUDA/XLA。**
+**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环；XLA BF16 compiled decode 达 246 tok/s（eager 的 16 倍）且 greedy 与 HF 全对；RTN INT8/INT4 量化让 8B 与 14B 首次驻留 16.3 GiB GPU——8B token 行为近乎无损，14B INT4 的保真边界被精确量化记录。**
 
-Week 01—15 均已 Closed；[`Week 15 — Qwen3 BF16 CUDA / XLA Accelerated Inference`](notes/week15_qwen3_bf16_accel.md) 以一份设备通用向量化实现（CPU 上与 Week 14 循环路径逐位相同）服务 CUDA eager 与 XLA 编译两种执行形态。此前各周的 contract、parity、流式加载与 GPT-2 历史内容保持关闭，不与本阶段混写。
+Week 01—16 均已 Closed；[`Week 16 — Qwen3 XLA BF16 Compiled Decode 与 INT8/INT4 量化`](notes/week16_qwen3_xla_decode_quant.md) 完成编译生成加速与量化驻留两条线。此前各周的 contract、parity、流式加载与 GPT-2 历史内容保持关闭，不与本阶段混写。
 
 目前已经具备：
 

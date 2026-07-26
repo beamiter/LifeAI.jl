@@ -1,8 +1,10 @@
 # Week 16 — Qwen3 XLA BF16 Compiled Decode 与 INT8/INT4 量化
 
-> 状态：Open
+> 状态：Closed
 >
 > 开启记录：2026-07-26
+>
+> 关闭记录：2026-07-26
 >
 > 依赖基线：[`Week 15 — Qwen3 BF16 CUDA / XLA Accelerated Inference`](week15_qwen3_bf16_accel.md) 已 Closed，保持历史内容不变。
 >
@@ -66,14 +68,14 @@
 
 ## 验证分层
 
-| 证据层 | 目标状态 |
+| 证据层 | 最终状态 |
 | --- | --- |
-| XLA BF16 decode vs eager greedy 序列 | 0.6B 逐 token 一致 |
-| XLA decode steady 吞吐 | 记录并对照 eager（目标 ≥10×） |
-| 量化 round-trip / 打包语义 | 默认离线覆盖 |
-| 8B INT8 GPU：VRAM / parity / greedy | 驻留实测；token 级行为与 BF16 对照冻结 |
-| 14B INT4 GPU：VRAM / parity / greedy 一致率 | 驻留实测；漂移如实量化 |
-| 既有全部路径 | 零改动，无回归 |
+| XLA BF16 decode vs HF greedy 序列 | 0.6B 两条编译路径 16 步全对 |
+| XLA decode steady 吞吐 | **246 tok/s = eager 的 16.1×**（目标 ≥10× 达成） |
+| 量化 round-trip / 打包语义 | 默认离线覆盖（61 项） |
+| 8B INT8 GPU：VRAM / parity / greedy | 8.22 GiB 驻留；argmax 全对，greedy 14/16（近平局） |
+| 14B INT4 GPU：VRAM / parity / greedy 一致率 | 8.38 GiB 驻留；prefill argmax 对，greedy 4/16 如实冻结 |
+| 既有全部路径 | 零改动，默认全套无回归 |
 
 ## Close 条件
 
@@ -104,3 +106,93 @@
 - F32 XLA static 模式（traced position/动态写/前缀掩码）确认可镜像；
   量化方案冻结为 RTN INT8 per-channel 与 INT4 group-128。
 - 资源边界冻结如上表；32B 出界。
+
+### 2026-07-26：XLA compiled decode
+
+- 新增 `src/models/bf16_xla.jl`：BF16 static cache 的 traced prefill 与
+  单 token decode（traced position、动态 RoPE 取位、动态 cache 写、
+  有效前缀掩码），批 1。三个编译产物：prefill、返回 logits 的
+  decode、**设备端 greedy step**（argmax 在 executable 内，token 与
+  position 以同型 1 元素数组回馈，宿主每 token 只取回一个整数）。
+- 关键性能教训：**宿主往返比整个前向还贵**——纯编译调用 3.4 ms，但
+  `copyto!` + 全量 logits 取回把每步拖到 115 ms。设备端 greedy 闭环
+  后：**steady 4.06 ms/token ≈ 246 tok/s**，为 CUDA eager
+  （15.3 tok/s）的 **16.1 倍**，量级目标达成。logits 路径（每步取回
+  151936 维向量做宿主 argmax）为 25.8 tok/s，用于 parity 复核。
+- 正确性：两条路径的 16 步 greedy 均与 HF BF16 完全一致；编译成本
+  prefill 44.4 s / decode 16.5 s / greedy 14.2 s。
+- 排坑记录：0 维 traced 数组缺 `one`/`Array` 方法、1 元素数组的
+  `[1]` 触发 scalar-indexing 禁令（用 `sum` 提取 traced 标量）、
+  greedy 回馈的 position 必须与输入同为 1 元素数组否则第二次调用
+  类型不匹配。
+
+### 2026-07-26：量化实现与 8B INT8
+
+- 新增 `src/models/quantized.jl`：RTN INT8 per-channel 与 INT4
+  group-wise（相邻两列一字节打包，+8 偏移）；`load_hf_qwen3_quantized`
+  流式逐层量化加载（8B 全程无需 BF16 全树驻留，宿主峰值 15.4 GiB）；
+  量化权重经 `_bf16a_linear` 分派反量化为 BF16 后走既有计算契约。
+  离线 round-trip / 打包 / 合成模型对照 61 项通过。
+- **8B INT8 GPU 驻留达成**：量化树 8.22 GiB，VRAM 总用量 15.4 GiB；
+  prefill/decode argmax 与 HF BF16 全对，logits max-abs 1.91
+  （mean 0.12）。
+- 大权重反量化的 OOM 教训：14B 的 lm_head 单块 BF16 反量化（1.49 GiB）
+  在内存池 99% 时直接 OOM——量化线性层改为**按输出行 8192 分块**
+  反量化 + 分块 gemm，且 INT4 解包融合进单个广播消除全宽 F32 中间体。
+- 分块的副作用（如实记录）：CUBLAS 按矩阵形状选 kernel，split-K 归约
+  顺序变化使 BF16 logits 漂移 ±ulp——8B INT8 greedy 从单块实现的
+  16/16 变为分块实现的 **14/16**（第 15 个 token 近平局翻转；prefill
+  与 decode argmax 仍全对）。量化后 logit 边距收窄，这类翻转是量化
+  相似度指标的固有噪声，按测量值冻结。
+
+### 2026-07-26：14B INT4 与量化质量边界
+
+- **14B INT4 g128 GPU 驻留达成**：量化树 8.38 GiB、VRAM 总用量
+  15.2 GiB——原本 55 GiB（F32）/ 27.5 GiB（BF16）的模型跑进了
+  16.3 GiB 显卡。prefill logits argmax 与 HF BF16 一致。
+- **质量如实记录**：16 步 greedy 一致率 **4/16**（第 5 个 token 首次
+  分歧），decode argmax 不一致，logits mean-abs 0.89（8B INT8 为
+  0.12）。plain RTN INT4 的噪声已达 14B logit 边距量级，greedy 轨迹
+  在几步后混沌发散——驻留问题解决了，无校准 INT4 的生成保真是明确
+  的下一个边界。
+- 两个否定结果也记录在案：g64（更小组、理论误差更小）一致率反而
+  0/16——量化噪声与边距同量级时 agreement 是近平局抽签，组大小的
+  微小变化即可翻转轨迹；混合精度（down/o_proj INT8）三次尝试均因
+  宿主内存竞争 OOM KILL，未获得数据（逐投影低峰值加载器已就位，
+  留待空闲内存窗口）。
+- 反量化吞吐（0.11—0.61 tok/s）远低于 BF16 eager——每 token 重复
+  反量化全部权重是带宽瓶颈，本周非目标（驻留验证），量化 gemm /
+  缓存化留待后续。
+
+### 2026-07-26：验证与 Close
+
+- 默认离线全套 `4870 / 4870` 通过（Week 16 离线专项 `78 / 78`：
+  round-trip 48 + 量化前向 13 + 资产 contract 17），Week 05—15 计数
+  与各自 Close 时一致，无回归。
+- GPU/XLA 实测由三个验证脚本冻结进 fixture；量化 GPU 验证为独占
+  任务并有宿主内存前置检查，protocol 记入 `local_model_assets.md`。
+
+## Close 回顾
+
+- **完成了什么**：两条线均达标。(1) XLA BF16 static-cache decode 编译
+  完成，设备端 greedy 闭环 steady **246 tok/s**（eager 的 16.1 倍），
+  16 步 greedy 与 HF BF16 完全一致；(2) RTN 量化让 **8B（INT8，
+  8.22 GiB）与 14B（INT4，8.38 GiB）首次驻留 16.3 GiB GPU**，8B token
+  级行为近乎无损（argmax 全对、greedy 14/16 仅近平局），14B INT4 的
+  质量损失被精确量化而非掩盖。
+- **验证证据**：XLA 三个编译产物与吞吐冻结进 fixture；两个量化配置的
+  VRAM/parity/greedy 一致率/分歧位置冻结；离线 61 项量化语义测试 +
+  默认全套回归。
+- **没有完成及原因**：14B 混合精度实验因宿主内存竞争三次 OOM 未获
+  数据；量化吞吐优化（量化 gemm、反量化缓存）、无损化 INT4（需校准
+  类方法，本周非目标）、32B 驻留均留待后续。
+- **最重要的认知变化**：其一，编译推理的瓶颈从来不在 kernel 而在
+  宿主往返——argmax 进 executable、token/position 设备闭环一步把
+  53 ms 压到 4 ms；其二，量化的"驻留问题"和"保真问题"是两个独立
+  问题：INT8 几乎白拿显存减半，而无校准 INT4 的噪声一旦达到 logit
+  边距量级，greedy 一致率就退化为近平局抽签（g64 比 g128 更差即为
+  明证），此时诚实的指标是一致率+分歧位置而不是一个丢失信息的
+  "通过/失败"；其三，GPU 上任何形状变化（分块）都可能换 kernel 改
+  归约顺序，BF16 下的"确定性"只对固定形状成立。
+- **是否满足 Close 条件**：是。XLA 吞吐 ≥10× 达成且 greedy 全对；
+  量化离线测试、8B/14B 驻留与行为记录、默认回归、边界文档均落实。

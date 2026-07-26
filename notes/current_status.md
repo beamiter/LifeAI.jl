@@ -6,7 +6,7 @@
 
 ## 当前活动阶段
 
-[`Week 16 — Qwen3 XLA BF16 Compiled Decode 与 INT8/INT4 量化`](week16_qwen3_xla_decode_quant.md) 已于 2026-07-26 Open。目标：镜像 F32 XLA static 模式实现 BF16 compiled decode（0.6B 逐 token 与 eager 一致、steady 吞吐目标 ≥10×），RTN INT8 per-channel / INT4 group-128 权重量化让 8B/14B 进 16.3 GiB VRAM；量化行为漂移如实量化记录；32B 出界。
+[`Week 16 — Qwen3 XLA BF16 Compiled Decode 与 INT8/INT4 量化`](week16_qwen3_xla_decode_quant.md) 已于 2026-07-26 Closed。XLA BF16 static-cache decode 编译完成：设备端 greedy 闭环 steady **246 tok/s**（eager 的 16.1 倍），16 步 greedy 与 HF BF16 全对。RTN 量化让 8B（INT8，8.22 GiB）与 14B（INT4，8.38 GiB）首次驻留 16.3 GiB GPU：8B token 级行为近乎无损（greedy 14/16，仅近平局翻转），14B INT4 一致率 4/16 如实冻结——无校准 INT4 的生成保真是明确的下一个边界。
 
 [`Week 15 — Qwen3 BF16 CUDA / XLA Accelerated Inference`](week15_qwen3_bf16_accel.md) 已于 2026-07-26 Closed。设备通用向量化 BF16 路径（CPU 上与 Week 14 循环路径逐位相同）在 RTX 5080 上以原生 BF16 张量核运行：0.6B/1.7B/4B CUDA parity 与 16 步 greedy 全部与 HF BF16 一致，吞吐 15.3/14.1/8.1 tok/s（CPU 的 33—92 倍），VRAM ≤ 12.1 GiB；Reactant XLA BF16 编译 prefill 通过（编译 44.8 s、steady 1.36 ms）。推理验证主战场从 CPU 移至 CUDA/XLA；8B GPU 驻留超出 16.3 GiB VRAM 保持边界。
 
@@ -33,6 +33,8 @@
 - 流式 safetensors 加载（Week 13）：`open_safetensors_reader` header-only 索引 + `read_safetensors_tensor` 按需读取 + `stream_hf_qwen3_forward` 逐层 trace 与 dynamic decode；embedding 按 token 行从磁盘 gather，单层参数映射与 in-memory loader 共用；与全量路径逐位一致（合成 fixture 与真实 0.6B 验证），32B 峰值 RSS 8.9 GiB。
 - native BF16 混合精度推理（Week 14）：`load_hf_qwen3_model(...; weight_dtype=BFloat16)` 位保真加载（参数内存减半）+ `hf_qwen3_bf16_forward` 独立路径，逐算子镜像 HF 语义（RMSNorm/QK-Norm/softmax F32 归一化、RoPE 表 F32 转 BF16、线性 BF16 存储 + 分块 F32 累加 + BF16 舍入）；BF16 cached decode 与全量前向逐位等价；0.6B—8B 与 HF BF16 argmax 零失配、16 步 greedy 完全一致。
 - BF16 CUDA/XLA 加速推理（Week 15）：`hf_qwen3_bf16_accel_forward` 设备通用向量化路径（CPU 上与循环路径逐位相同），CUDA eager 用原生 BF16 张量核（CUBLAS/batched_mul，F32 累加），Reactant XLA 可编译同一实现；0.6B—4B GPU parity/greedy 全对，吞吐 8—15 tok/s；CPU batched matmul 显式分派为 F32 累加防止通用 fallback 破坏契约。
+- XLA BF16 compiled decode（Week 16）：static KV cache 的 traced prefill/decode/greedy（traced position、动态写、有效前缀掩码），设备端 argmax 闭环使宿主每 token 只取回一个整数；0.6B steady 246 tok/s（eager 16.1×），greedy 与 HF 全对。
+- RTN 权重量化（Week 16）：INT8 per-channel / INT4 group 打包 + 混合精度选项；`load_hf_qwen3_quantized` 逐投影流式量化加载；分块反量化线性层；8B INT8 与 14B INT4 首次 GPU 驻留（各约 8.2/8.4 GiB），量化只改权重驻留格式不改计算契约。
 - HuggingFace GPT-2 导入：冻结 revision/checksum，严格映射 learned position、LayerNorm bias、fused QKV 与 HF Conv1D `(in, out)`，验证 causal buffers 与 tied LM head；完整 context 参数量 124,439,808。
 - 显式 `hf_token_ids` 处理 HF 0-based 到 LifeAI 1-based 边界；逐层 trace 与 reference 脚本可验证 embedding、每个 block、final hidden、full logits 和 cache decode logits。`Lux.parameterlength` 已包含自定义 Q/K-Norm scale，六个 dense topology 的精确参数量与冻结 reference 一致。
 
@@ -76,9 +78,11 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-2026-07-26 复核默认套件，共 `4792 / 4792` 项测试通过；其中 Week 05 专项 3094 项、Week 06 专项 112 项、Week 07 离线专项 54 项、Week 08 离线专项 61 项、Week 09 离线专项 67 项、Week 10 离线专项 37 项、Week 11 专项 91 项、Week 12 离线专项 85 项、Week 13 离线专项 283 项、Week 14 离线专项 77 项、Week 15 离线专项 63 项。历史 Reactant/XLA 专项 `52 / 52` 通过；Week 10 与 Week 11 的 XLA smoke 均曾另行复核 `4 / 4` 通过（Week 12—15 未改动既有 XLA F32 路径）。
+2026-07-26 复核默认套件，共 `4870 / 4870` 项测试通过；其中 Week 05 专项 3094 项、Week 06 专项 112 项、Week 07 离线专项 54 项、Week 08 离线专项 61 项、Week 09 离线专项 67 项、Week 10 离线专项 37 项、Week 11 专项 91 项、Week 12 离线专项 85 项、Week 13 离线专项 283 项、Week 14 离线专项 77 项、Week 15 离线专项 63 项、Week 16 离线专项 78 项。历史 Reactant/XLA 专项 `52 / 52` 通过；Week 10 与 Week 11 的 XLA smoke 均曾另行复核 `4 / 4` 通过（Week 12—15 未改动既有 XLA F32 路径）。
 
 Week 15 的离线 `63 / 63` 覆盖 CPU batched matmul F32 累加契约、向量化 vs 循环路径逐位一致（tied/untied）与 CUDA/XLA 资产 contract；CUDA opt-in（`LIFEAI_QWEN3_BF16_CUDA_0_6B/1_7B/4B_MODEL_DIR` 同进程 `Pkg.test`）`173 / 173` 通过。CUDA 三尺寸 16 步 greedy 与 HF BF16 全部一致，吞吐 15.3 / 14.1 / 8.1 tok/s，VRAM 峰值 ≤ 12.1 GiB；XLA BF16 prefill 编译 44.8 s、steady 1.36 ms，argmax/greedy 首 token 一致（`scripts/verify_qwen3_bf16_xla.jl`）。
+
+Week 16 离线专项覆盖 RTN round-trip/打包语义（48 项）、量化树驱动 accel 前向（13 项）与 XLA/量化资产 contract。GPU/XLA 实测经脚本冻结：XLA compiled decode（`scripts/verify_qwen3_bf16_xla_decode.jl`）设备端 greedy steady 4.06 ms/token = 246 tok/s，两条编译路径 16 步 greedy 与 HF 全对；8B INT8（`scripts/verify_qwen3_quant_cuda.jl`）树 8.22 GiB、argmax 全对、greedy 14/16（第 15 token 近平局）；14B INT4 g128 树 8.38 GiB、prefill argmax 对、greedy 4/16（第 5 token 分歧）。量化吞吐 0.11—0.61 tok/s（每 token 全量反量化，带宽瓶颈，驻留验证非吞吐目标）。
 
 Week 14 的离线 `77 / 77` 覆盖 BF16 位保真加载、混合精度算子语义、路径确定性与 cached-decode 逐位等价、BF16 资产/parity contract。opt-in：0.6B/1.7B/4B BF16 integration 同进程 `Pkg.test` 中 Week 14 专项 `205 / 205` 通过；8B BF16 integration 用独立进程 + `--heap-size-hint=2G` 跑 `125 / 125` 通过（峰值 RSS 18.53 GiB）。四尺寸 16 步 greedy token 与 HF BF16 全部一致，logits max-abs ≤ 0.72（mean ≤ 0.073），blocks 尺度感知误差 ≤ 1.49e-2，embedding 位精确。
 
@@ -110,7 +114,7 @@ Week 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定形�
 
 - GPT-2 的 WebText 从零训练、论文 zero-shot quality、其他尺寸和非 causal-LM heads；Week 10 只完成 124M 官方 checkpoint 的 Float32 推理/架构复现。
 - 通用 Jinja chat template、Qwen3 tools/tool-role 分支、JSON schema 工具注入与 agent tool loop；Week 08 只完成已冻结的无 tools 基础 chat 子集。
-- BF16 训练/反向、FP8/INT8/INT4 量化、完整 40K 真实模型运行与 MoE；14B/32B 的 BF16 全量驻留（27.5 / 61.0 GiB）仍超 RAM，8B BF16（15.26 GiB）超出 16.3 GiB VRAM 无法 GPU 驻留。XLA BF16 目前覆盖编译 prefill，固定形状 decode/完整生成闭环未做。1.7B—32B 未做 text 端到端、sampling replay；8B—32B 的静态 KV cache 路径仍需全量参数驻留。
+- BF16/量化训练、FP8、GPTQ/AWQ 等校准式量化、KV cache/激活量化与 MoE；32B GPU 驻留（INT4 约 16.4 GiB）仍出界。无校准 INT4 的生成保真不足（14B greedy 4/16），量化推理吞吐未优化（每 token 全量反量化）。XLA compiled decode 目前为 0.6B 批 1 greedy；4B XLA、sampling 与 chat 端到端闭环未做。
 - Qwen3 128K YaRN / RoPE scaling；六个冻结 checkpoint 的原生 `max_position_embeddings` 均为 40,960，非空 `rope_scaling` 仍 fail closed。
 - 面向真实任务和长期运行的模型质量；较大规模真实语料训练。
 - 适合 tied embedding 的统一初始化基线、低精度专项与真实规模组件对照。
@@ -224,6 +228,16 @@ Week 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定形�
 全绿；吞吐/VRAM/编译耗时冻结进离线 fixture；推理主战场移至
 CUDA/XLA。
 
+### Milestone B''''''''': XLA 编译生成与量化驻留（已完成）
+
+- XLA BF16 static-cache decode 编译，设备端 greedy 闭环 246 tok/s
+  （eager 16.1×），greedy 与 HF 全对。（Week 16 已完成）
+- RTN INT8/INT4 量化：8B 与 14B 首次 GPU 驻留；8B token 行为近乎
+  无损，14B INT4 漂移精确量化记录。（Week 16 已完成）
+
+完成标准已满足：XLA 吞吐目标 ≥10× 达成；量化离线语义测试、GPU 驻留
+实测与行为记录冻结进 fixture；默认全套无回归。
+
 ### Milestone C：建立最小有状态智能体闭环（后移）
 
 - 定义与具体机器人无关的 `Observation`、`Action`、`Memory` 和 policy / model 接口。
@@ -236,10 +250,10 @@ CUDA/XLA。
 
 | 主线 | 当前状态 | 下一关键缺口 |
 | --- | --- | --- |
-| 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + 0.6B—8B native BF16 推理 + 0.6B—4B CUDA/XLA BF16 加速（8—15 tok/s）；GPT-2 真实 parity；流式 safetensors 逐层加载；五类版本化 Tokenizer 与中文数据管线 | XLA BF16 decode 编译闭环、更低精度量化开启 8B+ GPU 驻留，或下一经典/SOTA 架构 |
+| 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + native BF16 推理 + CUDA/XLA 加速（XLA compiled decode 246 tok/s）+ INT8/INT4 量化 GPU 驻留（8B/14B）；GPT-2 真实 parity；流式加载；五类版本化 Tokenizer 与中文数据管线 | 校准式量化提升 INT4 保真、量化 gemm 吞吐、XLA sampling/chat 闭环，或下一经典/SOTA 架构 |
 | 高效训练与推理 | modern / GQA / rotate_half 已兼容 Zygote / XLA 与两类 KV Cache；Qwen3-0.6B CPU/CUDA/XLA decode 已真实验证 | 低精度、device-resident sampling 与更长上下文优化 |
 | 智能体核心 | 尚未开始；Qwen3 基础 chat 输入已可作为模型后端 | conversation state、memory、planning、tools、agent loop |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Week 01—15 已 Closed | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏 |
+| 学习记录 | Week 01—16 已 Closed | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏 |

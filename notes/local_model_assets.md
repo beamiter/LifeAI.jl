@@ -212,6 +212,24 @@ julia --project=. --startup-file=no scripts/verify_qwen3_bf16_xla.jl \
 CUDA opt-in 测试（`Pkg.test` 内可三尺寸同进程，累计 GPU 树 ≈ 11.9 GiB）：
 `LIFEAI_QWEN3_BF16_CUDA_0_6B/1_7B/4B_MODEL_DIR`。
 
+## Week 16 XLA compiled decode 与量化验证
+
+14B 的 HF BF16 reference（offload 导出）位于
+`Qwen3-14B/<revision>/lifeai-references/week16-bf16-parity/`。
+
+```bash
+# XLA BF16 static-cache compiled decode（0.6B，含设备端 greedy 快路径）
+julia --project=. --startup-file=no scripts/verify_qwen3_bf16_xla_decode.jl \
+  MODEL_DIR MODEL_DIR/lifeai-references/week14-bf16-parity
+
+# 量化 GPU 驻留验证（8B 用 int8 + week14 reference；14B 用 int4 + week16 reference）
+julia --project=. --startup-file=no --heap-size-hint=3G scripts/verify_qwen3_quant_cuda.jl \
+  MODEL_DIR REFERENCE_DIR int8|int4
+```
+
+量化验证是 GPU 独占任务，且宿主内存紧张时（本机常有其他负载）14B 加载
+可能被 OOM KILL——重试前用 `free -g` 确认 ≥ 15 GiB 可用。
+
 ## Week 11 Qwen3 dense family config reference
 
 Week 11 冻结全部六个官方 config contract；Week 12 下载 1.7B/4B 权重，

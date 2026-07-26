@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["beamiter <beamiter@163.com>"]
 
 [deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 BFloat16s = "ab4f0b2a-ad5b-11e8-123f-65d77653426b"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 ConcreteStructs = "2569d6c7-a4a2-43d3-a901-331e8e4be471"
@@ -32,6 +33,7 @@ Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
 
 [compat]
+Adapt = "4.7.0"
 BFloat16s = "0.6.1"
 CUDA = "6.2.1"
 ConcreteStructs = "0.2.5"

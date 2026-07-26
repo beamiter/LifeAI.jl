@@ -30,6 +30,8 @@ export HFSafetensorsReader, open_safetensors_reader, read_safetensors_tensor
 export stream_hf_qwen3_forward
 export hf_qwen3_bf16_forward
 export hf_qwen3_bf16_accel_forward
+export Int8ChannelWeight, Int4GroupWeight, quantize_bf16_parameters
+export load_hf_qwen3_quantized
 export load_hf_qwen3_bundle, generate_hf_text
 export load_hf_gpt2_config, load_hf_gpt2_parameters, load_hf_gpt2_model
 export load_hf_gpt2_bundle, hf_gpt2_forward_trace
@@ -68,6 +70,8 @@ include("generation/kv_cache.jl")
 include("io/hf_streaming.jl")
 include("models/bf16_inference.jl")
 include("models/bf16_accel.jl")
+include("models/bf16_xla.jl")
+include("models/quantized.jl")
 include("generation/xla_kv_cache.jl")
 include("generation/hf_text_generation.jl")
 include("generation/kv_benchmark.jl")
