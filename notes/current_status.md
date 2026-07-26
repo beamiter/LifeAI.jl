@@ -6,6 +6,8 @@
 
 ## 当前活动阶段
 
+[`Week 16 — Qwen3 XLA BF16 Compiled Decode 与 INT8/INT4 量化`](week16_qwen3_xla_decode_quant.md) 已于 2026-07-26 Open。目标：镜像 F32 XLA static 模式实现 BF16 compiled decode（0.6B 逐 token 与 eager 一致、steady 吞吐目标 ≥10×），RTN INT8 per-channel / INT4 group-128 权重量化让 8B/14B 进 16.3 GiB VRAM；量化行为漂移如实量化记录；32B 出界。
+
 [`Week 15 — Qwen3 BF16 CUDA / XLA Accelerated Inference`](week15_qwen3_bf16_accel.md) 已于 2026-07-26 Closed。设备通用向量化 BF16 路径（CPU 上与 Week 14 循环路径逐位相同）在 RTX 5080 上以原生 BF16 张量核运行：0.6B/1.7B/4B CUDA parity 与 16 步 greedy 全部与 HF BF16 一致，吞吐 15.3/14.1/8.1 tok/s（CPU 的 33—92 倍），VRAM ≤ 12.1 GiB；Reactant XLA BF16 编译 prefill 通过（编译 44.8 s、steady 1.36 ms）。推理验证主战场从 CPU 移至 CUDA/XLA；8B GPU 驻留超出 16.3 GiB VRAM 保持边界。
 
 [`Week 14 — Qwen3 Native BF16 Mixed-Precision Compute`](week14_qwen3_bf16_compute.md) 已于 2026-07-26 Closed。独立 BF16 推理路径逐算子镜像 Transformers 4.51.0 混合精度语义；0.6B/1.7B/4B/8B 与 HF BF16 逐层对齐、argmax 零失配、16 步 greedy token 序列完全一致；参数常驻内存减半，8B 完成本机首个 >4B 全量驻留 greedy 生成（峰值 RSS 19.0 GiB）。既有 F32 / 流式 / XLA 路径零改动。

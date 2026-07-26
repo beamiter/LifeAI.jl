@@ -21,6 +21,7 @@
 - [`week13_qwen3_streamed_large_weights.md`](week13_qwen3_streamed_large_weights.md)：Week 13（Closed），流式 / 逐层加载（与全量路径逐位一致）完成 8B / 14B / 32B 真实权重逐层 parity，32B 峰值 8.9 GiB；Qwen3 dense 六尺寸真实验证闭环完成。
 - [`week14_qwen3_bf16_compute.md`](week14_qwen3_bf16_compute.md)：Week 14（Closed），native BF16 混合精度推理路径逐算子镜像 HF 语义；0.6B—8B 与 HF BF16 argmax 零失配、16 步 greedy 完全一致，8B 完成本机首个 >4B 全量驻留生成。
 - [`week15_qwen3_bf16_accel.md`](week15_qwen3_bf16_accel.md)：Week 15（Closed），BF16 推理落地 RTX 5080——向量化路径与 CPU 循环逐位相同，CUDA parity/greedy 全对、吞吐 8—15 tok/s（33—92×），XLA BF16 编译 prefill steady 1.36 ms。
+- [`week16_qwen3_xla_decode_quant.md`](week16_qwen3_xla_decode_quant.md)：Week 16（Open），XLA BF16 static-cache decode 编译（目标 eager 吞吐 ≥10×）+ RTN INT8/INT4 权重量化打开 8B/14B GPU 驻留。
 - [`qwen3_hf_config_mapping.md`](qwen3_hf_config_mapping.md)：Qwen3 HF `config.json` 与 `gpt_config` 的字段、权重名与布局映射契约（Week 07 已实现并验证）。
 - [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
 - [`monthly/`](monthly/)：月度总结和跨周能力变化。
