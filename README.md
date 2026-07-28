@@ -92,12 +92,14 @@ Open Week → 执行与验证 → 满足 Close 条件 → 复盘并更新状态 
 
 ```text
 src/
+├── LifeAI.jl      # 按依赖顺序组装实现
+├── api.jl         # 按职责分组的公共 API 清单
 ├── core/          # Attention、RoPE、Transformer、sampling
 ├── data/          # Tokenizer 与 DatasetLoader
 ├── io/            # HuggingFace config / safetensors 权重加载
 ├── models/        # GPT 模型
 ├── train/         # Zygote / Reactant-XLA 训练
-└── generation/    # 文本生成、动态与固定形状 KV Cache
+└── generation/    # 共享采样/输入边界、文本生成与 KV Cache
 
 test/              # 默认测试与可选 XLA 测试
 examples/          # 最小训练和生成示例
