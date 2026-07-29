@@ -1,0 +1,53 @@
+{
+  "description": "Exact no-thinking Qwen3 prompts for a cache-busted E2E comparison. The first Chinese character is one tokenizer token and changes for every performance request, preventing cross-request prefix-cache reuse.",
+  "cases": [
+    {
+      "name": "cold_ji",
+      "phase": "cold",
+      "rendered_prompt": "己<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "prompt_tokens": 18
+    },
+    {
+      "name": "warmup_geng",
+      "phase": "warmup",
+      "rendered_prompt": "庚<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "prompt_tokens": 18
+    },
+    {
+      "name": "measured_jia",
+      "phase": "measured",
+      "rendered_prompt": "甲<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "prompt_tokens": 18
+    },
+    {
+      "name": "measured_yi",
+      "phase": "measured",
+      "rendered_prompt": "乙<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "prompt_tokens": 18
+    },
+    {
+      "name": "measured_bing",
+      "phase": "measured",
+      "rendered_prompt": "丙<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "prompt_tokens": 18
+    },
+    {
+      "name": "measured_ding",
+      "phase": "measured",
+      "rendered_prompt": "丁<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "prompt_tokens": 18
+    },
+    {
+      "name": "measured_wu",
+      "phase": "measured",
+      "rendered_prompt": "戊<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "prompt_tokens": 18
+    },
+    {
+      "name": "canonical",
+      "phase": "semantic_smoke",
+      "rendered_prompt": "<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "prompt_tokens": 17
+    }
+  ]
+}

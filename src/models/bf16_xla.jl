@@ -1,4 +1,5 @@
 using BFloat16s: BFloat16
+using Reactant: @allowscalar, @trace
 
 # Week 16: BF16 static-cache decode designed for Reactant/XLA compilation.
 # Mirrors the proven F32 XLA pattern — traced position, dynamic single-column
@@ -25,17 +26,18 @@ function _bf16a_static_attention(
     head_dim, num_heads, query_tokens, batch_size = size(queries)
     _, num_kv_heads, max_len, _ = size(keys_cache)
     groups = num_heads ÷ num_kv_heads
-    head_map = ((0:(num_heads - 1)) .÷ groups) .+ 1
-    keys_full = keys_cache[:, head_map, :, :]
-    values_full = values_cache[:, head_map, :, :]
-
-    q3 = reshape(
+    kv_batches = num_kv_heads * batch_size
+    q5 = reshape(
         permutedims(queries, (3, 1, 2, 4)),
-        query_tokens, head_dim, num_heads * batch_size,
+        query_tokens, head_dim, groups, num_kv_heads, batch_size,
+    )
+    q3 = reshape(
+        permutedims(q5, (1, 3, 2, 4, 5)),
+        query_tokens * groups, head_dim, kv_batches,
     )
     k3 = reshape(
-        permutedims(keys_full, (1, 3, 2, 4)),
-        head_dim, max_len, num_heads * batch_size,
+        permutedims(keys_cache, (1, 3, 2, 4)),
+        head_dim, max_len, kv_batches,
     )
     scores = _bf16a_batched_mul(q3, k3)
     scaled = _bf16a_f32(BFloat16.(_bf16a_f32(scores) .* scaling))
@@ -46,19 +48,92 @@ function _bf16a_static_attention(
     weights = BFloat16.(exponents ./ sum(exponents; dims=2))
 
     v3 = reshape(
-        permutedims(values_full, (1, 3, 2, 4)),
-        head_dim, max_len, num_heads * batch_size,
+        permutedims(values_cache, (1, 3, 2, 4)),
+        head_dim, max_len, kv_batches,
     )
-    context = _bf16a_batched_mul(v3, permutedims(weights, (2, 1, 3)))
-    return permutedims(
-        reshape(context, head_dim, query_tokens, num_heads, batch_size),
-        (1, 3, 2, 4),
+    context3 = _bf16a_batched_mul(v3, permutedims(weights, (2, 1, 3)))
+    context5 = permutedims(
+        reshape(
+            context3,
+            head_dim, query_tokens, groups, num_kv_heads, batch_size,
+        ),
+        (1, 3, 4, 2, 5),
+    )
+    return reshape(context5, head_dim, num_heads, query_tokens, batch_size)
+end
+
+"""
+    _bf16a_pack_decode_projections(ps)
+
+Build host-side QKV and gate/up projection matrices for low-latency decode.
+Packing happens once before device transfer; concatenating these weights
+inside a traced decode graph would copy hundreds of MiB on every token.
+"""
+function _bf16a_pack_decode_projections(ps)
+    block_names = keys(ps.blocks)
+    packed_blocks = map(Tuple(values(ps.blocks))) do ps_block
+        (;
+            qkv_weight=vcat(
+                ps_block.attn.q_proj.weight,
+                ps_block.attn.k_proj.weight,
+                ps_block.attn.v_proj.weight,
+            ),
+            gate_up_weight=vcat(
+                ps_block.mlp.gate_proj.weight,
+                ps_block.mlp.up_proj.weight,
+            ),
+        )
+    end
+    logits_weight = hasproperty(ps.lm_head, :weight) ?
+        ps.lm_head.weight : permutedims(ps.token_embedding.weight, (2, 1))
+    return (;
+        blocks=NamedTuple{block_names}(packed_blocks),
+        logits_weight,
     )
 end
 
-function _bf16a_static_decode_step(
+"""
+    _bf16a_compact_decode_parameters(ps, packed_projections)
+
+Build the parameter tree consumed by the packed decode executable. Unchanged
+weights remain references to the already-transferred model parameters, while
+the unused separate Q/K/V and gate/up matrices are omitted from the executable
+signature. This cuts host/PJRT buffer-handle processing without duplicating the
+unchanged device weights.
+"""
+function _bf16a_compact_decode_parameters(ps, packed_projections)
+    block_names = keys(ps.blocks)
+    compact_blocks = map(
+        Tuple(values(ps.blocks)),
+        Tuple(values(packed_projections.blocks)),
+    ) do ps_block, packed_block
+        (;
+            norm1=ps_block.norm1,
+            qkv_weight=packed_block.qkv_weight,
+            attn=(;
+                o_proj=ps_block.attn.o_proj,
+                q_norm=ps_block.attn.q_norm,
+                k_norm=ps_block.attn.k_norm,
+            ),
+            norm2=ps_block.norm2,
+            gate_up_weight=packed_block.gate_up_weight,
+            mlp=(;
+                down_proj=ps_block.mlp.down_proj,
+            ),
+        )
+    end
+    return (;
+        token_embedding=ps.token_embedding,
+        blocks=NamedTuple{block_names}(compact_blocks),
+        final_norm=ps.final_norm,
+        logits_weight=packed_projections.logits_weight,
+    )
+end
+
+function _bf16a_static_decode_step_core(
     model::GPTModel,
     ps,
+    packed_projections,
     token,
     key_caches,
     value_caches,
@@ -77,21 +152,45 @@ function _bf16a_static_decode_step(
 
     x = reshape(ps.token_embedding.weight[:, token], model.d_model, 1, 1)
     block_parameters = Tuple(values(ps.blocks))
+    packed_blocks = packed_projections === nothing ?
+        nothing : Tuple(values(packed_projections.blocks))
+    query_dim = head_dim * model.num_heads
+    kv_dim = head_dim * model.num_kv_heads
     for index in 1:model.num_layers
         ps_block = block_parameters[index]
         normed = _bf16a_rmsnorm(x, ps_block.norm1.scale, model.norm_epsilon)
-        queries = reshape(
-            _bf16a_linear(ps_block.attn.q_proj.weight, normed),
-            head_dim, model.num_heads, 1, 1,
-        )
-        keys = reshape(
-            _bf16a_linear(ps_block.attn.k_proj.weight, normed),
-            head_dim, model.num_kv_heads, 1, 1,
-        )
-        values = reshape(
-            _bf16a_linear(ps_block.attn.v_proj.weight, normed),
-            head_dim, model.num_kv_heads, 1, 1,
-        )
+        queries, keys, values = if packed_blocks === nothing
+            (
+                reshape(
+                    _bf16a_linear(ps_block.attn.q_proj.weight, normed),
+                    head_dim, model.num_heads, 1, 1,
+                ),
+                reshape(
+                    _bf16a_linear(ps_block.attn.k_proj.weight, normed),
+                    head_dim, model.num_kv_heads, 1, 1,
+                ),
+                reshape(
+                    _bf16a_linear(ps_block.attn.v_proj.weight, normed),
+                    head_dim, model.num_kv_heads, 1, 1,
+                ),
+            )
+        else
+            qkv = _bf16a_linear(packed_blocks[index].qkv_weight, normed)
+            (
+                reshape(
+                    qkv[1:query_dim, :, :],
+                    head_dim, model.num_heads, 1, 1,
+                ),
+                reshape(
+                    qkv[(query_dim + 1):(query_dim + kv_dim), :, :],
+                    head_dim, model.num_kv_heads, 1, 1,
+                ),
+                reshape(
+                    qkv[(query_dim + kv_dim + 1):end, :, :],
+                    head_dim, model.num_kv_heads, 1, 1,
+                ),
+            )
+        end
         queries = _bf16a_rmsnorm(
             queries, ps_block.attn.q_norm.scale, model.qk_norm_epsilon,
         )
@@ -119,8 +218,21 @@ function _bf16a_static_decode_step(
         x = BFloat16.(_bf16a_f32(x) .+ _bf16a_f32(attn_out))
 
         normed2 = _bf16a_rmsnorm(x, ps_block.norm2.scale, model.norm_epsilon)
-        gate = _bf16a_linear(ps_block.mlp.gate_proj.weight, normed2)
-        up = _bf16a_linear(ps_block.mlp.up_proj.weight, normed2)
+        gate, up = if packed_blocks === nothing
+            (
+                _bf16a_linear(ps_block.mlp.gate_proj.weight, normed2),
+                _bf16a_linear(ps_block.mlp.up_proj.weight, normed2),
+            )
+        else
+            gate_up = _bf16a_linear(
+                packed_blocks[index].gate_up_weight,
+                normed2,
+            )
+            (
+                gate_up[1:model.mlp_hidden_dim, :, :],
+                gate_up[(model.mlp_hidden_dim + 1):end, :, :],
+            )
+        end
         gate_f = _bf16a_f32(gate)
         activated = BFloat16.(gate_f ./ (1.0f0 .+ exp.(.-gate_f)))
         hidden = BFloat16.(_bf16a_f32(activated) .* _bf16a_f32(up))
@@ -128,9 +240,64 @@ function _bf16a_static_decode_step(
         x = BFloat16.(_bf16a_f32(x) .+ _bf16a_f32(mlp_out))
     end
     final_hidden = _bf16a_rmsnorm(x, ps.final_norm.scale, model.norm_epsilon)
-    logits_weight = model.tie_embeddings ?
-        permutedims(ps.token_embedding.weight, (2, 1)) : ps.lm_head.weight
+    logits_weight = packed_projections === nothing ?
+        (
+            model.tie_embeddings ?
+                permutedims(ps.token_embedding.weight, (2, 1)) :
+                ps.lm_head.weight
+        ) :
+        packed_projections.logits_weight
     return _bf16a_linear(logits_weight, final_hidden)
+end
+
+function _bf16a_static_decode_step(
+    model::GPTModel,
+    ps,
+    token,
+    key_caches,
+    value_caches,
+    position,
+    cos_table,
+    sin_table,
+    key_positions,
+)
+    return _bf16a_static_decode_step_core(
+        model,
+        ps,
+        nothing,
+        token,
+        key_caches,
+        value_caches,
+        position,
+        cos_table,
+        sin_table,
+        key_positions,
+    )
+end
+
+function _bf16a_static_decode_step_packed(
+    model::GPTModel,
+    packed_parameters,
+    token,
+    key_caches,
+    value_caches,
+    position,
+    cos_table,
+    sin_table,
+    key_positions,
+)
+    return _bf16a_static_decode_step_core(
+        model,
+        packed_parameters,
+        packed_parameters,
+        token,
+        key_caches,
+        value_caches,
+        position,
+        cos_table,
+        sin_table,
+        key_positions,
+    )
 end
 
 # Device-resident greedy step: argmax runs inside the executable and the next
@@ -148,9 +315,43 @@ function _bf16a_static_decode_greedy_step(
     sin_table,
     key_positions,
 )
-    logits = _bf16a_static_decode_step(
-        model, ps, token, key_caches, value_caches,
-        position, cos_table, sin_table, key_positions,
+    return _bf16a_static_decode_greedy_step_core(
+        model,
+        ps,
+        nothing,
+        token,
+        key_caches,
+        value_caches,
+        position,
+        cos_table,
+        sin_table,
+        key_positions,
+    )
+end
+
+function _bf16a_static_decode_greedy_step_core(
+    model::GPTModel,
+    ps,
+    packed_projections,
+    token,
+    key_caches,
+    value_caches,
+    position,
+    cos_table,
+    sin_table,
+    key_positions,
+)
+    logits = _bf16a_static_decode_step_core(
+        model,
+        ps,
+        packed_projections,
+        token,
+        key_caches,
+        value_caches,
+        position,
+        cos_table,
+        sin_table,
+        key_positions,
     )
     next_token = argmax(vec(_bf16a_f32(logits)))
     token_next = token .* 0 .+ next_token
@@ -158,10 +359,133 @@ function _bf16a_static_decode_greedy_step(
     return token_next, position_next
 end
 
+function _bf16a_static_decode_greedy_step_packed(
+    model::GPTModel,
+    packed_parameters,
+    token,
+    key_caches,
+    value_caches,
+    position,
+    cos_table,
+    sin_table,
+    key_positions,
+)
+    return _bf16a_static_decode_greedy_step_core(
+        model,
+        packed_parameters,
+        packed_parameters,
+        token,
+        key_caches,
+        value_caches,
+        position,
+        cos_table,
+        sin_table,
+        key_positions,
+    )
+end
+
+"""
+    _bf16a_static_generate_greedy!(
+        model, ps, token, key_caches, value_caches, position,
+        cos_table, sin_table, key_positions, generated,
+    )
+
+Run the post-prefill greedy decode segment in one PJRT invocation containing a
+StableHLO loop. `generated` includes the first token selected by prefill, so a
+single host transfer retrieves the entire completion after the loop. This
+avoids one PJRT dispatch and synchronization per generated token while
+retaining the single-step kernel for streaming callers.
+"""
+function _bf16a_static_generate_greedy_core!(
+    model::GPTModel,
+    ps,
+    packed_projections,
+    token,
+    key_caches,
+    value_caches,
+    position,
+    cos_table,
+    sin_table,
+    key_positions,
+    generated,
+)
+    generated[1:1] = token
+    @trace for step in 2:length(generated)
+        token, position = _bf16a_static_decode_greedy_step_core(
+            model,
+            ps,
+            packed_projections,
+            token,
+            key_caches,
+            value_caches,
+            position,
+            cos_table,
+            sin_table,
+            key_positions,
+        )
+        @allowscalar generated[step] = sum(token)
+    end
+    return generated
+end
+
+function _bf16a_static_generate_greedy!(
+    model::GPTModel,
+    ps,
+    token,
+    key_caches,
+    value_caches,
+    position,
+    cos_table,
+    sin_table,
+    key_positions,
+    generated,
+)
+    return _bf16a_static_generate_greedy_core!(
+        model,
+        ps,
+        nothing,
+        token,
+        key_caches,
+        value_caches,
+        position,
+        cos_table,
+        sin_table,
+        key_positions,
+        generated,
+    )
+end
+
+function _bf16a_static_generate_greedy_packed!(
+    model::GPTModel,
+    packed_parameters,
+    token,
+    key_caches,
+    value_caches,
+    position,
+    cos_table,
+    sin_table,
+    key_positions,
+    generated,
+)
+    return _bf16a_static_generate_greedy_core!(
+        model,
+        packed_parameters,
+        packed_parameters,
+        token,
+        key_caches,
+        value_caches,
+        position,
+        cos_table,
+        sin_table,
+        key_positions,
+        generated,
+    )
+end
+
 function _bf16a_static_prefill(
     model::GPTModel,
     ps,
-    tokens::AbstractMatrix{Int},
+    tokens,
     key_caches,
     value_caches,
     cos_table,
@@ -174,6 +498,7 @@ function _bf16a_static_prefill(
     result = _bf16a_forward_pass(
         model, ps, tokens, caches, cos_table, sin_table, mask;
         start_pos=1,
+        project_last_token_only=true,
     )
     for index in 1:model.num_layers
         keys, values = caches[index]

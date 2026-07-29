@@ -1,5 +1,5 @@
 using BFloat16s: BFloat16
-using NNlib: batched_mul
+using NNlib: batched_mul, gather
 import MLDataDevices
 
 # Week 15: device-generic vectorized BF16 inference. Same mixed-precision
@@ -65,24 +65,38 @@ function _bf16a_attention(
     head_dim, num_heads, query_tokens, batch_size = size(queries)
     _, num_kv_heads, key_tokens, _ = size(keys)
     groups = num_heads ÷ num_kv_heads
-    head_map = ((0:(num_heads - 1)) .÷ groups) .+ 1
-    keys_full = keys[:, head_map, :, :]
-    values_full = values[:, head_map, :, :]
+    kv_batches = num_kv_heads * batch_size
 
-    q3 = reshape(
+    # Keep the GQA replication factor in the query-row dimension instead of
+    # gathering K/V from `num_kv_heads` to `num_heads`. This preserves adjacent
+    # query-head grouping while avoiding two expanded cache tensors.
+    q5 = reshape(
         permutedims(queries, (3, 1, 2, 4)),
-        query_tokens, head_dim, num_heads * batch_size,
+        query_tokens, head_dim, groups, num_kv_heads, batch_size,
+    )
+    q3 = reshape(
+        permutedims(q5, (1, 3, 2, 4, 5)),
+        query_tokens * groups, head_dim, kv_batches,
     )
     k3 = reshape(
-        permutedims(keys_full, (1, 3, 2, 4)),
-        head_dim, key_tokens, num_heads * batch_size,
+        permutedims(keys, (1, 3, 2, 4)),
+        head_dim, key_tokens, kv_batches,
     )
     scores = _bf16a_batched_mul(q3, k3)
     scaled = BFloat16.(_bf16a_f32(scores) .* scaling)
     if mask !== nothing
-        scaled = BFloat16.(_bf16a_f32(scaled) .+ _bf16a_f32(reshape(
-            mask, query_tokens, key_tokens, 1,
-        )))
+        scaled_grouped = reshape(
+            scaled,
+            query_tokens, groups, key_tokens, kv_batches,
+        )
+        scaled_grouped = BFloat16.(
+            _bf16a_f32(scaled_grouped) .+
+            _bf16a_f32(reshape(mask, query_tokens, 1, key_tokens, 1))
+        )
+        scaled = reshape(
+            scaled_grouped,
+            query_tokens * groups, key_tokens, kv_batches,
+        )
     end
     scores_f = _bf16a_f32(scaled)
     maxima = maximum(scores_f; dims=2)
@@ -90,15 +104,19 @@ function _bf16a_attention(
     weights = BFloat16.(exponents ./ sum(exponents; dims=2))
 
     v3 = reshape(
-        permutedims(values_full, (1, 3, 2, 4)),
-        head_dim, key_tokens, num_heads * batch_size,
+        permutedims(values, (1, 3, 2, 4)),
+        head_dim, key_tokens, kv_batches,
     )
     w3 = permutedims(weights, (2, 1, 3))
-    context = _bf16a_batched_mul(v3, w3)
-    return permutedims(
-        reshape(context, head_dim, query_tokens, num_heads, batch_size),
-        (1, 3, 2, 4),
+    context3 = _bf16a_batched_mul(v3, w3)
+    context5 = permutedims(
+        reshape(
+            context3,
+            head_dim, query_tokens, groups, num_kv_heads, batch_size,
+        ),
+        (1, 3, 4, 2, 5),
     )
+    return reshape(context5, head_dim, num_heads, query_tokens, batch_size)
 end
 
 function _bf16a_input_second_moment(x::AbstractArray{<:Any,3})
@@ -245,16 +263,17 @@ end
 function _bf16a_forward_pass(
     model::GPTModel,
     ps,
-    tokens::AbstractMatrix{Int},
+    tokens,
     caches,
     cos_table,
     sin_table,
     mask;
     start_pos::Int,
+    project_last_token_only::Bool=false,
 )
     seq_len, batch_size = size(tokens)
     x = reshape(
-        ps.token_embedding.weight[:, vec(tokens)],
+        gather(ps.token_embedding.weight, tokens),
         model.d_model, seq_len, batch_size,
     )
     embedding = x
@@ -278,7 +297,9 @@ function _bf16a_forward_pass(
     final_hidden = _bf16a_rmsnorm(x, ps.final_norm.scale, model.norm_epsilon)
     logits_weight = model.tie_embeddings ?
         permutedims(ps.token_embedding.weight, (2, 1)) : ps.lm_head.weight
-    logits = _bf16a_linear(logits_weight, final_hidden)
+    projection_input = project_last_token_only ?
+        final_hidden[:, end:end, :] : final_hidden
+    logits = _bf16a_linear(logits_weight, projection_input)
     return (; embedding, block_outputs, final_hidden, logits, caches)
 end
 

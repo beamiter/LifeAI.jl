@@ -145,6 +145,169 @@ function _week16_fixture_dir(directory; tie=false)
     return model
 end
 
+@testset "packed compact decode matches unpacked BF16 decode" begin
+    for tie in (false, true)
+        mktempdir() do directory
+            _week16_fixture_dir(directory; tie)
+            loaded = load_hf_qwen3_model(
+                directory;
+                max_seq_len=16,
+                weight_dtype=BFloat16,
+            )
+            model = loaded.model
+            parameters = loaded.parameters
+            projections = LifeAI._bf16a_pack_decode_projections(parameters)
+            compact = LifeAI._bf16a_compact_decode_parameters(
+                parameters,
+                projections,
+            )
+            q_dim = model.num_heads * model.head_dim
+            kv_dim = model.num_kv_heads * model.head_dim
+            for (original, packed, decode) in zip(
+                values(parameters.blocks),
+                values(projections.blocks),
+                values(compact.blocks),
+            )
+                @test packed.qkv_weight[1:q_dim, :] ==
+                    original.attn.q_proj.weight
+                @test packed.qkv_weight[
+                    (q_dim + 1):(q_dim + kv_dim),
+                    :,
+                ] == original.attn.k_proj.weight
+                @test packed.qkv_weight[
+                    (q_dim + kv_dim + 1):end,
+                    :,
+                ] == original.attn.v_proj.weight
+                @test packed.gate_up_weight[
+                    1:model.mlp_hidden_dim,
+                    :,
+                ] == original.mlp.gate_proj.weight
+                @test packed.gate_up_weight[
+                    (model.mlp_hidden_dim + 1):end,
+                    :,
+                ] == original.mlp.up_proj.weight
+                @test !hasproperty(decode.attn, :q_proj)
+                @test !hasproperty(decode.attn, :k_proj)
+                @test !hasproperty(decode.attn, :v_proj)
+                @test !hasproperty(decode.mlp, :gate_proj)
+                @test !hasproperty(decode.mlp, :up_proj)
+                @test decode.norm1 === original.norm1
+                @test decode.attn.o_proj === original.attn.o_proj
+                @test decode.attn.q_norm === original.attn.q_norm
+                @test decode.attn.k_norm === original.attn.k_norm
+                @test decode.norm2 === original.norm2
+                @test decode.mlp.down_proj === original.mlp.down_proj
+            end
+            @test compact.token_embedding === parameters.token_embedding
+            @test compact.final_norm === parameters.final_norm
+
+            tokens = reshape(
+                hf_token_ids(
+                    [0, 4, 7, 2, 11];
+                    vocab_size=model.vocab_size,
+                ),
+                :,
+                1,
+            )
+            rope = first(values(model.blocks.layers)).attn.rope
+            cos_table = BFloat16.(rope.cos_cache)
+            sin_table = BFloat16.(rope.sin_cache)
+            mask = LifeAI._bf16a_causal_mask(
+                size(tokens, 1),
+                size(tokens, 1),
+            )
+            prefix_keys = [
+                zeros(
+                    BFloat16,
+                    model.head_dim,
+                    model.num_kv_heads,
+                    model.max_seq_len,
+                    1,
+                )
+                for _ in 1:model.num_layers
+            ]
+            prefix_values = deepcopy(prefix_keys)
+            prefill_logits = LifeAI._bf16a_static_prefill(
+                model,
+                parameters,
+                tokens,
+                prefix_keys,
+                prefix_values,
+                cos_table,
+                sin_table,
+                mask,
+            )
+            token = [argmax(vec(Float32.(prefill_logits)))]
+            position = Int32[size(tokens, 1)]
+            key_positions = Int32.(collect(1:model.max_seq_len))
+
+            unpacked_keys = deepcopy(prefix_keys)
+            unpacked_values = deepcopy(prefix_values)
+            packed_keys = deepcopy(prefix_keys)
+            packed_values = deepcopy(prefix_values)
+            unpacked_logits = LifeAI._bf16a_static_decode_step(
+                model,
+                parameters,
+                token,
+                unpacked_keys,
+                unpacked_values,
+                position,
+                cos_table,
+                sin_table,
+                key_positions,
+            )
+            packed_logits = LifeAI._bf16a_static_decode_step_packed(
+                model,
+                compact,
+                token,
+                packed_keys,
+                packed_values,
+                position,
+                cos_table,
+                sin_table,
+                key_positions,
+            )
+            @test packed_logits == unpacked_logits
+            @test packed_keys == unpacked_keys
+            @test packed_values == unpacked_values
+
+            unpacked_keys = deepcopy(prefix_keys)
+            unpacked_values = deepcopy(prefix_values)
+            packed_keys = deepcopy(prefix_keys)
+            packed_values = deepcopy(prefix_values)
+            unpacked_generated = zeros(Int, 4)
+            packed_generated = zeros(Int, 4)
+            LifeAI._bf16a_static_generate_greedy!(
+                model,
+                parameters,
+                token,
+                unpacked_keys,
+                unpacked_values,
+                copy(position),
+                cos_table,
+                sin_table,
+                key_positions,
+                unpacked_generated,
+            )
+            LifeAI._bf16a_static_generate_greedy_packed!(
+                model,
+                compact,
+                token,
+                packed_keys,
+                packed_values,
+                copy(position),
+                cos_table,
+                sin_table,
+                key_positions,
+                packed_generated,
+            )
+            @test packed_generated == unpacked_generated
+            @test packed_keys == unpacked_keys
+            @test packed_values == unpacked_values
+        end
+    end
+end
+
 @testset "quantized parameter trees drive the accel forward" begin
     mktempdir() do directory
         model = _week16_fixture_dir(directory; tie=false)

@@ -1,0 +1,1888 @@
+{
+  "schema_version": 1,
+  "benchmark": "qwen3_e2e_ollama",
+  "recorded_at": "2026-07-29T14:01:20.643698+00:00",
+  "runtime": {
+    "python_version": "3.10.12",
+    "platform": "Linux-6.8.0-136-generic-x86_64-with-glibc2.35",
+    "clock": "time.perf_counter_ns"
+  },
+  "endpoint": "http://127.0.0.1:11434/api/generate",
+  "request": {
+    "model": "lifeai-qwen3:0.6b-bf16-gguf",
+    "raw": true,
+    "stream": true,
+    "think": false,
+    "keep_alive": "10m",
+    "options": {
+      "temperature": 0.0,
+      "repeat_penalty": 1.0,
+      "repeat_last_n": 0,
+      "num_predict": 32,
+      "num_ctx": 64,
+      "seed": 0
+    },
+    "timeout_seconds": 600.0,
+    "phase_aware": true
+  },
+  "warmups": 0,
+  "samples": 1,
+  "case_count": 8,
+  "cases": [
+    {
+      "name": "cold_ji",
+      "phase": "cold",
+      "included_in_measured_summary": false,
+      "prompt_source": {
+        "kind": "prompts_json",
+        "path": "/home/ubuntu/projects/LifeAI.jl/benchmark_inputs/qwen3_14b_e2e_cachebusters.json",
+        "case_index": 1,
+        "utf8_bytes": 88,
+        "characters": 76,
+        "sha256": "6d0e126730a4055f1680244714aaf67f74d0ca7d75f19d45c5bbfc6d91a5775a"
+      },
+      "prompt": "己<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "expected_lifeai_prompt_tokens": 18,
+      "expected_lifeai_prompt_token_ids_0_based": null,
+      "raw_samples": [
+        {
+          "sample": 1,
+          "http_status": 200,
+          "client": {
+            "ttft_seconds": 1.521792649,
+            "chunk_itl_seconds": [
+              0.003524522,
+              0.003065376,
+              0.002159641,
+              0.002234952,
+              0.00221004,
+              0.002219423,
+              0.002177356,
+              0.002189689,
+              0.002140737,
+              0.002312933,
+              0.002166093,
+              0.002214009,
+              0.002194207,
+              0.002202235,
+              0.002343009,
+              0.002066544,
+              0.002258901,
+              0.002103653,
+              0.002104043,
+              0.002146224,
+              0.002206048,
+              0.002188462,
+              0.002195488,
+              0.002181921,
+              0.002230522,
+              0.002201776,
+              0.002171685,
+              0.002173428,
+              0.002194985,
+              0.002119465,
+              0.002373546
+            ],
+            "chunk_received_offsets_seconds": [
+              1.521792649,
+              1.525317171,
+              1.528382547,
+              1.530542188,
+              1.53277714,
+              1.53498718,
+              1.537206603,
+              1.539383959,
+              1.541573648,
+              1.543714385,
+              1.546027318,
+              1.548193411,
+              1.55040742,
+              1.552601627,
+              1.554803862,
+              1.557146871,
+              1.559213415,
+              1.561472316,
+              1.563575969,
+              1.565680012,
+              1.567826236,
+              1.570032284,
+              1.572220746,
+              1.574416234,
+              1.576598155,
+              1.578828677,
+              1.581030453,
+              1.583202138,
+              1.585375566,
+              1.587570551,
+              1.589690016,
+              1.592063562
+            ],
+            "response_chunk_count": 32,
+            "total_wall_seconds": 1.592106918,
+            "wall_minus_api_total_seconds": 0.0008042670000001362
+          },
+          "ollama": {
+            "model": "lifeai-qwen3:0.6b-bf16-gguf",
+            "created_at": "2026-07-29T14:01:19.259418857Z",
+            "done_reason": "length",
+            "total_duration_ns": 1591302651,
+            "load_duration_ns": 1459721451,
+            "prompt_eval_duration_ns": 58555000,
+            "eval_duration_ns": 70814000,
+            "total_duration_seconds": 1.591302651,
+            "load_duration_seconds": 1.459721451,
+            "prompt_eval_duration_seconds": 0.058555,
+            "eval_duration_seconds": 0.070814,
+            "prompt_eval_count": 18,
+            "eval_count": 32,
+            "context_present": false,
+            "context": null,
+            "context_token_count": null,
+            "prompt_eval_tokens_per_second": 307.40329604645206,
+            "eval_tokens_per_second": 451.8880447369164
+          },
+          "completion": "从1开始数：\n\n1  \n2  \n3  \n4  \n5  \n6  \n7  \n8  \n9  \n10  \n11  \n12  \n",
+          "completion_utf8_bytes": 69,
+          "completion_sha256": "7c6522b3c3913af0ec09641d8a885105fd6ab3e399f2c423a421ff6ab4571e34",
+          "validation": {
+            "expected_lifeai_prompt_tokens": 18,
+            "prompt_eval_count_matches_lifeai": true,
+            "expected_eval_count": 32,
+            "eval_count_matches_num_predict": true,
+            "expected_done_reason": "length",
+            "done_reason_is_length": true,
+            "context_prompt_prefix": {
+              "checked": false,
+              "matches": null,
+              "reason": "raw_mode_api_contract_does_not_return_context",
+              "context_present": false,
+              "lifeai_prompt_token_ids_available": false
+            },
+            "fairness_hard_gates_passed": true
+          }
+        }
+      ],
+      "summary": {
+        "percentile_method": "linear interpolation at (n - 1) * q",
+        "client_ttft_seconds": {
+          "count": 1,
+          "median": 1.521792649,
+          "p90": 1.521792649
+        },
+        "client_chunk_itl_seconds": {
+          "count": 31,
+          "median": 0.002194985,
+          "p90": 0.002343009
+        },
+        "client_total_wall_seconds": {
+          "count": 1,
+          "median": 1.592106918,
+          "p90": 1.592106918
+        },
+        "client_wall_minus_api_total_seconds": {
+          "count": 1,
+          "median": 0.0008042670000001362,
+          "p90": 0.0008042670000001362
+        },
+        "api_total_duration_seconds": {
+          "count": 1,
+          "median": 1.591302651,
+          "p90": 1.591302651
+        },
+        "api_load_duration_seconds": {
+          "count": 1,
+          "median": 1.459721451,
+          "p90": 1.459721451
+        },
+        "api_prompt_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.058555,
+          "p90": 0.058555
+        },
+        "api_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.070814,
+          "p90": 0.070814
+        },
+        "api_prompt_eval_count": {
+          "count": 1,
+          "median": 18.0,
+          "p90": 18.0
+        },
+        "api_eval_count": {
+          "count": 1,
+          "median": 32.0,
+          "p90": 32.0
+        },
+        "api_prompt_eval_tokens_per_second": {
+          "count": 1,
+          "median": 307.40329604645206,
+          "p90": 307.40329604645206
+        },
+        "api_eval_tokens_per_second": {
+          "count": 1,
+          "median": 451.8880447369164,
+          "p90": 451.8880447369164
+        }
+      },
+      "validation": {
+        "checked": true,
+        "expected_lifeai_prompt_tokens": 18,
+        "observed_ollama_prompt_eval_counts": [
+          18
+        ],
+        "all_samples_match": true,
+        "expected_eval_count": 32,
+        "observed_ollama_eval_counts": [
+          32
+        ],
+        "all_eval_counts_match_num_predict": true,
+        "expected_done_reason": "length",
+        "observed_ollama_done_reasons": [
+          "length"
+        ],
+        "all_done_reasons_are_length": true,
+        "context_prompt_prefix_checked": false,
+        "context_prompt_prefix_reason": "raw_mode_context_prefix_semantics_not_guaranteed",
+        "fairness_hard_gates_passed": true
+      }
+    },
+    {
+      "name": "warmup_geng",
+      "phase": "warmup",
+      "included_in_measured_summary": false,
+      "prompt_source": {
+        "kind": "prompts_json",
+        "path": "/home/ubuntu/projects/LifeAI.jl/benchmark_inputs/qwen3_14b_e2e_cachebusters.json",
+        "case_index": 2,
+        "utf8_bytes": 88,
+        "characters": 76,
+        "sha256": "36b67b27a8a627e868515daecc259abd22286cab284a0ba605824dfa35621d1a"
+      },
+      "prompt": "庚<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "expected_lifeai_prompt_tokens": 18,
+      "expected_lifeai_prompt_token_ids_0_based": null,
+      "raw_samples": [
+        {
+          "sample": 1,
+          "http_status": 200,
+          "client": {
+            "ttft_seconds": 0.122724941,
+            "chunk_itl_seconds": [
+              0.002607534,
+              0.00266702,
+              0.002152474,
+              0.002201134,
+              0.002032417,
+              0.002207568,
+              0.002357434,
+              0.002059947,
+              0.00225628,
+              0.002187673,
+              0.002184689,
+              0.002194842,
+              0.002031755,
+              0.002208447,
+              0.002120683,
+              0.002211409,
+              0.002164278,
+              0.002152314,
+              0.002178824,
+              0.002186123,
+              0.002183841,
+              0.002224181,
+              0.002148601,
+              0.00217891,
+              0.002187192,
+              0.002211844,
+              0.002184934,
+              0.002164354,
+              0.002173623,
+              0.002224526,
+              0.002117849
+            ],
+            "chunk_received_offsets_seconds": [
+              0.122724941,
+              0.125332475,
+              0.127999495,
+              0.130151969,
+              0.132353103,
+              0.13438552,
+              0.136593088,
+              0.138950522,
+              0.141010469,
+              0.143266749,
+              0.145454422,
+              0.147639111,
+              0.149833953,
+              0.151865708,
+              0.154074155,
+              0.156194838,
+              0.158406247,
+              0.160570525,
+              0.162722839,
+              0.164901663,
+              0.167087786,
+              0.169271627,
+              0.171495808,
+              0.173644409,
+              0.175823319,
+              0.178010511,
+              0.180222355,
+              0.182407289,
+              0.184571643,
+              0.186745266,
+              0.188969792,
+              0.191087641
+            ],
+            "response_chunk_count": 32,
+            "total_wall_seconds": 0.191265516,
+            "wall_minus_api_total_seconds": 0.0003930399999999834
+          },
+          "ollama": {
+            "model": "lifeai-qwen3:0.6b-bf16-gguf",
+            "created_at": "2026-07-29T14:01:19.450901113Z",
+            "done_reason": "length",
+            "total_duration_ns": 190872476,
+            "load_duration_ns": 112890699,
+            "prompt_eval_duration_ns": 4466000,
+            "eval_duration_ns": 68891000,
+            "total_duration_seconds": 0.190872476,
+            "load_duration_seconds": 0.112890699,
+            "prompt_eval_duration_seconds": 0.004466,
+            "eval_duration_seconds": 0.068891,
+            "prompt_eval_count": 18,
+            "eval_count": 32,
+            "context_present": false,
+            "context": null,
+            "context_token_count": null,
+            "prompt_eval_tokens_per_second": 4030.452306314375,
+            "eval_tokens_per_second": 464.50189429678767
+          },
+          "completion": "从1开始数：\n\n1  \n2  \n3  \n4  \n5  \n6  \n7  \n8  \n9  \n10  \n11  \n12  \n",
+          "completion_utf8_bytes": 69,
+          "completion_sha256": "7c6522b3c3913af0ec09641d8a885105fd6ab3e399f2c423a421ff6ab4571e34",
+          "validation": {
+            "expected_lifeai_prompt_tokens": 18,
+            "prompt_eval_count_matches_lifeai": true,
+            "expected_eval_count": 32,
+            "eval_count_matches_num_predict": true,
+            "expected_done_reason": "length",
+            "done_reason_is_length": true,
+            "context_prompt_prefix": {
+              "checked": false,
+              "matches": null,
+              "reason": "raw_mode_api_contract_does_not_return_context",
+              "context_present": false,
+              "lifeai_prompt_token_ids_available": false
+            },
+            "fairness_hard_gates_passed": true
+          }
+        }
+      ],
+      "summary": {
+        "percentile_method": "linear interpolation at (n - 1) * q",
+        "client_ttft_seconds": {
+          "count": 1,
+          "median": 0.122724941,
+          "p90": 0.122724941
+        },
+        "client_chunk_itl_seconds": {
+          "count": 31,
+          "median": 0.002184934,
+          "p90": 0.00225628
+        },
+        "client_total_wall_seconds": {
+          "count": 1,
+          "median": 0.191265516,
+          "p90": 0.191265516
+        },
+        "client_wall_minus_api_total_seconds": {
+          "count": 1,
+          "median": 0.0003930399999999834,
+          "p90": 0.0003930399999999834
+        },
+        "api_total_duration_seconds": {
+          "count": 1,
+          "median": 0.190872476,
+          "p90": 0.190872476
+        },
+        "api_load_duration_seconds": {
+          "count": 1,
+          "median": 0.112890699,
+          "p90": 0.112890699
+        },
+        "api_prompt_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.004466,
+          "p90": 0.004466
+        },
+        "api_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.068891,
+          "p90": 0.068891
+        },
+        "api_prompt_eval_count": {
+          "count": 1,
+          "median": 18.0,
+          "p90": 18.0
+        },
+        "api_eval_count": {
+          "count": 1,
+          "median": 32.0,
+          "p90": 32.0
+        },
+        "api_prompt_eval_tokens_per_second": {
+          "count": 1,
+          "median": 4030.452306314375,
+          "p90": 4030.452306314375
+        },
+        "api_eval_tokens_per_second": {
+          "count": 1,
+          "median": 464.50189429678767,
+          "p90": 464.50189429678767
+        }
+      },
+      "validation": {
+        "checked": true,
+        "expected_lifeai_prompt_tokens": 18,
+        "observed_ollama_prompt_eval_counts": [
+          18
+        ],
+        "all_samples_match": true,
+        "expected_eval_count": 32,
+        "observed_ollama_eval_counts": [
+          32
+        ],
+        "all_eval_counts_match_num_predict": true,
+        "expected_done_reason": "length",
+        "observed_ollama_done_reasons": [
+          "length"
+        ],
+        "all_done_reasons_are_length": true,
+        "context_prompt_prefix_checked": false,
+        "context_prompt_prefix_reason": "raw_mode_context_prefix_semantics_not_guaranteed",
+        "fairness_hard_gates_passed": true
+      }
+    },
+    {
+      "name": "measured_jia",
+      "phase": "measured",
+      "included_in_measured_summary": true,
+      "prompt_source": {
+        "kind": "prompts_json",
+        "path": "/home/ubuntu/projects/LifeAI.jl/benchmark_inputs/qwen3_14b_e2e_cachebusters.json",
+        "case_index": 3,
+        "utf8_bytes": 88,
+        "characters": 76,
+        "sha256": "de2f254b51479a1974d44a07d553c307e643dd5ea603cdbc48cddd2fc6a76549"
+      },
+      "prompt": "甲<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "expected_lifeai_prompt_tokens": 18,
+      "expected_lifeai_prompt_token_ids_0_based": null,
+      "raw_samples": [
+        {
+          "sample": 1,
+          "http_status": 200,
+          "client": {
+            "ttft_seconds": 0.132719727,
+            "chunk_itl_seconds": [
+              0.002633086,
+              0.002631048,
+              0.002178226,
+              0.002202155,
+              0.002196752,
+              0.002208832,
+              0.002205968,
+              0.002181954,
+              0.002153674,
+              0.002249994,
+              0.002200196,
+              0.002205022,
+              0.00223393,
+              0.002168936,
+              0.00219183,
+              0.002219688,
+              0.002237265,
+              0.002140325,
+              0.002245036,
+              0.002209557,
+              0.002197985,
+              0.002317488,
+              0.002115263,
+              0.002165844,
+              0.002124504,
+              0.002272433,
+              0.002139518,
+              0.002198566,
+              0.002200037,
+              0.002187809,
+              0.002292772
+            ],
+            "chunk_received_offsets_seconds": [
+              0.132719727,
+              0.135352813,
+              0.137983861,
+              0.140162087,
+              0.142364242,
+              0.144560994,
+              0.146769826,
+              0.148975794,
+              0.151157748,
+              0.153311422,
+              0.155561416,
+              0.157761612,
+              0.159966634,
+              0.162200564,
+              0.1643695,
+              0.16656133,
+              0.168781018,
+              0.171018283,
+              0.173158608,
+              0.175403644,
+              0.177613201,
+              0.179811186,
+              0.182128674,
+              0.184243937,
+              0.186409781,
+              0.188534285,
+              0.190806718,
+              0.192946236,
+              0.195144802,
+              0.197344839,
+              0.199532648,
+              0.20182542
+            ],
+            "response_chunk_count": 32,
+            "total_wall_seconds": 0.202130574,
+            "wall_minus_api_total_seconds": 0.0005814980000000136
+          },
+          "ollama": {
+            "model": "lifeai-qwen3:0.6b-bf16-gguf",
+            "created_at": "2026-07-29T14:01:19.65308909Z",
+            "done_reason": "length",
+            "total_duration_ns": 201549076,
+            "load_duration_ns": 122252550,
+            "prompt_eval_duration_ns": 4480000,
+            "eval_duration_ns": 69348000,
+            "total_duration_seconds": 0.201549076,
+            "load_duration_seconds": 0.12225255,
+            "prompt_eval_duration_seconds": 0.00448,
+            "eval_duration_seconds": 0.069348,
+            "prompt_eval_count": 18,
+            "eval_count": 32,
+            "context_present": false,
+            "context": null,
+            "context_token_count": null,
+            "prompt_eval_tokens_per_second": 4017.8571428571427,
+            "eval_tokens_per_second": 461.4408490511623
+          },
+          "completion": "从1开始数：\n\n1  \n2  \n3  \n4  \n5  \n6  \n7  \n8  \n9  \n10  \n11  \n12  \n",
+          "completion_utf8_bytes": 69,
+          "completion_sha256": "7c6522b3c3913af0ec09641d8a885105fd6ab3e399f2c423a421ff6ab4571e34",
+          "validation": {
+            "expected_lifeai_prompt_tokens": 18,
+            "prompt_eval_count_matches_lifeai": true,
+            "expected_eval_count": 32,
+            "eval_count_matches_num_predict": true,
+            "expected_done_reason": "length",
+            "done_reason_is_length": true,
+            "context_prompt_prefix": {
+              "checked": false,
+              "matches": null,
+              "reason": "raw_mode_api_contract_does_not_return_context",
+              "context_present": false,
+              "lifeai_prompt_token_ids_available": false
+            },
+            "fairness_hard_gates_passed": true
+          }
+        }
+      ],
+      "summary": {
+        "percentile_method": "linear interpolation at (n - 1) * q",
+        "client_ttft_seconds": {
+          "count": 1,
+          "median": 0.132719727,
+          "p90": 0.132719727
+        },
+        "client_chunk_itl_seconds": {
+          "count": 31,
+          "median": 0.002200196,
+          "p90": 0.002292772
+        },
+        "client_total_wall_seconds": {
+          "count": 1,
+          "median": 0.202130574,
+          "p90": 0.202130574
+        },
+        "client_wall_minus_api_total_seconds": {
+          "count": 1,
+          "median": 0.0005814980000000136,
+          "p90": 0.0005814980000000136
+        },
+        "api_total_duration_seconds": {
+          "count": 1,
+          "median": 0.201549076,
+          "p90": 0.201549076
+        },
+        "api_load_duration_seconds": {
+          "count": 1,
+          "median": 0.12225255,
+          "p90": 0.12225255
+        },
+        "api_prompt_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.00448,
+          "p90": 0.00448
+        },
+        "api_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.069348,
+          "p90": 0.069348
+        },
+        "api_prompt_eval_count": {
+          "count": 1,
+          "median": 18.0,
+          "p90": 18.0
+        },
+        "api_eval_count": {
+          "count": 1,
+          "median": 32.0,
+          "p90": 32.0
+        },
+        "api_prompt_eval_tokens_per_second": {
+          "count": 1,
+          "median": 4017.8571428571427,
+          "p90": 4017.8571428571427
+        },
+        "api_eval_tokens_per_second": {
+          "count": 1,
+          "median": 461.4408490511623,
+          "p90": 461.4408490511623
+        }
+      },
+      "validation": {
+        "checked": true,
+        "expected_lifeai_prompt_tokens": 18,
+        "observed_ollama_prompt_eval_counts": [
+          18
+        ],
+        "all_samples_match": true,
+        "expected_eval_count": 32,
+        "observed_ollama_eval_counts": [
+          32
+        ],
+        "all_eval_counts_match_num_predict": true,
+        "expected_done_reason": "length",
+        "observed_ollama_done_reasons": [
+          "length"
+        ],
+        "all_done_reasons_are_length": true,
+        "context_prompt_prefix_checked": false,
+        "context_prompt_prefix_reason": "raw_mode_context_prefix_semantics_not_guaranteed",
+        "fairness_hard_gates_passed": true
+      }
+    },
+    {
+      "name": "measured_yi",
+      "phase": "measured",
+      "included_in_measured_summary": true,
+      "prompt_source": {
+        "kind": "prompts_json",
+        "path": "/home/ubuntu/projects/LifeAI.jl/benchmark_inputs/qwen3_14b_e2e_cachebusters.json",
+        "case_index": 4,
+        "utf8_bytes": 88,
+        "characters": 76,
+        "sha256": "0ab3f6896ab7fcd5dd85dd9a7a0108c7107cbdf3f63c6b32f1c790a59d132790"
+      },
+      "prompt": "乙<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "expected_lifeai_prompt_tokens": 18,
+      "expected_lifeai_prompt_token_ids_0_based": null,
+      "raw_samples": [
+        {
+          "sample": 1,
+          "http_status": 200,
+          "client": {
+            "ttft_seconds": 0.137006049,
+            "chunk_itl_seconds": [
+              0.00293053,
+              0.003047733,
+              0.002154998,
+              0.002238865,
+              0.002171436,
+              0.002239745,
+              0.002110905,
+              0.002187343,
+              0.002176785,
+              0.002177802,
+              0.002261125,
+              0.002116219,
+              0.002169452,
+              0.00214177,
+              0.0022851,
+              0.002206924,
+              0.002188644,
+              0.002156463,
+              0.002181297,
+              0.002077224,
+              0.002176727,
+              0.002229827,
+              0.002299045,
+              0.002116557,
+              0.002182436,
+              0.00213199,
+              0.002173989,
+              0.002222083,
+              0.002143312,
+              0.002183757,
+              0.002210457
+            ],
+            "chunk_received_offsets_seconds": [
+              0.137006049,
+              0.139936579,
+              0.142984312,
+              0.14513931,
+              0.147378175,
+              0.149549611,
+              0.151789356,
+              0.153900261,
+              0.156087604,
+              0.158264389,
+              0.160442191,
+              0.162703316,
+              0.164819535,
+              0.166988987,
+              0.169130757,
+              0.171415857,
+              0.173622781,
+              0.175811425,
+              0.177967888,
+              0.180149185,
+              0.182226409,
+              0.184403136,
+              0.186632963,
+              0.188932008,
+              0.191048565,
+              0.193231001,
+              0.195362991,
+              0.19753698,
+              0.199759063,
+              0.201902375,
+              0.204086132,
+              0.206296589
+            ],
+            "response_chunk_count": 32,
+            "total_wall_seconds": 0.206575595,
+            "wall_minus_api_total_seconds": 0.0003663989999999895
+          },
+          "ollama": {
+            "model": "lifeai-qwen3:0.6b-bf16-gguf",
+            "created_at": "2026-07-29T14:01:19.859974798Z",
+            "done_reason": "length",
+            "total_duration_ns": 206209196,
+            "load_duration_ns": 127546213,
+            "prompt_eval_duration_ns": 4688000,
+            "eval_duration_ns": 69777000,
+            "total_duration_seconds": 0.206209196,
+            "load_duration_seconds": 0.127546213,
+            "prompt_eval_duration_seconds": 0.004688,
+            "eval_duration_seconds": 0.069777,
+            "prompt_eval_count": 18,
+            "eval_count": 32,
+            "context_present": false,
+            "context": null,
+            "context_token_count": null,
+            "prompt_eval_tokens_per_second": 3839.590443686007,
+            "eval_tokens_per_second": 458.60383794086874
+          },
+          "completion": "从1开始数：\n\n1  \n2  \n3  \n4  \n5  \n6  \n7  \n8  \n9  \n10  \n11  \n12  \n",
+          "completion_utf8_bytes": 69,
+          "completion_sha256": "7c6522b3c3913af0ec09641d8a885105fd6ab3e399f2c423a421ff6ab4571e34",
+          "validation": {
+            "expected_lifeai_prompt_tokens": 18,
+            "prompt_eval_count_matches_lifeai": true,
+            "expected_eval_count": 32,
+            "eval_count_matches_num_predict": true,
+            "expected_done_reason": "length",
+            "done_reason_is_length": true,
+            "context_prompt_prefix": {
+              "checked": false,
+              "matches": null,
+              "reason": "raw_mode_api_contract_does_not_return_context",
+              "context_present": false,
+              "lifeai_prompt_token_ids_available": false
+            },
+            "fairness_hard_gates_passed": true
+          }
+        }
+      ],
+      "summary": {
+        "percentile_method": "linear interpolation at (n - 1) * q",
+        "client_ttft_seconds": {
+          "count": 1,
+          "median": 0.137006049,
+          "p90": 0.137006049
+        },
+        "client_chunk_itl_seconds": {
+          "count": 31,
+          "median": 0.002181297,
+          "p90": 0.0022851
+        },
+        "client_total_wall_seconds": {
+          "count": 1,
+          "median": 0.206575595,
+          "p90": 0.206575595
+        },
+        "client_wall_minus_api_total_seconds": {
+          "count": 1,
+          "median": 0.0003663989999999895,
+          "p90": 0.0003663989999999895
+        },
+        "api_total_duration_seconds": {
+          "count": 1,
+          "median": 0.206209196,
+          "p90": 0.206209196
+        },
+        "api_load_duration_seconds": {
+          "count": 1,
+          "median": 0.127546213,
+          "p90": 0.127546213
+        },
+        "api_prompt_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.004688,
+          "p90": 0.004688
+        },
+        "api_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.069777,
+          "p90": 0.069777
+        },
+        "api_prompt_eval_count": {
+          "count": 1,
+          "median": 18.0,
+          "p90": 18.0
+        },
+        "api_eval_count": {
+          "count": 1,
+          "median": 32.0,
+          "p90": 32.0
+        },
+        "api_prompt_eval_tokens_per_second": {
+          "count": 1,
+          "median": 3839.590443686007,
+          "p90": 3839.590443686007
+        },
+        "api_eval_tokens_per_second": {
+          "count": 1,
+          "median": 458.60383794086874,
+          "p90": 458.60383794086874
+        }
+      },
+      "validation": {
+        "checked": true,
+        "expected_lifeai_prompt_tokens": 18,
+        "observed_ollama_prompt_eval_counts": [
+          18
+        ],
+        "all_samples_match": true,
+        "expected_eval_count": 32,
+        "observed_ollama_eval_counts": [
+          32
+        ],
+        "all_eval_counts_match_num_predict": true,
+        "expected_done_reason": "length",
+        "observed_ollama_done_reasons": [
+          "length"
+        ],
+        "all_done_reasons_are_length": true,
+        "context_prompt_prefix_checked": false,
+        "context_prompt_prefix_reason": "raw_mode_context_prefix_semantics_not_guaranteed",
+        "fairness_hard_gates_passed": true
+      }
+    },
+    {
+      "name": "measured_bing",
+      "phase": "measured",
+      "included_in_measured_summary": true,
+      "prompt_source": {
+        "kind": "prompts_json",
+        "path": "/home/ubuntu/projects/LifeAI.jl/benchmark_inputs/qwen3_14b_e2e_cachebusters.json",
+        "case_index": 5,
+        "utf8_bytes": 88,
+        "characters": 76,
+        "sha256": "0225133864fa4eb62c6bff50bbe5b5bb8e11f27aa1f970300a328735edff8a71"
+      },
+      "prompt": "丙<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "expected_lifeai_prompt_tokens": 18,
+      "expected_lifeai_prompt_token_ids_0_based": null,
+      "raw_samples": [
+        {
+          "sample": 1,
+          "http_status": 200,
+          "client": {
+            "ttft_seconds": 0.133787137,
+            "chunk_itl_seconds": [
+              0.002627005,
+              0.002757363,
+              0.002179938,
+              0.002175639,
+              0.00220643,
+              0.002198558,
+              0.002190319,
+              0.002193552,
+              0.002182732,
+              0.002247448,
+              0.002103777,
+              0.002196296,
+              0.002193593,
+              0.002192504,
+              0.002204687,
+              0.002184228,
+              0.002190173,
+              0.002163178,
+              0.002260182,
+              0.002184551,
+              0.002204453,
+              0.002198255,
+              0.002207178,
+              0.002199205,
+              0.002165481,
+              0.002151426,
+              0.002262236,
+              0.002209305,
+              0.002148458,
+              0.002078231,
+              0.002263868
+            ],
+            "chunk_received_offsets_seconds": [
+              0.133787137,
+              0.136414142,
+              0.139171505,
+              0.141351443,
+              0.143527082,
+              0.145733512,
+              0.14793207,
+              0.150122389,
+              0.152315941,
+              0.154498673,
+              0.156746121,
+              0.158849898,
+              0.161046194,
+              0.163239787,
+              0.165432291,
+              0.167636978,
+              0.169821206,
+              0.172011379,
+              0.174174557,
+              0.176434739,
+              0.17861929,
+              0.180823743,
+              0.183021998,
+              0.185229176,
+              0.187428381,
+              0.189593862,
+              0.191745288,
+              0.194007524,
+              0.196216829,
+              0.198365287,
+              0.200443518,
+              0.202707386
+            ],
+            "response_chunk_count": 32,
+            "total_wall_seconds": 0.202721986,
+            "wall_minus_api_total_seconds": 0.00028698399999999014
+          },
+          "ollama": {
+            "model": "lifeai-qwen3:0.6b-bf16-gguf",
+            "created_at": "2026-07-29T14:01:20.063059559Z",
+            "done_reason": "length",
+            "total_duration_ns": 202435002,
+            "load_duration_ns": 123519341,
+            "prompt_eval_duration_ns": 4522000,
+            "eval_duration_ns": 69233000,
+            "total_duration_seconds": 0.202435002,
+            "load_duration_seconds": 0.123519341,
+            "prompt_eval_duration_seconds": 0.004522,
+            "eval_duration_seconds": 0.069233,
+            "prompt_eval_count": 18,
+            "eval_count": 32,
+            "context_present": false,
+            "context": null,
+            "context_token_count": null,
+            "prompt_eval_tokens_per_second": 3980.5395842547546,
+            "eval_tokens_per_second": 462.2073288749585
+          },
+          "completion": "从1开始数：\n\n1  \n2  \n3  \n4  \n5  \n6  \n7  \n8  \n9  \n10  \n11  \n12  \n",
+          "completion_utf8_bytes": 69,
+          "completion_sha256": "7c6522b3c3913af0ec09641d8a885105fd6ab3e399f2c423a421ff6ab4571e34",
+          "validation": {
+            "expected_lifeai_prompt_tokens": 18,
+            "prompt_eval_count_matches_lifeai": true,
+            "expected_eval_count": 32,
+            "eval_count_matches_num_predict": true,
+            "expected_done_reason": "length",
+            "done_reason_is_length": true,
+            "context_prompt_prefix": {
+              "checked": false,
+              "matches": null,
+              "reason": "raw_mode_api_contract_does_not_return_context",
+              "context_present": false,
+              "lifeai_prompt_token_ids_available": false
+            },
+            "fairness_hard_gates_passed": true
+          }
+        }
+      ],
+      "summary": {
+        "percentile_method": "linear interpolation at (n - 1) * q",
+        "client_ttft_seconds": {
+          "count": 1,
+          "median": 0.133787137,
+          "p90": 0.133787137
+        },
+        "client_chunk_itl_seconds": {
+          "count": 31,
+          "median": 0.002193593,
+          "p90": 0.002262236
+        },
+        "client_total_wall_seconds": {
+          "count": 1,
+          "median": 0.202721986,
+          "p90": 0.202721986
+        },
+        "client_wall_minus_api_total_seconds": {
+          "count": 1,
+          "median": 0.00028698399999999014,
+          "p90": 0.00028698399999999014
+        },
+        "api_total_duration_seconds": {
+          "count": 1,
+          "median": 0.202435002,
+          "p90": 0.202435002
+        },
+        "api_load_duration_seconds": {
+          "count": 1,
+          "median": 0.123519341,
+          "p90": 0.123519341
+        },
+        "api_prompt_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.004522,
+          "p90": 0.004522
+        },
+        "api_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.069233,
+          "p90": 0.069233
+        },
+        "api_prompt_eval_count": {
+          "count": 1,
+          "median": 18.0,
+          "p90": 18.0
+        },
+        "api_eval_count": {
+          "count": 1,
+          "median": 32.0,
+          "p90": 32.0
+        },
+        "api_prompt_eval_tokens_per_second": {
+          "count": 1,
+          "median": 3980.5395842547546,
+          "p90": 3980.5395842547546
+        },
+        "api_eval_tokens_per_second": {
+          "count": 1,
+          "median": 462.2073288749585,
+          "p90": 462.2073288749585
+        }
+      },
+      "validation": {
+        "checked": true,
+        "expected_lifeai_prompt_tokens": 18,
+        "observed_ollama_prompt_eval_counts": [
+          18
+        ],
+        "all_samples_match": true,
+        "expected_eval_count": 32,
+        "observed_ollama_eval_counts": [
+          32
+        ],
+        "all_eval_counts_match_num_predict": true,
+        "expected_done_reason": "length",
+        "observed_ollama_done_reasons": [
+          "length"
+        ],
+        "all_done_reasons_are_length": true,
+        "context_prompt_prefix_checked": false,
+        "context_prompt_prefix_reason": "raw_mode_context_prefix_semantics_not_guaranteed",
+        "fairness_hard_gates_passed": true
+      }
+    },
+    {
+      "name": "measured_ding",
+      "phase": "measured",
+      "included_in_measured_summary": true,
+      "prompt_source": {
+        "kind": "prompts_json",
+        "path": "/home/ubuntu/projects/LifeAI.jl/benchmark_inputs/qwen3_14b_e2e_cachebusters.json",
+        "case_index": 6,
+        "utf8_bytes": 88,
+        "characters": 76,
+        "sha256": "68cf01566c2ff76ade316edaf12fdeac9bd3a7b9dc07f693b85f96eae1bb5e19"
+      },
+      "prompt": "丁<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "expected_lifeai_prompt_tokens": 18,
+      "expected_lifeai_prompt_token_ids_0_based": null,
+      "raw_samples": [
+        {
+          "sample": 1,
+          "http_status": 200,
+          "client": {
+            "ttft_seconds": 0.123180652,
+            "chunk_itl_seconds": [
+              0.002423945,
+              0.00261056,
+              0.002155635,
+              0.002263172,
+              0.002227314,
+              0.002116527,
+              0.002297279,
+              0.002115308,
+              0.002231157,
+              0.002135418,
+              0.00233739,
+              0.002072476,
+              0.002160202,
+              0.002210708,
+              0.002169802,
+              0.002170471,
+              0.002242388,
+              0.00213305,
+              0.002194797,
+              0.002207046,
+              0.002187734,
+              0.002210239,
+              0.002158175,
+              0.002178122,
+              0.002141231,
+              0.002247634,
+              0.00215308,
+              0.002460066,
+              0.002044495,
+              0.002133063,
+              0.00208102
+            ],
+            "chunk_received_offsets_seconds": [
+              0.123180652,
+              0.125604597,
+              0.128215157,
+              0.130370792,
+              0.132633964,
+              0.134861278,
+              0.136977805,
+              0.139275084,
+              0.141390392,
+              0.143621549,
+              0.145756967,
+              0.148094357,
+              0.150166833,
+              0.152327035,
+              0.154537743,
+              0.156707545,
+              0.158878016,
+              0.161120404,
+              0.163253454,
+              0.165448251,
+              0.167655297,
+              0.169843031,
+              0.17205327,
+              0.174211445,
+              0.176389567,
+              0.178530798,
+              0.180778432,
+              0.182931512,
+              0.185391578,
+              0.187436073,
+              0.189569136,
+              0.191650156
+            ],
+            "response_chunk_count": 32,
+            "total_wall_seconds": 0.191672594,
+            "wall_minus_api_total_seconds": 0.00017711500000000546
+          },
+          "ollama": {
+            "model": "lifeai-qwen3:0.6b-bf16-gguf",
+            "created_at": "2026-07-29T14:01:20.25497557Z",
+            "done_reason": "length",
+            "total_duration_ns": 191495479,
+            "load_duration_ns": 114194418,
+            "prompt_eval_duration_ns": 4362000,
+            "eval_duration_ns": 68833000,
+            "total_duration_seconds": 0.191495479,
+            "load_duration_seconds": 0.114194418,
+            "prompt_eval_duration_seconds": 0.004362,
+            "eval_duration_seconds": 0.068833,
+            "prompt_eval_count": 18,
+            "eval_count": 32,
+            "context_present": false,
+            "context": null,
+            "context_token_count": null,
+            "prompt_eval_tokens_per_second": 4126.547455295736,
+            "eval_tokens_per_second": 464.8932924614647
+          },
+          "completion": "从1开始数：\n\n1  \n2  \n3  \n4  \n5  \n6  \n7  \n8  \n9  \n10  \n11  \n12  \n",
+          "completion_utf8_bytes": 69,
+          "completion_sha256": "7c6522b3c3913af0ec09641d8a885105fd6ab3e399f2c423a421ff6ab4571e34",
+          "validation": {
+            "expected_lifeai_prompt_tokens": 18,
+            "prompt_eval_count_matches_lifeai": true,
+            "expected_eval_count": 32,
+            "eval_count_matches_num_predict": true,
+            "expected_done_reason": "length",
+            "done_reason_is_length": true,
+            "context_prompt_prefix": {
+              "checked": false,
+              "matches": null,
+              "reason": "raw_mode_api_contract_does_not_return_context",
+              "context_present": false,
+              "lifeai_prompt_token_ids_available": false
+            },
+            "fairness_hard_gates_passed": true
+          }
+        }
+      ],
+      "summary": {
+        "percentile_method": "linear interpolation at (n - 1) * q",
+        "client_ttft_seconds": {
+          "count": 1,
+          "median": 0.123180652,
+          "p90": 0.123180652
+        },
+        "client_chunk_itl_seconds": {
+          "count": 31,
+          "median": 0.002178122,
+          "p90": 0.00233739
+        },
+        "client_total_wall_seconds": {
+          "count": 1,
+          "median": 0.191672594,
+          "p90": 0.191672594
+        },
+        "client_wall_minus_api_total_seconds": {
+          "count": 1,
+          "median": 0.00017711500000000546,
+          "p90": 0.00017711500000000546
+        },
+        "api_total_duration_seconds": {
+          "count": 1,
+          "median": 0.191495479,
+          "p90": 0.191495479
+        },
+        "api_load_duration_seconds": {
+          "count": 1,
+          "median": 0.114194418,
+          "p90": 0.114194418
+        },
+        "api_prompt_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.004362,
+          "p90": 0.004362
+        },
+        "api_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.068833,
+          "p90": 0.068833
+        },
+        "api_prompt_eval_count": {
+          "count": 1,
+          "median": 18.0,
+          "p90": 18.0
+        },
+        "api_eval_count": {
+          "count": 1,
+          "median": 32.0,
+          "p90": 32.0
+        },
+        "api_prompt_eval_tokens_per_second": {
+          "count": 1,
+          "median": 4126.547455295736,
+          "p90": 4126.547455295736
+        },
+        "api_eval_tokens_per_second": {
+          "count": 1,
+          "median": 464.8932924614647,
+          "p90": 464.8932924614647
+        }
+      },
+      "validation": {
+        "checked": true,
+        "expected_lifeai_prompt_tokens": 18,
+        "observed_ollama_prompt_eval_counts": [
+          18
+        ],
+        "all_samples_match": true,
+        "expected_eval_count": 32,
+        "observed_ollama_eval_counts": [
+          32
+        ],
+        "all_eval_counts_match_num_predict": true,
+        "expected_done_reason": "length",
+        "observed_ollama_done_reasons": [
+          "length"
+        ],
+        "all_done_reasons_are_length": true,
+        "context_prompt_prefix_checked": false,
+        "context_prompt_prefix_reason": "raw_mode_context_prefix_semantics_not_guaranteed",
+        "fairness_hard_gates_passed": true
+      }
+    },
+    {
+      "name": "measured_wu",
+      "phase": "measured",
+      "included_in_measured_summary": true,
+      "prompt_source": {
+        "kind": "prompts_json",
+        "path": "/home/ubuntu/projects/LifeAI.jl/benchmark_inputs/qwen3_14b_e2e_cachebusters.json",
+        "case_index": 7,
+        "utf8_bytes": 88,
+        "characters": 76,
+        "sha256": "905301978192d0ca8b42a49d899f33bcc2fc8b459adc9c3d4317efd297756fe1"
+      },
+      "prompt": "戊<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "expected_lifeai_prompt_tokens": 18,
+      "expected_lifeai_prompt_token_ids_0_based": null,
+      "raw_samples": [
+        {
+          "sample": 1,
+          "http_status": 200,
+          "client": {
+            "ttft_seconds": 0.132871571,
+            "chunk_itl_seconds": [
+              0.00295,
+              0.002839335,
+              0.002214651,
+              0.002176437,
+              0.002185504,
+              0.002177793,
+              0.002188162,
+              0.0021904,
+              0.002149639,
+              0.002211992,
+              0.002218671,
+              0.0021775,
+              0.00219539,
+              0.002179267,
+              0.002202086,
+              0.001982392,
+              0.002206747,
+              0.002140326,
+              0.002241294,
+              0.002182319,
+              0.002176002,
+              0.002165116,
+              0.002186508,
+              0.00219226,
+              0.002172027,
+              0.002130085,
+              0.002236364,
+              0.002213204,
+              0.002135802,
+              0.00221837,
+              0.002285272
+            ],
+            "chunk_received_offsets_seconds": [
+              0.132871571,
+              0.135821571,
+              0.138660906,
+              0.140875557,
+              0.143051994,
+              0.145237498,
+              0.147415291,
+              0.149603453,
+              0.151793853,
+              0.153943492,
+              0.156155484,
+              0.158374155,
+              0.160551655,
+              0.162747045,
+              0.164926312,
+              0.167128398,
+              0.16911079,
+              0.171317537,
+              0.173457863,
+              0.175699157,
+              0.177881476,
+              0.180057478,
+              0.182222594,
+              0.184409102,
+              0.186601362,
+              0.188773389,
+              0.190903474,
+              0.193139838,
+              0.195353042,
+              0.197488844,
+              0.199707214,
+              0.201992486
+            ],
+            "response_chunk_count": 32,
+            "total_wall_seconds": 0.202033402,
+            "wall_minus_api_total_seconds": 0.00028847100000001236
+          },
+          "ollama": {
+            "model": "lifeai-qwen3:0.6b-bf16-gguf",
+            "created_at": "2026-07-29T14:01:20.457125724Z",
+            "done_reason": "length",
+            "total_duration_ns": 201744931,
+            "load_duration_ns": 119044264,
+            "prompt_eval_duration_ns": 7807000,
+            "eval_duration_ns": 69536000,
+            "total_duration_seconds": 0.201744931,
+            "load_duration_seconds": 0.119044264,
+            "prompt_eval_duration_seconds": 0.007807,
+            "eval_duration_seconds": 0.069536,
+            "prompt_eval_count": 18,
+            "eval_count": 32,
+            "context_present": false,
+            "context": null,
+            "context_token_count": null,
+            "prompt_eval_tokens_per_second": 2305.6231587037273,
+            "eval_tokens_per_second": 460.1932811780948
+          },
+          "completion": "从1开始数：\n\n1  \n2  \n3  \n4  \n5  \n6  \n7  \n8  \n9  \n10  \n11  \n12  \n",
+          "completion_utf8_bytes": 69,
+          "completion_sha256": "7c6522b3c3913af0ec09641d8a885105fd6ab3e399f2c423a421ff6ab4571e34",
+          "validation": {
+            "expected_lifeai_prompt_tokens": 18,
+            "prompt_eval_count_matches_lifeai": true,
+            "expected_eval_count": 32,
+            "eval_count_matches_num_predict": true,
+            "expected_done_reason": "length",
+            "done_reason_is_length": true,
+            "context_prompt_prefix": {
+              "checked": false,
+              "matches": null,
+              "reason": "raw_mode_api_contract_does_not_return_context",
+              "context_present": false,
+              "lifeai_prompt_token_ids_available": false
+            },
+            "fairness_hard_gates_passed": true
+          }
+        }
+      ],
+      "summary": {
+        "percentile_method": "linear interpolation at (n - 1) * q",
+        "client_ttft_seconds": {
+          "count": 1,
+          "median": 0.132871571,
+          "p90": 0.132871571
+        },
+        "client_chunk_itl_seconds": {
+          "count": 31,
+          "median": 0.002188162,
+          "p90": 0.002241294
+        },
+        "client_total_wall_seconds": {
+          "count": 1,
+          "median": 0.202033402,
+          "p90": 0.202033402
+        },
+        "client_wall_minus_api_total_seconds": {
+          "count": 1,
+          "median": 0.00028847100000001236,
+          "p90": 0.00028847100000001236
+        },
+        "api_total_duration_seconds": {
+          "count": 1,
+          "median": 0.201744931,
+          "p90": 0.201744931
+        },
+        "api_load_duration_seconds": {
+          "count": 1,
+          "median": 0.119044264,
+          "p90": 0.119044264
+        },
+        "api_prompt_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.007807,
+          "p90": 0.007807
+        },
+        "api_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.069536,
+          "p90": 0.069536
+        },
+        "api_prompt_eval_count": {
+          "count": 1,
+          "median": 18.0,
+          "p90": 18.0
+        },
+        "api_eval_count": {
+          "count": 1,
+          "median": 32.0,
+          "p90": 32.0
+        },
+        "api_prompt_eval_tokens_per_second": {
+          "count": 1,
+          "median": 2305.6231587037273,
+          "p90": 2305.6231587037273
+        },
+        "api_eval_tokens_per_second": {
+          "count": 1,
+          "median": 460.1932811780948,
+          "p90": 460.1932811780948
+        }
+      },
+      "validation": {
+        "checked": true,
+        "expected_lifeai_prompt_tokens": 18,
+        "observed_ollama_prompt_eval_counts": [
+          18
+        ],
+        "all_samples_match": true,
+        "expected_eval_count": 32,
+        "observed_ollama_eval_counts": [
+          32
+        ],
+        "all_eval_counts_match_num_predict": true,
+        "expected_done_reason": "length",
+        "observed_ollama_done_reasons": [
+          "length"
+        ],
+        "all_done_reasons_are_length": true,
+        "context_prompt_prefix_checked": false,
+        "context_prompt_prefix_reason": "raw_mode_context_prefix_semantics_not_guaranteed",
+        "fairness_hard_gates_passed": true
+      }
+    },
+    {
+      "name": "canonical",
+      "phase": "semantic_smoke",
+      "included_in_measured_summary": false,
+      "prompt_source": {
+        "kind": "prompts_json",
+        "path": "/home/ubuntu/projects/LifeAI.jl/benchmark_inputs/qwen3_14b_e2e_cachebusters.json",
+        "case_index": 8,
+        "utf8_bytes": 85,
+        "characters": 75,
+        "sha256": "d9f4f3743230e1f7de560e9916f6954753ddfde71733cfea813ca86fa6b101b6"
+      },
+      "prompt": "<|im_start|>user\n从1开始数：<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "expected_lifeai_prompt_tokens": 17,
+      "expected_lifeai_prompt_token_ids_0_based": null,
+      "raw_samples": [
+        {
+          "sample": 1,
+          "http_status": 200,
+          "client": {
+            "ttft_seconds": 0.117292312,
+            "chunk_itl_seconds": [
+              0.002506915,
+              0.002566405,
+              0.002329315,
+              0.002207079,
+              0.002211638,
+              0.002175414,
+              0.002117471,
+              0.00219323,
+              0.002217785,
+              0.002221183,
+              0.002174615,
+              0.002166172,
+              0.002213938,
+              0.002221593,
+              0.002238918,
+              0.00215766,
+              0.002151382,
+              0.002215843,
+              0.00219866,
+              0.002189902,
+              0.00215798,
+              0.002191351,
+              0.002182153,
+              0.002188309,
+              0.00214851,
+              0.002222441,
+              0.002166911,
+              0.002168553,
+              0.00217486,
+              0.002196757,
+              0.00222906
+            ],
+            "chunk_received_offsets_seconds": [
+              0.117292312,
+              0.119799227,
+              0.122365632,
+              0.124694947,
+              0.126902026,
+              0.129113664,
+              0.131289078,
+              0.133406549,
+              0.135599779,
+              0.137817564,
+              0.140038747,
+              0.142213362,
+              0.144379534,
+              0.146593472,
+              0.148815065,
+              0.151053983,
+              0.153211643,
+              0.155363025,
+              0.157578868,
+              0.159777528,
+              0.16196743,
+              0.16412541,
+              0.166316761,
+              0.168498914,
+              0.170687223,
+              0.172835733,
+              0.175058174,
+              0.177225085,
+              0.179393638,
+              0.181568498,
+              0.183765255,
+              0.185994315
+            ],
+            "response_chunk_count": 32,
+            "total_wall_seconds": 0.186077228,
+            "wall_minus_api_total_seconds": 0.0003976980000000019
+          },
+          "ollama": {
+            "model": "lifeai-qwen3:0.6b-bf16-gguf",
+            "created_at": "2026-07-29T14:01:20.643345644Z",
+            "done_reason": "length",
+            "total_duration_ns": 185679530,
+            "load_duration_ns": 108199328,
+            "prompt_eval_duration_ns": 4351000,
+            "eval_duration_ns": 68797000,
+            "total_duration_seconds": 0.18567953,
+            "load_duration_seconds": 0.108199328,
+            "prompt_eval_duration_seconds": 0.004351,
+            "eval_duration_seconds": 0.068797,
+            "prompt_eval_count": 17,
+            "eval_count": 32,
+            "context_present": false,
+            "context": null,
+            "context_token_count": null,
+            "prompt_eval_tokens_per_second": 3907.1477821190533,
+            "eval_tokens_per_second": 465.13656118726107
+          },
+          "completion": "从1开始数：\n\n1  \n2  \n3  \n4  \n5  \n6  \n7  \n8  \n9  \n10  \n11  \n12  \n",
+          "completion_utf8_bytes": 69,
+          "completion_sha256": "7c6522b3c3913af0ec09641d8a885105fd6ab3e399f2c423a421ff6ab4571e34",
+          "validation": {
+            "expected_lifeai_prompt_tokens": 17,
+            "prompt_eval_count_matches_lifeai": true,
+            "expected_eval_count": 32,
+            "eval_count_matches_num_predict": true,
+            "expected_done_reason": "length",
+            "done_reason_is_length": true,
+            "context_prompt_prefix": {
+              "checked": false,
+              "matches": null,
+              "reason": "raw_mode_api_contract_does_not_return_context",
+              "context_present": false,
+              "lifeai_prompt_token_ids_available": false
+            },
+            "fairness_hard_gates_passed": true
+          }
+        }
+      ],
+      "summary": {
+        "percentile_method": "linear interpolation at (n - 1) * q",
+        "client_ttft_seconds": {
+          "count": 1,
+          "median": 0.117292312,
+          "p90": 0.117292312
+        },
+        "client_chunk_itl_seconds": {
+          "count": 31,
+          "median": 0.00219323,
+          "p90": 0.002238918
+        },
+        "client_total_wall_seconds": {
+          "count": 1,
+          "median": 0.186077228,
+          "p90": 0.186077228
+        },
+        "client_wall_minus_api_total_seconds": {
+          "count": 1,
+          "median": 0.0003976980000000019,
+          "p90": 0.0003976980000000019
+        },
+        "api_total_duration_seconds": {
+          "count": 1,
+          "median": 0.18567953,
+          "p90": 0.18567953
+        },
+        "api_load_duration_seconds": {
+          "count": 1,
+          "median": 0.108199328,
+          "p90": 0.108199328
+        },
+        "api_prompt_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.004351,
+          "p90": 0.004351
+        },
+        "api_eval_duration_seconds": {
+          "count": 1,
+          "median": 0.068797,
+          "p90": 0.068797
+        },
+        "api_prompt_eval_count": {
+          "count": 1,
+          "median": 17.0,
+          "p90": 17.0
+        },
+        "api_eval_count": {
+          "count": 1,
+          "median": 32.0,
+          "p90": 32.0
+        },
+        "api_prompt_eval_tokens_per_second": {
+          "count": 1,
+          "median": 3907.1477821190533,
+          "p90": 3907.1477821190533
+        },
+        "api_eval_tokens_per_second": {
+          "count": 1,
+          "median": 465.13656118726107,
+          "p90": 465.13656118726107
+        }
+      },
+      "validation": {
+        "checked": true,
+        "expected_lifeai_prompt_tokens": 17,
+        "observed_ollama_prompt_eval_counts": [
+          17
+        ],
+        "all_samples_match": true,
+        "expected_eval_count": 32,
+        "observed_ollama_eval_counts": [
+          32
+        ],
+        "all_eval_counts_match_num_predict": true,
+        "expected_done_reason": "length",
+        "observed_ollama_done_reasons": [
+          "length"
+        ],
+        "all_done_reasons_are_length": true,
+        "context_prompt_prefix_checked": false,
+        "context_prompt_prefix_reason": "raw_mode_context_prefix_semantics_not_guaranteed",
+        "fairness_hard_gates_passed": true
+      }
+    }
+  ],
+  "phased_execution": {
+    "enabled": true,
+    "scheduling": "one request per case in JSON order",
+    "case_order": [
+      "cold_ji",
+      "warmup_geng",
+      "measured_jia",
+      "measured_yi",
+      "measured_bing",
+      "measured_ding",
+      "measured_wu",
+      "canonical"
+    ],
+    "phases": [
+      "cold",
+      "warmup",
+      "measured",
+      "measured",
+      "measured",
+      "measured",
+      "measured",
+      "semantic_smoke"
+    ],
+    "measured_case_names": [
+      "measured_jia",
+      "measured_yi",
+      "measured_bing",
+      "measured_ding",
+      "measured_wu"
+    ],
+    "excluded_from_measured_summary": [
+      "cold_ji",
+      "warmup_geng",
+      "canonical"
+    ],
+    "measured_sample_count": 5,
+    "measured_summary": {
+      "percentile_method": "linear interpolation at (n - 1) * q",
+      "client_ttft_seconds": {
+        "count": 5,
+        "median": 0.132871571,
+        "p90": 0.1357184842
+      },
+      "client_chunk_itl_seconds": {
+        "count": 155,
+        "median": 0.00219183,
+        "p90": 0.0022897720000000002
+      },
+      "client_total_wall_seconds": {
+        "count": 5,
+        "median": 0.202130574,
+        "p90": 0.2050341514
+      },
+      "client_wall_minus_api_total_seconds": {
+        "count": 5,
+        "median": 0.00028847100000001236,
+        "p90": 0.000495458400000004
+      },
+      "api_total_duration_seconds": {
+        "count": 5,
+        "median": 0.201744931,
+        "p90": 0.2046995184
+      },
+      "api_load_duration_seconds": {
+        "count": 5,
+        "median": 0.12225255,
+        "p90": 0.12593546419999999
+      },
+      "api_prompt_eval_duration_seconds": {
+        "count": 5,
+        "median": 0.004522,
+        "p90": 0.0065594
+      },
+      "api_eval_duration_seconds": {
+        "count": 5,
+        "median": 0.069348,
+        "p90": 0.06968060000000001
+      },
+      "api_prompt_eval_count": {
+        "count": 5,
+        "median": 18.0,
+        "p90": 18.0
+      },
+      "api_eval_count": {
+        "count": 5,
+        "median": 32.0,
+        "p90": 32.0
+      },
+      "api_prompt_eval_tokens_per_second": {
+        "count": 5,
+        "median": 3980.5395842547546,
+        "p90": 4083.0713303202983
+      },
+      "api_eval_tokens_per_second": {
+        "count": 5,
+        "median": 461.4408490511623,
+        "p90": 463.8189070268622
+      }
+    }
+  },
+  "validation": {
+    "prompt_eval_count_checked_cases": 8,
+    "prompt_eval_count_failed_cases": [],
+    "all_checked_cases_match": true,
+    "eval_count_failed_cases": [],
+    "done_reason_failed_cases": [],
+    "context_prompt_prefix_checked": false,
+    "context_prompt_prefix_reason": "Ollama raw mode does not provide stable context-prefix semantics",
+    "fairness_hard_gate_failed_cases": [],
+    "all_fairness_hard_gates_pass": true
+  }
+}

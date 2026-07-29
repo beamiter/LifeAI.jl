@@ -159,6 +159,145 @@ end
     @test c == expected
 end
 
+function _week15_expanded_attention(
+    queries,
+    keys,
+    values;
+    scaling::Float32,
+    mask,
+)
+    head_dim, num_heads, query_tokens, batch_size = size(queries)
+    _, num_kv_heads, key_tokens, _ = size(keys)
+    groups = num_heads ÷ num_kv_heads
+    head_map = ((0:(num_heads - 1)) .÷ groups) .+ 1
+    keys_full = keys[:, head_map, :, :]
+    values_full = values[:, head_map, :, :]
+    q3 = reshape(
+        permutedims(queries, (3, 1, 2, 4)),
+        query_tokens, head_dim, num_heads * batch_size,
+    )
+    k3 = reshape(
+        permutedims(keys_full, (1, 3, 2, 4)),
+        head_dim, key_tokens, num_heads * batch_size,
+    )
+    scores = LifeAI._bf16a_batched_mul(q3, k3)
+    scaled = BFloat16.(LifeAI._bf16a_f32(scores) .* scaling)
+    if mask !== nothing
+        scaled = BFloat16.(
+            LifeAI._bf16a_f32(scaled) .+
+            LifeAI._bf16a_f32(reshape(
+                mask,
+                query_tokens,
+                key_tokens,
+                1,
+            ))
+        )
+    end
+    scores_f = LifeAI._bf16a_f32(scaled)
+    exponents = exp.(scores_f .- maximum(scores_f; dims=2))
+    weights = BFloat16.(exponents ./ sum(exponents; dims=2))
+    v3 = reshape(
+        permutedims(values_full, (1, 3, 2, 4)),
+        head_dim, key_tokens, num_heads * batch_size,
+    )
+    context = LifeAI._bf16a_batched_mul(
+        v3,
+        permutedims(weights, (2, 1, 3)),
+    )
+    return permutedims(
+        reshape(context, head_dim, query_tokens, num_heads, batch_size),
+        (1, 3, 2, 4),
+    )
+end
+
+function _week15_expanded_static_attention(
+    queries,
+    keys,
+    values,
+    key_positions,
+    valid_length;
+    scaling::Float32,
+)
+    head_dim, num_heads, query_tokens, batch_size = size(queries)
+    _, num_kv_heads, key_tokens, _ = size(keys)
+    groups = num_heads ÷ num_kv_heads
+    head_map = ((0:(num_heads - 1)) .÷ groups) .+ 1
+    keys_full = keys[:, head_map, :, :]
+    values_full = values[:, head_map, :, :]
+    q3 = reshape(
+        permutedims(queries, (3, 1, 2, 4)),
+        query_tokens, head_dim, num_heads * batch_size,
+    )
+    k3 = reshape(
+        permutedims(keys_full, (1, 3, 2, 4)),
+        head_dim, key_tokens, num_heads * batch_size,
+    )
+    scores = LifeAI._bf16a_batched_mul(q3, k3)
+    scaled = LifeAI._bf16a_f32(
+        BFloat16.(LifeAI._bf16a_f32(scores) .* scaling),
+    )
+    visible = reshape(key_positions, 1, key_tokens, 1) .<= valid_length
+    masked = ifelse.(visible, scaled, LifeAI._BF16_MASK_MIN)
+    exponents = exp.(masked .- maximum(masked; dims=2))
+    weights = BFloat16.(exponents ./ sum(exponents; dims=2))
+    v3 = reshape(
+        permutedims(values_full, (1, 3, 2, 4)),
+        head_dim, key_tokens, num_heads * batch_size,
+    )
+    context = LifeAI._bf16a_batched_mul(
+        v3,
+        permutedims(weights, (2, 1, 3)),
+    )
+    return permutedims(
+        reshape(context, head_dim, query_tokens, num_heads, batch_size),
+        (1, 3, 2, 4),
+    )
+end
+
+@testset "grouped GQA matches expanded-head BF16 semantics" begin
+    queries = BFloat16.(_week15_values((4, 6, 3, 2); seed=3))
+    keys = BFloat16.(_week15_values((4, 2, 5, 2); seed=11))
+    values = BFloat16.(_week15_values((4, 2, 5, 2); seed=19))
+    scaling = 1.0f0 / sqrt(4.0f0)
+    for mask in (nothing, LifeAI._bf16a_causal_mask(3, 5))
+        expected = _week15_expanded_attention(
+            queries,
+            keys,
+            values;
+            scaling,
+            mask,
+        )
+        actual = LifeAI._bf16a_attention(
+            queries,
+            keys,
+            values;
+            scaling,
+            mask,
+        )
+        @test actual == expected
+    end
+
+    static_queries = queries[:, :, 1:1, :]
+    key_positions = Int32.(collect(1:5))
+    expected = _week15_expanded_static_attention(
+        static_queries,
+        keys,
+        values,
+        key_positions,
+        Int32(3);
+        scaling,
+    )
+    actual = LifeAI._bf16a_static_attention(
+        static_queries,
+        keys,
+        values,
+        key_positions,
+        Int32(3);
+        scaling,
+    )
+    @test actual == expected
+end
+
 @testset "vectorized BF16 path is bitwise identical to the loop path" begin
     for tie in (false, true)
         mktempdir() do directory
@@ -190,6 +329,79 @@ end
             @test accel.logits == loop.logits
             @test accel.decode_logits == loop.decode_logits
             @test accel.greedy_tokens == loop.greedy_tokens
+
+            two_batch_tokens = hcat(
+                vec(tokens),
+                hf_token_ids(
+                    [6, 1, 8, 5, 9];
+                    vocab_size=model.vocab_size,
+                ),
+            )
+            rope = first(values(loaded.model.blocks.layers)).attn.rope
+            cos_table = BFloat16.(rope.cos_cache)
+            sin_table = BFloat16.(rope.sin_cache)
+            mask = LifeAI._bf16a_causal_mask(
+                size(two_batch_tokens, 1),
+                size(two_batch_tokens, 1),
+            )
+            full_caches = Vector{Any}(undef, loaded.model.num_layers)
+            last_caches = Vector{Any}(undef, loaded.model.num_layers)
+            fill!(full_caches, (nothing, nothing))
+            fill!(last_caches, (nothing, nothing))
+            full = LifeAI._bf16a_forward_pass(
+                loaded.model,
+                loaded.parameters,
+                two_batch_tokens,
+                full_caches,
+                cos_table,
+                sin_table,
+                mask;
+                start_pos=1,
+            )
+            last = LifeAI._bf16a_forward_pass(
+                loaded.model,
+                loaded.parameters,
+                two_batch_tokens,
+                last_caches,
+                cos_table,
+                sin_table,
+                mask;
+                start_pos=1,
+                project_last_token_only=true,
+            )
+            @test size(last.logits) ==
+                (loaded.model.vocab_size, 1, 2)
+            @test last.logits == full.logits[:, end:end, :]
+            @test last.embedding == full.embedding
+            @test last.final_hidden == full.final_hidden
+            @test last.block_outputs == full.block_outputs
+            @test last_caches == full_caches
+
+            static_tokens = two_batch_tokens[:, 1:1]
+            static_key_caches = [
+                zeros(
+                    BFloat16,
+                    loaded.model.head_dim,
+                    loaded.model.num_kv_heads,
+                    loaded.model.max_seq_len,
+                    1,
+                )
+                for _ in 1:loaded.model.num_layers
+            ]
+            static_value_caches = deepcopy(static_key_caches)
+            static_logits = LifeAI._bf16a_static_prefill(
+                loaded.model,
+                loaded.parameters,
+                static_tokens,
+                static_key_caches,
+                static_value_caches,
+                cos_table,
+                sin_table,
+                mask,
+            )
+            @test size(static_logits) ==
+                (loaded.model.vocab_size, 1, 1)
+            @test static_logits == full.logits[:, end:end, 1:1]
 
             @test_throws ArgumentError hf_qwen3_bf16_accel_forward(
                 loaded.model,
