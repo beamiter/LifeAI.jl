@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环；XLA BF16 compiled decode 达 246 tok/s（eager 的 16 倍）且 greedy 与 HF 全对；RTN INT8/INT4 量化让 8B 与 14B 首次驻留 16.3 GiB GPU——8B token 行为近乎无损，14B INT4 的保真边界被精确量化记录。**
+**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环；XLA BF16 compiled decode 达 246 tok/s；权重量化已升级为可按层/投影/LM head 预算的 INT4/INT8/BF16 计划。RTX 4090 D 上 Qwen3-14B 全 INT8 与 12.09 GiB mixed RTN 均完成 16/16 BF16 greedy parity。**
 
-Week 01—16 均已 Closed；[`Week 16 — Qwen3 XLA BF16 Compiled Decode 与 INT8/INT4 量化`](notes/week16_qwen3_xla_decode_quant.md) 完成编译生成加速与量化驻留两条线。此前各周的 contract、parity、流式加载与 GPT-2 历史内容保持关闭，不与本阶段混写。
+Week 01—17 均已 Closed；[`Week 17 — Qwen3 Reconstruction-Calibrated INT4 与预算化混合精度`](notes/week17_qwen3_calibrated_int4.md) 完成统一量化计划、精确参数预算与 14B 三组真实对照。reconstruction MSE 虽降低同布局 RTN 的 full-logits 全局误差，却把 greedy 从 16/16 降至 4/16；该负结果保持为下一阶段的明确边界。
 
 目前已经具备：
 
@@ -36,6 +36,10 @@ Week 01—16 均已 Closed；[`Week 16 — Qwen3 XLA BF16 Compiled Decode 与 IN
 - 动态 KV Cache 的 prefill / decode，以及面向 XLA 的固定形状 KV Cache 和编译后增量解码。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
 - 六个官方 Qwen3 dense 规格的 immutable revision/config checksum、自动识别、显式 variant 校验、精确参数量；严格的 BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
+- Qwen3 weight-only INT8 per-channel / packed groupwise INT4，以及统一的
+  `QuantizationPlan`：可按 one-based layer、projection 与独立 LM head
+  选择 INT4/INT8/BF16，streamed/in-memory 路径共用策略；真实树统计与
+  topology 估算逐 byte 对齐。
 - Qwen3-0.6B 逐层 hidden states、full logits、dynamic/static cache decode 的真实 HF reference parity；真实权重测试显式 opt-in，默认测试保持离线。
 - Qwen3-0.6B 的 16-step 官方 sampled reference parity、position 40,959 独立 Transformers RoPE fixture，以及 CPU/CUDA/Reactant-XLA GPU 真实推理 benchmark。
 - 严格的 Qwen3 HF tokenizer：NFC、目标 regex、ByteLevel、imported BPE、added/special tokens、artifact/checkpoint 与 provenance fingerprint。
@@ -49,7 +53,9 @@ Week 01—16 均已 Closed；[`Week 16 — Qwen3 XLA BF16 Compiled Decode 与 IN
 尚未具备：
 
 - GPT-2 的 WebText 从零训练、论文 zero-shot quality、Medium/Large/XL、cross-attention 与分类 head 未复现；当前完成的是 124M 官方 checkpoint 的 Float32 推理/架构复现。
-- Qwen3 native BF16、量化、完整 40K 真实模型 dense forward、1.7B—32B 真实权重逐层 parity 与 MoE；当前真实推理仍只在 0.6B 上完成 BF16 storage → Float32 parameters/compute 验证。
+- Qwen3 MoE、完整 40K context 的端到端真实推理、activation/KV-cache
+  量化与量化 GEMM；dense 0.6B—32B 真实权重 parity、native BF16 和
+  weight-only INT8/INT4 已完成，不能再沿用早期“只验证 0.6B”的边界。
 - 通用 Jinja、tools/tool-role chat template 与 agent tool loop；可用于真实任务的模型质量仍未评估。
 - 长短期记忆、规划、工具使用、反思等完整的 agent loop。
 - 视觉、听觉和传感器输入等多模态感知。
@@ -58,7 +64,12 @@ Week 01—16 均已 Closed；[`Week 16 — Qwen3 XLA BF16 Compiled Decode 与 IN
 
 更详细的能力盘点、验证范围与建议里程碑见 [`notes/current_status.md`](notes/current_status.md)。
 
-本机大模型权重与真实 reference 固定存放在 `/home/yj/models/`，不使用易清理的 `/tmp`，也不提交进仓库；Qwen3 六尺寸（0.6B—32B）与 GPT-2 124M 的完整资产和恢复命令见 [`notes/local_model_assets.md`](notes/local_model_assets.md)，六个 Qwen3 dense config 规格见 [`Week 11`](notes/week11_qwen3_dense_family.md)。
+大模型权重与真实 reference 存放在仓库外的持久模型目录，不使用易清理的
+`/tmp`，也不提交进 Git；历史资产机器使用 `/home/yj/models/`，Week 17
+验证机使用 `/home/ubuntu/models/modelscope/`。Qwen3 六尺寸（0.6B—32B）
+与 GPT-2 124M 的完整资产和恢复命令见
+[`notes/local_model_assets.md`](notes/local_model_assets.md)，六个 Qwen3
+dense config 规格见 [`Week 11`](notes/week11_qwen3_dense_family.md)。
 
 ## 演进路线
 

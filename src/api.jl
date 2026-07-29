@@ -40,6 +40,8 @@ export stream_hf_qwen3_forward
 export hf_qwen3_bf16_forward
 export hf_qwen3_bf16_accel_forward
 export Int8ChannelWeight, Int4GroupWeight, quantize_bf16_parameters
+export LinearQuantizationSpec, QuantizationPlan, quantization_spec
+export quantized_parameter_bytes, estimate_qwen3_quantized_bytes
 export load_hf_qwen3_quantized
 export load_hf_qwen3_bundle, generate_hf_text
 export load_hf_gpt2_config, load_hf_gpt2_parameters, load_hf_gpt2_model

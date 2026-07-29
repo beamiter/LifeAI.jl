@@ -8,12 +8,57 @@ using Statistics: mean
 using LifeAI
 using LifeAI: hf_token_ids
 
-length(ARGS) == 3 || error(
-    "usage: julia --project=. scripts/verify_qwen3_quant_cuda.jl MODEL_DIR REFERENCE_DIR SCHEME",
+length(ARGS) in (3, 4) || error(
+    "usage: julia --project=. scripts/verify_qwen3_quant_cuda.jl " *
+    "MODEL_DIR REFERENCE_DIR SCHEME [PLAN_JSON]",
 )
 model_dir, reference_dir, scheme_name = ARGS
 scheme = Symbol(scheme_name)
 CUDA.functional() || error("CUDA.jl is not functional on this machine")
+
+_json_get(object, key, default) = haskey(object, key) ? object[key] : default
+
+function _quantization_spec_from_json(object)
+    scheme = Symbol(String(object["scheme"]))
+    group = Int(_json_get(object, "group", 128))
+    calibration = Symbol(String(_json_get(object, "calibration", "maxabs")))
+    if haskey(object, "clip_ratios")
+        clip_ratios = Tuple(Float32.(collect(object["clip_ratios"])))
+        return LinearQuantizationSpec(
+            scheme;
+            group,
+            calibration,
+            clip_ratios,
+        )
+    end
+    return LinearQuantizationSpec(scheme; group, calibration)
+end
+
+function _quantization_plan_from_json(path)
+    object = JSON3.read(read(path, String))
+    projections = Dict{Symbol,LinearQuantizationSpec}()
+    for (projection, spec) in pairs(_json_get(
+        object,
+        "projection_overrides",
+        Dict{String,Any}(),
+    ))
+        projections[Symbol(projection)] = _quantization_spec_from_json(spec)
+    end
+    layers = Dict{Tuple{Int,Symbol},LinearQuantizationSpec}()
+    for entry in _json_get(object, "layer_overrides", Any[])
+        target = (Int(entry["layer"]), Symbol(String(entry["projection"])))
+        layers[target] = _quantization_spec_from_json(entry["spec"])
+    end
+    return QuantizationPlan(
+        default=_quantization_spec_from_json(object["default"]),
+        projection_overrides=projections,
+        layer_overrides=layers,
+    )
+end
+
+plan = length(ARGS) == 4 ?
+    _quantization_plan_from_json(ARGS[4]) :
+    QuantizationPlan(default=LinearQuantizationSpec(scheme))
 
 metadata = JSON3.read(read(joinpath(reference_dir, "reference.json"), String))
 String(metadata["compute_dtype"]) == "bfloat16" || error(
@@ -33,8 +78,14 @@ decode_token = hf_token_ids(
 expected_greedy = Int.(collect(metadata["greedy_token_ids_0_based"])) .+ 1
 
 GC.gc()
-load_timing = @timed load_hf_qwen3_quantized(model_dir; max_seq_len=64, scheme)
+load_timing = @timed load_hf_qwen3_quantized(
+    model_dir;
+    max_seq_len=64,
+    plan,
+)
 loaded = load_timing.value
+estimated_tree_bytes = estimate_qwen3_quantized_bytes(loaded.model, plan)
+host_tree_bytes = quantized_parameter_bytes(loaded.parameters)
 free_before = CUDA.free_memory()
 ps_gpu = CUDA.cu(loaded.parameters)
 CUDA.synchronize()
@@ -81,9 +132,27 @@ println(
     loaded.variant === nothing ? "custom" : String(loaded.variant.variant),
 )
 println("scheme\t", scheme)
+println("default_scheme\t", plan.default.scheme)
+println("default_calibration\t", plan.default.calibration)
+println("projection_overrides\t", join(
+    ["$(target):$(spec.scheme)" for (target, spec) in sort!(
+        collect(plan.projection_overrides);
+        by=first,
+    )],
+    ",",
+))
+println("layer_overrides\t", join(
+    ["$(target[1]):$(target[2]):$(spec.scheme)" for (target, spec) in sort!(
+        collect(plan.layer_overrides);
+        by=first,
+    )],
+    ",",
+))
 println("gpu_name\t", CUDA.name(CUDA.device()))
 println("load_seconds\t", load_timing.time)
 println("host_maxrss_bytes\t", Sys.maxrss())
+println("estimated_tree_bytes\t", estimated_tree_bytes)
+println("host_tree_bytes\t", host_tree_bytes)
 println("gpu_tree_bytes\t", tree_bytes)
 println("vram_used_bytes\t", CUDA.total_memory() - CUDA.free_memory())
 println("cold_seconds\t", cold_timing.time)

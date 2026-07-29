@@ -1,12 +1,17 @@
 # 本地模型资产与持久化约定
 
-大模型权重、HuggingFace 下载缓存和真实 reference 不放在 `/tmp`，也不提交到 LifeAI.jl 仓库。当前机器统一使用：
+大模型权重、下载缓存和真实 reference 不放在 `/tmp`，也不提交到
+LifeAI.jl 仓库。Week 09—16 的历史 RTX 5080 资产机统一使用：
 
 ```text
 /home/yj/models/huggingface/<organization>/<model>/<revision>/
 ```
 
 每个 revision 自包含配置、tokenizer 和权重；LifeAI 生成的真实 reference 放在模型 revision 目录内的 `lifeai-references/<week-or-purpose>/`。仓库只保存生成/验证脚本、checksum、可重复命令和小型 benchmark 结果。
+
+Week 17 的 RTX 4090 D 验证机用户目录不同，ModelScope 官方下载放在
+`/home/ubuntu/models/modelscope/`；该例外在本页单独记录。无论下载源和
+宿主路径如何，能否复用资产都以冻结 revision 的逐文件 SHA256 为准。
 
 ## 当前 Qwen3-0.6B 资产
 
@@ -229,6 +234,73 @@ julia --project=. --startup-file=no --heap-size-hint=3G scripts/verify_qwen3_qua
 
 量化验证是 GPU 独占任务，且宿主内存紧张时（本机常有其他负载）14B 加载
 可能被 OOM KILL——重试前用 `free -g` 确认 ≥ 15 GiB 可用。
+
+## Week 17 RTX 4090 D / Qwen3-14B 量化验证
+
+验证机：
+
+```text
+GPU: NVIDIA GeForce RTX 4090 D
+driver: 570.153.02
+CUDA.jl: 6.2.1
+visible VRAM: 25,238,568,960 bytes
+```
+
+ModelScope 官方仓库下载目录：
+
+```text
+/home/ubuntu/models/modelscope/Qwen/Qwen3-14B/
+```
+
+8 个权重分片合计 `29,536,665,640` bytes；配置、tokenizer、index 与全部
+分片 SHA256 均和 HuggingFace 冻结 revision
+`40c069824f4251a91eefaf281ebe4c544efd3e18` 一致。完整期望 checksum 继续
+以 `test/fixtures/week13_qwen3_streamed_large_weights/assets.json` 为准，
+不为下载源复制第二份清单。
+
+BF16 reference：
+
+```text
+/home/ubuntu/models/modelscope/Qwen/Qwen3-14B/lifeai-references/week17-bf16-parity/
+reference.json        35755f087cd09313c5e2cffd80bb49bc8adee18b8845f2aa8546b01e7e1b3294
+reference.safetensors e76e8bb6a782c3bc4a4db2bca8f250230d4460a1b70c04d81796ecb3278dde5c
+```
+
+生成环境为 Transformers 4.51.0 / Torch 2.7.1+cpu：
+
+```bash
+python scripts/export_qwen3_reference.py \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-14B \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-14B/lifeai-references/week17-bf16-parity \
+  --revision 40c069824f4251a91eefaf281ebe4c544efd3e18 \
+  --compute-dtype bfloat16 --greedy-steps 16
+```
+
+三组 GPU 对照：
+
+```bash
+MODEL_DIR=/home/ubuntu/models/modelscope/Qwen/Qwen3-14B
+REFERENCE_DIR=$MODEL_DIR/lifeai-references/week17-bf16-parity
+
+# 全 INT8：16/16 greedy；tensor tree 14.487 GiB，但仅余约 54 MiB VRAM
+julia --threads=auto --project=. --startup-file=no --heap-size-hint=3G \
+  scripts/verify_qwen3_quant_cuda.jl "$MODEL_DIR" "$REFERENCE_DIR" int8
+
+# mixed MSE：4/16；full-logits error 低于同布局 RTN，但序列 fidelity 更差
+julia --threads=auto --project=. --startup-file=no --heap-size-hint=3G \
+  scripts/verify_qwen3_quant_cuda.jl "$MODEL_DIR" "$REFERENCE_DIR" int4 \
+  test/fixtures/week17_qwen3_calibrated_int4/plan_mixed_24g.json
+
+# 同布局 mixed RTN：16/16；tensor tree 12.093 GiB
+julia --threads=auto --project=. --startup-file=no --heap-size-hint=3G \
+  scripts/verify_qwen3_quant_cuda.jl "$MODEL_DIR" "$REFERENCE_DIR" int4 \
+  test/fixtures/week17_qwen3_calibrated_int4/plan_mixed_24g_rtn.json
+```
+
+精确 bytes、load/cold/warm、误差与 greedy 指标冻结在
+`test/fixtures/week17_qwen3_calibrated_int4/assets.json`。三组必须用独立
+Julia 进程，避免 CUDA allocator 的跨组状态污染；全 INT8 是极限驻留证据，
+不是有安全余量的部署配置。
 
 ## Week 11 Qwen3 dense family config reference
 

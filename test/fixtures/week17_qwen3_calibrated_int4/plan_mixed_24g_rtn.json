@@ -1,0 +1,28 @@
+{
+  "default": {
+    "scheme": "int4",
+    "group": 128,
+    "calibration": "maxabs"
+  },
+  "projection_overrides": {
+    "q_proj": {
+      "scheme": "int8"
+    },
+    "k_proj": {
+      "scheme": "int8"
+    },
+    "v_proj": {
+      "scheme": "int8"
+    },
+    "o_proj": {
+      "scheme": "int8"
+    },
+    "down_proj": {
+      "scheme": "int8"
+    },
+    "lm_head": {
+      "scheme": "bf16"
+    }
+  },
+  "layer_overrides": []
+}
