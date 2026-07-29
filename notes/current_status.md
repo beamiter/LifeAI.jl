@@ -6,6 +6,8 @@
 
 ## 当前活动阶段
 
+[`Week 18 — Qwen3 Activation-Aware INT4 校准`](week18_qwen3_activation_calibration.md) 已于 2026-07-29 Open。目标：用与评测 prompt 分离的校准 token，在 native BF16 流式前向中采集各线性层输入 second moments，以 diagonal activation-weighted reconstruction error 选择 INT4 clipping scale；保持 Week 17 packed format、量化计划与参数预算不变，并以 14B mixed RTN 16/16 为必须显式比较的真实行为基线。本周不把该近似称为完整 AWQ/GPTQ，结果无论正负都按实测关闭。
+
 [`Week 17 — Qwen3 Reconstruction-Calibrated INT4 与预算化混合精度`](week17_qwen3_calibrated_int4.md) 已于 2026-07-29 Closed。per-row/group MSE clipping search、按层/投影/LM head 覆盖的 INT4/INT8/BF16 计划，以及真实参数树/Qwen3 topology 的逐 byte 预算均已完成。RTX 4090 D 实测：14B 全 INT8（tree 14.487 GiB）和 12.093 GiB mixed RTN 均与 BF16 reference 16/16 greedy 一致；同布局 mixed MSE 虽降低 full-logits max/mean error，却只有 4/16，证明 reconstruction error 不能作为生成 fidelity 代理。
 
 [`Week 16 — Qwen3 XLA BF16 Compiled Decode 与 INT8/INT4 量化`](week16_qwen3_xla_decode_quant.md) 已于 2026-07-26 Closed。XLA BF16 static-cache decode 编译完成：设备端 greedy 闭环 steady **246 tok/s**（eager 的 16.1 倍），16 步 greedy 与 HF BF16 全对。RTN 量化让 8B（INT8，8.22 GiB）与 14B（INT4，8.38 GiB）首次驻留 16.3 GiB GPU：8B token 级行为近乎无损（greedy 14/16，仅近平局翻转），14B INT4 一致率 4/16 如实冻结——无校准 INT4 的生成保真是明确的下一个边界。
