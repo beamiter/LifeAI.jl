@@ -6,6 +6,8 @@
 
 ## 当前活动阶段
 
+[`Week 17 — Qwen3 Reconstruction-Calibrated INT4 与预算化混合精度`](week17_qwen3_calibrated_int4.md) 已于 2026-07-29 Open。目标：在不改变 BF16 计算契约的前提下，实现 per-row/group MSE clipping scale search、可按层/投影/LM head 覆盖的 INT4/INT8/BF16 量化计划，以及真实参数树和 Qwen3 topology 的 tensor-byte 预算；当前执行环境无模型资产与 NVIDIA driver，Close 只接受离线可复现证据，不伪造新的 14B GPU 指标。
+
 [`Week 16 — Qwen3 XLA BF16 Compiled Decode 与 INT8/INT4 量化`](week16_qwen3_xla_decode_quant.md) 已于 2026-07-26 Closed。XLA BF16 static-cache decode 编译完成：设备端 greedy 闭环 steady **246 tok/s**（eager 的 16.1 倍），16 步 greedy 与 HF BF16 全对。RTN 量化让 8B（INT8，8.22 GiB）与 14B（INT4，8.38 GiB）首次驻留 16.3 GiB GPU：8B token 级行为近乎无损（greedy 14/16，仅近平局翻转），14B INT4 一致率 4/16 如实冻结——无校准 INT4 的生成保真是明确的下一个边界。
 
 [`Week 15 — Qwen3 BF16 CUDA / XLA Accelerated Inference`](week15_qwen3_bf16_accel.md) 已于 2026-07-26 Closed。设备通用向量化 BF16 路径（CPU 上与 Week 14 循环路径逐位相同）在 RTX 5080 上以原生 BF16 张量核运行：0.6B/1.7B/4B CUDA parity 与 16 步 greedy 全部与 HF BF16 一致，吞吐 15.3/14.1/8.1 tok/s（CPU 的 33—92 倍），VRAM ≤ 12.1 GiB；Reactant XLA BF16 编译 prefill 通过（编译 44.8 s、steady 1.36 ms）。推理验证主战场从 CPU 移至 CUDA/XLA；8B GPU 驻留超出 16.3 GiB VRAM 保持边界。
