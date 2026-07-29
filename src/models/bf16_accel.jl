@@ -101,7 +101,15 @@ function _bf16a_attention(
     )
 end
 
-function _bf16a_block(
+function _bf16a_input_second_moment(x::AbstractArray{<:Any,3})
+    samples = size(x, 2) * size(x, 3)
+    samples > 0 || throw(ArgumentError(
+        "activation calibration requires at least one token",
+    ))
+    return vec(sum(abs2, _bf16a_f32(x); dims=(2, 3))) ./ Float32(samples)
+end
+
+function _bf16a_block_core(
     model::GPTModel,
     ps_block,
     x::AbstractArray{<:Any,3},
@@ -109,12 +117,15 @@ function _bf16a_block(
     sin_slice,
     cache;
     mask,
+    capture_activation_moments::Bool,
 )
     head_dim = model.head_dim
     num_tokens, batch_size = size(x, 2), size(x, 3)
     scaling = 1.0f0 / sqrt(Float32(head_dim))
 
     normed = _bf16a_rmsnorm(x, ps_block.norm1.scale, model.norm_epsilon)
+    attention_input_moment = capture_activation_moments ?
+        _bf16a_input_second_moment(normed) : nothing
     queries = reshape(
         _bf16a_linear(ps_block.attn.q_proj.weight, normed),
         head_dim, model.num_heads, num_tokens, batch_size,
@@ -137,21 +148,88 @@ function _bf16a_block(
     all_values = cached_values === nothing ? values : cat(cached_values, values; dims=3)
 
     context = _bf16a_attention(queries, all_keys, all_values; scaling, mask)
+    output_input = reshape(
+        context,
+        head_dim * model.num_heads,
+        num_tokens,
+        batch_size,
+    )
+    output_input_moment = capture_activation_moments ?
+        _bf16a_input_second_moment(output_input) : nothing
     attn_out = _bf16a_linear(
         ps_block.attn.o_proj.weight,
-        reshape(context, head_dim * model.num_heads, num_tokens, batch_size),
+        output_input,
     )
     x = BFloat16.(_bf16a_f32(x) .+ _bf16a_f32(attn_out))
 
     normed2 = _bf16a_rmsnorm(x, ps_block.norm2.scale, model.norm_epsilon)
+    mlp_input_moment = capture_activation_moments ?
+        _bf16a_input_second_moment(normed2) : nothing
     gate = _bf16a_linear(ps_block.mlp.gate_proj.weight, normed2)
     up = _bf16a_linear(ps_block.mlp.up_proj.weight, normed2)
     gate_f = _bf16a_f32(gate)
     activated = BFloat16.(gate_f ./ (1.0f0 .+ exp.(.-gate_f)))
     hidden = BFloat16.(_bf16a_f32(activated) .* _bf16a_f32(up))
+    down_input_moment = capture_activation_moments ?
+        _bf16a_input_second_moment(hidden) : nothing
     mlp_out = _bf16a_linear(ps_block.mlp.down_proj.weight, hidden)
     x = BFloat16.(_bf16a_f32(x) .+ _bf16a_f32(mlp_out))
-    return x, (all_keys, all_values)
+    moments = if capture_activation_moments
+        (;
+            q_proj=attention_input_moment,
+            k_proj=attention_input_moment,
+            v_proj=attention_input_moment,
+            o_proj=output_input_moment,
+            gate_proj=mlp_input_moment,
+            up_proj=mlp_input_moment,
+            down_proj=down_input_moment,
+        )
+    else
+        nothing
+    end
+    return x, (all_keys, all_values), moments
+end
+
+function _bf16a_block(
+    model::GPTModel,
+    ps_block,
+    x::AbstractArray{<:Any,3},
+    cos_slice,
+    sin_slice,
+    cache;
+    mask,
+)
+    output, updated_cache, _ = _bf16a_block_core(
+        model,
+        ps_block,
+        x,
+        cos_slice,
+        sin_slice,
+        cache;
+        mask,
+        capture_activation_moments=false,
+    )
+    return output, updated_cache
+end
+
+function _bf16a_block_activation_moments(
+    model::GPTModel,
+    ps_block,
+    x::AbstractArray{<:Any,3},
+    cos_slice,
+    sin_slice;
+    mask,
+)
+    return _bf16a_block_core(
+        model,
+        ps_block,
+        x,
+        cos_slice,
+        sin_slice,
+        (nothing, nothing);
+        mask,
+        capture_activation_moments=true,
+    )
 end
 
 function _bf16a_causal_mask(query_tokens::Int, key_tokens::Int)

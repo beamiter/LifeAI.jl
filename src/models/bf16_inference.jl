@@ -137,7 +137,15 @@ end
 
 _bf16_residual(x, delta) = BFloat16.(Float32.(x) .+ Float32.(delta))
 
-function _bf16_block(
+function _bf16_input_second_moment(x::AbstractArray{BFloat16,3})
+    samples = size(x, 2) * size(x, 3)
+    samples > 0 || throw(ArgumentError(
+        "activation calibration requires at least one token",
+    ))
+    return vec(sum(abs2, Float32.(x); dims=(2, 3))) ./ Float32(samples)
+end
+
+function _bf16_block_core(
     model::GPTModel,
     ps_block,
     x::AbstractArray{BFloat16,3},
@@ -145,12 +153,15 @@ function _bf16_block(
     sin_table,
     cache;
     start_pos::Int,
+    capture_activation_moments::Bool,
 )
     head_dim = model.head_dim
     num_tokens, batch_size = size(x, 2), size(x, 3)
     scaling = 1.0f0 / sqrt(Float32(head_dim))
 
     normed = _bf16_rmsnorm(x, ps_block.norm1.scale, model.norm_epsilon)
+    attention_input_moment = capture_activation_moments ?
+        _bf16_input_second_moment(normed) : nothing
     queries = reshape(
         _bf16_linear(ps_block.attn.q_proj.weight, normed),
         head_dim, model.num_heads, num_tokens, batch_size,
@@ -179,15 +190,88 @@ function _bf16_block(
         scaling,
         causal=cached_keys === nothing,
     )
+    output_input = reshape(
+        context,
+        head_dim * model.num_heads,
+        num_tokens,
+        batch_size,
+    )
+    output_input_moment = capture_activation_moments ?
+        _bf16_input_second_moment(output_input) : nothing
     attn_out = _bf16_linear(
         ps_block.attn.o_proj.weight,
-        reshape(context, head_dim * model.num_heads, num_tokens, batch_size),
+        output_input,
     )
     x = _bf16_residual(x, attn_out)
 
     normed2 = _bf16_rmsnorm(x, ps_block.norm2.scale, model.norm_epsilon)
-    x = _bf16_residual(x, _bf16_swiglu(ps_block.mlp, normed2))
-    return x, (all_keys, all_values)
+    mlp_input_moment = capture_activation_moments ?
+        _bf16_input_second_moment(normed2) : nothing
+    gate = _bf16_linear(ps_block.mlp.gate_proj.weight, normed2)
+    up = _bf16_linear(ps_block.mlp.up_proj.weight, normed2)
+    gate_f = Float32.(gate)
+    activated = BFloat16.(gate_f ./ (1.0f0 .+ exp.(.-gate_f)))
+    hidden = BFloat16.(Float32.(activated) .* Float32.(up))
+    down_input_moment = capture_activation_moments ?
+        _bf16_input_second_moment(hidden) : nothing
+    x = _bf16_residual(x, _bf16_linear(ps_block.mlp.down_proj.weight, hidden))
+
+    moments = if capture_activation_moments
+        (;
+            q_proj=attention_input_moment,
+            k_proj=attention_input_moment,
+            v_proj=attention_input_moment,
+            o_proj=output_input_moment,
+            gate_proj=mlp_input_moment,
+            up_proj=mlp_input_moment,
+            down_proj=down_input_moment,
+        )
+    else
+        nothing
+    end
+    return x, (all_keys, all_values), moments
+end
+
+function _bf16_block(
+    model::GPTModel,
+    ps_block,
+    x::AbstractArray{BFloat16,3},
+    cos_table,
+    sin_table,
+    cache;
+    start_pos::Int,
+)
+    output, updated_cache, _ = _bf16_block_core(
+        model,
+        ps_block,
+        x,
+        cos_table,
+        sin_table,
+        cache;
+        start_pos,
+        capture_activation_moments=false,
+    )
+    return output, updated_cache
+end
+
+function _bf16_block_activation_moments(
+    model::GPTModel,
+    ps_block,
+    x::AbstractArray{BFloat16,3},
+    cos_table,
+    sin_table;
+    start_pos::Int,
+)
+    return _bf16_block_core(
+        model,
+        ps_block,
+        x,
+        cos_table,
+        sin_table,
+        (nothing, nothing);
+        start_pos,
+        capture_activation_moments=true,
+    )
 end
 
 function _bf16_embed(model::GPTModel, ps, tokens::AbstractMatrix{Int})

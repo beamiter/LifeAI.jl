@@ -41,6 +41,8 @@ export hf_qwen3_bf16_forward
 export hf_qwen3_bf16_accel_forward
 export Int8ChannelWeight, Int4GroupWeight, quantize_bf16_parameters
 export LinearQuantizationSpec, QuantizationPlan, quantization_spec
+export ActivationCalibration, activation_second_moment
+export calibrate_hf_qwen3_activations
 export quantized_parameter_bytes, estimate_qwen3_quantized_bytes
 export load_hf_qwen3_quantized
 export load_hf_qwen3_bundle, generate_hf_text

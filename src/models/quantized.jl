@@ -1,12 +1,13 @@
 using BFloat16s: BFloat16
 import Adapt
 
-# Week 16 introduced RTN weight-only quantization. Week 17 adds deterministic
-# reconstruction-MSE scale calibration and one shared, fine-grained plan for
-# both in-memory and streamed quantization. Embeddings and norm scales stay
-# BF16. Compute is unchanged: weights are dequantized back to BF16 right before
-# the existing `_bf16a_linear`, so quantization only changes weight residency,
-# never the compute contract.
+# Week 16 introduced RTN weight-only quantization. Week 17 added deterministic
+# reconstruction-MSE scale calibration and one shared, fine-grained plan.
+# Week 18 adds diagonal activation-aware calibration from streamed native-BF16
+# input second moments. Embeddings and norm scales stay BF16. Compute is
+# unchanged: weights are dequantized back to BF16 right before the existing
+# `_bf16a_linear`, so calibration only changes stored scales, never the runtime
+# compute contract.
 
 const _QWEN3_QUANTIZATION_TARGETS = (
     :q_proj,
@@ -40,9 +41,10 @@ const _DEFAULT_INT4_MSE_CLIP_RATIOS = (
 
 Storage policy for one linear weight. Supported schemes are packed symmetric
 `:int4`, symmetric per-output-channel `:int8`, and unquantized `:bf16`.
-For INT4, `calibration=:maxabs` preserves the Week 16 RTN behavior, while
-`:mse` chooses one clipping ratio per output-row/input-group by minimizing
-weight reconstruction squared error over the frozen `clip_ratios`.
+For INT4, `calibration=:maxabs` preserves the Week 16 RTN behavior, `:mse`
+minimizes weight reconstruction squared error, and `:activation_mse`
+minimizes the same error weighted by calibration-input second moments.
+Both calibrated modes search the frozen `clip_ratios`.
 """
 struct LinearQuantizationSpec{C<:Tuple}
     scheme::Symbol
@@ -62,7 +64,7 @@ struct LinearQuantizationSpec{C<:Tuple}
         group > 0 || throw(ArgumentError("quantization group must be positive"))
         if scheme === :int4
             iseven(group) || throw(ArgumentError("INT4 group size must be even"))
-            calibration in (:maxabs, :mse) || throw(ArgumentError(
+            calibration in (:maxabs, :mse, :activation_mse) || throw(ArgumentError(
                 "unsupported INT4 calibration $(repr(calibration))",
             ))
         elseif calibration !== :maxabs
@@ -71,7 +73,7 @@ struct LinearQuantizationSpec{C<:Tuple}
             ))
         end
 
-        ratios = if scheme === :int4 && calibration === :mse
+        ratios = if scheme === :int4 && calibration in (:mse, :activation_mse)
             Tuple(Float32(ratio) for ratio in clip_ratios)
         else
             (1.0f0,)
@@ -191,6 +193,267 @@ function _validate_quantization_plan_layers(
     return plan
 end
 
+"""
+    ActivationCalibration(
+        layer_moments;
+        lm_head_moment=nothing,
+        token_count,
+        num_layers,
+        source="",
+    )
+
+Per-input-channel second moments from a separate calibration token set.
+`layer_moments` keys are one-based `(layer, projection)` tuples for Qwen3
+attention/MLP projections. An untied LM head uses `lm_head_moment`.
+
+The object contains calibration-time statistics only. It guides INT4 scale
+selection on the host and is not part of the deployed parameter tree.
+"""
+struct ActivationCalibration
+    layer_moments::Dict{Tuple{Int,Symbol},Vector{Float32}}
+    lm_head_moment::Union{Nothing,Vector{Float32}}
+    token_count::Int
+    num_layers::Int
+    source::String
+end
+
+function _validated_activation_moment(values, target)
+    values isa AbstractVector || throw(ArgumentError(
+        "activation second moment for $target must be a vector",
+    ))
+    moment = Float32.(collect(values))
+    isempty(moment) && throw(ArgumentError(
+        "activation second moment for $target must not be empty",
+    ))
+    all(value -> isfinite(value) && value >= 0.0f0, moment) ||
+        throw(ArgumentError(
+            "activation second moment for $target must be finite and non-negative",
+        ))
+    any(>(0.0f0), moment) || throw(ArgumentError(
+        "activation second moment for $target must contain positive mass",
+    ))
+    return moment
+end
+
+function ActivationCalibration(
+    layer_moments;
+    lm_head_moment=nothing,
+    token_count::Integer,
+    num_layers::Integer,
+    source::AbstractString="",
+)
+    token_count > 0 || throw(ArgumentError(
+        "activation calibration token_count must be positive",
+    ))
+    num_layers > 0 || throw(ArgumentError(
+        "activation calibration num_layers must be positive",
+    ))
+    moments = Dict{Tuple{Int,Symbol},Vector{Float32}}()
+    for (target, values) in pairs(layer_moments)
+        target isa Tuple && length(target) == 2 || throw(ArgumentError(
+            "activation calibration keys must be `(layer, projection)` tuples",
+        ))
+        layer, projection = target
+        layer isa Integer && 1 <= layer <= num_layers || throw(ArgumentError(
+            "activation calibration layer must be in 1:$num_layers",
+        ))
+        projection isa Symbol &&
+            projection in _QWEN3_QUANTIZATION_TARGETS &&
+            projection !== :lm_head || throw(ArgumentError(
+                "unsupported activation calibration projection $(repr(projection))",
+            ))
+        key = (Int(layer), projection)
+        haskey(moments, key) && throw(ArgumentError(
+            "duplicate activation calibration target $key",
+        ))
+        moments[key] = _validated_activation_moment(values, key)
+    end
+    head_moment = lm_head_moment === nothing ?
+        nothing : _validated_activation_moment(lm_head_moment, :lm_head)
+    return ActivationCalibration(
+        moments,
+        head_moment,
+        Int(token_count),
+        Int(num_layers),
+        String(source),
+    )
+end
+
+"""
+    activation_second_moment(calibration, projection; layer=nothing)
+
+Resolve one calibration vector. Transformer projections require a one-based
+`layer`; `:lm_head` requires `layer=nothing`. Missing statistics fail closed.
+"""
+function activation_second_moment(
+    calibration::ActivationCalibration,
+    projection::Symbol;
+    layer::Union{Nothing,Integer}=nothing,
+)
+    projection in _QWEN3_QUANTIZATION_TARGETS || throw(ArgumentError(
+        "unsupported activation calibration projection $(repr(projection))",
+    ))
+    if projection === :lm_head
+        layer === nothing || throw(ArgumentError(
+            "lm_head does not belong to a transformer layer",
+        ))
+        calibration.lm_head_moment === nothing && throw(ArgumentError(
+            "activation calibration is missing lm_head statistics",
+        ))
+        return calibration.lm_head_moment
+    end
+    layer isa Integer && 1 <= layer <= calibration.num_layers ||
+        throw(ArgumentError(
+            "activation calibration layer must be in 1:$(calibration.num_layers)",
+        ))
+    target = (Int(layer), projection)
+    haskey(calibration.layer_moments, target) || throw(ArgumentError(
+        "activation calibration is missing target $target",
+    ))
+    return calibration.layer_moments[target]
+end
+
+_bf16_calibration_parameters(array::AbstractArray) = BFloat16.(array)
+_bf16_calibration_parameters(values::NamedTuple) =
+    NamedTuple{keys(values)}(Tuple(
+        _bf16_calibration_parameters(value) for value in Base.values(values)
+    ))
+_bf16_calibration_parameters(values::Tuple) =
+    Tuple(_bf16_calibration_parameters(value) for value in values)
+
+"""
+    calibrate_hf_qwen3_activations(
+        model_dir,
+        tokens;
+        max_seq_len=max(64, size(tokens, 1)),
+        variant=nothing,
+        source="",
+        accelerated=false,
+        to_device=identity,
+        to_host=identity,
+    )
+
+Stream a local Qwen3 checkpoint layer by layer and collect per-input-channel
+second moments with the native BF16 operator contract. `tokens` uses LifeAI's
+one-based ids and may contain multiple equal-length calibration sequences as
+columns. The full BF16 parameter tree is never resident. With
+`accelerated=true`, each single-layer BF16 parameter tree and the hidden state
+are passed through `to_device`, while collected moment vectors are returned
+through `to_host`; this permits CUDA calibration without a package-level CUDA
+dependency.
+"""
+function calibrate_hf_qwen3_activations(
+    model_dir::AbstractString,
+    tokens::AbstractMatrix{<:Integer};
+    max_seq_len::Integer=max(64, size(tokens, 1)),
+    variant=nothing,
+    source::AbstractString="",
+    accelerated::Bool=false,
+    to_device=identity,
+    to_host=identity,
+)
+    isdir(model_dir) || throw(ArgumentError(
+        "model directory does not exist: $model_dir",
+    ))
+    size(tokens, 1) > 0 && size(tokens, 2) > 0 || throw(ArgumentError(
+        "activation calibration tokens must be a non-empty matrix",
+    ))
+    size(tokens, 1) <= max_seq_len || throw(ArgumentError(
+        "activation calibration sequence exceeds max_seq_len",
+    ))
+    config = load_hf_qwen3_config(
+        joinpath(model_dir, "config.json");
+        max_seq_len,
+        variant,
+    )
+    model = GPTModel(config)
+    _qwen3_validate_semantics(model)
+    token_matrix = Int.(collect(tokens))
+    _validate_generation_ids(token_matrix, model.vocab_size)
+
+    reader = open_safetensors_reader(model_dir)
+    _qwen3_validate_tensor_names(model, Set(String.(collect(keys(reader)))))
+    tensors = _StreamedTensors(reader)
+    x = BFloat16.(_read_embedding_rows(
+        reader,
+        "model.embed_tokens.weight",
+        token_matrix,
+        model.d_model,
+        model.vocab_size,
+    ))
+    cos_table, sin_table = _bf16_rope_tables(model)
+    if accelerated
+        x = to_device(x)
+        cos_table = to_device(cos_table)
+        sin_table = to_device(sin_table)
+    end
+    positions = 1:size(token_matrix, 1)
+    cos_slice = cos_table[:, positions]
+    sin_slice = sin_table[:, positions]
+    mask = accelerated ?
+        to_device(_bf16a_causal_mask(size(token_matrix, 1), size(token_matrix, 1))) :
+        nothing
+    layer_moments = Dict{Tuple{Int,Symbol},Vector{Float32}}()
+
+    for layer in 1:model.num_layers
+        block_f32 = _qwen3_block_parameters(model, tensors, layer - 1)
+        block_bf16 = _bf16_calibration_parameters(block_f32)
+        if accelerated
+            block_bf16 = to_device(block_bf16)
+            x, _, moments = _bf16a_block_activation_moments(
+                model,
+                block_bf16,
+                x,
+                cos_slice,
+                sin_slice;
+                mask,
+            )
+        else
+            x, _, moments = _bf16_block_activation_moments(
+                model,
+                block_bf16,
+                x,
+                cos_table,
+                sin_table;
+                start_pos=1,
+            )
+        end
+        for (projection, moment) in pairs(moments)
+            layer_moments[(layer, projection)] =
+                Float32.(collect(to_host(moment)))
+        end
+        block_f32 = nothing
+        block_bf16 = nothing
+        GC.gc(false)
+    end
+
+    final_scale = BFloat16.(reshape(_expect_tensor(
+        tensors,
+        "model.norm.weight",
+        (model.d_model,),
+    ), model.d_model, 1, 1))
+    final_hidden = accelerated ?
+        _bf16a_rmsnorm(x, to_device(final_scale), model.norm_epsilon) :
+        _bf16_rmsnorm(x, final_scale, model.norm_epsilon)
+    lm_head_moment = model.tie_embeddings ?
+        nothing : Float32.(collect(to_host(
+            accelerated ?
+                _bf16a_input_second_moment(final_hidden) :
+                _bf16_input_second_moment(final_hidden),
+        )))
+    resolved_source = isempty(source) ? abspath(model_dir) : String(source)
+    calibration = ActivationCalibration(
+        layer_moments;
+        lm_head_moment,
+        token_count=length(token_matrix),
+        num_layers=model.num_layers,
+        source=resolved_source,
+    )
+    dense_spec = config.qwen3_variant === nothing ?
+        nothing : qwen3_dense_spec(config.qwen3_variant)
+    return (; calibration, model, config, variant=dense_spec)
+end
+
 function _legacy_quantization_plan(
     scheme::Symbol,
     group::Integer,
@@ -266,6 +529,7 @@ function _mse_calibrated_int4_scale(
     grouped::AbstractArray{Float32,3},
     maxabs_scale::AbstractMatrix{Float32},
     clip_ratios::Tuple,
+    grouped_activation_moment,
 )
     out_dim, group, groups = size(grouped)
     best_scale = similar(maxabs_scale)
@@ -282,7 +546,9 @@ function _mse_calibrated_int4_scale(
                 value = grouped[row, column, group_index]
                 quantized = clamp(round(value / candidate_scale), -7.0f0, 7.0f0)
                 reconstructed = Float32(BFloat16(quantized * candidate_scale))
-                candidate_error += abs2(reconstructed - value)
+                importance = grouped_activation_moment === nothing ?
+                    1.0f0 : grouped_activation_moment[column, group_index]
+                candidate_error += importance * abs2(reconstructed - value)
             end
             if candidate_error < selected_error
                 selected_error = candidate_error
@@ -294,11 +560,38 @@ function _mse_calibrated_int4_scale(
     return best_scale
 end
 
+function _grouped_activation_second_moment(
+    values,
+    in_dim::Int,
+    group::Int,
+)
+    values isa AbstractVector || throw(ArgumentError(
+        "activation-aware INT4 calibration requires a second-moment vector",
+    ))
+    length(values) == in_dim || throw(DimensionMismatch(
+        "activation second moment has length $(length(values)); expected $in_dim",
+    ))
+    moment = Float32.(collect(values))
+    all(value -> isfinite(value) && value >= 0.0f0, moment) ||
+        throw(ArgumentError(
+            "activation second moment must be finite and non-negative",
+        ))
+    groups = in_dim ÷ group
+    grouped = reshape(moment, group, groups)
+    for group_index in 1:groups
+        any(>(0.0f0), view(grouped, :, group_index)) || throw(ArgumentError(
+            "activation second moment group $group_index has no positive mass",
+        ))
+    end
+    return grouped
+end
+
 function _quantize_int4_group(
     weight::AbstractMatrix;
     group::Int=128,
     calibration::Symbol=:maxabs,
     clip_ratios=_DEFAULT_INT4_MSE_CLIP_RATIOS,
+    activation_second_moment=nothing,
 )
     out_dim, in_dim = size(weight)
     in_dim % group == 0 || throw(ArgumentError(
@@ -314,6 +607,21 @@ function _quantize_int4_group(
     w = Float32.(weight)
     groups = in_dim ÷ group
     grouped = reshape(w, out_dim, group, groups)
+    grouped_activation_moment = if spec.calibration === :activation_mse
+        activation_second_moment === nothing && throw(ArgumentError(
+            "activation-aware INT4 calibration requires activation statistics",
+        ))
+        _grouped_activation_second_moment(
+            activation_second_moment,
+            in_dim,
+            group,
+        )
+    else
+        activation_second_moment === nothing || throw(ArgumentError(
+            "activation statistics are only valid with calibration=:activation_mse",
+        ))
+        nothing
+    end
     maxabs_scale = max.(
         reshape(maximum(abs, grouped; dims=2), out_dim, groups) ./ 7.0f0,
         1.0f-12,
@@ -325,6 +633,7 @@ function _quantize_int4_group(
             grouped,
             maxabs_scale,
             spec.clip_ratios,
+            grouped_activation_moment,
         )
     end
     shifted = reshape(UInt8.(
@@ -393,7 +702,16 @@ _bf16a_linear(weight::Int8ChannelWeight, x::AbstractArray{<:Any,3}) =
 _bf16a_linear(weight::Int4GroupWeight, x::AbstractArray{<:Any,3}) =
     _bf16a_linear_quantized(weight, x)
 
-function _quantize_linear(weight, spec::LinearQuantizationSpec)
+function _quantize_linear(
+    weight,
+    spec::LinearQuantizationSpec;
+    activation_second_moment=nothing,
+)
+    if spec.calibration !== :activation_mse
+        activation_second_moment === nothing || throw(ArgumentError(
+            "activation statistics were provided for non-activation calibration",
+        ))
+    end
     spec.scheme === :bf16 && return BFloat16.(weight)
     spec.scheme === :int8 && return _quantize_int8_channel(weight)
     spec.scheme === :int4 && return _quantize_int4_group(
@@ -401,12 +719,78 @@ function _quantize_linear(weight, spec::LinearQuantizationSpec)
         group=spec.group,
         calibration=spec.calibration,
         clip_ratios=spec.clip_ratios,
+        activation_second_moment,
     )
     throw(ArgumentError("unsupported quantization scheme $(repr(spec.scheme))"))
 end
 
 _quantize_linear(weight, scheme::Symbol, group::Int) =
     _quantize_linear(weight, LinearQuantizationSpec(scheme; group))
+
+function _activation_moment_for_quantization(
+    calibration::Union{Nothing,ActivationCalibration},
+    spec::LinearQuantizationSpec,
+    projection::Symbol;
+    layer::Union{Nothing,Integer}=nothing,
+)
+    spec.calibration === :activation_mse || return nothing
+    calibration === nothing && throw(ArgumentError(
+        "quantization plan requires an ActivationCalibration for " *
+        "$(layer === nothing ? projection : (layer, projection))",
+    ))
+    return activation_second_moment(calibration, projection; layer)
+end
+
+function _validate_activation_calibration_depth(
+    calibration::Union{Nothing,ActivationCalibration},
+    num_layers::Integer,
+)
+    calibration === nothing && return nothing
+    calibration.num_layers == num_layers || throw(ArgumentError(
+        "activation calibration depth $(calibration.num_layers) does not " *
+        "match model depth $num_layers",
+    ))
+    return calibration
+end
+
+function _validate_activation_calibration_usage(
+    plan::QuantizationPlan,
+    calibration::Union{Nothing,ActivationCalibration},
+    num_layers::Integer;
+    include_lm_head::Bool,
+)
+    _validate_activation_calibration_depth(calibration, num_layers)
+    used = false
+    for layer in 1:Int(num_layers), projection in _QWEN3_QUANTIZATION_TARGETS
+        projection === :lm_head && continue
+        spec = quantization_spec(plan, projection; layer)
+        if spec.calibration === :activation_mse
+            used = true
+            _activation_moment_for_quantization(
+                calibration,
+                spec,
+                projection;
+                layer,
+            )
+        end
+    end
+    if include_lm_head
+        head_spec = quantization_spec(plan, :lm_head)
+        if head_spec.calibration === :activation_mse
+            used = true
+            _activation_moment_for_quantization(
+                calibration,
+                head_spec,
+                :lm_head,
+            )
+        end
+    end
+    calibration !== nothing && !used && throw(ArgumentError(
+        "ActivationCalibration was provided but the quantization plan does " *
+        "not use calibration=:activation_mse",
+    ))
+    return calibration
+end
 
 """
     load_hf_qwen3_quantized(
@@ -415,6 +799,7 @@ _quantize_linear(weight, scheme::Symbol, group::Int) =
         scheme=:int8,
         group=128,
         plan=nothing,
+        activation_calibration=nothing,
         variant=nothing,
     )
 
@@ -424,6 +809,8 @@ quantized tree plus one layer of transients. Embedding and norm scales stay
 BF16. With `plan=nothing`, the Week 16 `scheme`, `group`, and
 `int8_projections` API is preserved. A `QuantizationPlan` can instead choose
 INT4, INT8, or BF16 independently for each layer/projection and the LM head.
+Plans using `calibration=:activation_mse` additionally require an
+`ActivationCalibration` with matching targets and input dimensions.
 """
 function load_hf_qwen3_quantized(
     model_dir::AbstractString;
@@ -432,6 +819,7 @@ function load_hf_qwen3_quantized(
     group::Int=128,
     int8_projections::Tuple{Vararg{Symbol}}=(),
     plan::Union{Nothing,QuantizationPlan}=nothing,
+    activation_calibration::Union{Nothing,ActivationCalibration}=nothing,
     variant=nothing,
 )
     quantization_plan = _resolve_quantization_plan(
@@ -449,6 +837,12 @@ function load_hf_qwen3_quantized(
     model = GPTModel(config)
     _qwen3_validate_semantics(model)
     _validate_quantization_plan_layers(quantization_plan, model.num_layers)
+    _validate_activation_calibration_usage(
+        quantization_plan,
+        activation_calibration,
+        model.num_layers,
+        include_lm_head=!model.tie_embeddings,
+    )
     reader = open_safetensors_reader(model_dir)
     _qwen3_validate_tensor_names(model, Set(String.(collect(keys(reader)))))
     tensors = _StreamedTensors(reader)
@@ -470,9 +864,16 @@ function load_hf_qwen3_quantized(
     # 宿主峰值推过 22 GiB 触发 OOM。
     function _quantized_projection(prefix, name, shape, layer, projection)
         weight = _expect_tensor(tensors, "$prefix.$name", shape)
+        spec = quantization_spec(quantization_plan, projection; layer)
         quantized = _quantize_linear(
             weight,
-            quantization_spec(quantization_plan, projection; layer),
+            spec;
+            activation_second_moment=_activation_moment_for_quantization(
+                activation_calibration,
+                spec,
+                projection;
+                layer,
+            ),
         )
         weight = nothing
         GC.gc(false)
@@ -518,13 +919,19 @@ function load_hf_qwen3_quantized(
     lm_head = if model.tie_embeddings
         (;)
     else
+        head_spec = quantization_spec(quantization_plan, :lm_head)
         head = _quantize_linear(
             _expect_tensor(
                 tensors,
                 "lm_head.weight",
                 (model.vocab_size, model.d_model),
             ),
-            quantization_spec(quantization_plan, :lm_head),
+            head_spec;
+            activation_second_moment=_activation_moment_for_quantization(
+                activation_calibration,
+                head_spec,
+                :lm_head,
+            ),
         )
         GC.gc(false)
         (; weight=head)
@@ -550,13 +957,15 @@ end
         group=128,
         int8_projections=(),
         plan=nothing,
+        activation_calibration=nothing,
     )
 
 Quantize every linear weight (attention/MLP projections and an untied LM
 head) of a BF16 Qwen3 parameter tree with round-to-nearest. Embedding and
 norm scales stay BF16. The result feeds `hf_qwen3_bf16_accel_forward`
 unchanged and can be moved to the GPU with `CUDA.cu`. A `QuantizationPlan`
-enables reconstruction-calibrated INT4 and fine-grained mixed precision.
+enables calibrated INT4 and fine-grained mixed precision. Plans using
+`:activation_mse` require an `ActivationCalibration`.
 """
 function quantize_bf16_parameters(
     ps;
@@ -564,6 +973,7 @@ function quantize_bf16_parameters(
     group::Int=128,
     int8_projections::Tuple{Vararg{Symbol}}=(),
     plan::Union{Nothing,QuantizationPlan}=nothing,
+    activation_calibration::Union{Nothing,ActivationCalibration}=nothing,
 )
     quantization_plan = _resolve_quantization_plan(
         plan,
@@ -576,51 +986,78 @@ function quantize_bf16_parameters(
     ))
     block_values = values(ps.blocks)
     _validate_quantization_plan_layers(quantization_plan, length(block_values))
+    has_untied_head = haskey(ps, :lm_head) && haskey(ps.lm_head, :weight)
+    _validate_activation_calibration_usage(
+        quantization_plan,
+        activation_calibration,
+        length(block_values),
+        include_lm_head=has_untied_head,
+    )
+    function _quantized_weight(weight, projection; layer=nothing)
+        spec = quantization_spec(quantization_plan, projection; layer)
+        return _quantize_linear(
+            weight,
+            spec;
+            activation_second_moment=_activation_moment_for_quantization(
+                activation_calibration,
+                spec,
+                projection;
+                layer,
+            ),
+        )
+    end
     blocks = ntuple(length(block_values)) do index
         block = block_values[index]
         (;
             norm1=block.norm1,
             attn=(;
-                q_proj=(; weight=_quantize_linear(
+                q_proj=(; weight=_quantized_weight(
                     block.attn.q_proj.weight,
-                    quantization_spec(quantization_plan, :q_proj; layer=index),
+                    :q_proj;
+                    layer=index,
                 )),
-                k_proj=(; weight=_quantize_linear(
+                k_proj=(; weight=_quantized_weight(
                     block.attn.k_proj.weight,
-                    quantization_spec(quantization_plan, :k_proj; layer=index),
+                    :k_proj;
+                    layer=index,
                 )),
-                v_proj=(; weight=_quantize_linear(
+                v_proj=(; weight=_quantized_weight(
                     block.attn.v_proj.weight,
-                    quantization_spec(quantization_plan, :v_proj; layer=index),
+                    :v_proj;
+                    layer=index,
                 )),
-                o_proj=(; weight=_quantize_linear(
+                o_proj=(; weight=_quantized_weight(
                     block.attn.o_proj.weight,
-                    quantization_spec(quantization_plan, :o_proj; layer=index),
+                    :o_proj;
+                    layer=index,
                 )),
                 q_norm=block.attn.q_norm,
                 k_norm=block.attn.k_norm,
             ),
             norm2=block.norm2,
             mlp=(;
-                gate_proj=(; weight=_quantize_linear(
+                gate_proj=(; weight=_quantized_weight(
                     block.mlp.gate_proj.weight,
-                    quantization_spec(quantization_plan, :gate_proj; layer=index),
+                    :gate_proj;
+                    layer=index,
                 )),
-                up_proj=(; weight=_quantize_linear(
+                up_proj=(; weight=_quantized_weight(
                     block.mlp.up_proj.weight,
-                    quantization_spec(quantization_plan, :up_proj; layer=index),
+                    :up_proj;
+                    layer=index,
                 )),
-                down_proj=(; weight=_quantize_linear(
+                down_proj=(; weight=_quantized_weight(
                     block.mlp.down_proj.weight,
-                    quantization_spec(quantization_plan, :down_proj; layer=index),
+                    :down_proj;
+                    layer=index,
                 )),
             ),
         )
     end
-    lm_head = if haskey(ps, :lm_head) && haskey(ps.lm_head, :weight)
-        (; weight=_quantize_linear(
+    lm_head = if has_untied_head
+        (; weight=_quantized_weight(
             ps.lm_head.weight,
-            quantization_spec(quantization_plan, :lm_head),
+            :lm_head,
         ))
     else
         ps.lm_head

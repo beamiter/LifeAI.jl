@@ -1,0 +1,103 @@
+{
+  "source": "Week 18 diagonal activation-aware INT4 calibration and Qwen3-14B RTX 4090 D validation",
+  "frozen_at": "2026-07-29",
+  "implementation_scope": "per-input-channel second moments; not full AWQ, GPTQ, SmoothQuant, or Hessian PTQ",
+  "plan_sha256": {
+    "plan_mixed_24g_activation.json": "48395aaeba9df2aa7a03093e2079beb52d9909fd98b8b18dfd99ac3d1def039c"
+  },
+  "calibration": {
+    "fixture": "calibration_tokens.json",
+    "fixture_sha256": "5709c3ca3cfb2c6752e355a5212f7e18d30c3a940304de075db18bfb2b1cdc80",
+    "generator": "scripts/export_qwen3_calibration_tokens.py",
+    "generator_sha256": "be0d8a2d476ce7d1aed5b19dccea1f1771c324850304394ebaa18ac4d5c296d3",
+    "source": "LifeAI Week 18 fixed multilingual/code/math calibration corpus",
+    "corpus_sha256": "04be2b3c43a835767d9bb24bf5ea972c3a13870b47b4e6f0725b60ca1452d488",
+    "tokenizer_class": "Qwen2TokenizerFast",
+    "transformers_version": "4.51.0",
+    "sequence_length": 32,
+    "batch_size": 8,
+    "token_count": 256,
+    "evaluation_sequence_present": false
+  },
+  "qwen3_14b": {
+    "variant": "qwen3_14b",
+    "revision": "40c069824f4251a91eefaf281ebe4c544efd3e18",
+    "weight_shards_bytes": 29536665640,
+    "mixed_24g_tensor_bytes": 12985006080,
+    "mixed_24g_tensor_gib": 12.093229293823242
+  },
+  "reference": {
+    "transformers_version": "4.51.0",
+    "torch_version": "2.7.1+cpu",
+    "compute_dtype": "bfloat16",
+    "greedy_steps": 16,
+    "reference_json_sha256": "35755f087cd09313c5e2cffd80bb49bc8adee18b8845f2aa8546b01e7e1b3294",
+    "reference_safetensors_sha256": "e76e8bb6a782c3bc4a4db2bca8f250230d4460a1b70c04d81796ecb3278dde5c"
+  },
+  "hardware_validation": {
+    "required": true,
+    "status": "complete",
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "driver_version": "570.153.02",
+    "cuda_jl_version": "6.2.1",
+    "gpu_total_bytes": 25238568960,
+    "model_source": "ModelScope Qwen/Qwen3-14B master",
+    "model_matches_frozen_huggingface_revision": true,
+    "activation_aware": {
+      "plan": "plan_mixed_24g_activation.json",
+      "default_calibration": "activation_mse",
+      "calibration_seconds": 248.315852384,
+      "calibration_token_count": 256,
+      "calibration_tokens_sha256": "5709c3ca3cfb2c6752e355a5212f7e18d30c3a940304de075db18bfb2b1cdc80",
+      "load_seconds": 489.227792392,
+      "host_maxrss_bytes": 22965575680,
+      "estimated_tree_bytes": 12985006080,
+      "host_tree_bytes": 12985006080,
+      "gpu_tree_bytes": 12982943744,
+      "vram_used_bytes": 23057530880,
+      "cold_seconds": 36.126435551,
+      "warm_greedy_seconds": 28.872623549,
+      "warm_tokens_per_second": 0.5541581620681699,
+      "logits_max_abs": 3.4238281,
+      "logits_mean_abs": 0.42864862,
+      "logits_argmax_equal": true,
+      "decode_max_abs": 1.125,
+      "decode_argmax_equal": true,
+      "greedy_token_ids_0_based": [
+        16,
+        198,
+        32313,
+        11,
+        1077,
+        594,
+        1490,
+        13,
+        576,
+        1196,
+        3208,
+        330,
+        9707,
+        13,
+        100,
+        42
+      ],
+      "greedy_agreement": 4,
+      "greedy_first_divergence": 5
+    },
+    "week17_baselines": {
+      "mixed_rtn": {
+        "logits_max_abs": 4.3203125,
+        "logits_mean_abs": 0.42933297,
+        "greedy_agreement": 16,
+        "greedy_first_divergence": null
+      },
+      "mixed_weight_mse": {
+        "logits_max_abs": 3.6289062,
+        "logits_mean_abs": 0.36034447,
+        "greedy_agreement": 4,
+        "greedy_first_divergence": 5
+      }
+    },
+    "finding": "Diagonal activation-aware clipping did not preserve mixed RTN generation fidelity: agreement remained 4/16 with first divergence at token 5. It lowered max-logit error versus both Week 17 baselines, but mean-logit error was only marginally below RTN and worse than weight-MSE, so second-moment-weighted local reconstruction is still not a generation-fidelity proxy."
+  }
+}

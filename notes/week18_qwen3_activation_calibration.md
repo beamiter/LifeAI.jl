@@ -1,8 +1,10 @@
 # Week 18 — Qwen3 Activation-Aware INT4 校准
 
-> 状态：Open
+> 状态：Closed
 >
 > 开启记录：2026-07-29
+>
+> 关闭记录：2026-07-29
 >
 > 依赖基线：[`Week 17 — Qwen3 Reconstruction-Calibrated INT4 与预算化混合精度`](week17_qwen3_calibrated_int4.md) 已 Closed，保持历史内容不变。
 >
@@ -79,11 +81,72 @@
 - 冻结实现顺序：校准统计契约 → BF16 流式采集 → activation-weighted
   scale search → 两 loader 一致性 → 独立校准 token → 14B GPU 对照。
 
+### 2026-07-29：实现与离线验证
+
+- 新增 `ActivationCalibration`、`activation_second_moment` 与
+  `calibrate_hf_qwen3_activations`；每层 Q/K/V 共享 attention norm
+  输入统计，O、gate/up、down 分别采集真实线性输入，untied LM head
+  采集 final norm 后输入。
+- 校准器仍逐层读取 checkpoint，不常驻完整 BF16 权重树；CPU 路径保持
+  Week 14 位精确语义，加速路径通过 `to_device` / `to_host` callback
+  使用 Week 15 device-generic BF16 算子，因此核心包不依赖 CUDA。
+- `:activation_mse` 只改变每个 INT4 row/group 的 clipping candidate
+  选择；packed bytes、scale shape、反量化与 BF16 compute 全部不变。
+- 冻结 8×32 多语种/代码/数学 token fixture：
+  SHA256 `5709c3ca3cfb2c6752e355a5212f7e18d30c3a940304de075db18bfb2b1cdc80`；
+  tokenizer 为 Transformers 4.51.0 `Qwen2TokenizerFast`，模型 revision
+  `40c069824f4251a91eefaf281ebe4c544efd3e18`，明确验证 Week 17 evaluation
+  token sequence 不在选中语料中。
+- synthetic case 中 activation-weighted error 严格低于 max-abs 与
+  weight-MSE；所有 row/group 因 candidate 含 `1.0` 而局部不劣于 RTN。
+  缺失 target、错层、错维度、NaN、负值、零质量 group 和错误 plan
+  usage 全部 fail closed。
+- 合成 Qwen3 tied/untied fixture 上 CPU loop/CPU accelerated 统计逐值一致，
+  BF16 参数树量化与 safetensors streamed loader 逐 tensor 相同；
+  Week 14—18 回归全部通过。
+
+### 2026-07-29：Qwen3-14B / RTX 4090 D
+
+冻结环境与 Week 17 相同：RTX 4090 D、driver 570.153.02、CUDA.jl 6.2.1；
+本地 ModelScope 权重逐文件匹配 HuggingFace revision，复用冻结的
+Transformers 4.51.0 / Torch 2.7.1+cpu BF16 reference。
+
+| 指标 | mixed RTN（Week 17） | mixed weight-MSE（Week 17） | mixed activation-MSE |
+| --- | ---: | ---: | ---: |
+| tensor tree | 12.093 GiB | 12.093 GiB | 12.093 GiB |
+| calibration | — | weight-only | 256 tokens / 248.32 s |
+| load | 259.60 s | 273.59 s | 489.23 s |
+| VRAM used | 22.597 GiB | 22.521 GiB | 21.474 GiB |
+| logits max abs | 4.3203 | 3.6289 | **3.4238** |
+| logits mean abs | 0.42933 | **0.36034** | 0.42865 |
+| decode max abs | 1.125 | 1.0156 | 1.125 |
+| greedy agreement | **16/16** | 4/16 | 4/16 |
+| first divergence | — | 5 | 5 |
+
+VRAM 是 allocator 状态相关的单进程观测，不把小幅差异解释为参数格式变化；
+三组精确 tensor bytes 相同。activation-MSE 的 max error 最低，但 mean
+几乎回到 RTN，generation 与 weight-MSE 一样从第 5 token 分歧。这个结果
+否定了“只需把 weight MSE 换成 diagonal activation-weighted MSE 就能恢复
+greedy”的本周假设。
+
 ## Close 回顾
 
-- **完成了什么**：
-- **验证证据**：
-- **没有完成及原因**：
-- **最重要的认知变化**：
-- **是否满足 Close 条件**：
-- **带到下一 Week 的问题**：
+- **完成了什么**：独立校准语料、严格统计契约、CPU/GPU 逐层采集、
+  activation-weighted INT4 scale search、两种 loader 一致性和真实 14B
+  三方对照全部完成。
+- **验证证据**：默认套件 `5086 / 5086`、Week 18 专项 `133 / 133`；
+  校准 token、plan、generator、模型 revision、BF16 reference 与硬件指标
+  均冻结 checksum。4090 D 真实结果为 logits max/mean
+  `3.4238 / 0.42865`、greedy 4/16。
+- **没有完成及原因**：没有实现完整 AWQ/GPTQ/Hessian/block
+  reconstruction，也没有 fused INT4 GEMM；它们从 Open 起就是非目标，
+  不能借 diagonal 统计的实现宣称已完成。
+- **最重要的认知变化**：activation 信息本身不够，目标函数、跨层误差
+  传播和离散 argmax margin 才是生成保真的关键；降低某个重建代理甚至
+  full-logits max error，仍可能完全不改变错误的自回归分支。
+- **是否满足 Close 条件**：满足。实现与 fail-closed 条件完成，legacy
+  行为无回归，真实 GPU 对照完成；质量假设被证伪但 Close 条件明确允许
+  正负结果。
+- **带到下一 Week 的问题**：若继续量化，优先选择“直接约束层输出/生成
+  margin 的 blockwise 方法”或 fused quantized GEMM，而不是继续微调
+  diagonal clipping ratios；是否投入完整 AWQ/GPTQ 应与吞吐目标一起决策。

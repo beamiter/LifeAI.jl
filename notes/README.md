@@ -23,7 +23,7 @@
 - [`week15_qwen3_bf16_accel.md`](week15_qwen3_bf16_accel.md)：Week 15（Closed），BF16 推理落地 RTX 5080——向量化路径与 CPU 循环逐位相同，CUDA parity/greedy 全对、吞吐 8—15 tok/s（33—92×），XLA BF16 编译 prefill steady 1.36 ms。
 - [`week16_qwen3_xla_decode_quant.md`](week16_qwen3_xla_decode_quant.md)：Week 16（Closed），XLA BF16 compiled decode 设备端 greedy 246 tok/s（eager 16.1×）且与 HF 全对；RTN INT8/INT4 让 8B/14B 首次 GPU 驻留，8B 近乎无损、14B INT4 漂移如实冻结。
 - [`week17_qwen3_calibrated_int4.md`](week17_qwen3_calibrated_int4.md)：Week 17（Closed），reconstruction-calibrated INT4、按层/投影/LM-head 的 INT4/INT8/BF16 计划与精确参数预算；RTX 4090 D 上 14B 全 INT8 和 mixed RTN 均 16/16 greedy，mixed MSE 虽降低全局 logit error 却只有 4/16，负结果如实冻结。
-- [`week18_qwen3_activation_calibration.md`](week18_qwen3_activation_calibration.md)：Week 18（Open），用独立校准 token 的 per-channel activation second moment 加权 INT4 clipping search，并以 Week 17 mixed RTN 16/16 为真实 14B 行为基线。
+- [`week18_qwen3_activation_calibration.md`](week18_qwen3_activation_calibration.md)：Week 18（Closed），独立校准 token、fail-closed per-channel activation second moment 与 GPU 逐层采集均完成；14B 同布局 activation-aware 仍为 4/16（第 5 token 分歧），未守住 mixed RTN 16/16，负结果冻结。
 - [`qwen3_hf_config_mapping.md`](qwen3_hf_config_mapping.md)：Qwen3 HF `config.json` 与 `gpt_config` 的字段、权重名与布局映射契约（Week 07 已实现并验证）。
 - [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
 - [`monthly/`](monthly/)：月度总结和跨周能力变化。

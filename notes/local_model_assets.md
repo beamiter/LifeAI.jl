@@ -302,6 +302,41 @@ julia --threads=auto --project=. --startup-file=no --heap-size-hint=3G \
 Julia 进程，避免 CUDA allocator 的跨组状态污染；全 INT8 是极限驻留证据，
 不是有安全余量的部署配置。
 
+## Week 18 activation-aware INT4 验证
+
+Week 18 复用上述 Qwen3-14B 权重和 BF16 reference，不新增模型下载。
+独立校准 token 由仓库自有的多语种/代码/数学短语生成，不包含 Week 17
+evaluation token sequence：
+
+```bash
+/tmp/lifeai-week17-venv/bin/python \
+  scripts/export_qwen3_calibration_tokens.py \
+  --revision 40c069824f4251a91eefaf281ebe4c544efd3e18 \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-14B \
+  test/fixtures/week18_qwen3_activation_calibration/calibration_tokens.json
+```
+
+fixture SHA256 为
+`5709c3ca3cfb2c6752e355a5212f7e18d30c3a940304de075db18bfb2b1cdc80`，
+包含 8×32=256 tokens。GPU 校准和验证命令：
+
+```bash
+MODEL_DIR=/home/ubuntu/models/modelscope/Qwen/Qwen3-14B
+REFERENCE_DIR=$MODEL_DIR/lifeai-references/week17-bf16-parity
+
+julia --project=. scripts/verify_qwen3_quant_cuda.jl \
+  "$MODEL_DIR" "$REFERENCE_DIR" int4 \
+  test/fixtures/week18_qwen3_activation_calibration/plan_mixed_24g_activation.json \
+  test/fixtures/week18_qwen3_activation_calibration/calibration_tokens.json
+```
+
+实测 calibration `248.32 s`、load `489.23 s`、tree `12.093 GiB`、VRAM
+`21.474 GiB`；logits max/mean error `3.4238 / 0.42865`，greedy 4/16，
+首次分歧第 5 token。精确 provenance 与指标位于
+`test/fixtures/week18_qwen3_activation_calibration/assets.json`。这是
+diagonal activation second-moment clipping 的负结果，不代表完整
+AWQ/GPTQ 已验证。
+
 ## Week 11 Qwen3 dense family config reference
 
 Week 11 冻结全部六个官方 config contract；Week 12 下载 1.7B/4B 权重，

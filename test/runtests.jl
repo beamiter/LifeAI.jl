@@ -99,6 +99,10 @@ end
     include("test_week17.jl")
 end
 
+@testset "Week 18 activation-aware INT4 calibration" begin
+    include("test_week18.jl")
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA KV cache" begin
         include("test_xla_kv_cache.jl")

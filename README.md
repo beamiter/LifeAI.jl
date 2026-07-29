@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环；XLA BF16 compiled decode 达 246 tok/s；权重量化已升级为可按层/投影/LM head 预算的 INT4/INT8/BF16 计划。RTX 4090 D 上 Qwen3-14B 全 INT8 与 12.09 GiB mixed RTN 均完成 16/16 BF16 greedy parity。**
+**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环；XLA BF16 compiled decode 达 246 tok/s；权重量化已升级为可按层/投影/LM head 预算的 INT4/INT8/BF16 计划，并完成独立 token 驱动的 diagonal activation-aware INT4 实验。RTX 4090 D 上 Qwen3-14B 全 INT8 与 12.09 GiB mixed RTN 均完成 16/16 BF16 greedy parity；weight-MSE 与 activation-aware 同布局均只有 4/16。**
 
-Week 01—17 均已 Closed；[`Week 17 — Qwen3 Reconstruction-Calibrated INT4 与预算化混合精度`](notes/week17_qwen3_calibrated_int4.md) 完成统一量化计划、精确参数预算与 14B 三组真实对照。reconstruction MSE 虽降低同布局 RTN 的 full-logits 全局误差，却把 greedy 从 16/16 降至 4/16；该负结果保持为下一阶段的明确边界。
+Week 01—18 均已 Closed；[`Week 18 — Qwen3 Activation-Aware INT4 校准`](notes/week18_qwen3_activation_calibration.md) 完成 fail-closed activation second-moment 采集、GPU 逐层校准和 14B 实测。activation-aware 将 full-logits max error 降到 `3.4238`，但仍从第 5 token 分歧且仅 4/16；局部加权重建目标仍不能作为 generation fidelity 代理。
 
 目前已经具备：
 
@@ -39,7 +39,9 @@ Week 01—17 均已 Closed；[`Week 17 — Qwen3 Reconstruction-Calibrated INT4 
 - Qwen3 weight-only INT8 per-channel / packed groupwise INT4，以及统一的
   `QuantizationPlan`：可按 one-based layer、projection 与独立 LM head
   选择 INT4/INT8/BF16，streamed/in-memory 路径共用策略；真实树统计与
-  topology 估算逐 byte 对齐。
+  topology 估算逐 byte 对齐。`ActivationCalibration` 可用独立 token
+  逐层采集每个线性输入的 second moment，并以 `:activation_mse` 做
+  diagonal activation-aware clipping；这不是完整 AWQ/GPTQ。
 - Qwen3-0.6B 逐层 hidden states、full logits、dynamic/static cache decode 的真实 HF reference parity；真实权重测试显式 opt-in，默认测试保持离线。
 - Qwen3-0.6B 的 16-step 官方 sampled reference parity、position 40,959 独立 Transformers RoPE fixture，以及 CPU/CUDA/Reactant-XLA GPU 真实推理 benchmark。
 - 严格的 Qwen3 HF tokenizer：NFC、目标 regex、ByteLevel、imported BPE、added/special tokens、artifact/checkpoint 与 provenance fingerprint。
@@ -53,9 +55,10 @@ Week 01—17 均已 Closed；[`Week 17 — Qwen3 Reconstruction-Calibrated INT4 
 尚未具备：
 
 - GPT-2 的 WebText 从零训练、论文 zero-shot quality、Medium/Large/XL、cross-attention 与分类 head 未复现；当前完成的是 124M 官方 checkpoint 的 Float32 推理/架构复现。
-- Qwen3 MoE、完整 40K context 的端到端真实推理、activation/KV-cache
-  量化与量化 GEMM；dense 0.6B—32B 真实权重 parity、native BF16 和
-  weight-only INT8/INT4 已完成，不能再沿用早期“只验证 0.6B”的边界。
+- Qwen3 MoE、完整 40K context 的端到端真实推理、完整 AWQ/GPTQ、
+  activation/KV-cache 量化与量化 GEMM；dense 0.6B—32B 真实权重
+  parity、native BF16、weight-only INT8/INT4 与 diagonal
+  activation-aware clipping 已完成，不能再沿用早期“只验证 0.6B”的边界。
 - 通用 Jinja、tools/tool-role chat template 与 agent tool loop；可用于真实任务的模型质量仍未评估。
 - 长短期记忆、规划、工具使用、反思等完整的 agent loop。
 - 视觉、听觉和传感器输入等多模态感知。

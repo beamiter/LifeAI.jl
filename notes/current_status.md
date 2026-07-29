@@ -2,11 +2,11 @@
 
 ## 一句话判断
 
-项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**（0.6B—4B 全量、8B—32B 流式），并具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化：RTX 4090 D 上 14B 全 INT8 与预算化 mixed RTN 均完成 16/16 BF16 greedy parity。
+项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**（0.6B—4B 全量、8B—32B 流式），并具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化：RTX 4090 D 上 14B 全 INT8 与预算化 mixed RTN 均完成 16/16 BF16 greedy parity，diagonal activation-aware 同布局实测为 4/16。
 
 ## 当前活动阶段
 
-[`Week 18 — Qwen3 Activation-Aware INT4 校准`](week18_qwen3_activation_calibration.md) 已于 2026-07-29 Open。目标：用与评测 prompt 分离的校准 token，在 native BF16 流式前向中采集各线性层输入 second moments，以 diagonal activation-weighted reconstruction error 选择 INT4 clipping scale；保持 Week 17 packed format、量化计划与参数预算不变，并以 14B mixed RTN 16/16 为必须显式比较的真实行为基线。本周不把该近似称为完整 AWQ/GPTQ，结果无论正负都按实测关闭。
+当前没有 Open 的 Week；[`Week 18 — Qwen3 Activation-Aware INT4 校准`](week18_qwen3_activation_calibration.md) 已于 2026-07-29 Closed。独立的 8×32 calibration token、native BF16 CPU/GPU 逐层 activation second-moment 采集、`:activation_mse` scale search 与 streamed/in-memory 一致性均已完成。RTX 4090 D 上同 12.093 GiB mixed layout 的真实结果为 4/16、首次分歧第 5 token，没有守住 Week 17 mixed RTN 16/16；该 diagonal 近似不称为完整 AWQ/GPTQ。
 
 [`Week 17 — Qwen3 Reconstruction-Calibrated INT4 与预算化混合精度`](week17_qwen3_calibrated_int4.md) 已于 2026-07-29 Closed。per-row/group MSE clipping search、按层/投影/LM head 覆盖的 INT4/INT8/BF16 计划，以及真实参数树/Qwen3 topology 的逐 byte 预算均已完成。RTX 4090 D 实测：14B 全 INT8（tree 14.487 GiB）和 12.093 GiB mixed RTN 均与 BF16 reference 16/16 greedy 一致；同布局 mixed MSE 虽降低 full-logits max/mean error，却只有 4/16，证明 reconstruction error 不能作为生成 fidelity 代理。
 
@@ -45,6 +45,12 @@
   reconstruction-MSE clipping，`quantized_parameter_bytes` 与
   `estimate_qwen3_quantized_bytes` 对真实树/静态 topology 逐 byte 对齐。
   14B 实测同时冻结正负证据：全 INT8 和 mixed RTN 16/16，mixed MSE 4/16。
+- activation-aware INT4（Week 18）：`ActivationCalibration` /
+  `activation_second_moment` 以 one-based layer/target 绑定输入二阶矩；
+  `calibrate_hf_qwen3_activations` 逐层读取权重，支持 CPU 位精确路径和
+  无 CUDA 硬依赖的 device callback 加速路径；`:activation_mse` 缺统计、
+  错维度、NaN/负值或空统计全部 fail closed。14B 实测 max-logit error
+  `3.4238`，但 greedy 仍只有 4/16。
 - HuggingFace GPT-2 导入：冻结 revision/checksum，严格映射 learned position、LayerNorm bias、fused QKV 与 HF Conv1D `(in, out)`，验证 causal buffers 与 tied LM head；完整 context 参数量 124,439,808。
 - 显式 `hf_token_ids` 处理 HF 0-based 到 LifeAI 1-based 边界；逐层 trace 与 reference 脚本可验证 embedding、每个 block、final hidden、full logits 和 cache decode logits。`Lux.parameterlength` 已包含自定义 Q/K-Norm scale，六个 dense topology 的精确参数量与冻结 reference 一致。
 
@@ -88,7 +94,7 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-2026-07-29 复核默认套件，共 `4953 / 4953` 项测试通过；其中 Week 05 专项 3094 项、Week 06 专项 112 项、Week 07 离线专项 54 项、Week 08 离线专项 61 项、Week 09 离线专项 67 项、Week 10 离线专项 37 项、Week 11 专项 91 项、Week 12 离线专项 85 项、Week 13 离线专项 283 项、Week 14 离线专项 77 项、Week 15 离线专项 63 项、Week 16 离线专项 78 项、Week 17 专项 83 项。历史 Reactant/XLA 专项 `52 / 52` 通过；Week 10 与 Week 11 的 XLA smoke 均曾另行复核 `4 / 4` 通过（Week 12—17 未改动既有 XLA F32 路径）。
+2026-07-29 复核默认套件，共 `5086 / 5086` 项测试通过；其中 Week 05 专项 3094 项、Week 06 专项 112 项、Week 07 离线专项 54 项、Week 08 离线专项 61 项、Week 09 离线专项 67 项、Week 10 离线专项 37 项、Week 11 专项 91 项、Week 12 离线专项 85 项、Week 13 离线专项 283 项、Week 14 离线专项 77 项、Week 15 离线专项 63 项、Week 16 离线专项 78 项、Week 17 专项 83 项、Week 18 专项 133 项。历史 Reactant/XLA 专项 `52 / 52` 通过；Week 10 与 Week 11 的 XLA smoke 均曾另行复核 `4 / 4` 通过（Week 12—18 未改动既有 XLA F32 路径）。
 
 Week 15 的离线 `63 / 63` 覆盖 CPU batched matmul F32 累加契约、向量化 vs 循环路径逐位一致（tied/untied）与 CUDA/XLA 资产 contract；CUDA opt-in（`LIFEAI_QWEN3_BF16_CUDA_0_6B/1_7B/4B_MODEL_DIR` 同进程 `Pkg.test`）`173 / 173` 通过。CUDA 三尺寸 16 步 greedy 与 HF BF16 全部一致，吞吐 15.3 / 14.1 / 8.1 tok/s，VRAM 峰值 ≤ 12.1 GiB；XLA BF16 prefill 编译 44.8 s、steady 1.36 ms，argmax/greedy 首 token 一致（`scripts/verify_qwen3_bf16_xla.jl`）。
 
@@ -102,6 +108,15 @@ Qwen3-14B 全分片 SHA256 与冻结 revision 一致；RTX 4090 D 实测全 INT8
 mixed RTN tree 12.093 GiB、VRAM 22.597 GiB、16/16、0.377 tok/s；
 同布局 mixed MSE VRAM 22.521 GiB、full-logits error 更低但 greedy 4/16。
 全 INT8 仅余约 54 MiB 显存，不视为有部署余量。
+
+Week 18 专项覆盖 activation-weighted candidate 局部不劣于 max-abs、
+偏斜 activation fixture 严格改善、统计契约 fail-closed、CPU/accelerated
+采集逐值一致、streamed/in-memory 逐 tensor 一致，以及 calibration/plan/
+14B 硬件资产 checksum。RTX 4090 D 实测 256-token 校准 `248.32 s`、
+量化加载 `489.23 s`、tree `12.093 GiB`、VRAM `21.474 GiB`；
+full-logits max/mean error `3.4238 / 0.42865`，greedy 4/16、第 5 token
+首次分歧。相较 mixed RTN，max/mean error 均略低但生成轨迹显著更差；
+相较 weight-MSE，max 更低、mean 更高而 greedy 相同。
 
 Week 14 的离线 `77 / 77` 覆盖 BF16 位保真加载、混合精度算子语义、路径确定性与 cached-decode 逐位等价、BF16 资产/parity contract。opt-in：0.6B/1.7B/4B BF16 integration 同进程 `Pkg.test` 中 Week 14 专项 `205 / 205` 通过；8B BF16 integration 用独立进程 + `--heap-size-hint=2G` 跑 `125 / 125` 通过（峰值 RSS 18.53 GiB）。四尺寸 16 步 greedy token 与 HF BF16 全部一致，logits max-abs ≤ 0.72（mean ≤ 0.073），blocks 尺度感知误差 ≤ 1.49e-2，embedding 位精确。
 
@@ -133,11 +148,12 @@ Week 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定形�
 
 - GPT-2 的 WebText 从零训练、论文 zero-shot quality、其他尺寸和非 causal-LM heads；Week 10 只完成 124M 官方 checkpoint 的 Float32 推理/架构复现。
 - 通用 Jinja chat template、Qwen3 tools/tool-role 分支、JSON schema 工具注入与 agent tool loop；Week 08 只完成已冻结的无 tools 基础 chat 子集。
-- BF16/量化训练、FP8、GPTQ/AWQ 等 activation-aware / second-order
-  量化、KV cache/激活量化与 MoE；32B GPU 驻留（INT4 约 16.4 GiB）
-  仍出界。Week 17 只实现 weight-reconstruction MSE，且真实对照证明它
-  不保证 greedy fidelity；量化推理仍每 token 全量反量化。XLA compiled
-  decode 目前为 0.6B 批 1 greedy；4B XLA、sampling 与 chat 端到端闭环未做。
+- BF16/量化训练、FP8、完整 GPTQ/AWQ/Hessian/block reconstruction、
+  KV cache/激活量化与 MoE；32B GPU 驻留（INT4 约 16.4 GiB）仍出界。
+  Week 18 只实现 diagonal activation second-moment 加权，并且与 Week 17
+  weight-MSE 一样不保证 greedy fidelity；量化推理仍每 token 全量反量化。
+  XLA compiled decode 目前为 0.6B 批 1 greedy；4B XLA、sampling 与 chat
+  端到端闭环未做。
 - Qwen3 128K YaRN / RoPE scaling；六个冻结 checkpoint 的原生 `max_position_embeddings` 均为 40,960，非空 `rope_scaling` 仍 fail closed。
 - 面向真实任务和长期运行的模型质量；较大规模真实语料训练。
 - 适合 tied embedding 的统一初始化基线、低精度专项与真实规模组件对照。
@@ -275,6 +291,21 @@ CUDA/XLA。
 reference checksum、GPU 驻留/误差/greedy 指标进入 fixture。MSE 降低
 full-logits 全局误差却损害 greedy 的负结果被保留，未包装成质量提升。
 
+### Milestone B2：独立 token 的 diagonal activation-aware 校准（已完成）
+
+- 冻结与评测 prompt 分离的多语种/代码/数学 token fixture、tokenizer
+  revision 与 checksum。
+- native BF16 流式采集每层 Q/K/V/O、gate/up/down 和 untied LM head
+  输入二阶矩；CPU 数组上的 loop 与 device-generic accelerated 路径逐值一致。
+- `:activation_mse` 共用 Week 17 packed INT4/预算与 plan；缺失或非法
+  stats fail closed，streamed/in-memory 逐 tensor 相同。
+- 14B/RTX 4090 D 同布局对照按负结果关闭：activation-aware 4/16，
+  没有保住 mixed RTN 16/16。
+
+完成标准已满足：实现、离线测试、校准 provenance、模型/reference
+checksum、GPU 驻留/误差/greedy 指标均进入 fixture；没有把 diagonal
+近似包装成完整 AWQ/GPTQ 或质量提升。
+
 ### Milestone C：建立最小有状态智能体闭环（后移）
 
 - 定义与具体机器人无关的 `Observation`、`Action`、`Memory` 和 policy / model 接口。
@@ -287,10 +318,10 @@ full-logits 全局误差却损害 greedy 的负结果被保留，未包装成质
 
 | 主线 | 当前状态 | 下一关键缺口 |
 | --- | --- | --- |
-| 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + native BF16 推理 + CUDA/XLA 加速（XLA compiled decode 246 tok/s）+ 可预算 INT4/INT8/BF16 计划（14B 全 INT8/mixed RTN 均 16/16）；GPT-2 真实 parity；流式加载；五类版本化 Tokenizer 与中文数据管线 | activation-aware 量化与量化 GEMM、XLA sampling/chat 闭环，或下一经典/SOTA 架构 |
+| 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + native BF16 推理 + CUDA/XLA 加速（XLA compiled decode 246 tok/s）+ 可预算 INT4/INT8/BF16 计划与 diagonal activation-aware 校准（14B RTN 16/16，weight/activation MSE 均 4/16）；GPT-2 真实 parity；流式加载；五类版本化 Tokenizer 与中文数据管线 | 完整 AWQ/GPTQ 或量化 GEMM、XLA sampling/chat 闭环，或下一经典/SOTA 架构 |
 | 高效训练与推理 | modern / GQA / rotate_half 已兼容 Zygote / XLA 与两类 KV Cache；Qwen3-0.6B CPU/CUDA/XLA decode 已真实验证 | 低精度、device-resident sampling 与更长上下文优化 |
 | 智能体核心 | 尚未开始；Qwen3 基础 chat 输入已可作为模型后端 | conversation state、memory、planning、tools、agent loop |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Week 01—17 已 Closed | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏 |
+| 学习记录 | Week 01—18 已 Closed | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏 |

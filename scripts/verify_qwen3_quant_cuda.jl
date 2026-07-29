@@ -4,13 +4,14 @@ using LuxCUDA
 using CUDA
 using BFloat16s: BFloat16
 using JSON3
+using SHA: sha256
 using Statistics: mean
 using LifeAI
 using LifeAI: hf_token_ids
 
-length(ARGS) in (3, 4) || error(
+length(ARGS) in (3, 4, 5) || error(
     "usage: julia --project=. scripts/verify_qwen3_quant_cuda.jl " *
-    "MODEL_DIR REFERENCE_DIR SCHEME [PLAN_JSON]",
+    "MODEL_DIR REFERENCE_DIR SCHEME [PLAN_JSON] [CALIBRATION_TOKENS_JSON]",
 )
 model_dir, reference_dir, scheme_name = ARGS
 scheme = Symbol(scheme_name)
@@ -58,7 +59,43 @@ end
 
 plan = length(ARGS) == 4 ?
     _quantization_plan_from_json(ARGS[4]) :
-    QuantizationPlan(default=LinearQuantizationSpec(scheme))
+    length(ARGS) == 5 ?
+        _quantization_plan_from_json(ARGS[4]) :
+        QuantizationPlan(default=LinearQuantizationSpec(scheme))
+
+calibration_tokens_sha256 = "none"
+calibration_timing = nothing
+activation_calibration = nothing
+if length(ARGS) == 5
+    calibration_path = ARGS[5]
+    calibration_bytes = read(calibration_path)
+    calibration_tokens_sha256 = bytes2hex(sha256(calibration_bytes))
+    calibration_object = JSON3.read(String(calibration_bytes))
+    sequences = collect(calibration_object["token_ids_0_based"])
+    isempty(sequences) && error("calibration token fixture has no sequences")
+    sequence_length = length(first(sequences))
+    all(length(sequence) == sequence_length for sequence in sequences) ||
+        error("calibration token sequences must have equal length")
+    calibration_tokens = hcat([
+        hf_token_ids(
+            Int.(collect(sequence));
+            vocab_size=151936,
+        )
+        for sequence in sequences
+    ]...)
+    calibration_timing = @timed calibrate_hf_qwen3_activations(
+        model_dir,
+        calibration_tokens;
+        max_seq_len=max(64, sequence_length),
+        source="$(abspath(calibration_path))#$calibration_tokens_sha256",
+        accelerated=true,
+        to_device=CUDA.cu,
+        to_host=Array,
+    )
+    activation_calibration = calibration_timing.value.calibration
+    GC.gc()
+    CUDA.reclaim()
+end
 
 metadata = JSON3.read(read(joinpath(reference_dir, "reference.json"), String))
 String(metadata["compute_dtype"]) == "bfloat16" || error(
@@ -82,6 +119,7 @@ load_timing = @timed load_hf_qwen3_quantized(
     model_dir;
     max_seq_len=64,
     plan,
+    activation_calibration,
 )
 loaded = load_timing.value
 estimated_tree_bytes = estimate_qwen3_quantized_bytes(loaded.model, plan)
@@ -148,6 +186,16 @@ println("layer_overrides\t", join(
     )],
     ",",
 ))
+println(
+    "calibration_seconds\t",
+    calibration_timing === nothing ? "none" : string(calibration_timing.time),
+)
+println(
+    "calibration_token_count\t",
+    activation_calibration === nothing ?
+        0 : activation_calibration.token_count,
+)
+println("calibration_tokens_sha256\t", calibration_tokens_sha256)
 println("gpu_name\t", CUDA.name(CUDA.device()))
 println("load_seconds\t", load_timing.time)
 println("host_maxrss_bytes\t", Sys.maxrss())
