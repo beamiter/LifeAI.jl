@@ -144,18 +144,40 @@ function _bf16a_block_core(
     normed = _bf16a_rmsnorm(x, ps_block.norm1.scale, model.norm_epsilon)
     attention_input_moment = capture_activation_moments ?
         _bf16a_input_second_moment(normed) : nothing
-    queries = reshape(
-        _bf16a_linear(ps_block.attn.q_proj.weight, normed),
-        head_dim, model.num_heads, num_tokens, batch_size,
-    )
-    keys = reshape(
-        _bf16a_linear(ps_block.attn.k_proj.weight, normed),
-        head_dim, model.num_kv_heads, num_tokens, batch_size,
-    )
-    values = reshape(
-        _bf16a_linear(ps_block.attn.v_proj.weight, normed),
-        head_dim, model.num_kv_heads, num_tokens, batch_size,
-    )
+    query_dim = head_dim * model.num_heads
+    kv_dim = head_dim * model.num_kv_heads
+    queries, keys, values = if hasproperty(ps_block, :qkv_weight)
+        qkv = _bf16a_linear(ps_block.qkv_weight, normed)
+        (
+            reshape(
+                qkv[1:query_dim, :, :],
+                head_dim, model.num_heads, num_tokens, batch_size,
+            ),
+            reshape(
+                qkv[(query_dim + 1):(query_dim + kv_dim), :, :],
+                head_dim, model.num_kv_heads, num_tokens, batch_size,
+            ),
+            reshape(
+                qkv[(query_dim + kv_dim + 1):end, :, :],
+                head_dim, model.num_kv_heads, num_tokens, batch_size,
+            ),
+        )
+    else
+        (
+            reshape(
+                _bf16a_linear(ps_block.attn.q_proj.weight, normed),
+                head_dim, model.num_heads, num_tokens, batch_size,
+            ),
+            reshape(
+                _bf16a_linear(ps_block.attn.k_proj.weight, normed),
+                head_dim, model.num_kv_heads, num_tokens, batch_size,
+            ),
+            reshape(
+                _bf16a_linear(ps_block.attn.v_proj.weight, normed),
+                head_dim, model.num_kv_heads, num_tokens, batch_size,
+            ),
+        )
+    end
     queries = _bf16a_rmsnorm(queries, ps_block.attn.q_norm.scale, model.qk_norm_epsilon)
     keys = _bf16a_rmsnorm(keys, ps_block.attn.k_norm.scale, model.qk_norm_epsilon)
     queries = _bf16a_apply_rope(queries, cos_slice, sin_slice)
@@ -183,8 +205,18 @@ function _bf16a_block_core(
     normed2 = _bf16a_rmsnorm(x, ps_block.norm2.scale, model.norm_epsilon)
     mlp_input_moment = capture_activation_moments ?
         _bf16a_input_second_moment(normed2) : nothing
-    gate = _bf16a_linear(ps_block.mlp.gate_proj.weight, normed2)
-    up = _bf16a_linear(ps_block.mlp.up_proj.weight, normed2)
+    gate, up = if hasproperty(ps_block, :gate_up_weight)
+        gate_up = _bf16a_linear(ps_block.gate_up_weight, normed2)
+        (
+            gate_up[1:model.mlp_hidden_dim, :, :],
+            gate_up[(model.mlp_hidden_dim + 1):end, :, :],
+        )
+    else
+        (
+            _bf16a_linear(ps_block.mlp.gate_proj.weight, normed2),
+            _bf16a_linear(ps_block.mlp.up_proj.weight, normed2),
+        )
+    end
     gate_f = _bf16a_f32(gate)
     activated = BFloat16.(gate_f ./ (1.0f0 .+ exp.(.-gate_f)))
     hidden = BFloat16.(_bf16a_f32(activated) .* _bf16a_f32(up))
@@ -295,8 +327,13 @@ function _bf16a_forward_pass(
         block_outputs[index] = x
     end
     final_hidden = _bf16a_rmsnorm(x, ps.final_norm.scale, model.norm_epsilon)
-    logits_weight = model.tie_embeddings ?
-        permutedims(ps.token_embedding.weight, (2, 1)) : ps.lm_head.weight
+    logits_weight = if hasproperty(ps, :logits_weight)
+        ps.logits_weight
+    elseif model.tie_embeddings
+        permutedims(ps.token_embedding.weight, (2, 1))
+    else
+        ps.lm_head.weight
+    end
     projection_input = project_last_token_only ?
         final_hidden[:, end:end, :] : final_hidden
     logits = _bf16a_linear(logits_weight, projection_input)

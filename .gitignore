@@ -1,4 +1,6 @@
 .git_data/
 Manifest.toml
 notebook/assets/
-benchmark_results/
+benchmark_results/*
+!benchmark_results/qwen3_0.6b_xla_gpu_e2e_cachebusted_packed_prefill_repeat_a.json
+!benchmark_results/qwen3_0.6b_xla_gpu_e2e_cachebusted_packed_prefill_repeat_b.json

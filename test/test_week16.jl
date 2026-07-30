@@ -200,6 +200,13 @@ end
             end
             @test compact.token_embedding === parameters.token_embedding
             @test compact.final_norm === parameters.final_norm
+            @test compact.logits_weight === projections.logits_weight
+            if tie
+                @test compact.logits_weight ==
+                    permutedims(parameters.token_embedding.weight, (2, 1))
+            else
+                @test compact.logits_weight === parameters.lm_head.weight
+            end
 
             tokens = reshape(
                 hf_token_ids(
@@ -227,6 +234,8 @@ end
                 for _ in 1:model.num_layers
             ]
             prefix_values = deepcopy(prefix_keys)
+            packed_prefix_keys = deepcopy(prefix_keys)
+            packed_prefix_values = deepcopy(prefix_values)
             prefill_logits = LifeAI._bf16a_static_prefill(
                 model,
                 parameters,
@@ -237,6 +246,19 @@ end
                 sin_table,
                 mask,
             )
+            packed_prefill_logits = LifeAI._bf16a_static_prefill(
+                model,
+                compact,
+                tokens,
+                packed_prefix_keys,
+                packed_prefix_values,
+                cos_table,
+                sin_table,
+                mask,
+            )
+            @test packed_prefill_logits == prefill_logits
+            @test packed_prefix_keys == prefix_keys
+            @test packed_prefix_values == prefix_values
             token = [argmax(vec(Float32.(prefill_logits)))]
             position = Int32[size(tokens, 1)]
             key_positions = Int32.(collect(1:model.max_seq_len))

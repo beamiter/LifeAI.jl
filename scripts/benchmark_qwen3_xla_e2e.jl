@@ -302,7 +302,7 @@ end
 
 prefill_compile_start = time_ns()
 compiled_prefill = @compile prefill_greedy(
-    parameters,
+    packed_decode_parameters,
     compile_token_matrix,
     key_caches,
     value_caches,
@@ -389,7 +389,7 @@ function run_once(case, sample_index)
     prompt_h2d_seconds = (time_ns() - prompt_h2d_start) / 1.0e9
     prefill_start = time_ns()
     token_state = compiled_prefill(
-        parameters,
+        packed_decode_parameters,
         token_matrix,
         key_caches,
         value_caches,
@@ -746,6 +746,9 @@ common_report = (;
     execution=(;
         prefill=(;
             logits_projection="last_prompt_token_only",
+            packed_qkv=true,
+            packed_gate_up=true,
+            compact_parameter_tree=true,
             internal_first_token_d2h=1,
             first_token_exposed_to_caller=false,
         ),

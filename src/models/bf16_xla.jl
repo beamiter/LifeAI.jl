@@ -95,11 +95,11 @@ end
 """
     _bf16a_compact_decode_parameters(ps, packed_projections)
 
-Build the parameter tree consumed by the packed decode executable. Unchanged
-weights remain references to the already-transferred model parameters, while
-the unused separate Q/K/V and gate/up matrices are omitted from the executable
-signature. This cuts host/PJRT buffer-handle processing without duplicating the
-unchanged device weights.
+Build the compact parameter tree consumed by packed prefill and decode
+executables. Unchanged weights remain references to the already-transferred
+model parameters, while the unused separate Q/K/V and gate/up matrices are
+omitted from the executable signature. This cuts host/PJRT buffer-handle
+processing without duplicating the unchanged device weights.
 """
 function _bf16a_compact_decode_parameters(ps, packed_projections)
     block_names = keys(ps.blocks)
