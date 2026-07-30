@@ -321,6 +321,7 @@ while true
         error isa EOFError && break
         rethrow()
     end
+    isempty(line) && eof(stdin) && break
     command = strip(line)
     command == "/exit" && break
     if command == "/clear"
@@ -337,9 +338,7 @@ while true
     push!(history, (role="user", content=line))
     print("lifeai> ")
     result = run_request(history)
-    history = convert(
-        Vector{NamedTuple{(:role, :content),Tuple{String,String}}},
-        collect(result.messages),
-    )
+    empty!(history)
+    append!(history, result.messages)
     push!(history, (role="assistant", content=result.completion))
 end

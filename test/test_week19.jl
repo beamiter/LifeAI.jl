@@ -408,3 +408,18 @@ end
         )
     end
 end
+
+@testset "interactive CLI avoids soft-scope history reassignment" begin
+    script = read(joinpath(
+        @__DIR__,
+        "..",
+        "scripts",
+        "run_qwen3_cuda_chat.jl",
+    ), String)
+    @test !occursin("history = convert(", script)
+    @test occursin(
+        "empty!(history)\n    append!(history, result.messages)",
+        script,
+    )
+    @test occursin("isempty(line) && eof(stdin) && break", script)
+end

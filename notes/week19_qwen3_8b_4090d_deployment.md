@@ -124,8 +124,8 @@ context 与等待时间。
 
 ### 离线
 
-- Week 19 专项：`77 / 77`。
-- 默认完整套件：`5,272 / 5,272`。
+- Week 19 专项：`80 / 80`。
+- 默认完整套件：`5,275 / 5,275`。
 - 分块 prefill 的末位置 logits、下一 token decode logits、4-step greedy
   与既有 BF16 accel 路径逐值相同。
 - cache reset 后重复请求确定；EOS、overflow、history compaction 均覆盖。
@@ -225,6 +225,10 @@ KV Cache（Key-Value Cache）是自回归模型（如Transformer）在进行解�
 - 最终用户入口再做 18-token prompt + 16-token greedy CLI smoke：
   正常输出“`KV Cache 是在大语言模型推理过程中，用于存储已生成 token 的`”，
   cold prefill `16.745 s`、decode `6.54 tok/s`、请求后 free `6.86 GiB`。
+- 首次手工交互暴露顶层 loop 的 `history = convert(...)` soft-scope
+  歧义；改为 `empty!` / `append!` 原地更新，并处理 stdin EOF。真实
+  `/clear → hi → /exit` 回归无 warning/exception，输出正常；对应 3 项
+  自动检查使 Week 19 专项增至 `80 / 80`。
 
 ## Close 回顾
 
