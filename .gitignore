@@ -9,3 +9,7 @@ benchmark_results/week20/*
 !benchmark_results/week20/qwen3_8b_cuda_greedy_reference.json
 !benchmark_results/week20/qwen3_8b_4090d_bf16_xla_daily.json
 !benchmark_results/week20/qwen3_8b_4090d_bf16_xla_daily_nvidia_smi.csv
+!benchmark_results/week21/
+benchmark_results/week21/*
+!benchmark_results/week21/qwen3_8b_4090d_bf16_xla_service.json
+!benchmark_results/week21/qwen3_8b_4090d_bf16_xla_service_nvidia_smi.csv

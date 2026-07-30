@@ -26,7 +26,7 @@
 - [`week18_qwen3_activation_calibration.md`](week18_qwen3_activation_calibration.md)：Week 18（Closed），独立校准 token、fail-closed per-channel activation second moment 与 GPU 逐层采集均完成；14B 同布局 activation-aware 仍为 4/16（第 5 token 分歧），未守住 mixed RTN 16/16，负结果冻结。
 - [`week19_qwen3_8b_4090d_deployment.md`](week19_qwen3_8b_4090d_deployment.md)：Week 19（Closed），把 8B BF16 落成 RTX 4090 D 日常本地运行入口；4K 总 context、静态 KV、分块 last-logit prefill、EOS/采样/多轮历史裁剪均完成，3,584+512 整窗与 2 GiB 显存余量通过真实硬件验收。
 - [`week20_qwen3_8b_xla_deployment.md`](week20_qwen3_8b_xla_deployment.md)：Week 20（Closed），把 Qwen3-8B BF16 落成 RTX 4090 D 上的 XLA single-residency 4K greedy 入口；compact 参数树只传输一次，CUDA reference 96/96 token 一致，3,584-token prefill 1.50 s、整窗 decode 41.13 tok/s，并以 200 ms 连续采样守住 2 GiB 物理显存余量。
-- [`week21_qwen3_xla_resident_service.md`](week21_qwen3_xla_resident_service.md)：Week 21（Open），把 Week 20 的单进程 compiled session 落成仅监听本机的常驻 HTTP 服务，让独立客户端复用同一参数树、executable 与静态 KV cache；跨进程 kernel cache 只保留为负结果，不冒充 executable cache。
+- [`week21_qwen3_xla_resident_service.md`](week21_qwen3_xla_resident_service.md)：Week 21（Closed），把 Week 20 的单进程 compiled session 落成仅监听本机的常驻 HTTP 服务；15 个真实请求只 load 一次、CUDA oracle 96/96、整窗 41.35 tok/s，独立客户端复用同一参数树、executable 与静态 KV cache。
 - [`qwen3_hf_config_mapping.md`](qwen3_hf_config_mapping.md)：Qwen3 HF `config.json` 与 `gpt_config` 的字段、权重名与布局映射契约（Week 07 已实现并验证）。
 - [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
 - [`monthly/`](monthly/)：月度总结和跨周能力变化。

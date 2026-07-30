@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环；RTX 4090 D 上的容量上限仍是已实证生成的 14B mixed RTN，日常部署则选择 Qwen3-8B BF16。8B 已同时具备 CUDA eager 与 XLA single-residency 4K 入口；XLA 在 3,584+512 整窗上达到 1.50 秒 prefill、41.13 tok/s decode，并保留超过 2 GiB 物理显存。**
+**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环；RTX 4090 D 上的容量上限仍是已实证生成的 14B mixed RTN，日常部署则选择 Qwen3-8B BF16。8B 已同时具备 CUDA eager、XLA single-residency 4K 入口与 loopback 常驻 HTTP 服务；XLA 在 3,584+512 整窗上达到 1.48 秒 prefill、41.35 tok/s decode，并保留超过 2 GiB 物理显存。**
 
-Week 01—20 均已 Closed；[`Week 20 — Qwen3-8B BF16 XLA single-residency 部署`](notes/week20_qwen3_8b_xla_deployment.md) 已通过真实 4090D 验收。应用侧只构造并传输一棵 compact 参数树；64、65 与 3,584-token 三种真实 prompt 的 CUDA BF16 greedy reference 共 `96 / 96` token 一致，3,584+512 整窗 decode 为 41.13 tok/s，200 ms 连续采样最低空闲显存为 2.247 GiB。
+Week 01—21 均已 Closed；[`Week 21 — Qwen3-8B XLA 常驻本地推理服务`](notes/week21_qwen3_xla_resident_service.md) 已通过真实 4090D 验收。一个 server PID 接受 15 个独立 HTTP 请求而 `load_count=1`，三种真实 prompt 的 CUDA BF16 greedy reference 共 `96 / 96` token 一致；3,584+512 整窗 decode 为 41.35 tok/s，200 ms 连续采样最低空闲显存为 2.251 GiB。
 
 目前已经具备：
 
@@ -41,6 +41,10 @@ Week 01—20 均已 Closed；[`Week 20 — Qwen3-8B BF16 XLA single-residency �
   packed compact tree，只做一次递归 device transfer；固定形状 64-token
   prefill 与单 token decode 共用 4K 静态 KV。4090 D 日常 CLI 当前明确为
   batch-1 greedy，sampling 仍走 CUDA eager 路径。
+- Qwen3-8B XLA loopback resident service：严格的 `/healthz` 与
+  Ollama-compatible `/api/generate` 子集支持 buffered/NDJSON、UTF-8
+  安全 streaming、context/options fail-closed 和 single-flight；轻量
+  client 只读取 tokenizer，权重与 compiled executable 常驻 server。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
 - 六个官方 Qwen3 dense 规格的 immutable revision/config checksum、自动识别、显式 variant 校验、精确参数量；严格的 BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
 - Qwen3 weight-only INT8 per-channel / packed groupwise INT4，以及统一的

@@ -672,3 +672,59 @@ cache 和单次 device-side decode loop 均不在 Week 20 的关闭范围内。
 权重仍保存在仓库外；Week 20 的 deterministic CUDA oracle、最终 JSON
 和 200 ms 显存 CSV 体积较小，作为关闭证据进入 Git。0.95/0.89 的失败
 中间产物继续只保存在本机，不提交。
+
+## Week 21 Qwen3-8B XLA 常驻本地服务
+
+Week 21 继续使用上节完全相同的 model directory、revision、asset
+manifest 和 4K XLA profile，不复制或修改模型文件。常驻 server：
+
+```bash
+julia --project=. --startup-file=no \
+  scripts/run_qwen3_xla_server.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B
+```
+
+默认只监听 `127.0.0.1:11435`。首次 ready 仍需验证资产、读取 15.27 GiB
+权重、上传唯一参数树并编译两个 executable；不要为“更快启动”跳过 hash
+验证，除非明确接受本地资产未校验风险。服务 ready 后，其他终端只启动
+轻量 client：
+
+```bash
+julia --project=. --startup-file=no \
+  scripts/qwen3_xla_client.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B \
+  --prompt "解释静态 KV cache 为什么不能并发写" \
+  --max-new-tokens 128
+```
+
+client 只加载 tokenizer 并套 Qwen3 chat template。服务只支持冻结的
+batch-1 greedy 4K profile；sampling、错误 model、非 4K `num_ctx`、
+未知 options、超过 1 MiB body 和超窗口请求都会明确拒绝。
+
+最终硬件验收：
+
+```bash
+julia --threads=auto --project=. --startup-file=no \
+  scripts/benchmark_qwen3_xla_service.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B \
+  configs/deployment/qwen3_8b_4090d_bf16_xla_daily.json \
+  benchmark_results/week20/qwen3_8b_cuda_greedy_reference.json \
+  benchmark_results/week21/qwen3_8b_4090d_bf16_xla_service.json
+```
+
+结果为 `load_count=1`、15/15 HTTP generation、96/96 frozen CUDA tokens；
+9 个 steady 短请求中位 decode 41.351 tok/s，3,584+512 为
+1.4828 s prefill / 41.351 tok/s decode。1,228 个 200 ms 显存样本最低
+free 2,416,967,680 bytes（2.251 GiB）。
+
+```text
+benchmark_results/week21/qwen3_8b_4090d_bf16_xla_service.json
+SHA256 73c1bf7a0a7dbabbd2ee1b4ae246022e05d2296e11d8e1d665624fb4cc4b6152
+
+benchmark_results/week21/qwen3_8b_4090d_bf16_xla_service_nvidia_smi.csv
+SHA256 e006940214ecabb3802dda178faaad994491cfeae2fc2cfd3425a0d71c2d960b
+```
+
+Reactant 0.2.275 的 persistent kernel/autotune cache 不保存完整 PJRT
+executable；server 退出后仍会冷启动。Week 21 的承诺是一个长寿命进程
+服务多个客户端，不是把 kernel cache 文件描述成跨进程 executable cache。

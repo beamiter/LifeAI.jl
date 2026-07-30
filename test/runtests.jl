@@ -111,6 +111,10 @@ end
     include("test_week20.jl")
 end
 
+@testset "Week 21 Qwen3 XLA resident HTTP service" begin
+    include("test_week21.jl")
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA KV cache" begin
         include("test_xla_kv_cache.jl")
