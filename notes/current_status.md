@@ -6,7 +6,7 @@
 
 ## 当前活动阶段
 
-当前没有 Open 的 Week；[`Week 20 — Qwen3-8B BF16 XLA single-residency 部署`](week20_qwen3_8b_xla_deployment.md) 已于 2026-07-30 Closed。safetensors 现在逐层直接组装最终 compact packed topology，应用侧只构造一棵 291-leaf 参数树并只做一次递归 device transfer；固定形状 64-token prefill、单 token decode 与 4K 静态 KV 已接入日常 greedy CLI。真实 4090 D 上，64-token 单 chunk、65-token 左填充与 3,584-token 多 chunk 三组 CUDA BF16 reference 共 96/96 token 一致；3,584+512 整窗 prefill 为 1.498 s、decode 为 41.13 tok/s，1,225 个 200 ms 样本的最低物理 free 为 2.247 GiB。
+[`Week 21 — Qwen3-8B XLA 常驻本地推理服务`](week21_qwen3_xla_resident_service.md) 已于 2026-07-30 Open。目标是让多个独立 HTTP 客户端复用 Week 20 已加载、已编译的唯一 XLA session，消除逐命令重复的 15.27 GiB host load、参数上传和 executable compile；默认只监听 `127.0.0.1:11435`，并以 single-flight 保护会原地写入的静态 KV cache。Reactant 0.2.275 的公开 persistent cache 只有 kernel/autotune 层，缩小跨进程 A/B 仍各需约 55 秒，因此不把 kernel cache 文件误写成可恢复的完整 executable。
 
 [`Week 19 — Qwen3-8B / RTX 4090 D 日常本地部署`](week19_qwen3_8b_4090d_deployment.md) 已于 2026-07-30 Closed。本阶段明确区分容量上限与日常选择：14B mixed RTN 是同卡已实证生成上限，但仅 0.377 tok/s 且上下文余量很小；日常部署选择无量化误差的 8B BF16，冻结为 4K 总 context、3,584-token prompt/history、512-token output、64-token 分块 prefill。CUDA eager 路径的 3,584 prefill 为 46.85 s，3,584+512 整窗 decode 为 10.25 tok/s，保留 sampling 与多轮历史裁剪能力。
 
