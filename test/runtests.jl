@@ -107,6 +107,10 @@ end
     include("test_week19.jl")
 end
 
+@testset "Week 20 Qwen3 XLA single-residency deployment" begin
+    include("test_week20.jl")
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA KV cache" begin
         include("test_xla_kv_cache.jl")
@@ -116,5 +120,6 @@ if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
         include("test_week08_xla.jl")
         include("test_week10_xla.jl")
         include("test_week11_xla.jl")
+        include("test_week20_xla.jl")
     end
 end

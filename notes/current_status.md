@@ -2,11 +2,13 @@
 
 ## 一句话判断
 
-项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**（0.6B—4B 全量、8B—32B 流式），并具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化：RTX 4090 D 上 14B 全 INT8 与预算化 mixed RTN 均完成 16/16 BF16 greedy parity，diagonal activation-aware 同布局实测为 4/16。
+项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**（0.6B—4B 全量、8B—32B 流式），并具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化。RTX 4090 D 上，14B mixed RTN 是已实证尺寸上限；日常 8B BF16 则已完成 XLA single-residency 4K greedy 部署，3,584-token prefill 为 1.50 s、整窗 decode 为 41.13 tok/s，CUDA BF16 reference 共 96/96 token 一致。
 
 ## 当前活动阶段
 
-当前没有 Open 的 Week；[`Week 19 — Qwen3-8B / RTX 4090 D 日常本地部署`](week19_qwen3_8b_4090d_deployment.md) 已于 2026-07-30 Closed。本阶段明确区分容量上限与日常选择：14B mixed RTN 是同卡已实证生成上限，但仅 0.377 tok/s 且上下文余量很小；日常部署选择无量化误差的 8B BF16，冻结为 4K 总 context、3,584-token prompt/history、512-token output、64-token 分块 prefill。真实 4090D 上 3,584 prefill 为 46.85 s，3,584+512 整窗 decode 为 10.25 tok/s，物理最低 free 为 2,099 MiB；静态 KV session、last-token-only projection、EOS/采样、多轮历史裁剪和 CLI 均已完成。
+当前没有 Open 的 Week；[`Week 20 — Qwen3-8B BF16 XLA single-residency 部署`](week20_qwen3_8b_xla_deployment.md) 已于 2026-07-30 Closed。safetensors 现在逐层直接组装最终 compact packed topology，应用侧只构造一棵 291-leaf 参数树并只做一次递归 device transfer；固定形状 64-token prefill、单 token decode 与 4K 静态 KV 已接入日常 greedy CLI。真实 4090 D 上，64-token 单 chunk、65-token 左填充与 3,584-token 多 chunk 三组 CUDA BF16 reference 共 96/96 token 一致；3,584+512 整窗 prefill 为 1.498 s、decode 为 41.13 tok/s，1,225 个 200 ms 样本的最低物理 free 为 2.247 GiB。
+
+[`Week 19 — Qwen3-8B / RTX 4090 D 日常本地部署`](week19_qwen3_8b_4090d_deployment.md) 已于 2026-07-30 Closed。本阶段明确区分容量上限与日常选择：14B mixed RTN 是同卡已实证生成上限，但仅 0.377 tok/s 且上下文余量很小；日常部署选择无量化误差的 8B BF16，冻结为 4K 总 context、3,584-token prompt/history、512-token output、64-token 分块 prefill。CUDA eager 路径的 3,584 prefill 为 46.85 s，3,584+512 整窗 decode 为 10.25 tok/s，保留 sampling 与多轮历史裁剪能力。
 
 [`Week 18 — Qwen3 Activation-Aware INT4 校准`](week18_qwen3_activation_calibration.md) 已于 2026-07-29 Closed。独立的 8×32 calibration token、native BF16 CPU/GPU 逐层 activation second-moment 采集、`:activation_mse` scale search 与 streamed/in-memory 一致性均已完成。RTX 4090 D 上同 12.093 GiB mixed layout 的真实结果为 4/16、首次分歧第 5 token，没有守住 Week 17 mixed RTN 16/16；该 diagonal 近似不称为完整 AWQ/GPTQ。
 
@@ -40,6 +42,11 @@
 - native BF16 混合精度推理（Week 14）：`load_hf_qwen3_model(...; weight_dtype=BFloat16)` 位保真加载（参数内存减半）+ `hf_qwen3_bf16_forward` 独立路径，逐算子镜像 HF 语义（RMSNorm/QK-Norm/softmax F32 归一化、RoPE 表 F32 转 BF16、线性 BF16 存储 + 分块 F32 累加 + BF16 舍入）；BF16 cached decode 与全量前向逐位等价；0.6B—8B 与 HF BF16 argmax 零失配、16 步 greedy 完全一致。
 - BF16 CUDA/XLA 加速推理（Week 15）：`hf_qwen3_bf16_accel_forward` 设备通用向量化路径（CPU 上与循环路径逐位相同），CUDA eager 用原生 BF16 张量核（CUBLAS/batched_mul，F32 累加），Reactant XLA 可编译同一实现；0.6B—4B GPU parity/greedy 全对，吞吐 8—15 tok/s；CPU batched matmul 显式分派为 F32 累加防止通用 fallback 破坏契约。
 - XLA BF16 compiled decode（Week 16）：static KV cache 的 traced prefill/decode/greedy（traced position、动态写、有效前缀掩码），设备端 argmax 闭环使宿主每 token 只取回一个整数；0.6B steady 246 tok/s（eager 16.1×），greedy 与 HF 全对。
+- Qwen3-8B XLA single residency（Week 20）：`load_hf_qwen3_compact_model`
+  直接以 BF16 流式读取并按层合并 Q/K/V 与 gate/up，不构造完整 unpacked
+  参数树；`load_hf_qwen3_bf16_xla_session` 对最终 291-leaf tree 只调用一次
+  `Reactant.to_rarray`。分块 K/V 写入每层各 lower 为一个
+  `dynamic_update_slice`，替代 64 次逐 token 写入。
 - RTN 权重量化（Week 16）：INT8 per-channel / INT4 group 打包 + 混合精度选项；`load_hf_qwen3_quantized` 逐投影流式量化加载；分块反量化线性层；8B INT8 与 14B INT4 首次 GPU 驻留（各约 8.2/8.4 GiB），量化只改权重驻留格式不改计算契约。
 - 校准与预算化量化计划（Week 17）：`LinearQuantizationSpec` /
   `QuantizationPlan` 统一流式与 in-memory 量化，支持 default、projection、
@@ -77,6 +84,10 @@
 - greedy、temperature、top-k 和 top-p sampling；基础生成入口对全部五类 Tokenizer 通用。
 - 动态 KV Cache（prompt prefill、单 token decode、cached generation）与固定形状静态 KV Cache（面向编译后增量推理）。
 - XLA prefill / decode 接口及编译后生成流程。
+- Qwen3-8B XLA 4K batch-1 greedy session：固定 64-token prompt bucket、
+  左填充 mask、4,095-slot K/V、设备端 argmax、连续请求 reset 与多轮
+  history 裁剪；`scripts/run_qwen3_xla_chat.jl` 是 4090 D 日常入口。
+  XLA sampling 尚未作为 Week 20 日常 profile 开放。
 - full forward、动态 KV Cache、静态 KV Cache 的 correctness matrix 与 microbenchmark。
 - CPU、CUDA GPU、XLA CPU、XLA GPU 独立进程 benchmark，可区分 cold compile、warm-up 和 steady-state。
 - `load_hf_qwen3_bundle` / `generate_hf_text` 串联本地模型、tokenizer、EOS 与 greedy trace；Qwen3-0.6B 的 full、dynamic、static 生成及 host-tokenizer→XLA static 路径已验证。
@@ -96,7 +107,20 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-2026-07-29 复核默认套件，共 `5086 / 5086` 项测试通过；其中 Week 05 专项 3094 项、Week 06 专项 112 项、Week 07 离线专项 54 项、Week 08 离线专项 61 项、Week 09 离线专项 67 项、Week 10 离线专项 37 项、Week 11 专项 91 项、Week 12 离线专项 85 项、Week 13 离线专项 283 项、Week 14 离线专项 77 项、Week 15 离线专项 63 项、Week 16 离线专项 78 项、Week 17 专项 83 项、Week 18 专项 133 项。历史 Reactant/XLA 专项 `52 / 52` 通过；Week 10 与 Week 11 的 XLA smoke 均曾另行复核 `4 / 4` 通过（Week 12—18 未改动既有 XLA F32 路径）。
+2026-07-30 复核默认套件，共 `5,380 / 5,380` 项测试通过；其中 Week 05 专项 3,094 项、Week 06 专项 112 项、Week 07 离线专项 54 项、Week 08 离线专项 61 项、Week 09 离线专项 67 项、Week 10 离线专项 37 项、Week 11 专项 91 项、Week 12 离线专项 85 项、Week 13 离线专项 283 项、Week 14 离线专项 77 项、Week 15 专项 82 项、Week 16 专项 168 项、Week 17 专项 83 项、Week 18 专项 133 项、Week 19 专项 80 项、Week 20 专项 105 项。历史 Reactant/XLA 专项 `52 / 52` 通过；Week 20 的 compact fixed-chunk prefill 另在 Reactant CPU 编译执行 `5 / 5` 通过，并在 RTX 4090 D 做同路径 GPU smoke `5 / 5`。
+
+Week 20 的真实 8B XLA 验收使用冻结 revision 与 deterministic CUDA
+BF16 oracle：64-token 单 chunk、65-token 左填充和 3,584-token 多 chunk
+三组共 `96 / 96` greedy tokens 一致。唯一 compact 参数树 291 leaves、
+16,381,470,720 logical bytes，只做一次递归 device transfer；3,584
+prefill `1.49764 s`，3,584+512 decode `41.132 tok/s`。8 次复用请求
+allocator drift 为 234,752 bytes；1,225 个 200 ms `nvidia-smi` 样本的
+最低物理 free 为 2,301 MiB，最终报告 `closed=true`。
+
+Week 19 CUDA eager 日常入口专项 `80 / 80`；同一 8B BF16/4K profile
+的 3,584 prefill 为 `46.849 s`，整窗 decode 为 `10.246 tok/s`，外部
+最低 free 为 2,099 MiB。它继续承担 XLA daily profile 尚未覆盖的
+temperature/top-k/top-p sampling。
 
 Week 15 的离线 `63 / 63` 覆盖 CPU batched matmul F32 累加契约、向量化 vs 循环路径逐位一致（tied/untied）与 CUDA/XLA 资产 contract；CUDA opt-in（`LIFEAI_QWEN3_BF16_CUDA_0_6B/1_7B/4B_MODEL_DIR` 同进程 `Pkg.test`）`173 / 173` 通过。CUDA 三尺寸 16 步 greedy 与 HF BF16 全部一致，吞吐 15.3 / 14.1 / 8.1 tok/s，VRAM 峰值 ≤ 12.1 GiB；XLA BF16 prefill 编译 44.8 s、steady 1.36 ms，argmax/greedy 首 token 一致（`scripts/verify_qwen3_bf16_xla.jl`）。
 
@@ -154,8 +178,8 @@ Week 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定形�
   KV cache/激活量化与 MoE；32B GPU 驻留（INT4 约 16.4 GiB）仍出界。
   Week 18 只实现 diagonal activation second-moment 加权，并且与 Week 17
   weight-MSE 一样不保证 greedy fidelity；量化推理仍每 token 全量反量化。
-  XLA compiled decode 目前为 0.6B 批 1 greedy；4B XLA、sampling 与 chat
-  端到端闭环未做。
+  XLA 日常部署目前为 Qwen3-8B、batch 1、greedy、4K 总窗口；device-side
+  sampling、通用动态 batch、40K 长窗和 fused/FlashAttention 未完成。
 - Qwen3 128K YaRN / RoPE scaling；六个冻结 checkpoint 的原生 `max_position_embeddings` 均为 40,960，非空 `rope_scaling` 仍 fail closed。
 - 面向真实任务和长期运行的模型质量；较大规模真实语料训练。
 - 适合 tied embedding 的统一初始化基线、低精度专项与真实规模组件对照。
@@ -308,6 +332,18 @@ full-logits 全局误差却损害 greedy 的负结果被保留，未包装成质
 checksum、GPU 驻留/误差/greedy 指标均进入 fixture；没有把 diagonal
 近似包装成完整 AWQ/GPTQ 或质量提升。
 
+### Milestone B3：Qwen3-8B XLA single-residency 日常部署（已完成）
+
+- 逐层 streamed BF16 loader 直接产生 compact packed 参数树，应用侧只
+  保留一棵 device 参数树、一次递归 transfer。（Week 20 已完成）
+- 固定形状 64-token prefill 和单 token decode 共用 4K 静态 KV；分块
+  cache 写入从 64 次 DUS 合并为每层 K/V 各一次。（Week 20 已完成）
+- RTX 4090 D 完成 3,584+512 整窗、8 次复用、96-token CUDA parity 与
+  200 ms 连续显存验收。（Week 20 已完成）
+
+完成标准已满足：prefill 1.498 s、decode 41.13 tok/s，最低物理 free
+2.247 GiB；benchmark 只有全部门槛通过才以零状态退出。
+
 ### Milestone C：建立最小有状态智能体闭环（后移）
 
 - 定义与具体机器人无关的 `Observation`、`Action`、`Memory` 和 policy / model 接口。
@@ -320,10 +356,10 @@ checksum、GPU 驻留/误差/greedy 指标均进入 fixture；没有把 diagonal
 
 | 主线 | 当前状态 | 下一关键缺口 |
 | --- | --- | --- |
-| 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + native BF16 推理 + CUDA/XLA 加速（XLA compiled decode 246 tok/s）+ 可预算 INT4/INT8/BF16 计划与 diagonal activation-aware 校准（14B RTN 16/16，weight/activation MSE 均 4/16）；GPT-2 真实 parity；流式加载；五类版本化 Tokenizer 与中文数据管线 | 完整 AWQ/GPTQ 或量化 GEMM、XLA sampling/chat 闭环，或下一经典/SOTA 架构 |
-| 高效训练与推理 | modern / GQA / rotate_half 已兼容 Zygote / XLA 与两类 KV Cache；Qwen3-0.6B CPU/CUDA/XLA decode 已真实验证 | 低精度、device-resident sampling 与更长上下文优化 |
+| 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + native BF16 推理 + CUDA/XLA 加速 + 8B XLA single-residency 4K greedy 部署 + 可预算 INT4/INT8/BF16 计划与 diagonal activation-aware 校准（14B RTN 16/16，weight/activation MSE 均 4/16）；GPT-2 真实 parity；流式加载；五类版本化 Tokenizer 与中文数据管线 | 完整 AWQ/GPTQ 或量化 GEMM、XLA device-side sampling，或下一经典/SOTA 架构 |
+| 高效训练与推理 | modern / GQA / rotate_half 已兼容 Zygote / XLA 与两类 KV Cache；Qwen3-0.6B compiled decode 及 Qwen3-8B 4K XLA single-residency 已在 GPU 实证 | fused/FlashAttention、动态 batch、低精度 kernel 与更长上下文优化 |
 | 智能体核心 | 尚未开始；Qwen3 基础 chat 输入已可作为模型后端 | conversation state、memory、planning、tools、agent loop |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Week 01—18 已 Closed | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏 |
+| 学习记录 | Week 01—20 已 Closed | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏 |

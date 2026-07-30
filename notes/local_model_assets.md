@@ -520,3 +520,155 @@ julia --project=. --startup-file=no scripts/verify_gpt2_parity.jl \
 - 每个实验必须记录 model id、完整 revision、文件 checksum、reference 环境版本和计算 dtype。
 - 删除或替换某个 revision 前，先确认没有 weekly reference、benchmark 或 checkpoint 指向它。
 - 仓库内的 `artifacts/` 与该模型目录没有关系；保持用户已有内容不受自动 staging 影响。
+
+## Week 20 RTX 4090 D / Qwen3-8B XLA 单驻留部署
+
+Week 20 继续使用 Week 19 已校验的同一份本地 Qwen3-8B 资产：
+
+```text
+model_id: Qwen/Qwen3-8B
+revision: b968826d9c46dd6066d109eabc6255188de91218
+model directory:
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B
+verified files: 10
+verified bytes: 16,392,983,007
+```
+
+资产的下载/provenance 边界与 Week 19 相同：ModelScope `master` 只作为
+下载通道，身份仍由冻结的 Hugging Face revision 和逐文件 SHA256 决定。
+任一文件不匹配时，reference、benchmark 和默认 CLI 都应 fail closed。
+
+### 冻结配置与结果摘要
+
+```text
+XLA daily profile:
+  configs/deployment/qwen3_8b_4090d_bf16_xla_daily.json
+profile SHA256:
+  0638eecce7864d261770c8af1698575f055cf3149d6e5d70605c7cf35dbb8d01
+asset manifest:
+  configs/deployment/qwen3_8b_frozen_assets.json
+asset manifest SHA256:
+  f4737c1aca92b3cbf046da7861af88fc2d4650552397b7d6f4b7edade5040e91
+
+context:
+  4096 = prompt/history 3584 + output 512
+prefill chunk:
+  64
+decode strategy:
+  greedy
+XLA_REACTANT_GPU_MEM_FRACTION:
+  0.87
+XLA_REACTANT_GPU_PREALLOCATE:
+  false
+```
+
+最终验收使用 Reactant `0.2.275`。compact Qwen3-8B tree 为 291 个 tensor
+leaves、16,381,470,720 logical bytes；设备上只有这一棵参数树且只 transfer
+一次。4K BF16 KV 为 603,979,776 bytes。RTX 4090 D 实测：
+
+- host load / tree transfer：`108.445 / 3.266 s`；
+- prefill / decode compile：`71.696 / 25.204 s`；
+- ready wall / ready free：`213.219 s / 6,909 MiB`；
+- 7 个 steady 64-token request 中位 prefill：`0.02733 s`；
+- steady decode 中位数：`40.421 tok/s`；
+- 3,584-token prefill：`1.49764 s`；
+- 3,584+512 wall / decode：`13.921 s / 41.132 tok/s`；
+- logical sequence / cache：`4,096 / 4,095`；
+- 8 次复用请求 allocator drift：`234,752 bytes`；
+- 200 ms 连续 `nvidia-smi` 共 1,225 点，最低 free `2,301 MiB`。
+
+三个 CUDA BF16 oracle case 分别覆盖 64-token 单 chunk、65-token
+左补齐到 bucket 128，以及 3,584-token 最大 prompt；每组冻结 32 个
+generated tokens，XLA 合计 **96 / 96** 完全一致。
+
+### 可确定性 CUDA BF16 oracle
+
+先在独立 CUDA eager 进程导出 reference：
+
+```bash
+julia --project=. --startup-file=no \
+  scripts/export_qwen3_8b_greedy_reference.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B \
+  configs/deployment/qwen3_8b_4090d_bf16_xla_daily.json \
+  benchmark_results/week20/qwen3_8b_cuda_greedy_reference.json
+```
+
+reference 使用 schema 2，只冻结 provenance、prompt 与 generated token
+payload，不写入与运行时钟有关的 elapsed 字段，因此相同资产和代码可确定
+性再生成：
+
+```text
+benchmark_results/week20/qwen3_8b_cuda_greedy_reference.json
+SHA256 83f62afbbb470b695b6990a3b86a8860407a37874354d6b039e1ce19917e2747
+```
+
+XLA benchmark 源码钉住这个 exact digest，并继续核对 schema/source、
+model/revision、profile/manifest digest、资产数和三个 case shape；不能用
+任意 caller-supplied JSON 替代 oracle。
+
+### 最终 benchmark
+
+显式复现最终 allocator 配置：
+
+```bash
+XLA_REACTANT_GPU_MEM_FRACTION=0.87 \
+XLA_REACTANT_GPU_PREALLOCATE=false \
+julia --project=. --startup-file=no \
+  scripts/benchmark_qwen3_xla_deployment.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B \
+  configs/deployment/qwen3_8b_4090d_bf16_xla_daily.json \
+  benchmark_results/week20/qwen3_8b_cuda_greedy_reference.json \
+  benchmark_results/week20/qwen3_8b_4090d_bf16_xla_daily.json
+```
+
+脚本在资产校验后自行启动 GPU 0 的 200 ms `nvidia-smi` monitor，覆盖
+XLA load、compile、8 次复用短请求、65-token padding case 与
+3,584+512 整窗。最终两个结果文件为：
+
+```text
+benchmark_results/week20/qwen3_8b_4090d_bf16_xla_daily.json
+SHA256 075dc76a023a8143213f640bfb354d6e38c10b5747b5ef3e8c7e6baeb1c730dc
+
+benchmark_results/week20/qwen3_8b_4090d_bf16_xla_daily_nvidia_smi.csv
+SHA256 72fd3fe80b56647714604a85499a3a9d8e5833412f7a50864d8ea1aa6588b586
+```
+
+JSON 的全部 acceptance 为 true，顶层 `closed=true`。CSV 连续采样最大
+used 为 21,769 MiB、最低 free 为 2,301 MiB；后者是
+2,412,773,376 bytes（2.247 GiB），通过冻结的 2 GiB 门槛。
+
+显存 fraction 的失败过程同样保留：
+
+- `0.95`：3,215 个外部样本最低 free 仅 330 MiB；旧版 JSON 虽在尚未
+  纳入物理 trace 的门禁下 nominal `closed=true`，但不能作为日常验收。
+- `0.89`：1,517 个外部样本最低 free 为 1,848 MiB，仍未达到 2 GiB。
+- `0.87`：性能门槛保持通过，连续最低 free 提升到 2,301 MiB，最终关闭。
+
+### 日常聊天入口
+
+默认 CLI 已内置 `0.87 / preallocate=false`，也可由环境显式覆盖：
+
+```bash
+julia --project=. --startup-file=no \
+  scripts/run_qwen3_xla_chat.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B
+```
+
+指定 frozen profile 的一次性 smoke：
+
+```bash
+julia --project=. --startup-file=no \
+  scripts/run_qwen3_xla_chat.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B \
+  --profile configs/deployment/qwen3_8b_4090d_bf16_xla_daily.json \
+  --prompt "用三点解释 KV Cache" --greedy --max-new-tokens 64
+```
+
+当前 XLA 日常 profile 只冻结 batch-1 greedy。CLI 保留 chat template、
+system/thinking、history 裁剪、流式 tokenizer bytes、`/clear` 与 EOF
+处理；sampling、40K context、FlashAttention、persistent executable
+cache 和单次 device-side decode loop 均不在 Week 20 的关闭范围内。
+
+权重仍保存在仓库外；Week 20 的 deterministic CUDA oracle、最终 JSON
+和 200 ms 显存 CSV 体积较小，作为关闭证据进入 Git。0.95/0.89 的失败
+中间产物继续只保存在本机，不提交。

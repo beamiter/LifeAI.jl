@@ -25,6 +25,7 @@
 - [`week17_qwen3_calibrated_int4.md`](week17_qwen3_calibrated_int4.md)：Week 17（Closed），reconstruction-calibrated INT4、按层/投影/LM-head 的 INT4/INT8/BF16 计划与精确参数预算；RTX 4090 D 上 14B 全 INT8 和 mixed RTN 均 16/16 greedy，mixed MSE 虽降低全局 logit error 却只有 4/16，负结果如实冻结。
 - [`week18_qwen3_activation_calibration.md`](week18_qwen3_activation_calibration.md)：Week 18（Closed），独立校准 token、fail-closed per-channel activation second moment 与 GPU 逐层采集均完成；14B 同布局 activation-aware 仍为 4/16（第 5 token 分歧），未守住 mixed RTN 16/16，负结果冻结。
 - [`week19_qwen3_8b_4090d_deployment.md`](week19_qwen3_8b_4090d_deployment.md)：Week 19（Closed），把 8B BF16 落成 RTX 4090 D 日常本地运行入口；4K 总 context、静态 KV、分块 last-logit prefill、EOS/采样/多轮历史裁剪均完成，3,584+512 整窗与 2 GiB 显存余量通过真实硬件验收。
+- [`week20_qwen3_8b_xla_deployment.md`](week20_qwen3_8b_xla_deployment.md)：Week 20（Closed），把 Qwen3-8B BF16 落成 RTX 4090 D 上的 XLA single-residency 4K greedy 入口；compact 参数树只传输一次，CUDA reference 96/96 token 一致，3,584-token prefill 1.50 s、整窗 decode 41.13 tok/s，并以 200 ms 连续采样守住 2 GiB 物理显存余量。
 - [`qwen3_hf_config_mapping.md`](qwen3_hf_config_mapping.md)：Qwen3 HF `config.json` 与 `gpt_config` 的字段、权重名与布局映射契约（Week 07 已实现并验证）。
 - [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
 - [`monthly/`](monthly/)：月度总结和跨周能力变化。

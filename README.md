@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环；XLA BF16 compiled decode 达 246 tok/s；RTX 4090 D 上的容量上限是已实证生成的 14B mixed RTN，但日常部署选择 Qwen3-8B BF16。它已落成 4K 总 context（3,584 prompt/history + 512 output）、静态 KV、分块 prefill、EOS/采样和多轮历史裁剪的常驻 CUDA 本地入口。**
+**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环；RTX 4090 D 上的容量上限仍是已实证生成的 14B mixed RTN，日常部署则选择 Qwen3-8B BF16。8B 已同时具备 CUDA eager 与 XLA single-residency 4K 入口；XLA 在 3,584+512 整窗上达到 1.50 秒 prefill、41.13 tok/s decode，并保留超过 2 GiB 物理显存。**
 
-Week 01—19 均已 Closed；[`Week 19 — Qwen3-8B / RTX 4090 D 日常本地部署`](notes/week19_qwen3_8b_4090d_deployment.md) 已通过真实硬件验收。4090D 上 3,584-token prefill 为 46.85 s，3,584+512 整窗 decode 为 10.25 tok/s，物理最低空闲显存 2,099 MiB。
+Week 01—20 均已 Closed；[`Week 20 — Qwen3-8B BF16 XLA single-residency 部署`](notes/week20_qwen3_8b_xla_deployment.md) 已通过真实 4090D 验收。应用侧只构造并传输一棵 compact 参数树；64、65 与 3,584-token 三种真实 prompt 的 CUDA BF16 greedy reference 共 `96 / 96` token 一致，3,584+512 整窗 decode 为 41.13 tok/s，200 ms 连续采样最低空闲显存为 2.247 GiB。
 
 目前已经具备：
 
@@ -37,6 +37,10 @@ Week 01—19 均已 Closed；[`Week 19 — Qwen3-8B / RTX 4090 D 日常本地部
 - Qwen3 BF16 常驻 session：固定容量 KV、bounded chunked prefill、
   last-token-only vocabulary projection、EOS/采样、chat history token
   预算与最老 turn-pair 裁剪；4K/4090 D profile 已完成真实权重验收。
+- Qwen3-8B BF16 XLA single-residency session：safetensors 逐层直接组装
+  packed compact tree，只做一次递归 device transfer；固定形状 64-token
+  prefill 与单 token decode 共用 4K 静态 KV。4090 D 日常 CLI 当前明确为
+  batch-1 greedy，sampling 仍走 CUDA eager 路径。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
 - 六个官方 Qwen3 dense 规格的 immutable revision/config checksum、自动识别、显式 variant 校验、精确参数量；严格的 BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
 - Qwen3 weight-only INT8 per-channel / packed groupwise INT4，以及统一的
@@ -170,7 +174,21 @@ model = GPTModel(
 )
 ```
 
-RTX 4090 D 上启动 Week 19 的 Qwen3-8B BF16 日常聊天：
+RTX 4090 D 上启动 Week 20 的 Qwen3-8B BF16 XLA 日常聊天：
+
+```bash
+julia --project=. --startup-file=no \
+  scripts/run_qwen3_xla_chat.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B
+```
+
+默认 profile 是 4,096-token 总 context（最多 3,584-token
+prompt/history + 512-token output）、batch 1、non-thinking、greedy；
+XLA allocator 默认 fraction 为 `0.87` 且不预分配。首次进程仍需约
+1.5 分钟编译 prefill/decode executable；Reactant 0.2.275 当前只持久化
+autotune cache，不持久化完整 kernel executable。
+
+需要 temperature/top-k/top-p sampling 时保留 Week 19 CUDA eager 入口：
 
 ```bash
 julia --project=. --startup-file=no \
@@ -178,10 +196,8 @@ julia --project=. --startup-file=no \
   /home/ubuntu/models/modelscope/Qwen/Qwen3-8B
 ```
 
-默认 profile 是 4,096-token 总 context（最多 3,584-token
-prompt/history + 512-token output）、batch 1、non-thinking。14B mixed
-RTN 仍是当前已实证的尺寸上限，但 0.377 tok/s 和不足 1 GiB 的短输入余量
-不适合作为日常默认。
+14B mixed RTN 仍是当前已实证的尺寸上限，但 0.377 tok/s 和不足 1 GiB
+的短输入余量不适合作为日常默认。
 
 查看或严格选择 Qwen3 dense family member：
 

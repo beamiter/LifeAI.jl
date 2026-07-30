@@ -4,3 +4,8 @@ notebook/assets/
 benchmark_results/*
 !benchmark_results/qwen3_0.6b_xla_gpu_e2e_cachebusted_packed_prefill_repeat_a.json
 !benchmark_results/qwen3_0.6b_xla_gpu_e2e_cachebusted_packed_prefill_repeat_b.json
+!benchmark_results/week20/
+benchmark_results/week20/*
+!benchmark_results/week20/qwen3_8b_cuda_greedy_reference.json
+!benchmark_results/week20/qwen3_8b_4090d_bf16_xla_daily.json
+!benchmark_results/week20/qwen3_8b_4090d_bf16_xla_daily_nvidia_smi.csv

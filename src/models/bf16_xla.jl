@@ -1,5 +1,5 @@
 using BFloat16s: BFloat16
-using Reactant: @allowscalar, @trace
+using Reactant: @allowscalar, @opcall, @trace
 
 # Week 16: BF16 static-cache decode designed for Reactant/XLA compilation.
 # Mirrors the proven F32 XLA pattern — traced position, dynamic single-column
@@ -41,7 +41,9 @@ function _bf16a_static_attention(
     )
     scores = _bf16a_batched_mul(q3, k3)
     scaled = _bf16a_f32(BFloat16.(_bf16a_f32(scores) .* scaling))
-    visible = reshape(key_positions, 1, max_len, 1) .<= valid_length
+    query_limits = query_tokens == 1 ?
+        valid_length : repeat(valid_length; outer=groups)
+    visible = reshape(key_positions, 1, max_len, 1) .<= query_limits
     masked = ifelse.(visible, scaled, _BF16_MASK_MIN)
     maxima = maximum(masked; dims=2)
     exponents = exp.(masked .- maxima)
@@ -127,6 +129,21 @@ function _bf16a_compact_decode_parameters(ps, packed_projections)
         blocks=NamedTuple{block_names}(compact_blocks),
         final_norm=ps.final_norm,
         logits_weight=packed_projections.logits_weight,
+    )
+end
+
+"""
+    _bf16a_compact_parameters(ps)
+
+Replace the separate Q/K/V and gate/up projection leaves in a host parameter
+tree with their packed equivalents. The returned tree is complete: callers can
+transfer it directly and do not need to retain or transfer `ps` or a second
+packed-projection tree.
+"""
+function _bf16a_compact_parameters(ps)
+    return _bf16a_compact_decode_parameters(
+        ps,
+        _bf16a_pack_decode_projections(ps),
     )
 end
 
@@ -506,4 +523,208 @@ function _bf16a_static_prefill(
         value_caches[index][:, :, 1:seq_len, :] = values
     end
     return result.logits
+end
+
+function _bf16a_update_cache_chunk!(cache, update, first_position)
+    first_index = Int(first_position)
+    last_index = first_index + size(update, 3) - 1
+    copyto!(
+        @view(cache[:, :, first_index:last_index, :]),
+        update,
+    )
+    return cache
+end
+
+function _bf16a_update_cache_chunk!(
+    cache::Reactant.TracedRArray,
+    update,
+    first_position,
+)
+    # Reshape/view operations can leave `update` as a lazy traced array wrapper.
+    # StableHLO's dynamic_update_slice requires a materialized traced tensor.
+    materialized_update = Reactant.materialize_traced_array(update)
+    updated = @opcall dynamic_update_slice(
+        cache,
+        materialized_update,
+        Any[1, 1, first_position, 1],
+    )
+    # Preserve the mutating cache contract expected by compiled callers.
+    # Reactant aliases this copy during lowering; the resulting HLO contains
+    # one dynamic_update_slice and no stablehlo.copy.
+    copyto!(cache, updated)
+    return cache
+end
+
+"""
+    _bf16a_static_prefill_chunk_core(
+        model, packed_parameters, tokens, key_caches, value_caches, position,
+        cos_table, sin_table, key_positions,
+    )
+
+Run one fixed-shape packed prefill chunk against a full-size static cache.
+`position` is a one-element Int32 device array containing the number of
+physical cache slots already written. `key_positions` contains the visible
+position for every cache slot; setting left-padding entries to `typemax(Int32)`
+keeps them out of attention while allowing one compiled chunk shape to serve
+arbitrary prompt lengths.
+
+The function returns last-token logits and the updated device position. Cache
+updates are in-place, matching the single-token static decode kernels.
+"""
+function _bf16a_static_prefill_chunk_core(
+    model::GPTModel,
+    packed_parameters,
+    tokens,
+    key_caches,
+    value_caches,
+    position,
+    cos_table,
+    sin_table,
+    key_positions,
+)
+    seq_len, batch_size = size(tokens)
+    batch_size == 1 || throw(ArgumentError(
+        "static XLA prefill supports batch size 1 only",
+    ))
+    head_dim = model.head_dim
+    scaling = 1.0f0 / sqrt(Float32(head_dim))
+    first_position = sum(position) + one(Int32)
+    query_positions = position .+ Int32.(collect(1:seq_len))
+
+    x = reshape(
+        gather(packed_parameters.token_embedding.weight, tokens),
+        model.d_model,
+        seq_len,
+        batch_size,
+    )
+    cos_slice = cos_table[:, query_positions]
+    sin_slice = sin_table[:, query_positions]
+    block_parameters = Tuple(values(packed_parameters.blocks))
+    query_dim = head_dim * model.num_heads
+    kv_dim = head_dim * model.num_kv_heads
+
+    for index in 1:model.num_layers
+        ps_block = block_parameters[index]
+        normed = _bf16a_rmsnorm(
+            x,
+            ps_block.norm1.scale,
+            model.norm_epsilon,
+        )
+        qkv = _bf16a_linear(ps_block.qkv_weight, normed)
+        queries = reshape(
+            qkv[1:query_dim, :, :],
+            head_dim,
+            model.num_heads,
+            seq_len,
+            batch_size,
+        )
+        keys = reshape(
+            qkv[(query_dim + 1):(query_dim + kv_dim), :, :],
+            head_dim,
+            model.num_kv_heads,
+            seq_len,
+            batch_size,
+        )
+        values = reshape(
+            qkv[(query_dim + kv_dim + 1):end, :, :],
+            head_dim,
+            model.num_kv_heads,
+            seq_len,
+            batch_size,
+        )
+        queries = _bf16a_rmsnorm(
+            queries,
+            ps_block.attn.q_norm.scale,
+            model.qk_norm_epsilon,
+        )
+        keys = _bf16a_rmsnorm(
+            keys,
+            ps_block.attn.k_norm.scale,
+            model.qk_norm_epsilon,
+        )
+        queries = _bf16a_apply_rope(queries, cos_slice, sin_slice)
+        keys = _bf16a_apply_rope(keys, cos_slice, sin_slice)
+
+        _bf16a_update_cache_chunk!(
+            key_caches[index],
+            keys,
+            first_position,
+        )
+        _bf16a_update_cache_chunk!(
+            value_caches[index],
+            values,
+            first_position,
+        )
+
+        context = _bf16a_static_attention(
+            queries,
+            key_caches[index],
+            value_caches[index],
+            key_positions,
+            query_positions;
+            scaling,
+        )
+        attn_out = _bf16a_linear(
+            ps_block.attn.o_proj.weight,
+            reshape(
+                context,
+                head_dim * model.num_heads,
+                seq_len,
+                batch_size,
+            ),
+        )
+        x = BFloat16.(_bf16a_f32(x) .+ _bf16a_f32(attn_out))
+
+        normed2 = _bf16a_rmsnorm(
+            x,
+            ps_block.norm2.scale,
+            model.norm_epsilon,
+        )
+        gate_up = _bf16a_linear(ps_block.gate_up_weight, normed2)
+        gate = gate_up[1:model.mlp_hidden_dim, :, :]
+        up = gate_up[(model.mlp_hidden_dim + 1):end, :, :]
+        gate_f = _bf16a_f32(gate)
+        activated = BFloat16.(gate_f ./ (1.0f0 .+ exp.(.-gate_f)))
+        hidden = BFloat16.(_bf16a_f32(activated) .* _bf16a_f32(up))
+        mlp_out = _bf16a_linear(ps_block.mlp.down_proj.weight, hidden)
+        x = BFloat16.(_bf16a_f32(x) .+ _bf16a_f32(mlp_out))
+    end
+
+    final_hidden = _bf16a_rmsnorm(
+        x[:, end:end, :],
+        packed_parameters.final_norm.scale,
+        model.norm_epsilon,
+    )
+    logits = _bf16a_linear(
+        packed_parameters.logits_weight,
+        final_hidden,
+    )
+    return logits, position .+ Int32(seq_len)
+end
+
+function _bf16a_static_prefill_chunk_greedy(
+    model::GPTModel,
+    packed_parameters,
+    tokens,
+    key_caches,
+    value_caches,
+    position,
+    cos_table,
+    sin_table,
+    key_positions,
+)
+    logits, next_position = _bf16a_static_prefill_chunk_core(
+        model,
+        packed_parameters,
+        tokens,
+        key_caches,
+        value_caches,
+        position,
+        cos_table,
+        sin_table,
+        key_positions,
+    )
+    next_token = argmax(vec(_bf16a_f32(logits)))
+    token_state = tokens[1:1, 1] .* 0 .+ next_token
+    return token_state, next_position
 end

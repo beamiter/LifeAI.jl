@@ -37,6 +37,7 @@ export load_hf_qwen3_config, load_safetensors, load_hf_qwen3_parameters
 export load_hf_qwen3_model, hf_token_ids, hf_qwen3_forward_trace
 export HFSafetensorsReader, open_safetensors_reader, read_safetensors_tensor
 export stream_hf_qwen3_forward
+export load_hf_qwen3_compact_model, load_hf_qwen3_compact_bundle
 export hf_qwen3_bf16_forward
 export hf_qwen3_bf16_accel_forward
 export Int8ChannelWeight, Int4GroupWeight, quantize_bf16_parameters
@@ -53,6 +54,10 @@ export HFQwen3BF16Session, init_hf_qwen3_bf16_session
 export load_hf_qwen3_bf16_session, reset_hf_qwen3_bf16_session!
 export prefill_hf_qwen3_bf16!, decode_hf_qwen3_bf16!
 export generate_hf_qwen3_bf16!, generate_hf_text!, fit_qwen3_chat_context
+export Qwen3XLAWindowPlan, plan_qwen3_xla_window
+export qwen3_xla_pad_prompt, qwen3_xla_key_positions
+export HFQwen3BF16XLASession, load_hf_qwen3_bf16_xla_session
+export reset_hf_qwen3_bf16_xla_session!, generate_hf_qwen3_bf16_xla!
 export load_hf_gpt2_config, load_hf_gpt2_parameters, load_hf_gpt2_model
 export load_hf_gpt2_bundle, hf_gpt2_forward_trace
 

@@ -136,11 +136,19 @@ function _reader_location(reader::HFSafetensorsReader, name::AbstractString)
 end
 
 """
-    read_safetensors_tensor(reader, name)
+    read_safetensors_tensor(reader, name; target_dtype=Float32)
 
-Read one tensor from disk and decode it to Float32 with its semantic shape.
+Read one tensor from disk with its semantic shape. `target_dtype=BFloat16`
+preserves native BF16 storage for compact accelerator parameter trees.
 """
-function read_safetensors_tensor(reader::HFSafetensorsReader, name::AbstractString)
+function read_safetensors_tensor(
+    reader::HFSafetensorsReader,
+    name::AbstractString;
+    target_dtype::Type=Float32,
+)
+    target_dtype in (Float32, BFloat16) || throw(ArgumentError(
+        "streamed safetensors loading only supports Float32 or BFloat16",
+    ))
     location = _reader_location(reader, name)
     raw = open(location.path, "r") do io
         seek(io, location.data_base + location.data_start)
@@ -149,19 +157,32 @@ function read_safetensors_tensor(reader::HFSafetensorsReader, name::AbstractStri
             throw(ArgumentError("truncated data for safetensors tensor `$name`"))
         bytes
     end
-    return _decode_safetensors_values(raw, location.dtype, location.shape)
+    return _decode_safetensors_values(
+        raw,
+        location.dtype,
+        location.shape;
+        target_dtype,
+    )
 end
 
 # Minimal AbstractDict facade so `_expect_tensor` and the shared block mapping
 # work identically on the streamed reader and the in-memory state dict.
 struct _StreamedTensors <: AbstractDict{String,Any}
     reader::HFSafetensorsReader
+    target_dtype::DataType
 end
+
+_StreamedTensors(reader::HFSafetensorsReader) =
+    _StreamedTensors(reader, Float32)
 
 Base.haskey(tensors::_StreamedTensors, name::AbstractString) =
     haskey(tensors.reader, name)
 Base.getindex(tensors::_StreamedTensors, name::AbstractString) =
-    read_safetensors_tensor(tensors.reader, name)
+    read_safetensors_tensor(
+        tensors.reader,
+        name;
+        target_dtype=tensors.target_dtype,
+    )
 Base.length(tensors::_StreamedTensors) = length(tensors.reader.locations)
 Base.keys(tensors::_StreamedTensors) = keys(tensors.reader)
 function Base.iterate(tensors::_StreamedTensors, state...)
@@ -169,6 +190,158 @@ function Base.iterate(tensors::_StreamedTensors, state...)
     step === nothing && return nothing
     name, next_state = step
     return name => tensors[name], next_state
+end
+
+"""
+    load_hf_qwen3_compact_model(
+        model_dir; max_seq_len=2048, weight_dtype=BFloat16, variant=nothing,
+    )
+
+Stream a dense Qwen3 checkpoint directly into the packed parameter topology
+used by the XLA prefill/decode kernels. Separate Q/K/V and gate/up leaves exist
+only while one layer is being packed; no full unpacked parameter tree is ever
+constructed. The returned `parameters` tree is therefore ready for one
+recursive device transfer.
+"""
+function load_hf_qwen3_compact_model(
+    model_dir::AbstractString;
+    max_seq_len::Integer=2048,
+    weight_dtype::Type=BFloat16,
+    variant=nothing,
+)
+    weight_dtype in (Float32, BFloat16) || throw(ArgumentError(
+        "compact Qwen3 loading only supports Float32 or BFloat16",
+    ))
+    isdir(model_dir) || throw(ArgumentError(
+        "model directory does not exist: $model_dir",
+    ))
+    config = load_hf_qwen3_config(
+        joinpath(model_dir, "config.json");
+        max_seq_len=Int(max_seq_len),
+        variant,
+    )
+    model = GPTModel(config)
+    _qwen3_validate_semantics(model)
+    reader = open_safetensors_reader(model_dir)
+    _qwen3_validate_tensor_names(model, Set(String.(collect(keys(reader)))))
+    tensors = _StreamedTensors(reader, weight_dtype)
+
+    embedding_hf = _expect_tensor(
+        tensors,
+        "model.embed_tokens.weight",
+        (model.vocab_size, model.d_model),
+    )
+    token_embedding = (; weight=permutedims(embedding_hf, (2, 1)))
+    embedding_hf = nothing
+
+    block_values = ntuple(model.num_layers) do julia_layer
+        unpacked = _qwen3_block_parameters(
+            model,
+            tensors,
+            julia_layer - 1,
+        )
+        packed = (;
+            norm1=unpacked.norm1,
+            qkv_weight=vcat(
+                unpacked.attn.q_proj.weight,
+                unpacked.attn.k_proj.weight,
+                unpacked.attn.v_proj.weight,
+            ),
+            attn=(;
+                o_proj=unpacked.attn.o_proj,
+                q_norm=unpacked.attn.q_norm,
+                k_norm=unpacked.attn.k_norm,
+            ),
+            norm2=unpacked.norm2,
+            gate_up_weight=vcat(
+                unpacked.mlp.gate_proj.weight,
+                unpacked.mlp.up_proj.weight,
+            ),
+            mlp=(; down_proj=unpacked.mlp.down_proj),
+        )
+        unpacked = nothing
+        GC.gc(false)
+        return packed
+    end
+    block_names = Tuple(
+        Symbol("layer_$layer") for layer in 1:model.num_layers
+    )
+    blocks = NamedTuple{block_names}(block_values)
+    final_norm = (; scale=reshape(
+        _expect_tensor(
+            tensors,
+            "model.norm.weight",
+            (model.d_model,),
+        ),
+        model.d_model,
+        1,
+        1,
+    ))
+    logits_weight = if model.tie_embeddings
+        if haskey(reader, "lm_head.weight")
+            tied_head = _expect_tensor(
+                tensors,
+                "lm_head.weight",
+                (model.vocab_size, model.d_model),
+            )
+            tied_head == permutedims(token_embedding.weight, (2, 1)) ||
+                throw(ArgumentError(
+                    "tied Qwen3 lm_head.weight does not equal " *
+                    "model.embed_tokens.weight",
+                ))
+        end
+        permutedims(token_embedding.weight, (2, 1))
+    else
+        _expect_tensor(
+            tensors,
+            "lm_head.weight",
+            (model.vocab_size, model.d_model),
+        )
+    end
+    parameters = (;
+        token_embedding,
+        blocks,
+        final_norm,
+        logits_weight,
+    )
+    states = Lux.initialstates(Xoshiro(0), model)
+    dense_spec = config.qwen3_variant === nothing ?
+        nothing : qwen3_dense_spec(config.qwen3_variant)
+    return (;
+        model,
+        parameters,
+        states,
+        config,
+        variant=dense_spec,
+        source=abspath(model_dir),
+        parameter_layout=:compact_packed,
+    )
+end
+
+"""
+    load_hf_qwen3_compact_bundle(model_dir; revision="", kwargs...)
+
+Load the exact tokenizer/generation configuration next to a streamed compact
+Qwen3 model without constructing the ordinary unpacked model parameters.
+"""
+function load_hf_qwen3_compact_bundle(
+    model_dir::AbstractString;
+    revision::AbstractString="",
+    kwargs...,
+)
+    tokenizer = load_hf_qwen3_tokenizer(model_dir; revision)
+    loaded = load_hf_qwen3_compact_model(model_dir; kwargs...)
+    vocab_size(tokenizer) <= loaded.model.vocab_size || throw(ArgumentError(
+        "tokenizer vocabulary exceeds the model vocabulary",
+    ))
+    return merge(
+        loaded,
+        (;
+            tokenizer,
+            generation_config=hf_generation_config(tokenizer),
+            revision=String(revision),
+        ),
+    )
 end
 
 """
