@@ -368,6 +368,84 @@ config 的不可变 revision 与 SHA256 为：
   --local-dir /home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca
 ```
 
+## Week 19 RTX 4090 D / Qwen3-8B 日常部署
+
+Week 19 复用 Week 13 冻结的官方 revision：
+
+```text
+model_id: Qwen/Qwen3-8B
+revision: b968826d9c46dd6066d109eabc6255188de91218
+recommended runtime path:
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B
+```
+
+Hugging Face 原始恢复命令：
+
+```bash
+/home/ubuntu/.local/bin/hf download Qwen/Qwen3-8B \
+  --revision b968826d9c46dd6066d109eabc6255188de91218 \
+  --local-dir /home/ubuntu/models/huggingface/Qwen/Qwen3-8B/b968826d9c46dd6066d109eabc6255188de91218 \
+  --max-workers 2
+```
+
+当前验证机从 ModelScope 官方 Qwen 镜像恢复，以改善下载连通性：
+
+```bash
+MODELSCOPE_DOWNLOAD_PARALLEL_WORKERS=8 \
+MODELSCOPE_DOWNLOAD_TIMEOUT=600 \
+modelscope download Qwen/Qwen3-8B \
+  --revision master \
+  --local-dir /home/ubuntu/models/modelscope/Qwen/Qwen3-8B \
+  --max-workers 5
+```
+
+ModelScope 的 `master` 不是 provenance 身份。下载后必须逐文件匹配 Week 13
+冻结的 Hugging Face revision checksum；任一权重、config 或 tokenizer
+不匹配，都不能运行 deployment benchmark。
+
+日常 profile：
+
+```text
+configs/deployment/qwen3_8b_4090d_bf16_daily.json
+SHA256 93e7bde699fad4f0c93153e8d1c0458326c1ba848127cc14758fff066d944e4b
+asset manifest configs/deployment/qwen3_8b_frozen_assets.json
+asset manifest SHA256 f4737c1aca92b3cbf046da7861af88fc2d4650552397b7d6f4b7edade5040e91
+context 4096 = prompt/history 3584 + output 512
+prefill chunk 64
+prefill explicit full GC + CUDA.reclaim every chunk
+decode explicit incremental GC + CUDA.reclaim every 8 tokens
+workspace reserve 5 GiB
+```
+
+`CUDA.reclaim()` 在当前 CUDA.jl 中自身会执行 full GC、同步、清理
+task-local library state 和 pool trim；上述 full/incremental 指调用
+`CUDA.reclaim()` 之前的显式 GC pass，不表示 decode 路径没有 full GC。
+
+启动与硬件验收：
+
+```bash
+julia --project=. --startup-file=no \
+  scripts/run_qwen3_cuda_chat.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B
+
+julia --project=. --startup-file=no \
+  scripts/benchmark_qwen3_cuda_deployment.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B \
+  configs/deployment/qwen3_8b_4090d_bf16_daily.json \
+  benchmark_results/week19/qwen3_8b_4090d_bf16_daily.json
+```
+
+2026-07-30 的 RTX 4090 D 验收已通过：3,584-token prefill `46.849 s`，
+3,584+512 整窗 decode `10.246 tok/s`，CUDA 内部最低 free `2.190 GiB`，
+200 ms `nvidia-smi` 物理采样最低 free `2,099 MiB`。本地结果文件 SHA256
+为 `5c01dd5e218167778255b71f2b1053e153cbef279b60806e14ab5911fe2fa0c2`；
+2,856 行外部采样 CSV 的 SHA256 为
+`018d873a77e6d19ca6727fb9b2fdd00801e5cd4a6b6de10ddb0ec75be530555d`。
+
+权重不进入 Git。Git 提交保存 profile、checksum contract、脚本和文档化
+结果；原始 benchmark/采样保存在本地被忽略的 `benchmark_results/`
+目录，并用上述 SHA256 标识。
+
 `--local-dir` 内的 `.cache/huggingface/` 保存下载元数据和断点续传状态；不要把该目录移动到 `/tmp`。
 
 ## Week 09 reference 与验证

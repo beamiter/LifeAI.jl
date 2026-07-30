@@ -46,6 +46,13 @@ export calibrate_hf_qwen3_activations
 export quantized_parameter_bytes, estimate_qwen3_quantized_bytes
 export load_hf_qwen3_quantized
 export load_hf_qwen3_bundle, generate_hf_text
+export Qwen3DeploymentProfile, load_qwen3_deployment_profile
+export verify_qwen3_deployment_assets
+export qwen3_kv_cache_bytes
+export HFQwen3BF16Session, init_hf_qwen3_bf16_session
+export load_hf_qwen3_bf16_session, reset_hf_qwen3_bf16_session!
+export prefill_hf_qwen3_bf16!, decode_hf_qwen3_bf16!
+export generate_hf_qwen3_bf16!, generate_hf_text!, fit_qwen3_chat_context
 export load_hf_gpt2_config, load_hf_gpt2_parameters, load_hf_gpt2_model
 export load_hf_gpt2_bundle, hf_gpt2_forward_trace
 

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "name": "qwen3-8b-4090d-bf16-daily-4k",
+  "model_id": "Qwen/Qwen3-8B",
+  "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "variant": "qwen3_8b",
+  "weight_dtype": "bf16",
+  "context_tokens": 4096,
+  "max_prompt_tokens": 3584,
+  "max_new_tokens": 512,
+  "prefill_chunk_tokens": 64,
+  "prefill_reclaim_interval_chunks": 1,
+  "decode_reclaim_interval_tokens": 8,
+  "enable_thinking": false,
+  "strategy": "sample",
+  "temperature": 0.7,
+  "top_k": 20,
+  "top_p": 0.8,
+  "minimum_gpu_bytes": 25000000000,
+  "workspace_reserve_bytes": 5368709120,
+  "asset_manifest": "qwen3_8b_frozen_assets.json"
+}

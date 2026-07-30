@@ -38,6 +38,7 @@ include("models/bf16_xla.jl")
 include("models/quantized.jl")
 include("generation/xla_kv_cache.jl")
 include("generation/hf_text_generation.jl")
+include("generation/qwen3_deployment.jl")
 include("generation/kv_benchmark.jl")
 include("generation/xla_cache_modes_benchmark.jl")
 

@@ -136,6 +136,7 @@ function _bf16a_block_core(
     cache;
     mask,
     capture_activation_moments::Bool,
+    cache_position::Int=0,
 )
     head_dim = model.head_dim
     num_tokens, batch_size = size(x, 2), size(x, 3)
@@ -183,9 +184,12 @@ function _bf16a_block_core(
     queries = _bf16a_apply_rope(queries, cos_slice, sin_slice)
     keys = _bf16a_apply_rope(keys, cos_slice, sin_slice)
 
-    cached_keys, cached_values = cache
-    all_keys = cached_keys === nothing ? keys : cat(cached_keys, keys; dims=3)
-    all_values = cached_values === nothing ? values : cat(cached_values, values; dims=3)
+    all_keys, all_values, updated_cache = _bf16a_append_cache(
+        cache,
+        keys,
+        values,
+        cache_position,
+    )
 
     context = _bf16a_attention(queries, all_keys, all_values; scaling, mask)
     output_input = reshape(
@@ -237,7 +241,7 @@ function _bf16a_block_core(
     else
         nothing
     end
-    return x, (all_keys, all_values), moments
+    return x, updated_cache, moments
 end
 
 function _bf16a_block(
@@ -248,6 +252,7 @@ function _bf16a_block(
     sin_slice,
     cache;
     mask,
+    cache_position::Int=0,
 )
     output, updated_cache, _ = _bf16a_block_core(
         model,
@@ -258,6 +263,7 @@ function _bf16a_block(
         cache;
         mask,
         capture_activation_moments=false,
+        cache_position,
     )
     return output, updated_cache
 end
@@ -292,6 +298,59 @@ function _bf16a_causal_mask(query_tokens::Int, key_tokens::Int)
     return BFloat16.(mask)
 end
 
+"""
+    BF16AStaticLayerCache(keys, values)
+
+Preallocated K/V storage used by the low-overhead BF16 accelerator session.
+The physical layout is `(head_dim, num_kv_heads, max_seq_len, batch)`.
+Only the prefix selected by the owning session is read. Unlike the historical
+parity path's tuple cache, appending a token never reallocates or concatenates
+the already-cached prefix.
+"""
+struct BF16AStaticLayerCache{K,V}
+    keys::K
+    values::V
+end
+
+function _bf16a_append_cache(
+    cache::Tuple,
+    keys,
+    values,
+    cache_position::Int,
+)
+    cached_keys, cached_values = cache
+    cached_tokens = cached_keys === nothing ? 0 : size(cached_keys, 3)
+    cached_tokens == cache_position || throw(ArgumentError(
+        "dynamic BF16 cache position does not match its stored prefix",
+    ))
+    all_keys = cached_keys === nothing ? keys : cat(cached_keys, keys; dims=3)
+    all_values = cached_values === nothing ? values : cat(cached_values, values; dims=3)
+    return all_keys, all_values, (all_keys, all_values)
+end
+
+function _bf16a_append_cache(
+    cache::BF16AStaticLayerCache,
+    keys,
+    values,
+    cache_position::Int,
+)
+    size(keys) == size(values) || throw(DimensionMismatch(
+        "new BF16 keys and values must have matching shapes",
+    ))
+    first_position = cache_position + 1
+    last_position = cache_position + size(keys, 3)
+    last_position <= size(cache.keys, 3) || throw(ArgumentError(
+        "BF16 static KV cache capacity exceeded",
+    ))
+    key_target = @view cache.keys[:, :, first_position:last_position, :]
+    value_target = @view cache.values[:, :, first_position:last_position, :]
+    copyto!(key_target, keys)
+    copyto!(value_target, values)
+    all_keys = @view cache.keys[:, :, 1:last_position, :]
+    all_values = @view cache.values[:, :, 1:last_position, :]
+    return all_keys, all_values, cache
+end
+
 function _bf16a_forward_pass(
     model::GPTModel,
     ps,
@@ -302,18 +361,20 @@ function _bf16a_forward_pass(
     mask;
     start_pos::Int,
     project_last_token_only::Bool=false,
+    project_logits::Bool=true,
+    capture_trace::Bool=true,
 )
     seq_len, batch_size = size(tokens)
     x = reshape(
         gather(ps.token_embedding.weight, tokens),
         model.d_model, seq_len, batch_size,
     )
-    embedding = x
+    embedding = capture_trace ? x : nothing
     positions = start_pos:(start_pos + seq_len - 1)
     cos_slice = cos_table[:, positions]
     sin_slice = sin_table[:, positions]
     block_parameters = Tuple(values(ps.blocks))
-    block_outputs = Vector{Any}(undef, model.num_layers)
+    block_outputs = capture_trace ? Vector{Any}(undef, model.num_layers) : nothing
     for index in 1:model.num_layers
         x, caches[index] = _bf16a_block(
             model,
@@ -323,21 +384,36 @@ function _bf16a_forward_pass(
             sin_slice,
             caches[index];
             mask,
+            cache_position=start_pos - 1,
         )
-        block_outputs[index] = x
+        capture_trace && (block_outputs[index] = x)
     end
-    final_hidden = _bf16a_rmsnorm(x, ps.final_norm.scale, model.norm_epsilon)
-    logits_weight = if hasproperty(ps, :logits_weight)
-        ps.logits_weight
-    elseif model.tie_embeddings
-        permutedims(ps.token_embedding.weight, (2, 1))
+    final_hidden = if project_logits || capture_trace
+        _bf16a_rmsnorm(x, ps.final_norm.scale, model.norm_epsilon)
     else
-        ps.lm_head.weight
+        nothing
     end
-    projection_input = project_last_token_only ?
-        final_hidden[:, end:end, :] : final_hidden
-    logits = _bf16a_linear(logits_weight, projection_input)
-    return (; embedding, block_outputs, final_hidden, logits, caches)
+    logits = if project_logits
+        logits_weight = if hasproperty(ps, :logits_weight)
+            ps.logits_weight
+        elseif model.tie_embeddings
+            permutedims(ps.token_embedding.weight, (2, 1))
+        else
+            ps.lm_head.weight
+        end
+        projection_input = project_last_token_only ?
+            final_hidden[:, end:end, :] : final_hidden
+        _bf16a_linear(logits_weight, projection_input)
+    else
+        nothing
+    end
+    return (;
+        embedding,
+        block_outputs,
+        final_hidden=capture_trace ? final_hidden : nothing,
+        logits,
+        caches,
+    )
 end
 
 _bf16a_last_token(logits) = argmax(vec(Array(_bf16a_f32(

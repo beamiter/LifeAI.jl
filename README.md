@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环；XLA BF16 compiled decode 达 246 tok/s；权重量化已升级为可按层/投影/LM head 预算的 INT4/INT8/BF16 计划，并完成独立 token 驱动的 diagonal activation-aware INT4 实验。RTX 4090 D 上 Qwen3-14B 全 INT8 与 12.09 GiB mixed RTN 均完成 16/16 BF16 greedy parity；weight-MSE 与 activation-aware 同布局均只有 4/16。**
+**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环；XLA BF16 compiled decode 达 246 tok/s；RTX 4090 D 上的容量上限是已实证生成的 14B mixed RTN，但日常部署选择 Qwen3-8B BF16。它已落成 4K 总 context（3,584 prompt/history + 512 output）、静态 KV、分块 prefill、EOS/采样和多轮历史裁剪的常驻 CUDA 本地入口。**
 
-Week 01—18 均已 Closed；[`Week 18 — Qwen3 Activation-Aware INT4 校准`](notes/week18_qwen3_activation_calibration.md) 完成 fail-closed activation second-moment 采集、GPU 逐层校准和 14B 实测。activation-aware 将 full-logits max error 降到 `3.4238`，但仍从第 5 token 分歧且仅 4/16；局部加权重建目标仍不能作为 generation fidelity 代理。
+Week 01—19 均已 Closed；[`Week 19 — Qwen3-8B / RTX 4090 D 日常本地部署`](notes/week19_qwen3_8b_4090d_deployment.md) 已通过真实硬件验收。4090D 上 3,584-token prefill 为 46.85 s，3,584+512 整窗 decode 为 10.25 tok/s，物理最低空闲显存 2,099 MiB。
 
 目前已经具备：
 
@@ -34,6 +34,9 @@ Week 01—18 均已 Closed；[`Week 18 — Qwen3 Activation-Aware INT4 校准`](
 - 基于 Zygote 的常规训练，以及 Reactant/Enzyme 驱动的 XLA 训练路径。
 - greedy、temperature、top-k、top-p 文本生成；Qwen3 可严格读取官方 generation config，并支持固定 uniform 流的可重放采样。
 - 动态 KV Cache 的 prefill / decode，以及面向 XLA 的固定形状 KV Cache 和编译后增量解码。
+- Qwen3 BF16 常驻 session：固定容量 KV、bounded chunked prefill、
+  last-token-only vocabulary projection、EOS/采样、chat history token
+  预算与最老 turn-pair 裁剪；4K/4090 D profile 已完成真实权重验收。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
 - 六个官方 Qwen3 dense 规格的 immutable revision/config checksum、自动识别、显式 variant 校验、精确参数量；严格的 BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
 - Qwen3 weight-only INT8 per-channel / packed groupwise INT4，以及统一的
@@ -167,6 +170,19 @@ model = GPTModel(
 )
 ```
 
+RTX 4090 D 上启动 Week 19 的 Qwen3-8B BF16 日常聊天：
+
+```bash
+julia --project=. --startup-file=no \
+  scripts/run_qwen3_cuda_chat.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-8B
+```
+
+默认 profile 是 4,096-token 总 context（最多 3,584-token
+prompt/history + 512-token output）、batch 1、non-thinking。14B mixed
+RTN 仍是当前已实证的尺寸上限，但 0.377 tok/s 和不足 1 GiB 的短输入余量
+不适合作为日常默认。
+
 查看或严格选择 Qwen3 dense family member：
 
 ```julia
@@ -182,8 +198,9 @@ bundle = load_hf_qwen3_bundle(
 )
 ```
 
-`variant` 会校验所有架构 shape，但不会下载文件。当前真实逐层/logits/text
-reference 仍只覆盖 0.6B；其他尺寸的结构支持不等同于已加载巨型权重实跑。
+`variant` 会校验所有架构 shape，但不会下载文件。0.6B—32B 六个 dense
+尺寸均已完成真实权重逐层 parity（8B—32B 使用流式验证）；完整 tokenizer
+到 text-generation reference 仍以 0.6B 为主，不能把两种验证口径混写。
 
 加载冻结的 GPT-2 124M 并执行 greedy generation：
 

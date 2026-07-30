@@ -6,7 +6,9 @@
 
 ## 当前活动阶段
 
-当前没有 Open 的 Week；[`Week 18 — Qwen3 Activation-Aware INT4 校准`](week18_qwen3_activation_calibration.md) 已于 2026-07-29 Closed。独立的 8×32 calibration token、native BF16 CPU/GPU 逐层 activation second-moment 采集、`:activation_mse` scale search 与 streamed/in-memory 一致性均已完成。RTX 4090 D 上同 12.093 GiB mixed layout 的真实结果为 4/16、首次分歧第 5 token，没有守住 Week 17 mixed RTN 16/16；该 diagonal 近似不称为完整 AWQ/GPTQ。
+当前没有 Open 的 Week；[`Week 19 — Qwen3-8B / RTX 4090 D 日常本地部署`](week19_qwen3_8b_4090d_deployment.md) 已于 2026-07-30 Closed。本阶段明确区分容量上限与日常选择：14B mixed RTN 是同卡已实证生成上限，但仅 0.377 tok/s 且上下文余量很小；日常部署选择无量化误差的 8B BF16，冻结为 4K 总 context、3,584-token prompt/history、512-token output、64-token 分块 prefill。真实 4090D 上 3,584 prefill 为 46.85 s，3,584+512 整窗 decode 为 10.25 tok/s，物理最低 free 为 2,099 MiB；静态 KV session、last-token-only projection、EOS/采样、多轮历史裁剪和 CLI 均已完成。
+
+[`Week 18 — Qwen3 Activation-Aware INT4 校准`](week18_qwen3_activation_calibration.md) 已于 2026-07-29 Closed。独立的 8×32 calibration token、native BF16 CPU/GPU 逐层 activation second-moment 采集、`:activation_mse` scale search 与 streamed/in-memory 一致性均已完成。RTX 4090 D 上同 12.093 GiB mixed layout 的真实结果为 4/16、首次分歧第 5 token，没有守住 Week 17 mixed RTN 16/16；该 diagonal 近似不称为完整 AWQ/GPTQ。
 
 [`Week 17 — Qwen3 Reconstruction-Calibrated INT4 与预算化混合精度`](week17_qwen3_calibrated_int4.md) 已于 2026-07-29 Closed。per-row/group MSE clipping search、按层/投影/LM head 覆盖的 INT4/INT8/BF16 计划，以及真实参数树/Qwen3 topology 的逐 byte 预算均已完成。RTX 4090 D 实测：14B 全 INT8（tree 14.487 GiB）和 12.093 GiB mixed RTN 均与 BF16 reference 16/16 greedy 一致；同布局 mixed MSE 虽降低 full-logits max/mean error，却只有 4/16，证明 reconstruction error 不能作为生成 fidelity 代理。
 
