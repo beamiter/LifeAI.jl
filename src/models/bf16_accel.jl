@@ -87,11 +87,27 @@ function _bf16a_attention(
     if mask !== nothing
         scaled_grouped = reshape(
             scaled,
-            query_tokens, groups, key_tokens, kv_batches,
+            query_tokens, groups, key_tokens, num_kv_heads, batch_size,
         )
+        mask_view = if ndims(mask) == 2
+            size(mask) == (query_tokens, key_tokens) || throw(DimensionMismatch(
+                "2D attention mask must have shape " *
+                "($query_tokens, $key_tokens)",
+            ))
+            reshape(mask, query_tokens, 1, key_tokens, 1, 1)
+        elseif ndims(mask) == 3
+            size(mask) == (query_tokens, key_tokens, batch_size) ||
+                throw(DimensionMismatch(
+                    "3D attention mask must have shape " *
+                    "($query_tokens, $key_tokens, $batch_size)",
+                ))
+            reshape(mask, query_tokens, 1, key_tokens, 1, batch_size)
+        else
+            throw(DimensionMismatch("attention mask must be 2D or 3D"))
+        end
         scaled_grouped = BFloat16.(
             _bf16a_f32(scaled_grouped) .+
-            _bf16a_f32(reshape(mask, query_tokens, 1, key_tokens, 1))
+            _bf16a_f32(mask_view)
         )
         scaled = reshape(
             scaled_grouped,
@@ -298,6 +314,26 @@ function _bf16a_causal_mask(query_tokens::Int, key_tokens::Int)
     return BFloat16.(mask)
 end
 
+function _bf16a_causal_padding_mask(attention_mask::AbstractMatrix{Bool})
+    query_tokens, batch_size = size(attention_mask)
+    query_tokens > 0 || throw(ArgumentError(
+        "attention_mask must contain at least one token position",
+    ))
+    all(any(view(attention_mask, :, batch)) for batch in 1:batch_size) ||
+        throw(ArgumentError(
+            "every attention_mask column must contain at least one valid token",
+        ))
+    mask = Array{BFloat16}(undef, query_tokens, query_tokens, batch_size)
+    for batch in 1:batch_size
+        for query_index in 1:query_tokens, key_index in 1:query_tokens
+            visible = key_index <= query_index && attention_mask[key_index, batch]
+            mask[query_index, key_index, batch] =
+                visible ? BFloat16(0) : BFloat16(_BF16_MASK_MIN)
+        end
+    end
+    return mask
+end
+
 """
     BF16AStaticLayerCache(keys, values)
 
@@ -327,6 +363,9 @@ function _bf16a_append_cache(
     all_values = cached_values === nothing ? values : cat(cached_values, values; dims=3)
     return all_keys, all_values, (all_keys, all_values)
 end
+
+_bf16a_append_cache(::Nothing, keys, values, cache_position::Int) =
+    (keys, values, nothing)
 
 function _bf16a_append_cache(
     cache::BF16AStaticLayerCache,
@@ -363,6 +402,7 @@ function _bf16a_forward_pass(
     project_last_token_only::Bool=false,
     project_logits::Bool=true,
     capture_trace::Bool=true,
+    capture_final_hidden::Bool=false,
 )
     seq_len, batch_size = size(tokens)
     x = reshape(
@@ -388,7 +428,7 @@ function _bf16a_forward_pass(
         )
         capture_trace && (block_outputs[index] = x)
     end
-    final_hidden = if project_logits || capture_trace
+    final_hidden = if project_logits || capture_trace || capture_final_hidden
         _bf16a_rmsnorm(x, ps.final_norm.scale, model.norm_epsilon)
     else
         nothing
@@ -410,7 +450,7 @@ function _bf16a_forward_pass(
     return (;
         embedding,
         block_outputs,
-        final_hidden=capture_trace ? final_hidden : nothing,
+        final_hidden=(capture_trace || capture_final_hidden) ? final_hidden : nothing,
         logits,
         caches,
     )

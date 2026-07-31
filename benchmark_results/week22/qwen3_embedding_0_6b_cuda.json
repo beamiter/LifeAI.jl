@@ -1,0 +1,225 @@
+{
+    "timing": {
+        "forward_seconds": 18.958680523,
+        "padded_tokens": 280,
+        "max_rss_mib": 4302.28125,
+        "valid_tokens": 181,
+        "load_seconds": 9.051606161,
+        "batch_size": 8,
+        "upload_seconds": 1.103012975,
+        "warm_forward_seconds": 0.06407019,
+        "asset_verification_seconds": 2.487703769,
+        "cold_warm_embedding_max_abs": 0
+    },
+    "parameter_count": 595776512,
+    "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+    "dimensions": {
+        "512": {
+            "topk_equal": true,
+            "topk_document_indices_1_based": [
+                [
+                    1,
+                    2,
+                    4,
+                    5,
+                    3
+                ],
+                [
+                    2,
+                    3,
+                    4,
+                    5,
+                    1
+                ],
+                [
+                    3,
+                    2,
+                    5,
+                    4,
+                    1
+                ]
+            ],
+            "embedding_max_abs": 0.0050427914,
+            "similarity_max_abs": 0.008128881,
+            "embedding_passed": true,
+            "similarity_passed": true
+        },
+        "64": {
+            "topk_equal": true,
+            "topk_document_indices_1_based": [
+                [
+                    1,
+                    5,
+                    4,
+                    2,
+                    3
+                ],
+                [
+                    2,
+                    3,
+                    4,
+                    5,
+                    1
+                ],
+                [
+                    3,
+                    2,
+                    4,
+                    5,
+                    1
+                ]
+            ],
+            "embedding_max_abs": 0.009998128,
+            "similarity_max_abs": 0.00734403,
+            "embedding_passed": true,
+            "similarity_passed": true
+        },
+        "1024": {
+            "topk_equal": true,
+            "topk_document_indices_1_based": [
+                [
+                    1,
+                    4,
+                    2,
+                    5,
+                    3
+                ],
+                [
+                    2,
+                    3,
+                    4,
+                    5,
+                    1
+                ],
+                [
+                    3,
+                    2,
+                    4,
+                    5,
+                    1
+                ]
+            ],
+            "embedding_max_abs": 0.0036515072,
+            "similarity_max_abs": 0.0086628795,
+            "embedding_passed": true,
+            "similarity_passed": true
+        },
+        "256": {
+            "topk_equal": true,
+            "topk_document_indices_1_based": [
+                [
+                    1,
+                    4,
+                    2,
+                    5,
+                    3
+                ],
+                [
+                    2,
+                    3,
+                    4,
+                    5,
+                    1
+                ],
+                [
+                    3,
+                    2,
+                    4,
+                    5,
+                    1
+                ]
+            ],
+            "embedding_max_abs": 0.007404126,
+            "similarity_max_abs": 0.006948948,
+            "embedding_passed": true,
+            "similarity_passed": true
+        },
+        "128": {
+            "topk_equal": true,
+            "topk_document_indices_1_based": [
+                [
+                    1,
+                    5,
+                    4,
+                    2,
+                    3
+                ],
+                [
+                    2,
+                    3,
+                    4,
+                    5,
+                    1
+                ],
+                [
+                    3,
+                    2,
+                    4,
+                    5,
+                    1
+                ]
+            ],
+            "embedding_max_abs": 0.00937216,
+            "similarity_max_abs": 0.007204514,
+            "embedding_passed": true,
+            "similarity_passed": true
+        }
+    },
+    "reference": {
+        "torch_version": "2.7.1+cpu",
+        "sha256": "669694c860798fb8496dd1be199fc648a5779fd7860000c81fe8ca3d0153b322",
+        "transformers_version": "4.51.3",
+        "path": "/home/ubuntu/projects/LifeAI.jl/test/fixtures/week22_qwen3_embedding/reference.json"
+    },
+    "compute_dtype": "bfloat16",
+    "token_ids_equal": true,
+    "attention_mask_equal": true,
+    "model_dir": "/home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B",
+    "device": "cuda",
+    "closed": true,
+    "schema_version": 1,
+    "model_id": "Qwen/Qwen3-Embedding-0.6B",
+    "hardware": {
+        "gpu_total_bytes": 25238568960,
+        "cuda_runtime_version": "12.9.0",
+        "cuda_driver_api_version": "13.3.0",
+        "nvidia_driver_version": "570.153.02",
+        "julia_version": "1.12.6",
+        "gpu_name": "NVIDIA GeForce RTX 4090 D",
+        "gpu_free_bytes_after_forward": 17762680832,
+        "blas_threads": 8,
+        "logical_threads": 32,
+        "machine": "x86_64-linux-gnu",
+        "julia_threads": 8,
+        "cpu_model": "Intel(R) Core(TM) i9-14900K",
+        "gpu_parameter_bytes": 1205141504,
+        "compute_capability": "8.9.0"
+    },
+    "semantic_memory": {
+        "topk_equal": true,
+        "topk_document_indices_1_based": [
+            [
+                1,
+                4,
+                2,
+                5,
+                3
+            ],
+            [
+                2,
+                3,
+                4,
+                5,
+                1
+            ],
+            [
+                3,
+                2,
+                4,
+                5,
+                1
+            ]
+        ],
+        "first_document_equal": true
+    }
+}

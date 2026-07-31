@@ -1,4 +1,7 @@
 .git_data/
+.venv/
+__pycache__/
+*.py[cod]
 Manifest.toml
 notebook/assets/
 benchmark_results/*
@@ -13,3 +16,7 @@ benchmark_results/week20/*
 benchmark_results/week21/*
 !benchmark_results/week21/qwen3_8b_4090d_bf16_xla_service.json
 !benchmark_results/week21/qwen3_8b_4090d_bf16_xla_service_nvidia_smi.csv
+!benchmark_results/week22/
+benchmark_results/week22/*
+!benchmark_results/week22/qwen3_embedding_0_6b_cpu.json
+!benchmark_results/week22/qwen3_embedding_0_6b_cuda.json

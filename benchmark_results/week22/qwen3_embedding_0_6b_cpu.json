@@ -1,0 +1,214 @@
+{
+    "timing": {
+        "padded_tokens": 280,
+        "max_rss_mib": 3361.08984375,
+        "valid_tokens": 181,
+        "load_seconds": 8.8317665,
+        "batch_size": 8,
+        "asset_verification_seconds": 2.436219574,
+        "forward_seconds": 7.687282349
+    },
+    "parameter_count": 595776512,
+    "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+    "dimensions": {
+        "512": {
+            "topk_equal": true,
+            "topk_document_indices_1_based": [
+                [
+                    1,
+                    2,
+                    4,
+                    5,
+                    3
+                ],
+                [
+                    2,
+                    3,
+                    4,
+                    5,
+                    1
+                ],
+                [
+                    3,
+                    2,
+                    5,
+                    4,
+                    1
+                ]
+            ],
+            "embedding_max_abs": 0.005023919,
+            "similarity_max_abs": 0.004737053,
+            "embedding_passed": true,
+            "similarity_passed": true
+        },
+        "64": {
+            "topk_equal": true,
+            "topk_document_indices_1_based": [
+                [
+                    1,
+                    5,
+                    4,
+                    2,
+                    3
+                ],
+                [
+                    2,
+                    3,
+                    4,
+                    5,
+                    1
+                ],
+                [
+                    3,
+                    2,
+                    4,
+                    5,
+                    1
+                ]
+            ],
+            "embedding_max_abs": 0.009273,
+            "similarity_max_abs": 0.008203698,
+            "embedding_passed": true,
+            "similarity_passed": true
+        },
+        "1024": {
+            "topk_equal": true,
+            "topk_document_indices_1_based": [
+                [
+                    1,
+                    4,
+                    2,
+                    5,
+                    3
+                ],
+                [
+                    2,
+                    3,
+                    4,
+                    5,
+                    1
+                ],
+                [
+                    3,
+                    2,
+                    4,
+                    5,
+                    1
+                ]
+            ],
+            "embedding_max_abs": 0.0035982002,
+            "similarity_max_abs": 0.006517768,
+            "embedding_passed": true,
+            "similarity_passed": true
+        },
+        "256": {
+            "topk_equal": true,
+            "topk_document_indices_1_based": [
+                [
+                    1,
+                    4,
+                    2,
+                    5,
+                    3
+                ],
+                [
+                    2,
+                    3,
+                    4,
+                    5,
+                    1
+                ],
+                [
+                    3,
+                    2,
+                    4,
+                    5,
+                    1
+                ]
+            ],
+            "embedding_max_abs": 0.0066747516,
+            "similarity_max_abs": 0.0039415956,
+            "embedding_passed": true,
+            "similarity_passed": true
+        },
+        "128": {
+            "topk_equal": true,
+            "topk_document_indices_1_based": [
+                [
+                    1,
+                    5,
+                    4,
+                    2,
+                    3
+                ],
+                [
+                    2,
+                    3,
+                    4,
+                    5,
+                    1
+                ],
+                [
+                    3,
+                    2,
+                    4,
+                    5,
+                    1
+                ]
+            ],
+            "embedding_max_abs": 0.008260891,
+            "similarity_max_abs": 0.008296579,
+            "embedding_passed": true,
+            "similarity_passed": true
+        }
+    },
+    "reference": {
+        "torch_version": "2.7.1+cpu",
+        "sha256": "669694c860798fb8496dd1be199fc648a5779fd7860000c81fe8ca3d0153b322",
+        "transformers_version": "4.51.3",
+        "path": "/home/ubuntu/projects/LifeAI.jl/test/fixtures/week22_qwen3_embedding/reference.json"
+    },
+    "compute_dtype": "bfloat16",
+    "token_ids_equal": true,
+    "attention_mask_equal": true,
+    "model_dir": "/home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B",
+    "device": "cpu",
+    "closed": true,
+    "schema_version": 1,
+    "model_id": "Qwen/Qwen3-Embedding-0.6B",
+    "hardware": {
+        "julia_threads": 8,
+        "cpu_model": "Intel(R) Core(TM) i9-14900K",
+        "julia_version": "1.12.6",
+        "machine": "x86_64-linux-gnu",
+        "blas_threads": 8,
+        "logical_threads": 32
+    },
+    "semantic_memory": {
+        "topk_equal": true,
+        "topk_document_indices_1_based": [
+            [
+                1,
+                4,
+                2,
+                5,
+                3
+            ],
+            [
+                2,
+                3,
+                4,
+                5,
+                1
+            ],
+            [
+                3,
+                2,
+                4,
+                5,
+                1
+            ]
+        ],
+        "first_document_equal": true
+    }
+}

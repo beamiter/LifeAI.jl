@@ -728,3 +728,91 @@ SHA256 e006940214ecabb3802dda178faaad994491cfeae2fc2cfd3425a0d71c2d960b
 Reactant 0.2.275 的 persistent kernel/autotune cache 不保存完整 PJRT
 executable；server 退出后仍会冷启动。Week 21 的承诺是一个长寿命进程
 服务多个客户端，不是把 kernel cache 文件描述成跨进程 executable cache。
+
+## Week 22 Qwen3-Embedding-0.6B
+
+本机模型目录：
+
+```text
+/home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B
+```
+
+下载使用 ModelScope 镜像 commit
+`6a58e49965123c0a3012d9576414b8c920faef7e`；验收身份仍冻结为官方
+Hugging Face revision
+`97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3`。镜像只作为传输来源，
+以下 8 个内容 hash 必须与该 HF revision 完全一致：
+
+| 资产 | bytes | SHA256 |
+| --- | ---: | --- |
+| `config.json` | 727 | `b5bf1f51fc45be473a54718cef92448d90a1be001bf9b9a44b8c7f10a19feaa9` |
+| `tokenizer.json` | 11,423,705 | `def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a` |
+| `tokenizer_config.json` | 9,706 | `253153d0738ceb4c668d2eff957714dd2bea0b56de772a9fdccd96cbf517e6a0` |
+| `generation_config.json` | 117 | `28396d421a2108acce96383f6a7de78008f7f1b17f807958f3c14c51dbfb65fb` |
+| `modules.json` | 349 | `84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf` |
+| `config_sentence_transformers.json` | 215 | `10667c72ddb772627bf1780cb7f86af8e2ae0032b8c243c731172064105c6961` |
+| `1_Pooling/config.json` | 313 | `37bf193fa101f19101bfad9c31d3eb0f786e247b7b1e5cb7f007d730eed1ddbd` |
+| `model.safetensors` | 1,191,586,416 | `0437e45c94563b09e13cb7a64478fc406947a93cb34a7e05870fc8dcd48e23fd` |
+
+机器可读清单为
+`test/fixtures/week22_qwen3_embedding/assets.json`，SHA256
+`f02a10758da8b561a9d111823e26d0f4cca05ad905408d3737842c2342bf7782`。
+模型权重不进入 Git。
+
+恢复资产：
+
+```bash
+git clone --depth 1 \
+  https://www.modelscope.cn/Qwen/Qwen3-Embedding-0.6B.git \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B
+```
+
+Python oracle 环境严格放在仓库 `.venv`，不会写入已有 Conda、系统 Python
+或其他项目环境：
+
+```bash
+/home/ubuntu/.local/bin/uv venv --python /usr/bin/python3 .venv
+/home/ubuntu/.local/bin/uv pip install \
+  --python .venv/bin/python \
+  -r requirements/week22-reference.txt
+```
+
+冻结版本为 Python `3.10.12`、NumPy `1.26.4`、safetensors `0.5.3`、
+tokenizers `0.21.4`、PyTorch `2.7.1+cpu` 与 Transformers `4.51.3`。
+导出并验证：
+
+```bash
+.venv/bin/python scripts/export_qwen3_embedding_reference.py \
+  --model-dir /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B \
+  --output test/fixtures/week22_qwen3_embedding/reference.json
+
+julia --threads=8 --project=. --startup-file=no \
+  scripts/verify_qwen3_embedding_parity.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B \
+  test/fixtures/week22_qwen3_embedding/reference.json \
+  benchmark_results/week22/qwen3_embedding_0_6b_cpu.json
+
+LIFEAI_WEEK22_EMBEDDING_DEVICE=cuda \
+julia --threads=8 --project=. --startup-file=no \
+  scripts/verify_qwen3_embedding_parity.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B \
+  test/fixtures/week22_qwen3_embedding/reference.json \
+  benchmark_results/week22/qwen3_embedding_0_6b_cuda.json
+```
+
+reference SHA256 为
+`669694c860798fb8496dd1be199fc648a5779fd7860000c81fe8ca3d0153b322`；
+最终 CPU report SHA256 为
+`1e2098c5cfc1ba08e941beb1fdd9c012688ab55a518c528228b2b6b2372fe668`，
+顶层 `closed=true`。i9-14900K 上 8 条文本、35-token padded batch 的
+asset verification / load / forward 为 `2.436 / 8.832 / 7.687 s`，
+峰值 RSS `3361.09 MiB`。token/mask 完全一致；五档 MRL embedding 与
+similarity max-abs 均低于 `0.01`，15 组 top-k 全一致。
+
+宿主机 RTX 4090 D 的 NVIDIA driver 为 `570.153.02`，CUDA runtime 为
+`12.9.0`。GPU report SHA256 为
+`5d677d499794bab74c73b22ea0c8342a62fb96f72d942e58eb0655809d839be6`，
+顶层 `closed=true`。参数上传 `1.103 s`，同一 8×35 batch 的 cold / warm
+forward 为 `18.959 / 0.0641 s`，冷/热 embedding max-abs 为 `0`；
+token/mask、五档数值、15 组 top-k 与 semantic memory 门禁全部通过。
+普通沙箱内 `nvidia-smi` 因设备隔离失败，不代表宿主机驱动不可用。

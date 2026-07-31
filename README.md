@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环；RTX 4090 D 上的容量上限仍是已实证生成的 14B mixed RTN，日常部署则选择 Qwen3-8B BF16。8B 已同时具备 CUDA eager、XLA single-residency 4K 入口与 loopback 常驻 HTTP 服务；XLA 在 3,584+512 整窗上达到 1.48 秒 prefill、41.35 tok/s decode，并保留超过 2 GiB 物理显存。**
+**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的容量上限仍是已实证生成的 14B mixed RTN，日常部署则选择 Qwen3-8B BF16。8B 已同时具备 CUDA eager、XLA single-residency 4K 入口与 loopback 常驻 HTTP 服务；XLA 在 3,584+512 整窗上达到 1.48 秒 prefill、41.35 tok/s decode，并保留超过 2 GiB 物理显存。**
 
-Week 01—21 均已 Closed；[`Week 21 — Qwen3-8B XLA 常驻本地推理服务`](notes/week21_qwen3_xla_resident_service.md) 已通过真实 4090D 验收。一个 server PID 接受 15 个独立 HTTP 请求而 `load_count=1`，三种真实 prompt 的 CUDA BF16 greedy reference 共 `96 / 96` token 一致；3,584+512 整窗 decode 为 41.35 tok/s，200 ms 连续采样最低空闲显存为 2.251 GiB。
+Week 01—22 均已 Closed；[`Week 22 — Qwen3-Embedding-0.6B 与最小语义记忆`](notes/week22_qwen3_embedding_memory.md) 已通过真实 CPU 与 RTX 4090 D CUDA BF16 验收。token ids / attention mask 逐项一致，1024/512/256/128/64 五档 embedding 与 similarity max-abs 均低于 0.01，15 组完整 top-k 和 semantic-memory 首项全部一致；当前没有 Open Week。
 
 目前已经具备：
 
@@ -47,6 +47,13 @@ Week 01—21 均已 Closed；[`Week 21 — Qwen3-8B XLA 常驻本地推理服务
   client 只读取 tokenizer，权重与 compiled executable 常驻 server。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
 - 六个官方 Qwen3 dense 规格的 immutable revision/config checksum、自动识别、显式 variant 校验、精确参数量；严格的 BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
+- Qwen3-Embedding-0.6B 的独立 immutable revision/8-asset checksum、
+  151,669-vocabulary/32K contract、embedding tokenizer 尾 token 与
+  base-model safetensors namespace；BF16 hidden-state 前向不分配
+  vocabulary logits 或保留 KV cache。
+- instruction-aware query、变长批 attention mask、last-token pooling、
+  L2 normalization 与 1024/512/256/128/64 维 MRL；内存内 dense exact
+  cosine semantic memory 可关联 metadata，并有真实 notes 检索示例。
 - Qwen3 weight-only INT8 per-channel / packed groupwise INT4，以及统一的
   `QuantizationPlan`：可按 one-based layer、projection 与独立 LM head
   选择 INT4/INT8/BF16，streamed/in-memory 路径共用策略；真实树统计与
@@ -71,7 +78,9 @@ Week 01—21 均已 Closed；[`Week 21 — Qwen3-8B XLA 常驻本地推理服务
   parity、native BF16、weight-only INT8/INT4 与 diagonal
   activation-aware clipping 已完成，不能再沿用早期“只验证 0.6B”的边界。
 - 通用 Jinja、tools/tool-role chat template 与 agent tool loop；可用于真实任务的模型质量仍未评估。
-- 长短期记忆、规划、工具使用、反思等完整的 agent loop。
+- 跨 step 状态、持久/增量长短期记忆、ANN/reranker、规划、工具使用、
+  反思等完整 agent loop；当前只有 Week 22 的内存内 dense exact
+  semantic retrieval baseline。
 - 视觉、听觉和传感器输入等多模态感知。
 - 面向仿真或实体机器人的 observation / action 抽象、控制链路与安全边界。
 - 在线或持续学习机制。
@@ -80,8 +89,8 @@ Week 01—21 均已 Closed；[`Week 21 — Qwen3-8B XLA 常驻本地推理服务
 
 大模型权重与真实 reference 存放在仓库外的持久模型目录，不使用易清理的
 `/tmp`，也不提交进 Git；历史资产机器使用 `/home/yj/models/`，Week 17
-验证机使用 `/home/ubuntu/models/modelscope/`。Qwen3 六尺寸（0.6B—32B）
-与 GPT-2 124M 的完整资产和恢复命令见
+验证机使用 `/home/ubuntu/models/modelscope/`。Qwen3 六尺寸（0.6B—32B）、
+Qwen3-Embedding-0.6B 与 GPT-2 124M 的完整资产和恢复命令见
 [`notes/local_model_assets.md`](notes/local_model_assets.md)，六个 Qwen3
 dense config 规格见 [`Week 11`](notes/week11_qwen3_dense_family.md)。
 
@@ -221,6 +230,38 @@ bundle = load_hf_qwen3_bundle(
 `variant` 会校验所有架构 shape，但不会下载文件。0.6B—32B 六个 dense
 尺寸均已完成真实权重逐层 parity（8B—32B 使用流式验证）；完整 tokenizer
 到 text-generation reference 仍以 0.6B 为主，不能把两种验证口径混写。
+
+运行 Qwen3-Embedding-0.6B 的最小 notes 语义检索：
+
+```bash
+julia --threads=8 --project=. --startup-file=no \
+  examples/qwen3_embedding_memory.jl \
+  /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B
+```
+
+也可以直接构建和查询内存索引：
+
+```julia
+bundle = load_hf_qwen3_embedding_bundle(
+    "/path/to/Qwen3-Embedding-0.6B";
+    max_seq_len=256,
+)
+memory = build_qwen3_semantic_memory(
+    bundle,
+    ["KV cache 避免重复计算历史 token。", "MRL 支持截取 embedding 前若干维。"];
+    dimension=512,
+)
+hits = search_qwen3_semantic_memory(
+    bundle,
+    memory,
+    "如何减少增量解码的重复计算？";
+    top_k=1,
+)
+```
+
+这是 dense exact、进程内 baseline；不包含持久化、ANN、reranker 或 agent
+memory policy。Python oracle 只使用仓库 `.venv`，固定依赖见
+`requirements/week22-reference.txt`。
 
 加载冻结的 GPT-2 124M 并执行 greedy generation：
 

@@ -77,6 +77,7 @@ end
 function _tokenizer_payload(tokenizer::HFQwen3Tokenizer)
     return (;
         type=:hf_qwen3_bpe,
+        profile=tokenizer.profile,
         revision=tokenizer.revision,
         raw_tokenizer_json=tokenizer.raw_tokenizer_json,
         raw_tokenizer_config_json=tokenizer.raw_tokenizer_config_json,
@@ -148,6 +149,8 @@ function _tokenizer_from_payload(payload)
             String(payload.raw_tokenizer_config_json),
             String(payload.raw_generation_config_json);
             revision=String(payload.revision),
+            profile=hasproperty(payload, :profile) ?
+                Symbol(payload.profile) : :generation,
         )
     elseif tokenizer_type === :hf_gpt2_bpe
         _gpt2_tokenizer_from_json(

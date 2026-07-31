@@ -115,6 +115,10 @@ end
     include("test_week21.jl")
 end
 
+@testset "Week 22 Qwen3 embedding and semantic memory" begin
+    include("test_week22.jl")
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA KV cache" begin
         include("test_xla_kv_cache.jl")

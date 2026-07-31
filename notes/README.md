@@ -27,6 +27,7 @@
 - [`week19_qwen3_8b_4090d_deployment.md`](week19_qwen3_8b_4090d_deployment.md)：Week 19（Closed），把 8B BF16 落成 RTX 4090 D 日常本地运行入口；4K 总 context、静态 KV、分块 last-logit prefill、EOS/采样/多轮历史裁剪均完成，3,584+512 整窗与 2 GiB 显存余量通过真实硬件验收。
 - [`week20_qwen3_8b_xla_deployment.md`](week20_qwen3_8b_xla_deployment.md)：Week 20（Closed），把 Qwen3-8B BF16 落成 RTX 4090 D 上的 XLA single-residency 4K greedy 入口；compact 参数树只传输一次，CUDA reference 96/96 token 一致，3,584-token prefill 1.50 s、整窗 decode 41.13 tok/s，并以 200 ms 连续采样守住 2 GiB 物理显存余量。
 - [`week21_qwen3_xla_resident_service.md`](week21_qwen3_xla_resident_service.md)：Week 21（Closed），把 Week 20 的单进程 compiled session 落成仅监听本机的常驻 HTTP 服务；15 个真实请求只 load 一次、CUDA oracle 96/96、整窗 41.35 tok/s，独立客户端复用同一参数树、executable 与静态 KV cache。
+- [`week22_qwen3_embedding_memory.md`](week22_qwen3_embedding_memory.md)：Week 22（Closed），独立冻结 Qwen3-Embedding-0.6B contract/tokenizer/资产，复用 native BF16 主干完成 last-token pooling、五档 MRL 与 dense exact semantic memory；真实 CPU reference 的 token/mask、15 组 top-k 全一致，embedding/similarity max-abs 均低于 0.01。
 - [`qwen3_hf_config_mapping.md`](qwen3_hf_config_mapping.md)：Qwen3 HF `config.json` 与 `gpt_config` 的字段、权重名与布局映射契约（Week 07 已实现并验证）。
 - [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
 - [`monthly/`](monthly/)：月度总结和跨周能力变化。

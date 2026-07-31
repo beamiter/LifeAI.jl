@@ -18,6 +18,7 @@ export AbstractTokenizer, Tokenizer, ByteTokenizer, ByteBPETokenizer
 export HFQwen3Tokenizer, HFQwen3GenerationConfig
 export HFGPT2Tokenizer, HFGPT2GenerationConfig
 export hf_byte_unicode_alphabet, load_hf_qwen3_tokenizer, hf_generation_config
+export load_hf_qwen3_embedding_tokenizer
 export hf_qwen3_pretokenize, apply_qwen3_chat_template
 export load_hf_gpt2_tokenizer, hf_gpt2_pretokenize
 export fit_tokenizer, fit_byte_bpe, encode, decode, decode_bytes, vocab_size
@@ -35,11 +36,21 @@ export Qwen3DenseSpec, qwen3_dense_specs, qwen3_dense_spec
 export qwen3_dense_parameter_count
 export load_hf_qwen3_config, load_safetensors, load_hf_qwen3_parameters
 export load_hf_qwen3_model, hf_token_ids, hf_qwen3_forward_trace
+export Qwen3EmbeddingSpec, qwen3_embedding_spec
+export qwen3_embedding_parameter_count
+export load_hf_qwen3_embedding_config, verify_qwen3_embedding_assets
+export load_hf_qwen3_embedding_model, load_hf_qwen3_embedding_bundle
 export HFSafetensorsReader, open_safetensors_reader, read_safetensors_tensor
 export stream_hf_qwen3_forward
 export load_hf_qwen3_compact_model, load_hf_qwen3_compact_bundle
 export hf_qwen3_bf16_forward
 export hf_qwen3_bf16_accel_forward
+export QWEN3_EMBEDDING_RETRIEVAL_INSTRUCTION
+export qwen3_embedding_query, prepare_qwen3_embedding_inputs
+export qwen3_last_token_pool, hf_qwen3_embedding_forward, embed_texts
+export qwen3_embedding_similarity
+export Qwen3SemanticMemory, build_qwen3_semantic_memory
+export retrieve_qwen3_semantic_memory, search_qwen3_semantic_memory
 export Int8ChannelWeight, Int4GroupWeight, quantize_bf16_parameters
 export LinearQuantizationSpec, QuantizationPlan, quantization_spec
 export ActivationCalibration, activation_second_moment

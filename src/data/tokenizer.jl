@@ -824,6 +824,7 @@ function load_tokenizer(path::AbstractString)
             String(hex2bytes(payload["tokenizer_config_json_hex"])),
             String(hex2bytes(payload["generation_config_json_hex"]));
             revision=String(get(payload, "revision", "")),
+            profile=Symbol(get(payload, "profile", "generation")),
         )
     elseif tokenizer_type == "hf_gpt2_bpe"
         _gpt2_tokenizer_from_json(

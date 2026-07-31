@@ -3,6 +3,8 @@ using JSON3
 const _QWEN3_TOKENIZER_REGEX = raw"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"
 const _QWEN3_CHAT_TEMPLATE_SHA256 =
     "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+const _QWEN3_EMBEDDING_CHAT_TEMPLATE_SHA256 =
+    "87a2728cb8dc9fe424d624542f6060ec05a1d285ebbec578bb078900e33396b5"
 const _QWEN3_TEST_CHAT_TEMPLATE_SHA256 =
     "05b2396f106741b64a90f891dfe124f20bf76150f2d8523fa52d4967a32e1893"
 
@@ -45,6 +47,7 @@ struct HFQwen3Tokenizer <: AbstractTokenizer
     eos_ids::Vector{Int}
     pad_id::Union{Nothing,Int}
     generation::HFQwen3GenerationConfig
+    profile::Symbol
     model_max_length::Int
     chat_template::String
     revision::String
@@ -132,7 +135,91 @@ function _hf_byte_flags(object, label::AbstractString)
     return nothing
 end
 
-function _hf_validate_pipeline(tokenizer_json)
+function _hf_template_sequence_entry(entry, expected::AbstractString, label)
+    entry isa JSON3.Object || throw(ArgumentError("$label must be an object"))
+    length(entry) == 1 && haskey(entry, "Sequence") || throw(ArgumentError(
+        "$label must contain exactly one Sequence entry",
+    ))
+    sequence = entry["Sequence"]
+    sequence isa JSON3.Object || throw(ArgumentError(
+        "$label Sequence must be an object",
+    ))
+    _hf_exact_value(sequence, "id", String(expected), label)
+    _hf_exact_value(sequence, "type_id", 0, label)
+    return nothing
+end
+
+function _hf_template_special_entry(entry, label)
+    entry isa JSON3.Object || throw(ArgumentError("$label must be an object"))
+    length(entry) == 1 && haskey(entry, "SpecialToken") || throw(ArgumentError(
+        "$label must contain exactly one SpecialToken entry",
+    ))
+    special = entry["SpecialToken"]
+    special isa JSON3.Object || throw(ArgumentError(
+        "$label SpecialToken must be an object",
+    ))
+    _hf_exact_value(special, "id", "<|endoftext|>", label)
+    _hf_exact_value(special, "type_id", 0, label)
+    return nothing
+end
+
+function _hf_validate_embedding_post_processor(post_processor)
+    label = "tokenizer.json embedding post_processor"
+    _hf_exact_value(post_processor, "type", "Sequence", label)
+    processors = _hf_required(post_processor, "processors", label)
+    processors isa JSON3.Array && length(processors) == 2 || throw(ArgumentError(
+        "embedding post_processor must contain ByteLevel and TemplateProcessing",
+    ))
+    byte_processor = processors[1]
+    byte_processor isa JSON3.Object || throw(ArgumentError(
+        "embedding ByteLevel post-processor must be an object",
+    ))
+    _hf_byte_flags(byte_processor, "$label ByteLevel")
+
+    template = processors[2]
+    template isa JSON3.Object || throw(ArgumentError(
+        "embedding TemplateProcessing post-processor must be an object",
+    ))
+    _hf_exact_value(template, "type", "TemplateProcessing", label)
+    single = _hf_required(template, "single", label)
+    single isa JSON3.Array && length(single) == 2 || throw(ArgumentError(
+        "embedding single template must be A followed by <|endoftext|>",
+    ))
+    _hf_template_sequence_entry(single[1], "A", "$label single[1]")
+    _hf_template_special_entry(single[2], "$label single[2]")
+    pair = _hf_required(template, "pair", label)
+    pair isa JSON3.Array && length(pair) == 3 || throw(ArgumentError(
+        "embedding pair template must be A, B, then <|endoftext|>",
+    ))
+    _hf_template_sequence_entry(pair[1], "A", "$label pair[1]")
+    _hf_template_sequence_entry(pair[2], "B", "$label pair[2]")
+    _hf_template_special_entry(pair[3], "$label pair[3]")
+
+    special_tokens = _hf_required(template, "special_tokens", label)
+    special_tokens isa JSON3.Object &&
+        Set(String.(collect(keys(special_tokens)))) == Set(["<|endoftext|>"]) ||
+        throw(ArgumentError(
+            "embedding template must define only <|endoftext|>",
+        ))
+    endoftext = special_tokens["<|endoftext|>"]
+    endoftext isa JSON3.Object || throw(ArgumentError(
+        "embedding <|endoftext|> template metadata must be an object",
+    ))
+    _hf_exact_value(endoftext, "id", "<|endoftext|>", label)
+    ids = _hf_required(endoftext, "ids", label)
+    ids isa JSON3.Array && length(ids) == 1 && ids[1] isa Integer ||
+        throw(ArgumentError(
+            "embedding <|endoftext|> must define exactly one integer id",
+        ))
+    tokens = _hf_required(endoftext, "tokens", label)
+    tokens isa JSON3.Array && String.(collect(tokens)) == ["<|endoftext|>"] ||
+        throw(ArgumentError(
+            "embedding template token payload must be <|endoftext|>",
+        ))
+    return Int(ids[1]) + 1
+end
+
+function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
     _hf_exact_value(tokenizer_json, "version", "1.0", "tokenizer.json")
     _hf_exact_value(tokenizer_json, "truncation", nothing, "tokenizer.json")
     _hf_exact_value(tokenizer_json, "padding", nothing, "tokenizer.json")
@@ -168,12 +255,17 @@ function _hf_validate_pipeline(tokenizer_json)
 
     post_processor = _hf_required(tokenizer_json, "post_processor", "tokenizer.json")
     post_processor isa JSON3.Object || throw(ArgumentError("post_processor must be an object"))
-    _hf_byte_flags(post_processor, "tokenizer.json post_processor")
+    boundary_id = if profile === :generation
+        _hf_byte_flags(post_processor, "tokenizer.json post_processor")
+        nothing
+    else
+        _hf_validate_embedding_post_processor(post_processor)
+    end
 
     decoder = _hf_required(tokenizer_json, "decoder", "tokenizer.json")
     decoder isa JSON3.Object || throw(ArgumentError("decoder must be an object"))
     _hf_byte_flags(decoder, "tokenizer.json decoder")
-    return String(pattern)
+    return (; pattern=String(pattern), boundary_id)
 end
 
 function _hf_parse_model(tokenizer_json, char_to_byte)
@@ -286,6 +378,7 @@ function _hf_validate_tokenizer_config(
     added_tokens,
     added_by_content,
     model_vocabulary_size::Int,
+    profile::Symbol,
 )
     _hf_exact_value(config, "tokenizer_class", "Qwen2Tokenizer", "tokenizer_config.json")
     _hf_exact_bool(config, "add_bos_token", false, "tokenizer_config.json")
@@ -322,7 +415,9 @@ function _hf_validate_tokenizer_config(
         "chat_template must be a non-empty string",
     ))
     template_hash = _sha256_hex(chat_template)
-    is_official_template = template_hash == _QWEN3_CHAT_TEMPLATE_SHA256
+    is_official_template = profile === :generation ?
+        template_hash == _QWEN3_CHAT_TEMPLATE_SHA256 :
+        template_hash == _QWEN3_EMBEDDING_CHAT_TEMPLATE_SHA256
     is_tiny_test_fixture = model_vocabulary_size == 258 &&
         template_hash == _QWEN3_TEST_CHAT_TEMPLATE_SHA256
     is_official_template || is_tiny_test_fixture || throw(ArgumentError(
@@ -410,16 +505,75 @@ function _hf_validate_generation_config(config, total_vocabulary::Int)
     )
 end
 
+function _hf_validate_embedding_generation_config(
+    config,
+    total_vocabulary::Int,
+    pad_id::Int,
+)
+    allowed_fields = Set([
+        "bos_token_id",
+        "eos_token_id",
+        "max_new_tokens",
+        "transformers_version",
+    ])
+    unknown_fields = setdiff(Set(String.(collect(keys(config)))), allowed_fields)
+    isempty(unknown_fields) || throw(ArgumentError(
+        "unsupported embedding generation_config.json fields: " *
+        "$(join(sort!(collect(unknown_fields)), ", "))",
+    ))
+    bos_id = _hf_generation_id(
+        _hf_required(config, "bos_token_id", "generation_config.json"),
+        total_vocabulary,
+        "bos_token_id",
+    )
+    eos_id = _hf_generation_id(
+        _hf_required(config, "eos_token_id", "generation_config.json"),
+        total_vocabulary,
+        "eos_token_id",
+    )
+    max_new_tokens = _hf_required(
+        config,
+        "max_new_tokens",
+        "generation_config.json",
+    )
+    max_new_tokens isa Integer && max_new_tokens > 0 || throw(ArgumentError(
+        "max_new_tokens must be a positive integer",
+    ))
+    transformers_version = _hf_required(
+        config,
+        "transformers_version",
+        "generation_config.json",
+    )
+    transformers_version isa AbstractString && !isempty(transformers_version) || throw(
+        ArgumentError("transformers_version must be a non-empty string"),
+    )
+    return HFQwen3GenerationConfig(
+        bos_id,
+        [eos_id],
+        pad_id,
+        false,
+        1.0f0,
+        total_vocabulary,
+        1.0f0,
+        String(transformers_version),
+    )
+end
+
 function _hf_qwen3_tokenizer_from_json(
     raw_tokenizer_json::AbstractString,
     raw_tokenizer_config_json::AbstractString,
     raw_generation_config_json::AbstractString;
     revision::AbstractString="",
+    profile::Symbol=:generation,
 )
+    profile in (:generation, :embedding) || throw(ArgumentError(
+        "Qwen3 tokenizer profile must be :generation or :embedding",
+    ))
     tokenizer_json = _hf_json(raw_tokenizer_json, "tokenizer.json")
     tokenizer_config_json = _hf_json(raw_tokenizer_config_json, "tokenizer_config.json")
     generation_config_json = _hf_json(raw_generation_config_json, "generation_config.json")
-    pattern = _hf_validate_pipeline(tokenizer_json)
+    pipeline = _hf_validate_pipeline(tokenizer_json, profile)
+    pattern = pipeline.pattern
     alphabet = hf_byte_unicode_alphabet()
     vocabulary, model_vocabulary_size, merge_ranks = _hf_parse_model(
         tokenizer_json,
@@ -447,20 +601,37 @@ function _hf_qwen3_tokenizer_from_json(
             added_tokens,
             added_by_content,
             model_vocabulary_size,
+            profile,
         )
-    generation = _hf_validate_generation_config(
-        generation_config_json,
-        total_vocabulary,
-    )
-    tokenizer_bos === nothing || tokenizer_bos == generation.bos_id || throw(ArgumentError(
-        "tokenizer and generation BOS ids conflict",
+    tokenizer_pad === nothing && throw(ArgumentError(
+        "Qwen3 tokenizer must define a padding token",
     ))
-    tokenizer_pad == generation.pad_id || throw(ArgumentError(
-        "tokenizer and generation PAD ids conflict",
-    ))
-    tokenizer_eos in generation.eos_ids || throw(ArgumentError(
-        "tokenizer EOS id is absent from generation eos_token_id",
-    ))
+    pipeline.boundary_id === nothing ||
+        pipeline.boundary_id == tokenizer_pad || throw(ArgumentError(
+            "embedding post-processor token id must match tokenizer pad token",
+        ))
+    generation = if profile === :generation
+        value = _hf_validate_generation_config(
+            generation_config_json,
+            total_vocabulary,
+        )
+        tokenizer_bos === nothing || tokenizer_bos == value.bos_id || throw(ArgumentError(
+            "tokenizer and generation BOS ids conflict",
+        ))
+        tokenizer_pad == value.pad_id || throw(ArgumentError(
+            "tokenizer and generation PAD ids conflict",
+        ))
+        tokenizer_eos in value.eos_ids || throw(ArgumentError(
+            "tokenizer EOS id is absent from generation eos_token_id",
+        ))
+        value
+    else
+        _hf_validate_embedding_generation_config(
+            generation_config_json,
+            total_vocabulary,
+            tokenizer_pad,
+        )
+    end
     compiled_pattern = try
         Regex(pattern)
     catch err
@@ -482,6 +653,7 @@ function _hf_qwen3_tokenizer_from_json(
         generation.eos_ids,
         generation.pad_id,
         generation,
+        profile,
         model_max_length,
         chat_template,
         String(revision),
@@ -522,6 +694,38 @@ function load_hf_qwen3_tokenizer(
     )
 end
 
+"""
+    load_hf_qwen3_embedding_tokenizer(model_dir; revision="")
+
+Strictly load the tokenizer shipped with a Qwen3-Embedding checkpoint. Its
+small `generation_config.json` and frozen chat template intentionally differ
+from text-generation checkpoints, so the two profiles cannot be silently
+interchanged.
+"""
+function load_hf_qwen3_embedding_tokenizer(
+    model_dir::AbstractString;
+    revision::AbstractString="",
+)
+    isdir(model_dir) || throw(ArgumentError("model directory does not exist: $model_dir"))
+    paths = (
+        tokenizer=joinpath(model_dir, "tokenizer.json"),
+        tokenizer_config=joinpath(model_dir, "tokenizer_config.json"),
+        generation_config=joinpath(model_dir, "generation_config.json"),
+    )
+    for path in values(paths)
+        isfile(path) || throw(ArgumentError(
+            "required Qwen3 embedding tokenizer file does not exist: $path",
+        ))
+    end
+    return _hf_qwen3_tokenizer_from_json(
+        read(paths.tokenizer, String),
+        read(paths.tokenizer_config, String),
+        read(paths.generation_config, String);
+        revision,
+        profile=:embedding,
+    )
+end
+
 _normalization_mode(::HFQwen3Tokenizer) = :nfc
 vocab_size(tokenizer::HFQwen3Tokenizer) = length(tokenizer.id_to_token)
 Base.length(tokenizer::HFQwen3Tokenizer) = vocab_size(tokenizer)
@@ -533,6 +737,9 @@ Return the validated Qwen3 generation settings with LifeAI's public 1-based
 token ids. Mutable vectors are copied so callers cannot alter the tokenizer.
 """
 function hf_generation_config(tokenizer::HFQwen3Tokenizer)
+    tokenizer.profile === :generation || throw(ArgumentError(
+        "embedding tokenizer does not define text-generation sampling settings",
+    ))
     config = tokenizer.generation
     return (;
         bos_id=config.bos_id,
@@ -678,8 +885,6 @@ function encode(
     text::AbstractString;
     add_special_tokens::Bool=false,
 )
-    # Qwen3's ByteLevel post-processor adds no boundary tokens, so this flag is
-    # intentionally accepted but produces the same ids in both modes.
     add_special_tokens isa Bool || throw(ArgumentError("add_special_tokens must be Bool"))
     ids = Int[]
     for (is_added, segment, added_token) in _hf_added_segments(tokenizer, text)
@@ -697,6 +902,9 @@ function encode(
                 push!(ids, id)
             end
         end
+    end
+    if add_special_tokens && tokenizer.profile === :embedding
+        push!(ids, tokenizer.pad_id)
     end
     return ids
 end
@@ -748,6 +956,7 @@ function tokenizer_config(tokenizer::HFQwen3Tokenizer)
         top_k=tokenizer.generation.top_k,
         top_p=tokenizer.generation.top_p,
         transformers_version=tokenizer.generation.transformers_version,
+        profile=tokenizer.profile,
         model_max_length=tokenizer.model_max_length,
         revision=tokenizer.revision,
         tokenizer_sha256=tokenizer.tokenizer_sha256,
@@ -761,6 +970,7 @@ function tokenizer_fingerprint(tokenizer::HFQwen3Tokenizer)
     println(output, "schema=", TOKENIZER_ARTIFACT_VERSION)
     println(output, "type=hf_qwen3_bpe")
     println(output, "id_base=1")
+    tokenizer.profile === :embedding && println(output, "profile=embedding")
     println(output, "revision=", tokenizer.revision)
     println(output, "tokenizer=", tokenizer.tokenizer_sha256)
     println(output, "tokenizer_config=", tokenizer.tokenizer_config_sha256)
@@ -773,6 +983,7 @@ function _tokenizer_artifact(tokenizer::HFQwen3Tokenizer)
         "schema_version" => TOKENIZER_ARTIFACT_VERSION,
         "type" => "hf_qwen3_bpe",
         "id_base" => 1,
+        "profile" => String(tokenizer.profile),
         "revision" => tokenizer.revision,
         "tokenizer_json_hex" => bytes2hex(codeunits(tokenizer.raw_tokenizer_json)),
         "tokenizer_config_json_hex" => bytes2hex(codeunits(tokenizer.raw_tokenizer_config_json)),

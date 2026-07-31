@@ -2,11 +2,11 @@
 
 ## 一句话判断
 
-项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**（0.6B—4B 全量、8B—32B 流式），并具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化。RTX 4090 D 上，14B mixed RTN 是已实证尺寸上限；日常 8B BF16 已完成 XLA single-residency 4K greedy 部署与 loopback 常驻 HTTP 服务，3,584-token prefill 为 1.48 s、整窗 decode 为 41.35 tok/s，15 个跨连接请求只 load 一次，CUDA BF16 reference 共 96/96 token 一致。
+项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**（0.6B—4B 全量、8B—32B 流式），并具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化。Qwen3-Embedding-0.6B 的独立 checkpoint/tokenizer contract、五档 MRL 与 dense exact semantic memory 也已完成真实 BF16 parity。RTX 4090 D 上，14B mixed RTN 是已实证尺寸上限；日常 8B BF16 已完成 XLA single-residency 4K greedy 部署与 loopback 常驻 HTTP 服务，3,584-token prefill 为 1.48 s、整窗 decode 为 41.35 tok/s，15 个跨连接请求只 load 一次，CUDA BF16 reference 共 96/96 token 一致。
 
 ## 当前活动阶段
 
-当前没有 Open 的 Week；[`Week 21 — Qwen3-8B XLA 常驻本地推理服务`](week21_qwen3_xla_resident_service.md) 已于 2026-07-30 Closed。默认 `127.0.0.1:11435` 的严格 Ollama-compatible `/api/generate` 让独立客户端复用唯一 XLA session，并以 single-flight 保护原地写入的静态 KV；真实 4090 D 上 `load_count=1`、15/15 请求、96/96 CUDA token、整窗 41.35 tok/s、最低空闲 2.251 GiB。Reactant 0.2.275 的 persistent cache 只有 kernel/autotune 层，不能跨进程恢复完整 executable，因而冷启动由常驻进程摊销而不是被虚构为消失。
+[`Week 22 — Qwen3-Embedding-0.6B 与最小语义记忆`](week22_qwen3_embedding_memory.md) 已于 2026-07-31 Closed。独立的 151,669-vocabulary / 32K embedding contract、官方尾 `<|endoftext|>` post-processor、base-model safetensors namespace、变长批 mask、last-token pooling、五档 MRL 和 dense exact cosine memory 已完成；真实 CPU 与 RTX 4090 D CUDA BF16 的 token/mask、15 组 top-k 全一致，embedding/similarity max-abs 均低于 0.01。当前没有 Open Week。
 
 [`Week 19 — Qwen3-8B / RTX 4090 D 日常本地部署`](week19_qwen3_8b_4090d_deployment.md) 已于 2026-07-30 Closed。本阶段明确区分容量上限与日常选择：14B mixed RTN 是同卡已实证生成上限，但仅 0.377 tok/s 且上下文余量很小；日常部署选择无量化误差的 8B BF16，冻结为 4K 总 context、3,584-token prompt/history、512-token output、64-token 分块 prefill。CUDA eager 路径的 3,584 prefill 为 46.85 s，3,584+512 整窗 decode 为 10.25 tok/s，保留 sampling 与多轮历史裁剪能力。
 
@@ -38,6 +38,11 @@
 - GPTModel：包括 token/可选 position embedding、多层 TransformerBlock、final norm 和 LM head；支持 embedding / LM head 单 kernel 权重共享，并可分离 projection bias 与 LM-head bias。
 - legacy 默认仍为 LayerNorm + GELU + untied；modern 配置可通过独立开关组合，不改变旧调用。
 - HuggingFace Qwen3 dense 导入：冻结 0.6B / 1.7B / 4B / 8B / 14B / 32B 六个官方规格与 config checksum，可自动识别或显式要求 variant；严格解析 config，读取 BF16/F32 safetensors 单文件或 index 分片，完整映射 embedding、attention、QK-Norm、MLP、final norm 与 tied/untied LM head；missing、unexpected、duplicate、shape/dtype/config 错误均 fail closed。六个真实 checkpoint 全部实跑逐层 parity：0.6B—4B 全量加载，8B—32B 流式加载。
+- Qwen3-Embedding-0.6B 导入（Week 22）：独立冻结 HF revision 和 8 个
+  asset SHA256，严格区分 151,669 vocabulary、32K model context、
+  SentenceTransformers base-model namespace 与 causal-LM contract；
+  `load_hf_qwen3_embedding_bundle` 以 BF16 载入 595,776,512 参数，
+  hidden-state 前向不投影 vocabulary logits、也不保留 KV cache。
 - 流式 safetensors 加载（Week 13）：`open_safetensors_reader` header-only 索引 + `read_safetensors_tensor` 按需读取 + `stream_hf_qwen3_forward` 逐层 trace 与 dynamic decode；embedding 按 token 行从磁盘 gather，单层参数映射与 in-memory loader 共用；与全量路径逐位一致（合成 fixture 与真实 0.6B 验证），32B 峰值 RSS 8.9 GiB。
 - native BF16 混合精度推理（Week 14）：`load_hf_qwen3_model(...; weight_dtype=BFloat16)` 位保真加载（参数内存减半）+ `hf_qwen3_bf16_forward` 独立路径，逐算子镜像 HF 语义（RMSNorm/QK-Norm/softmax F32 归一化、RoPE 表 F32 转 BF16、线性 BF16 存储 + 分块 F32 累加 + BF16 舍入）；BF16 cached decode 与全量前向逐位等价；0.6B—8B 与 HF BF16 argmax 零失配、16 步 greedy 完全一致。
 - BF16 CUDA/XLA 加速推理（Week 15）：`hf_qwen3_bf16_accel_forward` 设备通用向量化路径（CPU 上与循环路径逐位相同），CUDA eager 用原生 BF16 张量核（CUBLAS/batched_mul，F32 累加），Reactant XLA 可编译同一实现；0.6B—4B GPU parity/greedy 全对，吞吐 8—15 tok/s；CPU batched matmul 显式分派为 F32 累加防止通用 fallback 破坏契约。
@@ -75,6 +80,9 @@
 - `ByteTokenizer`：对任意有效 UTF-8 无 OOV、可精确 round-trip；`decode_bytes` 始终可逆，`decode` 提供显式 `:strict` / `:replace` 策略。
 - `ByteBPETokenizer`：train-only 确定性训练，固定 tie-break，相同语料与配置产生相同 vocabulary、merge ranks 和 fingerprint。
 - `HFQwen3Tokenizer`：严格导入目标 revision 的 NFC、regex、ByteLevel、151,643-token BPE、151,387 merges 与 26 个 added tokens；支持 HF character/Julia UTF-8 byte spans、byte-exact decode、special-token 语义和 1-based 公共 ids。
+- Qwen3 embedding tokenizer profile：只接受官方
+  `Sequence(ByteLevel, TemplateProcessing)` 的尾 `<|endoftext|>` 模板，
+  与 generation profile 分开持久化和 fingerprint；两者不能静默互换。
 - `HFGPT2Tokenizer`：严格导入 GPT-2 regex、ByteLevel、50,257-token BPE、50,000 merges 与 `<|endoftext|>`；10 组 ASCII/Unicode/空白/控制字节/special corpus 与 HF 完全一致。
 - Qwen3 基础 chat template：支持无 tools 的 system/user/assistant、generation prompt 与 thinking 开关；模板 hash 与三份 tokenizer config checksum 纳入 provenance/fingerprint，未知 revision fail closed。
 - Tokenizer artifact v1：显式 schema version、normalization、special tokens、vocabulary / merges 与内容指纹，可独立保存、加载与校验，篡改被拒绝。
@@ -100,7 +108,20 @@
 - Qwen3 rotate-half RoPE 已用 Transformers 4.51.0 独立 fixture 验证到 position 40,959；真实 0.6B 的 CPU、CUDA 与 Reactant-XLA GPU cache correctness/benchmark 均有冻结条件和原始 JSON。
 - `load_hf_gpt2_bundle` / `generate_hf_text` 串联冻结 GPT-2 模型/tokenizer；embedding、12 blocks、final hidden、full logits 与 full/dynamic/static 8-step greedy text 均通过 Transformers Float32 reference。
 
-### 4. 学习与可视化记录
+### 4. 最小语义记忆
+
+- `embed_texts` 支持 instruction-aware query、left/right padding、right
+  truncation、mask-aware last-token pooling，以及
+  1024/512/256/128/64 维先截断后 L2 normalization。
+- `Qwen3SemanticMemory` / `build_qwen3_semantic_memory` /
+  `search_qwen3_semantic_memory` 提供内存内 dense exact cosine top-k；
+  文档、embedding 列与 metadata 强校验，稳定按 document index
+  处理同分。`examples/qwen3_embedding_memory.jl` 已实跑仓库 notes，
+  默认 query 首项稳定返回 Week 22。
+- 当前基线没有持久化、ANN、增量更新、reranker 或 agent memory policy；
+  “语义检索可用”不等于“长期记忆系统完成”。
+
+### 5. 学习与可视化记录
 
 `notebook/` 已覆盖 Attention 结构、RoPE、prefill / decode、KV Cache 原理与常见错误、动态与静态 cache 等主题；这些 notebook 不只是展示结果，也是关键组件学习过程的一部分。
 
@@ -112,7 +133,19 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-2026-07-30 复核默认套件，共 `5,489 / 5,489` 项测试通过；其中 Week 05 专项 3,094 项、Week 06 专项 112 项、Week 07 离线专项 54 项、Week 08 离线专项 61 项、Week 09 离线专项 67 项、Week 10 离线专项 37 项、Week 11 专项 91 项、Week 12 离线专项 85 项、Week 13 离线专项 283 项、Week 14 离线专项 77 项、Week 15 专项 82 项、Week 16 专项 168 项、Week 17 专项 83 项、Week 18 专项 133 项、Week 19 专项 80 项、Week 20 专项 105 项、Week 21 专项 109 项。Week 21 加真实 loopback socket opt-in 为 `116 / 116`；compact fixed-chunk prefill 在 Reactant CPU 编译执行 `5 / 5` 通过。
+2026-07-31 复核默认套件，共 `5,582 / 5,582` 项测试通过；其中 Week 05 专项 3,094 项、Week 06 专项 112 项、Week 07 离线专项 54 项、Week 08 离线专项 61 项、Week 09 离线专项 67 项、Week 10 离线专项 37 项、Week 11 专项 91 项、Week 12 离线专项 85 项、Week 13 离线专项 283 项、Week 14 离线专项 77 项、Week 15 专项 82 项、Week 16 专项 168 项、Week 17 专项 83 项、Week 18 专项 133 项、Week 19 专项 80 项、Week 20 专项 105 项、Week 21 专项 109 项、Week 22 离线专项 93 项。Week 22 加真实 Qwen3-Embedding-0.6B 权重为 `103 / 103`；Week 21 加真实 loopback socket opt-in 为 `116 / 116`；compact fixed-chunk prefill 在 Reactant CPU 编译执行 `5 / 5` 通过。
+
+Week 22 的真实 CPU BF16 reference 使用 PyTorch `2.7.1+cpu` /
+Transformers `4.51.3`。LifeAI token ids 与 attention mask 逐项相同；
+1024/512/256/128/64 维 embedding max-abs 为
+`0.00360 / 0.00502 / 0.00667 / 0.00826 / 0.00927`，similarity
+max-abs 全部低于 `0.00830`；五档共 15 组完整 top-k、semantic memory
+首项全部一致，验收 JSON 为 `closed=true`。i9-14900K 上 8 条/35-token
+batch 的资产校验、BF16 load、forward 为 `2.436 / 8.832 / 7.687 s`。
+RTX 4090 D（driver `570.153.02`、CUDA runtime `12.9.0`）上相同 batch
+的参数上传、cold forward、warm forward 为
+`1.103 / 18.959 / 0.0641 s`，冷/热 embedding max-abs 为 `0`；CUDA
+token/mask、五档数值、15 组 top-k 和 semantic memory 同样全部通过。
 
 Week 21 的真实 resident-service 验收在唯一 PID 内完成 15 个独立 HTTP
 请求，最终 health 为 15 completed / 0 failed、`load_count=1`、
@@ -200,7 +233,8 @@ Week 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定形�
 - 面向真实任务和长期运行的模型质量；较大规模真实语料训练。
 - 适合 tied embedding 的统一初始化基线、低精度专项与真实规模组件对照。
 - 实验注册、超参数搜索、分布式训练和面向生产的性能评估。
-- 对话状态、工作记忆、长期记忆和记忆检索。
+- 对话状态、跨 step 工作记忆、持久长期记忆、ANN/reranker 与 agent
+  memory policy；Week 22 仅完成内存内 dense exact semantic retrieval。
 - 任务规划、工具调用、反思和自主执行循环。
 - 图像、音频、空间状态或机器人传感器输入。
 - 动作空间、控制器、仿真环境与真实设备适配器。
@@ -373,8 +407,10 @@ checksum、GPU 驻留/误差/greedy 指标均进入 fixture；没有把 diagonal
 最低物理 free 2.251 GiB；常驻摊销冷启动，但不宣称跨进程 executable
 cache 已实现。
 
-### Milestone C：建立最小有状态智能体闭环（后移）
+### Milestone C：建立最小有状态智能体闭环（已启动）
 
+- Qwen3-Embedding-0.6B 与内存内 exact semantic memory baseline 已完成，
+  但尚未接入跨 step 状态或 policy。（Week 22 已完成）
 - 定义与具体机器人无关的 `Observation`、`Action`、`Memory` 和 policy / model 接口。
 - 先在一个简单、可重复的模拟环境中跑通"感知 → 记忆 → 决策 → 行动 → 反馈"。
 - 保持模型后端可替换，使当前小 GPT、Qwen3 复现权重或后续多模态模型都能接入。
@@ -387,8 +423,8 @@ cache 已实现。
 | --- | --- | --- |
 | 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + native BF16 推理 + CUDA/XLA 加速 + 8B XLA single-residency 4K greedy 部署/常驻服务 + 可预算 INT4/INT8/BF16 计划与 diagonal activation-aware 校准（14B RTN 16/16，weight/activation MSE 均 4/16）；GPT-2 真实 parity；流式加载；五类版本化 Tokenizer 与中文数据管线 | 完整 AWQ/GPTQ 或量化 GEMM、XLA device-side sampling，或下一经典/SOTA 架构 |
 | 高效训练与推理 | modern / GQA / rotate_half 已兼容 Zygote / XLA 与两类 KV Cache；Qwen3-0.6B compiled decode 及 Qwen3-8B 4K XLA single-residency/loopback resident service 已在 GPU 实证 | device-side decode block、fused/FlashAttention、动态 batch、低精度 kernel 与更长上下文优化 |
-| 智能体核心 | 尚未开始；Qwen3 基础 chat 输入已可作为模型后端 | conversation state、memory、planning、tools、agent loop |
+| 智能体核心 | Qwen3 基础 chat 输入 + Qwen3-Embedding-0.6B dense exact semantic memory baseline | conversation state、持久/增量 memory、planning、tools、agent loop |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Week 01—21 已 Closed | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏 |
+| 学习记录 | Week 01—22 已 Closed | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏 |
