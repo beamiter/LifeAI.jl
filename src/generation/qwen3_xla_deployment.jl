@@ -153,6 +153,7 @@ mutable struct HFQwen3BF16XLASession
     strategy::Symbol
     context_tokens::Int
     prefill_chunk_tokens::Int
+    sample_top_k::Int
     position::Int
     load_metrics::Any
 end
@@ -177,12 +178,21 @@ function load_hf_qwen3_bf16_xla_session(
     context_tokens::Integer=4096,
     prefill_chunk_tokens::Integer=64,
     strategy::Symbol=:greedy,
+    sample_top_k=nothing,
     revision::AbstractString="",
     variant=nothing,
 )
-    strategy in (:greedy, :sample) || throw(ArgumentError(
-        "XLA strategy must be :greedy or :sample",
+    strategy in (:greedy, :sample, :device_sample) || throw(ArgumentError(
+        "XLA strategy must be :greedy, :sample, or :device_sample",
     ))
+    if sample_top_k !== nothing
+        strategy === :device_sample || throw(ArgumentError(
+            "sample_top_k only applies to the :device_sample strategy",
+        ))
+        sample_top_k isa Integer && sample_top_k > 0 || throw(ArgumentError(
+            "sample_top_k must be a positive integer",
+        ))
+    end
     context = Int(context_tokens)
     chunk = Int(prefill_chunk_tokens)
     0 < chunk <= context || throw(ArgumentError(
@@ -247,7 +257,41 @@ function load_hf_qwen3_bf16_xla_session(
     compile_key_positions =
         Reactant.to_rarray(Int32.(collect(1:context)))
 
-    prefill_kernel = if strategy === :greedy
+    # `top_k` fixes the number of extraction passes, so it is the one sampling
+    # option baked into the executable; temperature and top-p stay as device
+    # scalars and can change per request without recompiling.
+    top_k_static = 0
+    if strategy === :device_sample
+        configured = sample_top_k === nothing ?
+            generation_config.top_k : sample_top_k
+        configured isa Integer && configured > 0 || throw(ArgumentError(
+            "device sampling requires a positive top_k; the generation " *
+            "config did not supply one, pass sample_top_k explicitly",
+        ))
+        top_k_static = min(Int(configured), model.vocab_size)
+    end
+    compile_uniform = Reactant.to_rarray(zeros(Float32, 1))
+    compile_temperature = Reactant.to_rarray(ones(Float32, 1))
+    compile_top_p = Reactant.to_rarray(ones(Float32, 1))
+
+    prefill_kernel = if strategy === :device_sample
+        (ps, tokens, kc, vc, position, cos_t, sin_t, kp, u, t, p) ->
+            _bf16a_static_prefill_chunk_sample(
+                model,
+                ps,
+                tokens,
+                kc,
+                vc,
+                position,
+                cos_t,
+                sin_t,
+                kp,
+                u,
+                t,
+                p,
+                top_k_static,
+            )
+    elseif strategy === :greedy
         (ps, tokens, kc, vc, position, cos_t, sin_t, kp) ->
             _bf16a_static_prefill_chunk_greedy(
                 model,
@@ -274,7 +318,24 @@ function load_hf_qwen3_bf16_xla_session(
                 kp,
             )
     end
-    decode_kernel = if strategy === :greedy
+    decode_kernel = if strategy === :device_sample
+        (ps, token, kc, vc, position, cos_t, sin_t, kp, u, t, p) ->
+            _bf16a_static_decode_sample_step_packed(
+                model,
+                ps,
+                token,
+                kc,
+                vc,
+                position,
+                cos_t,
+                sin_t,
+                kp,
+                u,
+                t,
+                p,
+                top_k_static,
+            )
+    elseif strategy === :greedy
         (ps, token, kc, vc, position, cos_t, sin_t, kp) ->
             _bf16a_static_decode_greedy_step_packed(
                 model,
@@ -305,30 +366,62 @@ function load_hf_qwen3_bf16_xla_session(
     end
 
     prefill_compile_started = time_ns()
-    compiled_prefill = Reactant.@compile prefill_kernel(
-        parameters,
-        compile_tokens,
-        key_caches,
-        value_caches,
-        compile_position,
-        cos_table,
-        sin_table,
-        compile_key_positions,
-    )
+    compiled_prefill = if strategy === :device_sample
+        Reactant.@compile prefill_kernel(
+            parameters,
+            compile_tokens,
+            key_caches,
+            value_caches,
+            compile_position,
+            cos_table,
+            sin_table,
+            compile_key_positions,
+            compile_uniform,
+            compile_temperature,
+            compile_top_p,
+        )
+    else
+        Reactant.@compile prefill_kernel(
+            parameters,
+            compile_tokens,
+            key_caches,
+            value_caches,
+            compile_position,
+            cos_table,
+            sin_table,
+            compile_key_positions,
+        )
+    end
     prefill_compile_seconds =
         (time_ns() - prefill_compile_started) / 1.0e9
 
     decode_compile_started = time_ns()
-    compiled_decode = Reactant.@compile decode_kernel(
-        parameters,
-        compile_token,
-        key_caches,
-        value_caches,
-        compile_position,
-        cos_table,
-        sin_table,
-        compile_key_positions,
-    )
+    compiled_decode = if strategy === :device_sample
+        Reactant.@compile decode_kernel(
+            parameters,
+            compile_token,
+            key_caches,
+            value_caches,
+            compile_position,
+            cos_table,
+            sin_table,
+            compile_key_positions,
+            compile_uniform,
+            compile_temperature,
+            compile_top_p,
+        )
+    else
+        Reactant.@compile decode_kernel(
+            parameters,
+            compile_token,
+            key_caches,
+            value_caches,
+            compile_position,
+            cos_table,
+            sin_table,
+            compile_key_positions,
+        )
+    end
     decode_compile_seconds =
         (time_ns() - decode_compile_started) / 1.0e9
     allocator_ready = _qwen3_xla_allocator_snapshot()
@@ -364,6 +457,7 @@ function load_hf_qwen3_bf16_xla_session(
         strategy,
         context,
         chunk,
+        top_k_static,
         0,
         load_metrics,
     )
@@ -381,10 +475,16 @@ end
         session, prompt_tokens; max_new_tokens=512, kwargs...
     )
 
-Generate from a reusable single-tree XLA session. Greedy mode keeps argmax on
-device and transfers one token per step. Sample mode transfers one logits
-vector per step and applies the same temperature/top-k/top-p policy as the
-eager deployment path.
+Generate from a reusable single-tree XLA session.
+
+  * `:greedy` keeps argmax on device and transfers one token per step.
+  * `:device_sample` keeps the whole temperature/top-k/top-p policy on device;
+    the host sends one uniform and receives one token per step.
+  * `:sample` transfers one logits vector per step and applies the host
+    temperature/top-k/top-p policy of the eager deployment path.
+
+`sample_uniforms` replaces the RNG draws with a fixed sequence, which is how
+the two sampling strategies are compared token by token.
 """
 function generate_hf_qwen3_bf16_xla!(
     session::HFQwen3BF16XLASession,
@@ -397,6 +497,7 @@ function generate_hf_qwen3_bf16_xla!(
     stop_token_ids=nothing,
     pad_token_id::Integer=1,
     on_token=nothing,
+    sample_uniforms=nothing,
 )
     prompt_ids = Int.(vec(collect(prompt_tokens)))
     _validate_generation_ids(prompt_ids, session.model.vocab_size)
@@ -419,6 +520,47 @@ function generate_hf_qwen3_bf16_xla!(
     all(id -> 1 <= id <= session.model.vocab_size, stops) ||
         throw(ArgumentError("stop token id is outside the model vocabulary"))
 
+    resolved_temperature = temperature === nothing ?
+        session.generation_config.temperature : temperature
+    resolved_top_k = top_k === nothing ?
+        session.generation_config.top_k : top_k
+    resolved_top_p = top_p === nothing ?
+        session.generation_config.top_p : top_p
+
+    uniforms = nothing
+    if sample_uniforms !== nothing
+        session.strategy === :greedy && throw(ArgumentError(
+            "sample_uniforms requires a sampling strategy",
+        ))
+        uniforms = Float32[
+            _validate_device_sampling_uniform(value)
+            for value in vec(collect(sample_uniforms))
+        ]
+        length(uniforms) >= plan.max_new_tokens || throw(ArgumentError(
+            "sample_uniforms must supply one value per requested token",
+        ))
+    end
+    draw_uniform(step) = uniforms === nothing ?
+        rand(rng, Float32) : uniforms[step]
+
+    temperature_state = nothing
+    top_p_state = nothing
+    if session.strategy === :device_sample
+        options = _validate_device_sampling_options(;
+            temperature=resolved_temperature,
+            top_k=resolved_top_k,
+            top_p=resolved_top_p,
+            vocab_size=session.model.vocab_size,
+        )
+        min(options.top_k, session.model.vocab_size) == session.sample_top_k ||
+            throw(ArgumentError(
+                "top_k must match the compiled device sampling constant " *
+                "$(session.sample_top_k); recompile the session to change it",
+            ))
+        temperature_state = Reactant.to_rarray(Float32[options.temperature])
+        top_p_state = Reactant.to_rarray(Float32[options.top_p])
+    end
+
     key_positions = Reactant.to_rarray(qwen3_xla_key_positions(plan))
     position_state = Reactant.to_rarray(zeros(Int32, 1))
     reset_hf_qwen3_bf16_xla_session!(session)
@@ -426,6 +568,11 @@ function generate_hf_qwen3_bf16_xla!(
 
     prefill_started = time_ns()
     output_state = nothing
+    # Every prefill chunk runs the same executable but only the final chunk
+    # selects a token, so one uniform is consumed for the first output token
+    # regardless of how many chunks the prompt needs.
+    prefill_uniform_state = session.strategy === :device_sample ?
+        Reactant.to_rarray(Float32[draw_uniform(1)]) : nothing
     for first_index in 1:session.prefill_chunk_tokens:length(padded)
         last_index = first_index + session.prefill_chunk_tokens - 1
         token_state = Reactant.to_rarray(reshape(
@@ -433,34 +580,48 @@ function generate_hf_qwen3_bf16_xla!(
             :,
             1,
         ))
-        output_state, position_state = session.compiled_prefill(
-            session.parameters,
-            token_state,
-            session.key_caches,
-            session.value_caches,
-            position_state,
-            session.cos_table,
-            session.sin_table,
-            key_positions,
-        )
+        output_state, position_state = if session.strategy === :device_sample
+            session.compiled_prefill(
+                session.parameters,
+                token_state,
+                session.key_caches,
+                session.value_caches,
+                position_state,
+                session.cos_table,
+                session.sin_table,
+                key_positions,
+                prefill_uniform_state,
+                temperature_state,
+                top_p_state,
+            )
+        else
+            session.compiled_prefill(
+                session.parameters,
+                token_state,
+                session.key_caches,
+                session.value_caches,
+                position_state,
+                session.cos_table,
+                session.sin_table,
+                key_positions,
+            )
+        end
     end
-    first_output = if session.strategy === :greedy
-        Int(Array(output_state)[1])
-    else
+    first_output = if session.strategy === :sample
         logits = Array(output_state)
         choice, _ = _qwen3_session_choice(
             logits,
             identity,
             :sample,
             rng;
-            temperature=temperature === nothing ?
-                session.generation_config.temperature : temperature,
-            top_k=top_k === nothing ?
-                session.generation_config.top_k : top_k,
-            top_p=top_p === nothing ?
-                session.generation_config.top_p : top_p,
+            temperature=resolved_temperature,
+            top_k=resolved_top_k,
+            top_p=resolved_top_p,
+            sample_uniform=uniforms === nothing ? nothing : uniforms[1],
         )
         choice
+    else
+        Int(Array(output_state)[1])
     end
     prefill_seconds = (time_ns() - prefill_started) / 1.0e9
 
@@ -471,36 +632,51 @@ function generate_hf_qwen3_bf16_xla!(
     decode_started = time_ns()
     while length(generated_ids) < plan.max_new_tokens &&
             !(last(generated_ids) in stops)
-        input_state = session.strategy === :greedy ?
-            output_state :
-            Reactant.to_rarray([last(generated_ids)])
-        output_state, position_state = session.compiled_decode(
-            session.parameters,
-            input_state,
-            session.key_caches,
-            session.value_caches,
-            position_state,
-            session.cos_table,
-            session.sin_table,
-            key_positions,
-        )
-        next_token = if session.strategy === :greedy
-            Int(Array(output_state)[1])
+        step = length(generated_ids) + 1
+        input_state = session.strategy === :sample ?
+            Reactant.to_rarray([last(generated_ids)]) :
+            output_state
+        output_state, position_state = if session.strategy === :device_sample
+            session.compiled_decode(
+                session.parameters,
+                input_state,
+                session.key_caches,
+                session.value_caches,
+                position_state,
+                session.cos_table,
+                session.sin_table,
+                key_positions,
+                Reactant.to_rarray(Float32[draw_uniform(step)]),
+                temperature_state,
+                top_p_state,
+            )
         else
+            session.compiled_decode(
+                session.parameters,
+                input_state,
+                session.key_caches,
+                session.value_caches,
+                position_state,
+                session.cos_table,
+                session.sin_table,
+                key_positions,
+            )
+        end
+        next_token = if session.strategy === :sample
             logits = Array(output_state)
             choice, _ = _qwen3_session_choice(
                 logits,
                 identity,
                 :sample,
                 rng;
-                temperature=temperature === nothing ?
-                    session.generation_config.temperature : temperature,
-                top_k=top_k === nothing ?
-                    session.generation_config.top_k : top_k,
-                top_p=top_p === nothing ?
-                    session.generation_config.top_p : top_p,
+                temperature=resolved_temperature,
+                top_k=resolved_top_k,
+                top_p=resolved_top_p,
+                sample_uniform=uniforms === nothing ? nothing : uniforms[step],
             )
             choice
+        else
+            Int(Array(output_state)[1])
         end
         push!(generated_ids, next_token)
         on_token === nothing || on_token(next_token, length(generated_ids))

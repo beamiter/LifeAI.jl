@@ -616,6 +616,7 @@ function _qwen3_session_choice(
     temperature,
     top_k,
     top_p,
+    sample_uniform=nothing,
 )
     return strategy === :greedy ?
         _hf_greedy_choice(logits, host, false) :
@@ -626,6 +627,7 @@ function _qwen3_session_choice(
             temperature,
             top_k,
             top_p,
+            sample_uniform,
         )
 end
 

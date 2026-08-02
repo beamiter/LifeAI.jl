@@ -17,6 +17,7 @@ include("models/gpt.jl")
 
 # Shared inference policies and host-side input boundaries.
 include("generation/sampling.jl")
+include("generation/xla_sampling.jl")
 include("generation/token_inputs.jl")
 
 # External formats and training workflows.

@@ -2,9 +2,11 @@
 
 ## 一句话判断
 
-项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**（0.6B—4B 全量、8B—32B 流式），并具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化。Qwen3-Embedding-0.6B 的独立 checkpoint/tokenizer contract、五档 MRL 与 dense exact semantic memory 也已完成真实 BF16 parity。RTX 4090 D 上，14B mixed RTN 是已实证尺寸上限；日常 8B BF16 已完成 XLA single-residency 4K greedy 部署与 loopback 常驻 HTTP 服务，3,584-token prefill 为 1.48 s、整窗 decode 为 41.35 tok/s，15 个跨连接请求只 load 一次，CUDA BF16 reference 共 96/96 token 一致。
+项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**（0.6B—4B 全量、8B—32B 流式），并具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化。Qwen3-Embedding-0.6B 的独立 checkpoint/tokenizer contract、五档 MRL 与 dense exact semantic memory 也已完成真实 BF16 parity。RTX 4090 D 上，14B mixed RTN 是已实证尺寸上限；日常 8B BF16 已完成 XLA single-residency 4K greedy 部署与 loopback 常驻 HTTP 服务，3,584-token prefill 为 1.48 s、整窗 decode 为 41.35 tok/s，15 个跨连接请求只 load 一次，CUDA BF16 reference 共 96/96 token 一致。官方 temperature/top-k/top-p 采样策略现在整体运行在编译好的 executable 内，宿主每 token 只交换一个 uniform 与一个 token id。
 
 ## 当前活动阶段
+
+[`Week 23 — Qwen3 XLA 设备端采样`](week23_qwen3_xla_device_sampling.md) 已于 2026-08-01 Closed。temperature / top-k / top-p / inverse-CDF 采样策略整体进入编译好的 prefill/decode executable：宿主每 token 只送一个 4 字节 uniform、取回一个整数，不再传回 151,936 维 logits。策略用 `top_k` 次 masked reduction 提取候选（不排序），nucleus 改写为「严格排在候选之前的质量 < top_p」，inverse-CDF 仍按词表 index 顺序走。真实 Qwen3-0.6B 在本机 RTX 5080 CUDA XLA 上以同一串 uniform replay，与宿主策略 **38/38 token 完全一致**，decode 从 `23.66` 提升到 `237.23` tok/s（`10.03×`），已贴近 greedy 的 246 tok/s。`top_k` 是编译期常量，temperature/top_p 是运行期设备标量。当前没有 Open Week。
 
 [`Week 22 — Qwen3-Embedding-0.6B 与最小语义记忆`](week22_qwen3_embedding_memory.md) 已于 2026-07-31 Closed。独立的 151,669-vocabulary / 32K embedding contract、官方尾 `<|endoftext|>` post-processor、base-model safetensors namespace、变长批 mask、last-token pooling、五档 MRL 和 dense exact cosine memory 已完成；真实 CPU 与 RTX 4090 D CUDA BF16 的 token/mask、15 组 top-k 全一致，embedding/similarity max-abs 均低于 0.01。当前没有 Open Week。
 
@@ -46,6 +48,13 @@
 - 流式 safetensors 加载（Week 13）：`open_safetensors_reader` header-only 索引 + `read_safetensors_tensor` 按需读取 + `stream_hf_qwen3_forward` 逐层 trace 与 dynamic decode；embedding 按 token 行从磁盘 gather，单层参数映射与 in-memory loader 共用；与全量路径逐位一致（合成 fixture 与真实 0.6B 验证），32B 峰值 RSS 8.9 GiB。
 - native BF16 混合精度推理（Week 14）：`load_hf_qwen3_model(...; weight_dtype=BFloat16)` 位保真加载（参数内存减半）+ `hf_qwen3_bf16_forward` 独立路径，逐算子镜像 HF 语义（RMSNorm/QK-Norm/softmax F32 归一化、RoPE 表 F32 转 BF16、线性 BF16 存储 + 分块 F32 累加 + BF16 舍入）；BF16 cached decode 与全量前向逐位等价；0.6B—8B 与 HF BF16 argmax 零失配、16 步 greedy 完全一致。
 - BF16 CUDA/XLA 加速推理（Week 15）：`hf_qwen3_bf16_accel_forward` 设备通用向量化路径（CPU 上与循环路径逐位相同），CUDA eager 用原生 BF16 张量核（CUBLAS/batched_mul，F32 累加），Reactant XLA 可编译同一实现；0.6B—4B GPU parity/greedy 全对，吞吐 8—15 tok/s；CPU batched matmul 显式分派为 F32 累加防止通用 fallback 破坏契约。
+- XLA 设备端采样（Week 23）：`_device_sample_next_index` 只用 reduction、
+  elementwise select 与标量算术表达 temperature/top-k/top-p/inverse-CDF，
+  同一份实现既是宿主参考也被 trace 进 executable；`:device_sample` session
+  策略把 `top_k` 固化为编译常量、temperature/top_p 作为运行期设备标量，
+  `sample_uniforms` 支持与宿主策略逐 token 对拍。已知契约差异：宿主/HF
+  保留与第 k 名并列的全部 token，设备保留恰好 `top_k` 个（并列取较大
+  index，与 HF 稳定排序方向一致）。
 - XLA BF16 compiled decode（Week 16）：static KV cache 的 traced prefill/decode/greedy（traced position、动态写、有效前缀掩码），设备端 argmax 闭环使宿主每 token 只取回一个整数；0.6B steady 246 tok/s（eager 16.1×），greedy 与 HF 全对。
 - Qwen3-8B XLA single residency（Week 20）：`load_hf_qwen3_compact_model`
   直接以 BF16 流式读取并按层合并 Q/K/V 与 gate/up，不构造完整 unpacked
@@ -133,7 +142,11 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-2026-07-31 复核默认套件，共 `5,582 / 5,582` 项测试通过；其中 Week 05 专项 3,094 项、Week 06 专项 112 项、Week 07 离线专项 54 项、Week 08 离线专项 61 项、Week 09 离线专项 67 项、Week 10 离线专项 37 项、Week 11 专项 91 项、Week 12 离线专项 85 项、Week 13 离线专项 283 项、Week 14 离线专项 77 项、Week 15 专项 82 项、Week 16 专项 168 项、Week 17 专项 83 项、Week 18 专项 133 项、Week 19 专项 80 项、Week 20 专项 105 项、Week 21 专项 109 项、Week 22 离线专项 93 项。Week 22 加真实 Qwen3-Embedding-0.6B 权重为 `103 / 103`；Week 21 加真实 loopback socket opt-in 为 `116 / 116`；compact fixed-chunk prefill 在 Reactant CPU 编译执行 `5 / 5` 通过。
+2026-08-01 复核默认套件，共 `5,663 / 5,663` 项测试通过（Week 23 离线专项
+81 项，加 Reactant CPU 编译对拍为 91 项）；此前 2026-07-31 基线为
+`5,582 / 5,582`。分项统计：其中 Week 05 专项 3,094 项、Week 06 专项 112 项、Week 07 离线专项 54 项、Week 08 离线专项 61 项、Week 09 离线专项 67 项、Week 10 离线专项 37 项、Week 11 专项 91 项、Week 12 离线专项 85 项、Week 13 离线专项 283 项、Week 14 离线专项 77 项、Week 15 专项 82 项、Week 16 专项 168 项、Week 17 专项 83 项、Week 18 专项 133 项、Week 19 专项 80 项、Week 20 专项 105 项、Week 21 专项 109 项、Week 22 离线专项 93 项、Week 23 离线专项 81 项。
+Week 23 的真实 0.6B CUDA XLA 验收（同 uniform replay）38/38 token 一致、
+decode `237.23` vs `23.66` tok/s，报告顶层 `closed=true`。Week 22 加真实 Qwen3-Embedding-0.6B 权重为 `103 / 103`；Week 21 加真实 loopback socket opt-in 为 `116 / 116`；compact fixed-chunk prefill 在 Reactant CPU 编译执行 `5 / 5` 通过。
 
 Week 22 的真实 CPU BF16 reference 使用 PyTorch `2.7.1+cpu` /
 Transformers `4.51.3`。LifeAI token ids 与 attention mask 逐项相同；

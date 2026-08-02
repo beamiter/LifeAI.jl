@@ -69,6 +69,7 @@ export Qwen3XLAWindowPlan, plan_qwen3_xla_window
 export qwen3_xla_pad_prompt, qwen3_xla_key_positions
 export HFQwen3BF16XLASession, load_hf_qwen3_bf16_xla_session
 export reset_hf_qwen3_bf16_xla_session!, generate_hf_qwen3_bf16_xla!
+export device_sample_token
 export Qwen3XLAHTTPService, load_qwen3_xla_http_service
 export qwen3_xla_service_status, qwen3_xla_http_handler
 export qwen3_xla_http_stream_handler, serve_qwen3_xla_http!

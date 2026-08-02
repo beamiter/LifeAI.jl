@@ -119,6 +119,10 @@ end
     include("test_week22.jl")
 end
 
+@testset "Week 23 Qwen3 XLA device-resident sampling" begin
+    include("test_week23.jl")
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA KV cache" begin
         include("test_xla_kv_cache.jl")
@@ -129,5 +133,6 @@ if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
         include("test_week10_xla.jl")
         include("test_week11_xla.jl")
         include("test_week20_xla.jl")
+        include("test_week23_xla.jl")
     end
 end

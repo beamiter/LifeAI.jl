@@ -702,6 +702,84 @@ function _bf16a_static_prefill_chunk_core(
     return logits, position .+ Int32(seq_len)
 end
 
+# Device-resident sampling step. The host contributes one uniform per token and
+# reads back one integer, so a sampled decode costs the same host traffic as a
+# greedy decode instead of a full 151,936-wide logits transfer.
+function _bf16a_static_prefill_chunk_sample(
+    model::GPTModel,
+    packed_parameters,
+    tokens,
+    key_caches,
+    value_caches,
+    position,
+    cos_table,
+    sin_table,
+    key_positions,
+    uniform,
+    temperature,
+    top_p,
+    top_k::Int,
+)
+    logits, next_position = _bf16a_static_prefill_chunk_core(
+        model,
+        packed_parameters,
+        tokens,
+        key_caches,
+        value_caches,
+        position,
+        cos_table,
+        sin_table,
+        key_positions,
+    )
+    next_token = _device_sample_next_index(
+        _bf16a_f32(logits),
+        uniform,
+        temperature,
+        top_p,
+        top_k,
+    )
+    token_state = tokens[1:1, 1] .* 0 .+ next_token
+    return token_state, next_position
+end
+
+function _bf16a_static_decode_sample_step_packed(
+    model::GPTModel,
+    packed_parameters,
+    token,
+    key_caches,
+    value_caches,
+    position,
+    cos_table,
+    sin_table,
+    key_positions,
+    uniform,
+    temperature,
+    top_p,
+    top_k::Int,
+)
+    logits = _bf16a_static_decode_step_packed(
+        model,
+        packed_parameters,
+        token,
+        key_caches,
+        value_caches,
+        position,
+        cos_table,
+        sin_table,
+        key_positions,
+    )
+    next_token = _device_sample_next_index(
+        _bf16a_f32(logits),
+        uniform,
+        temperature,
+        top_p,
+        top_k,
+    )
+    token_next = token .* 0 .+ next_token
+    position_next = position .+ one(Int32)
+    return token_next, position_next
+end
+
 function _bf16a_static_prefill_chunk_greedy(
     model::GPTModel,
     packed_parameters,
