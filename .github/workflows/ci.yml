@@ -4,7 +4,7 @@ on:
   pull_request:
   push:
     branches:
-      - main
+      - master
 
 jobs:
   test:
@@ -78,14 +78,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          ref: main
-          path: legacy-main
+          ref: master
+          path: legacy-master
       - uses: julia-actions/setup-julia@v2
         with:
           version: "1.11"
       - uses: julia-actions/cache@v2
-      - name: Generate a real main-branch v2 checkpoint
-        working-directory: legacy-main
+      - name: Generate a real master-branch v2 checkpoint
+        working-directory: legacy-master
         run: |
           julia --project=. -e '
             using Pkg; Pkg.instantiate()
