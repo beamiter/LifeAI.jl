@@ -115,8 +115,8 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - 三个 kernel 分别直接从原始 `(hidden, d_model, experts)` 权重按 route expert index 计算 SwiGLU hidden、down projection 和 top-k combine，不再 gather/复制每条 route 的 gate/up/down 矩阵。旧实现保留为 `qwen3_route_major_expert_dispatch` benchmark oracle。
 - CUDA 专项扩展为 `9 / 9`：indexed vs dense、indexed vs route-major、inactive `NaN` expert 隔离，以及精确 workspace byte contract 全部通过；max-abs 对 dense oracle ≤ `6.56e-7`。
 - 128 experts/top-8 下，单-token 临时空间从 `0.75 MiB` 降到 `6.50 KiB`，64-token 从 `48 MiB` 降到 `416 KiB`，两组都是 `118.15×` 缩减。
-- RTX 4090 D、15 次同进程 steady 对照：单-token indexed `0.368 ms` vs route-major `0.486 ms`（`1.32×`），64-token indexed `0.388 ms` vs route-major `0.563 ms`（`1.45×`）。64-token 相对单线程 CPU sparse 为 `3.95×`；单-token仍只有 CPU 的 `0.196×`，说明下一瓶颈已从权重物化转为小 kernel launch 与标量 dot-product 效率。
-- 原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cuda_4090d_indexed_kernels.json`。这三个直接索引 kernel 是低 workspace correctness/performance baseline，尚未使用 expert 分桶后的 grouped GEMM 或 tensor cores。
+- RTX 4090 D 最终重跑的 15 次同进程 steady 对照：单-token indexed `0.365 ms` vs route-major `0.481 ms`（`1.32×`），64-token indexed `0.377 ms` vs route-major `0.592 ms`（`1.57×`）。64-token 相对单线程 CPU sparse 为 `4.06×`；单-token 仍只有 CPU 的 `0.198×`，说明下一瓶颈已从权重物化转为小 kernel launch 与标量 dot-product 效率。
+- 原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cuda_4090d_indexed_kernels.json`。该文件 schema 2 也记录 bucketed 对照：小型 `128→64` 的单/64-token bucketed 分别为 `0.416 / 0.449 ms`，均慢于 indexed；这三个直接索引 kernel 是低 workspace baseline，尚未使用 grouped GEMM 或 tensor cores。
 
 ### 2026-08-07：路由驱动的 checkpoint expert streaming
 
@@ -139,13 +139,21 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - 官方 checkpoint 下载与真实 parity 本轮明确延后；已下载的约 64 MiB partial cache 保留在模型目录，可在后续阶段断点续传，本轮没有后台下载进程。
 - CUDA indexed 专项新增 BF16 expert 参数测试：router/input 保持 Float32，gate/up/down 以 BF16 驻留，kernel 显式用 Float32 累加；与同一组 BF16 数值转回 Float32 的 CPU sparse reference 对齐。CUDA 专项由 `9 / 9` 增至 `13 / 13`。
 - 新增 `scripts/benchmark_qwen3_moe_cuda_projection_widths.jl`，直接使用官方 `d_model=2,048`、expert hidden `768`、128 experts、top-8。完整三组 expert tensor 的 BF16/F32 容量分别为 `1,207,959,552 / 2,415,919,104` bytes，计时不包含 checkpoint I/O 或 router。
-- RTX 4090 D、15 次 steady：BF16 indexed dispatch 的 1-token / 8-token median 为 `0.204 / 0.687 ms`，相同数值的 Float32 权重为 `0.377 / 1.351 ms`，BF16 加速 `1.85× / 1.97×` 且输出逐位一致。原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cuda_4090d_bf16_projection_widths.json`。
+- RTX 4090 D 最终冻结的 15 次 steady：BF16 indexed dispatch 的 1-token / 8-token median 为 `0.180 / 0.689 ms`，相同数值的 Float32 权重为 `0.396 / 1.319 ms`，BF16 加速 `2.20× / 1.91×` 且输出逐位一致。原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cuda_4090d_bf16_projection_widths.json`。
 - 实验过“每个 dot-product 一个 thread block”的 shared-memory tiled reduction；在相同官方宽度上比现有“每个输出一个 thread”的 indexed kernel 慢 `2.6—6.0×`，原因是输出维与 route pair 已提供充足并行度，额外拆分产生过多 blocks 和 reduction 同步。该劣化路径未进入生产实现；下一步若继续优化，应做按 expert 分桶后的 GEMM/tensor-core 计算，而不是继续拆分单个 dot-product。
+
+### 2026-08-07：设备端 expert route bucketing
+
+- 新增纯 CUDA `qwen3_cuda_bucket_routes`：atomic count、稳定 device `sortperm!`、device `cumsum` 与 1-based half-open offsets 全程不回传 host；`route_permutation` 保留同 expert 内的原 route 顺序。新增 bucketed gate/up/down kernels 按 expert-major 次序读取权重，并把 down projection 写回原 pair index，combine 语义不变。
+- CUDA 专项从 `13 / 13` 增至 `27 / 27`，覆盖 stable permutation、含 inactive expert 的 counts/offsets、所有输出仍为 `CuArray`、策略阈值、真实触发 wide-prefill 生产分支、bucketed 与 indexed 逐位一致，以及既有 BF16/`NaN`/workspace contract。
+- 独立 bucketing 基准覆盖 8/64/512/4,096 routes，steady median 为 `0.053 / 0.059 / 0.074 / 0.103 ms`；stable permutation 与 offsets 均对 host MergeSort oracle 验证。原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cuda_4090d_route_bucketing.json`。
+- 官方 `2,048→768` BF16 synthetic dispatch 中，bucketed 在 1/8/16 token 上仍慢于 indexed，因此 decode 和小 batch 不启用；32 token 为 `1.896 vs 2.813 ms`（`1.48×`），64 token 为 `2.052 vs 6.730 ms`（`3.28×`），输出逐位一致。小型 `128→64` 即使 64 token 仍慢约 16%，证明切换不能只看 token 数。
+- 生产 CUDA dispatch 采用保守双阈值：`num_tokens ≥ 32` 且 `d_model × expert_hidden_dim ≥ 1,048,576` 时进入 expert-major bucketed 路径，否则保留 token-major indexed。当前收益来自权重访问局部性，还不是 grouped GEMM 或 tensor-core kernel；cuBLAS grouped wrapper 仍要求宿主矩阵列表/动态尺寸，不能用它引入隐式 host route 同步。
 
 ## Close 回顾
 
 - **完成了什么**：CPU Float32 correctness、独立 Transformers tiny parity、CPU sparse dispatch、真实 checkpoint 可复用的路由驱动 expert streaming，以及无 host routing fallback 的 compact Reactant/XLA CPU 与 RTX 4090 D CUDA 路径；本章仍 Open。
-- **验证证据**：MoE 专项 `246 / 246`、默认全套 `5,909 / 5,909`，XLA `3 / 3`、CUDA `13 / 13`；官方资产契约 `110 / 110`，双分片验证器成功路径新增 3 项。128-expert CPU 基准 `4.69×`，CUDA indexed 64-token prefill 相对 CPU `3.95×`；官方投影宽度 synthetic BF16 dispatch 为 `0.204 / 0.687 ms`（1/8 token），各设备路径均与相应 oracle 对齐。
+- **验证证据**：MoE 专项 `246 / 246`、默认全套 `5,909 / 5,909`，XLA `3 / 3`、CUDA `27 / 27`；官方资产契约 `110 / 110`，双分片验证器成功路径新增 3 项。128-expert CPU 基准 `4.69×`；官方投影宽度 synthetic BF16 的生产策略保持 1/8/16-token indexed，并在 32/64-token bucketed 达到 `1.48× / 3.28×`，各设备路径均与相应 oracle 对齐。
 - **没有完成及原因**：本机没有官方 Qwen3-30B-A3B checkpoint，真实资产 checksum、逐层 parity、峰值内存仍未验证；CUDA indexed 单-token decode 仍慢于 CPU，需要 expert 分桶/grouped GEMM，而 XLA 仍使用物化 route 权重的 portable fallback。
 - **最重要的认知变化**：原始 Qwen3 MoE 没有 shared expert；同时，compact route pairs 能保证算术稀疏，却不会自动消除选中权重物化与 gather 带宽成本，生产加速仍需要融合/分桶。
 - **是否满足 Close 条件**：否。

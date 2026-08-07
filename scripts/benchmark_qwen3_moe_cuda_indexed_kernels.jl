@@ -17,6 +17,7 @@ const BATCH_SIZE = 1
 const SAMPLES = 15
 const PARAMETER_SEED = 20260811
 const INPUT_SEED = 20260812
+const LIFEAI_CUDA_EXT = Base.get_extension(LifeAI, :LifeAICUDAExt)
 
 elapsed_seconds(started) = (time_ns() - started) / 1.0e9
 
@@ -34,6 +35,23 @@ function route_major_forward(layer, x, parameters)
         normalize=layer.normalize_routing,
     )
     output = LifeAI.qwen3_route_major_expert_dispatch(
+        tokens,
+        routed.expert_indices,
+        routed.routing_weights,
+        parameters.experts,
+    )
+    CUDA.synchronize()
+    return reshape(output, size(x))
+end
+
+function bucketed_forward(layer, x, parameters)
+    tokens = reshape(x, layer.d_model, :)
+    routed = qwen3_device_topk_routing(
+        parameters.gate.weight * tokens,
+        layer.experts_per_token;
+        normalize=layer.normalize_routing,
+    )
+    output = LIFEAI_CUDA_EXT.qwen3_cuda_bucketed_sparse_expert_dispatch(
         tokens,
         routed.expert_indices,
         routed.routing_weights,
@@ -81,6 +99,9 @@ function benchmark_case(layer, parameters, state, parameters_gpu, sequence_lengt
     route_major_cold_started = time_ns()
     route_major_output = route_major_forward(layer, x_gpu, parameters_gpu)
     route_major_cold_seconds = elapsed_seconds(route_major_cold_started)
+    bucketed_cold_started = time_ns()
+    bucketed_output = bucketed_forward(layer, x_gpu, parameters_gpu)
+    bucketed_cold_seconds = elapsed_seconds(bucketed_cold_started)
 
     indexed_output, indexed_samples = measured_samples(
         () -> indexed_forward(layer, x_gpu, parameters_gpu, state),
@@ -88,10 +109,15 @@ function benchmark_case(layer, parameters, state, parameters_gpu, sequence_lengt
     route_major_output, route_major_samples = measured_samples(
         () -> route_major_forward(layer, x_gpu, parameters_gpu),
     )
+    bucketed_output, bucketed_samples = measured_samples(
+        () -> bucketed_forward(layer, x_gpu, parameters_gpu),
+    )
     indexed = Array(indexed_output)
     route_major = Array(route_major_output)
+    bucketed = Array(bucketed_output)
     indexed_median = median(indexed_samples)
     route_major_median = median(route_major_samples)
+    bucketed_median = median(bucketed_samples)
     cpu_sparse_median = median(cpu_sparse_samples)
 
     token_count = sequence_length * BATCH_SIZE
@@ -118,14 +144,18 @@ function benchmark_case(layer, parameters, state, parameters_gpu, sequence_lengt
         results=(;
             indexed_cold_seconds,
             route_major_cold_seconds,
+            bucketed_cold_seconds,
             samples=SAMPLES,
             indexed_cuda_seconds=indexed_samples,
             indexed_cuda_median_seconds=indexed_median,
             route_major_cuda_seconds=route_major_samples,
             route_major_cuda_median_seconds=route_major_median,
+            bucketed_cuda_seconds=bucketed_samples,
+            bucketed_cuda_median_seconds=bucketed_median,
             cpu_sparse_seconds=cpu_sparse_samples,
             cpu_sparse_median_seconds=cpu_sparse_median,
             indexed_speedup=route_major_median / indexed_median,
+            bucketed_over_indexed_speedup=indexed_median / bucketed_median,
             indexed_cuda_over_cpu=cpu_sparse_median / indexed_median,
             max_abs_indexed_vs_dense=maximum(
                 abs.(indexed .- reshape(dense, size(indexed))),
@@ -133,6 +163,7 @@ function benchmark_case(layer, parameters, state, parameters_gpu, sequence_lengt
             max_abs_indexed_vs_route_major=maximum(
                 abs.(indexed .- route_major),
             ),
+            max_abs_bucketed_vs_indexed=maximum(abs.(bucketed .- indexed)),
         ),
     )
 end
@@ -155,7 +186,7 @@ function main(output_path)
         for sequence_length in SEQUENCE_LENGTHS
     ]
     result = (;
-        schema_version=1,
+        schema_version=2,
         benchmark="qwen3_moe_cuda_indexed_kernels",
         environment=(;
             julia_version=string(VERSION),

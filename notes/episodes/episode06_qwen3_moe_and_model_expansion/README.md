@@ -13,7 +13,7 @@
 ## 预期能力变化
 
 - **模型基本组件**：具备 Qwen3 top-k router、稀疏 expert SwiGLU 和 MoE decoder block。
-- **训练与推理**：Float32 correctness oracle、CPU sparse dispatch、compact Reactant/XLA CPU 与低 workspace CUDA indexed kernels 已完成；CUDA indexed dispatch 已覆盖 BF16 expert 权重和官方投影宽度，下一步推进 grouped GEMM 与真实 checkpoint cache decode。
+- **训练与推理**：Float32 correctness oracle、CPU sparse dispatch、compact Reactant/XLA CPU 与低 workspace CUDA indexed kernels 已完成；CUDA 大型 prefill 会在设备端稳定按 expert 分桶，在官方投影宽度上 32/64 token 相对 token-major indexed 加速约 `1.48× / 3.28×`。下一步让 expert-major buckets 进入真正的 grouped GEMM/tensor-core 计算。
 - **HuggingFace 互操作**：严格解析 `qwen3_moe` config，映射官方 expert 权重并完成逐层/logits/cache parity。
 - **工程与测试**：测试文件按 router、expert mixture、权重加载和 cached decode 的实际内容命名。
 

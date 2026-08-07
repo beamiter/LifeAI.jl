@@ -11,9 +11,10 @@ const D_MODEL = 2_048
 const EXPERT_HIDDEN_DIM = 768
 const NUM_EXPERTS = 128
 const EXPERTS_PER_TOKEN = 8
-const TOKEN_COUNTS = (1, 8)
+const TOKEN_COUNTS = (1, 8, 16, 32, 64)
 const SAMPLES = 15
 const INPUT_SEED = 20260813
+const LIFEAI_CUDA_EXT = Base.get_extension(LifeAI, :LifeAICUDAExt)
 
 elapsed_seconds(started) = (time_ns() - started) / 1.0e9
 
@@ -57,18 +58,25 @@ function benchmark_case(expert_parameters_bf16, expert_parameters_f32, token_cou
         token_count,
     ))
     expert_indices, routing_weights = routes(token_count)
-    bf16 = () -> qwen3_device_sparse_expert_dispatch(
+    bf16 = () -> LIFEAI_CUDA_EXT.qwen3_cuda_indexed_sparse_expert_dispatch(
         tokens,
         expert_indices,
         routing_weights,
         expert_parameters_bf16,
     )
-    f32 = () -> qwen3_device_sparse_expert_dispatch(
+    f32 = () -> LIFEAI_CUDA_EXT.qwen3_cuda_indexed_sparse_expert_dispatch(
         tokens,
         expert_indices,
         routing_weights,
         expert_parameters_f32,
     )
+    bucketed_bf16 = () ->
+        LIFEAI_CUDA_EXT.qwen3_cuda_bucketed_sparse_expert_dispatch(
+            tokens,
+            expert_indices,
+            routing_weights,
+            expert_parameters_bf16,
+        )
 
     bf16_cold_started = time_ns()
     bf16_output = synchronize_call(bf16)
@@ -76,25 +84,42 @@ function benchmark_case(expert_parameters_bf16, expert_parameters_f32, token_cou
     f32_cold_started = time_ns()
     f32_output = synchronize_call(f32)
     f32_cold_seconds = elapsed_seconds(f32_cold_started)
+    bucketed_cold_started = time_ns()
+    bucketed_output = synchronize_call(bucketed_bf16)
+    bucketed_bf16_cold_seconds = elapsed_seconds(bucketed_cold_started)
 
     bf16_output, bf16_samples = measured_samples(bf16)
     f32_output, f32_samples = measured_samples(f32)
+    bucketed_output, bucketed_samples = measured_samples(bucketed_bf16)
     bf16_host = Array(bf16_output)
     f32_host = Array(f32_output)
+    bucketed_host = Array(bucketed_output)
     bf16_median = median(bf16_samples)
     f32_median = median(f32_samples)
+    bucketed_median = median(bucketed_samples)
 
     return (;
         token_count,
         routed_pairs=token_count * EXPERTS_PER_TOKEN,
+        production_strategy=
+            LIFEAI_CUDA_EXT._qwen3_cuda_use_bucketed_dispatch(
+                D_MODEL,
+                EXPERT_HIDDEN_DIM,
+                token_count,
+            ) ? "bucketed" : "indexed",
         bf16_cold_seconds,
         f32_cold_seconds,
+        bucketed_bf16_cold_seconds,
         bf16_cuda_seconds=bf16_samples,
         bf16_cuda_median_seconds=bf16_median,
         f32_cuda_seconds=f32_samples,
         f32_cuda_median_seconds=f32_median,
+        bucketed_bf16_cuda_seconds=bucketed_samples,
+        bucketed_bf16_cuda_median_seconds=bucketed_median,
         bf16_over_f32_speedup=f32_median / bf16_median,
+        bucketed_over_indexed_speedup=bf16_median / bucketed_median,
         max_abs_bf16_vs_f32=maximum(abs.(bf16_host .- f32_host)),
+        max_abs_bucketed_vs_indexed=maximum(abs.(bucketed_host .- bf16_host)),
     )
 end
 
