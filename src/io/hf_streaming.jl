@@ -1,6 +1,6 @@
 using Random: Xoshiro
 
-# Week 13: streamed safetensors loading. The reader indexes tensor locations
+# Chapter 13: streamed safetensors loading. The reader indexes tensor locations
 # from file headers only; tensor data is read from disk on demand so models
 # whose Float32 parameters exceed host RAM can still be verified layer by
 # layer with the exact numeric semantics of the in-memory path.
@@ -426,7 +426,7 @@ end
         variant=nothing,
     )
 
-Run the Week 07 forward trace — embedding, every block output, final hidden
+Run the Chapter 07 forward trace — embedding, every block output, final hidden
 state and logits — plus an optional dynamic-KV-cache single-token decode,
 while streaming each layer's weights from safetensors on demand. Numeric
 semantics are identical to loading the full model: the same block kernels run
@@ -571,6 +571,344 @@ function stream_hf_qwen3_forward(
         model,
         config,
         variant=dense_spec,
+        source=abspath(model_dir),
+    )
+end
+
+function _streamed_qwen3_moe_block_parameters(
+    model::GPTModel,
+    tensors::_StreamedTensors,
+    layer::Int,
+)
+    d_model = model.d_model
+    q_dim = model.num_heads * model.head_dim
+    kv_dim = model.num_kv_heads * model.head_dim
+    prefix = "model.layers.$layer"
+    return (;
+        norm1=(; scale=reshape(_expect_tensor(
+            tensors,
+            "$prefix.input_layernorm.weight",
+            (d_model,),
+        ), d_model, 1, 1)),
+        attn=(;
+            q_proj=(; weight=_expect_tensor(
+                tensors,
+                "$prefix.self_attn.q_proj.weight",
+                (q_dim, d_model),
+            )),
+            k_proj=(; weight=_expect_tensor(
+                tensors,
+                "$prefix.self_attn.k_proj.weight",
+                (kv_dim, d_model),
+            )),
+            v_proj=(; weight=_expect_tensor(
+                tensors,
+                "$prefix.self_attn.v_proj.weight",
+                (kv_dim, d_model),
+            )),
+            o_proj=(; weight=_expect_tensor(
+                tensors,
+                "$prefix.self_attn.o_proj.weight",
+                (d_model, q_dim),
+            )),
+            q_norm=(; scale=_expect_tensor(
+                tensors,
+                "$prefix.self_attn.q_norm.weight",
+                (model.head_dim,),
+            )),
+            k_norm=(; scale=_expect_tensor(
+                tensors,
+                "$prefix.self_attn.k_norm.weight",
+                (model.head_dim,),
+            )),
+        ),
+        norm2=(; scale=reshape(_expect_tensor(
+            tensors,
+            "$prefix.post_attention_layernorm.weight",
+            (d_model,),
+        ), d_model, 1, 1)),
+        gate=(; weight=_expect_tensor(
+            tensors,
+            "$prefix.mlp.gate.weight",
+            (model.num_experts, d_model),
+        )),
+    )
+end
+
+function _streamed_qwen3_moe_experts(
+    model::GPTModel,
+    tensors::_StreamedTensors,
+    x,
+    routing::Matrix,
+    layer::Int,
+)
+    tokens = reshape(x, model.d_model, :)
+    output = similar(tokens)
+    fill!(output, zero(eltype(output)))
+    active_experts = Int[]
+    prefix = "model.layers.$layer.mlp.experts"
+
+    for expert in 1:model.num_experts
+        token_indices = findall(!iszero, view(routing, expert, :))
+        isempty(token_indices) && continue
+        push!(active_experts, expert)
+        expert_tokens = tokens[:, token_indices]
+        expert_prefix = "$prefix.$(expert - 1)"
+
+        gate_weight = _expect_tensor(
+            tensors,
+            "$expert_prefix.gate_proj.weight",
+            (model.mlp_hidden_dim, model.d_model),
+        )
+        gate = gate_weight * expert_tokens
+        gate_weight = nothing
+
+        up_weight = _expect_tensor(
+            tensors,
+            "$expert_prefix.up_proj.weight",
+            (model.mlp_hidden_dim, model.d_model),
+        )
+        up = up_weight * expert_tokens
+        up_weight = nothing
+        hidden = swish.(gate) .* up
+        gate = nothing
+        up = nothing
+
+        down_weight = _expect_tensor(
+            tensors,
+            "$expert_prefix.down_proj.weight",
+            (model.d_model, model.mlp_hidden_dim),
+        )
+        expert_output = down_weight * hidden
+        down_weight = nothing
+        hidden = nothing
+        weights = reshape(
+            convert.(eltype(expert_output), routing[expert, token_indices]),
+            1,
+            :,
+        )
+        view(output, :, token_indices) .+= expert_output .* weights
+    end
+    return reshape(output, size(x)), active_experts
+end
+
+function _streamed_qwen3_moe_block_with_kv_cache(
+    model::GPTModel,
+    block::TransformerBlock,
+    x,
+    tensors::_StreamedTensors,
+    st::NamedTuple,
+    cache::LayerKVCache,
+    layer::Int;
+    start_pos::Int,
+)
+    ps = _streamed_qwen3_moe_block_parameters(model, tensors, layer)
+    x_norm1, st_norm1 = block.norm1(x, ps.norm1, st.norm1)
+    attn_out, st_attn, new_cache = _attention_with_kv_cache(
+        block.attn,
+        x_norm1,
+        ps.attn,
+        st.attn,
+        cache;
+        start_pos,
+    )
+    residual = x .+ attn_out
+    x_norm2, st_norm2 = block.norm2(residual, ps.norm2, st.norm2)
+    router_logits = ps.gate.weight * reshape(x_norm2, model.d_model, :)
+    routing = qwen3_topk_routing(
+        router_logits,
+        model.experts_per_token;
+        normalize=model.normalize_routing,
+    )
+    mlp_out, active_experts = _streamed_qwen3_moe_experts(
+        model,
+        tensors,
+        x_norm2,
+        routing,
+        layer,
+    )
+    y = residual .+ mlp_out
+    return (
+        y,
+        (; norm1=st_norm1, attn=st_attn, norm2=st_norm2, mlp=(;)),
+        new_cache,
+        router_logits,
+        active_experts,
+    )
+end
+
+"""
+    stream_hf_qwen3_moe_forward(
+        model_dir,
+        tokens;
+        decode_token=nothing,
+        max_seq_len=64,
+    )
+
+Run a Qwen3 MoE forward trace and optional one-token dynamic-cache decode
+directly from a local HuggingFace safetensors checkpoint. Tensor names and
+shard indexes are validated before execution. Attention weights are resident
+for one layer at a time; expert weights are read only after routing and only
+for experts selected by the current prompt or decode token batch.
+
+`active_experts` and `decode_active_experts` contain 1-based expert ids for
+each layer, making the physical checkpoint reads observable. The computation
+uses Float32 host kernels and preserves the eager MoE routing/dispatch order.
+"""
+function stream_hf_qwen3_moe_forward(
+    model_dir::AbstractString,
+    tokens::AbstractMatrix{<:Integer};
+    decode_token=nothing,
+    max_seq_len=64,
+)
+    isdir(model_dir) || throw(ArgumentError(
+        "model directory does not exist: $model_dir",
+    ))
+    config = load_hf_qwen3_moe_config(
+        joinpath(model_dir, "config.json");
+        max_seq_len,
+    )
+    model = GPTModel(config)
+    _qwen3_validate_moe_semantics(model)
+
+    seq_len, batch_size = size(tokens)
+    seq_len > 0 || throw(ArgumentError(
+        "`tokens` must contain at least one token",
+    ))
+    decode_matrix = if decode_token === nothing
+        nothing
+    else
+        matrix = _decode_token_matrix(decode_token, batch_size)
+        _validate_generation_ids(matrix, model.vocab_size)
+        matrix
+    end
+    seq_len + (decode_matrix === nothing ? 0 : 1) <= model.max_seq_len ||
+        throw(ArgumentError(
+            "prompt plus decode token exceeds model.max_seq_len",
+        ))
+
+    reader = open_safetensors_reader(model_dir)
+    _qwen3_validate_moe_tensor_names(
+        model,
+        Set(String.(collect(keys(reader)))),
+    )
+    tensors = _StreamedTensors(reader)
+
+    if model.tie_embeddings && haskey(reader, "lm_head.weight")
+        tied_head = _expect_tensor(
+            tensors,
+            "lm_head.weight",
+            (model.vocab_size, model.d_model),
+        )
+        embedding_hf = _expect_tensor(
+            tensors,
+            "model.embed_tokens.weight",
+            (model.vocab_size, model.d_model),
+        )
+        tied_head == embedding_hf || throw(ArgumentError(
+            "tied Qwen3 MoE lm_head.weight does not equal " *
+            "model.embed_tokens.weight",
+        ))
+        tied_head = nothing
+        embedding_hf = nothing
+        GC.gc(false)
+    end
+
+    st = Lux.initialstates(Xoshiro(0), model)
+    token_matrix = Int.(collect(tokens))
+    _validate_generation_ids(token_matrix, model.vocab_size)
+    x = _read_embedding_rows(
+        reader,
+        "model.embed_tokens.weight",
+        token_matrix,
+        model.d_model,
+        model.vocab_size,
+    )
+    embedding = x
+
+    blocks = Tuple(values(model.blocks.layers))
+    block_states = Tuple(values(st.blocks))
+    block_outputs = Vector{Any}(undef, model.num_layers)
+    router_outputs = Vector{Any}(undef, model.num_layers)
+    active_experts = Vector{Vector{Int}}(undef, model.num_layers)
+    layer_caches = Vector{Any}(undef, model.num_layers)
+    for index in 1:model.num_layers
+        x, _, layer_caches[index], router_outputs[index], active_experts[index] =
+            _streamed_qwen3_moe_block_with_kv_cache(
+                model,
+                blocks[index],
+                x,
+                tensors,
+                block_states[index],
+                LayerKVCache(),
+                index - 1;
+                start_pos=1,
+            )
+        block_outputs[index] = x
+        GC.gc(false)
+    end
+
+    final_norm_ps = (; scale=reshape(_expect_tensor(
+        tensors,
+        "model.norm.weight",
+        (model.d_model,),
+    ), model.d_model, 1, 1))
+    final_hidden, _ = model.final_norm(x, final_norm_ps, st.final_norm)
+    logits, _ = _streamed_logits(model, final_hidden, tensors, st.lm_head)
+    GC.gc(false)
+
+    decode_logits = nothing
+    decode_router_outputs = nothing
+    decode_active_experts = nothing
+    if decode_matrix !== nothing
+        y = _read_embedding_rows(
+            reader,
+            "model.embed_tokens.weight",
+            decode_matrix,
+            model.d_model,
+            model.vocab_size,
+        )
+        decode_routers = Vector{Any}(undef, model.num_layers)
+        decode_active = Vector{Vector{Int}}(undef, model.num_layers)
+        start_pos = seq_len + 1
+        for index in 1:model.num_layers
+            y, _, layer_caches[index], decode_routers[index], decode_active[index] =
+                _streamed_qwen3_moe_block_with_kv_cache(
+                    model,
+                    blocks[index],
+                    y,
+                    tensors,
+                    block_states[index],
+                    layer_caches[index],
+                    index - 1;
+                    start_pos,
+                )
+            GC.gc(false)
+        end
+        decode_hidden, _ = model.final_norm(y, final_norm_ps, st.final_norm)
+        decode_logits, _ = _streamed_logits(
+            model,
+            decode_hidden,
+            tensors,
+            st.lm_head,
+        )
+        decode_router_outputs = Tuple(decode_routers)
+        decode_active_experts = Tuple(decode_active)
+        GC.gc(false)
+    end
+
+    return (;
+        embedding,
+        blocks=Tuple(block_outputs),
+        router_logits=Tuple(router_outputs),
+        active_experts=Tuple(active_experts),
+        final_hidden,
+        logits,
+        decode_logits,
+        decode_router_logits=decode_router_outputs,
+        decode_active_experts,
+        model,
+        config,
         source=abspath(model_dir),
     )
 end

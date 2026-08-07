@@ -4,8 +4,12 @@ using Lux
 using LifeAI:
     GPTModel,
     Qwen3SparseMoE,
+    hf_qwen3_moe_forward_trace,
+    hf_token_ids,
     load_hf_qwen3_moe_config,
-    load_hf_qwen3_moe_parameters
+    load_hf_qwen3_moe_model,
+    load_hf_qwen3_moe_parameters,
+    stream_hf_qwen3_moe_forward
 
 function _qwen3_moe_test_config(; kwargs...)
     return merge(
@@ -96,6 +100,59 @@ function _qwen3_moe_test_tensors(model::GPTModel)
     return tensors
 end
 
+function _qwen3_moe_write_safetensors(path, tensors, names)
+    header = Dict{String,Any}()
+    data = UInt8[]
+    offset = 0
+    for name in names
+        values = Float32.(tensors[name])
+        row_major = ndims(values) <= 1 ?
+            vec(values) :
+            vec(permutedims(values, Tuple(reverse(1:ndims(values)))))
+        bytes = collect(reinterpret(UInt8, row_major))
+        header[name] = Dict(
+            "dtype" => "F32",
+            "shape" => collect(size(values)),
+            "data_offsets" => [offset, offset + length(bytes)],
+        )
+        append!(data, bytes)
+        offset += length(bytes)
+    end
+    header_text = JSON3.write(header)
+    padded_header = header_text * repeat(" ", mod(-ncodeunits(header_text), 8))
+    open(path, "w") do io
+        write(io, UInt64(ncodeunits(padded_header)))
+        write(io, codeunits(padded_header))
+        write(io, data)
+    end
+    return path
+end
+
+function _qwen3_moe_write_sharded_checkpoint(directory, tensors)
+    names = sort!(collect(keys(tensors)))
+    midpoint = cld(length(names), 2)
+    shards = (
+        "model-00001-of-00002.safetensors" => names[1:midpoint],
+        "model-00002-of-00002.safetensors" => names[(midpoint + 1):end],
+    )
+    weight_map = Dict{String,String}()
+    for (shard, shard_names) in shards
+        _qwen3_moe_write_safetensors(
+            joinpath(directory, shard),
+            tensors,
+            shard_names,
+        )
+        for name in shard_names
+            weight_map[name] = shard
+        end
+    end
+    write(
+        joinpath(directory, "model.safetensors.index.json"),
+        JSON3.write(Dict("weight_map" => weight_map)),
+    )
+    return weight_map
+end
+
 @testset "Qwen3 MoE config and HuggingFace expert weight mapping" begin
     mktempdir() do directory
         path = joinpath(directory, "config.json")
@@ -134,5 +191,45 @@ end
         @test_throws ArgumentError load_hf_qwen3_moe_config(path)
         write(path, JSON3.write(_qwen3_moe_test_config(num_experts_per_tok=5)))
         @test_throws ArgumentError load_hf_qwen3_moe_config(path)
+    end
+end
+
+
+@testset "Qwen3 MoE streamed sharded checkpoint" begin
+    mktempdir() do directory
+        config_path = joinpath(directory, "config.json")
+        write(config_path, JSON3.write(_qwen3_moe_test_config()))
+        config = load_hf_qwen3_moe_config(config_path; max_seq_len=16)
+        model = GPTModel(config)
+        tensors = _qwen3_moe_test_tensors(model)
+        weight_map = _qwen3_moe_write_sharded_checkpoint(directory, tensors)
+
+        loaded = load_hf_qwen3_moe_model(directory; max_seq_len=16)
+        tokens = reshape(hf_token_ids([0, 4, 7]; vocab_size=model.vocab_size), :, 1)
+        eager = hf_qwen3_moe_forward_trace(
+            loaded.model,
+            tokens,
+            loaded.parameters,
+            loaded.states,
+        )
+        streamed = stream_hf_qwen3_moe_forward(
+            directory,
+            tokens;
+            max_seq_len=16,
+        )
+        @test streamed.blocks == eager.blocks
+        @test streamed.router_logits == eager.router_logits
+        @test streamed.logits == eager.logits
+        @test all(!isempty, streamed.active_experts)
+
+        index_path = joinpath(directory, "model.safetensors.index.json")
+        missing_name = "model.layers.0.mlp.experts.3.down_proj.weight"
+        delete!(weight_map, missing_name)
+        write(index_path, JSON3.write(Dict("weight_map" => weight_map)))
+        @test_throws ArgumentError stream_hf_qwen3_moe_forward(
+            directory,
+            tokens;
+            max_seq_len=16,
+        )
     end
 end

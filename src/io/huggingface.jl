@@ -960,6 +960,39 @@ function _qwen3_moe_expected_tensor_names(model::GPTModel)
     return names
 end
 
+function _qwen3_validate_moe_semantics(model::GPTModel)
+    model.norm_type === :rmsnorm || throw(ArgumentError("Qwen3 MoE requires RMSNorm"))
+    model.mlp_type === :qwen3_moe || throw(ArgumentError(
+        "Qwen3 MoE loading requires mlp_type=:qwen3_moe",
+    ))
+    model.use_qk_norm || throw(ArgumentError("Qwen3 MoE requires QK-Norm"))
+    model.use_rope && model.rope_style === :rotate_half || throw(ArgumentError(
+        "Qwen3 MoE requires rotate_half RoPE",
+    ))
+    model.use_bias && throw(ArgumentError(
+        "Qwen3 MoE loading requires bias-free projections",
+    ))
+    return nothing
+end
+
+function _qwen3_validate_moe_tensor_names(
+    model::GPTModel,
+    actual_names::Set{String},
+)
+    expected_names = _qwen3_moe_expected_tensor_names(model)
+    allowed_names = model.tie_embeddings ?
+        union(expected_names, Set(["lm_head.weight"])) : expected_names
+    missing = setdiff(expected_names, actual_names)
+    unexpected = setdiff(actual_names, allowed_names)
+    isempty(missing) || throw(ArgumentError(
+        "missing HuggingFace tensors: $(_format_tensor_names(missing))",
+    ))
+    isempty(unexpected) || throw(ArgumentError(
+        "unexpected HuggingFace tensors: $(_format_tensor_names(unexpected))",
+    ))
+    return nothing
+end
+
 function _qwen3_moe_block_parameters(
     model::GPTModel,
     tensors::AbstractDict,
@@ -1141,30 +1174,9 @@ function load_hf_qwen3_moe_parameters(
     model::GPTModel,
     tensors::AbstractDict,
 )
-    model.norm_type === :rmsnorm || throw(ArgumentError("Qwen3 MoE requires RMSNorm"))
-    model.mlp_type === :qwen3_moe || throw(ArgumentError(
-        "Qwen3 MoE loading requires mlp_type=:qwen3_moe",
-    ))
-    model.use_qk_norm || throw(ArgumentError("Qwen3 MoE requires QK-Norm"))
-    model.use_rope && model.rope_style === :rotate_half || throw(ArgumentError(
-        "Qwen3 MoE requires rotate_half RoPE",
-    ))
-    model.use_bias && throw(ArgumentError(
-        "Qwen3 MoE loading requires bias-free projections",
-    ))
-
-    expected_names = _qwen3_moe_expected_tensor_names(model)
+    _qwen3_validate_moe_semantics(model)
     actual_names = Set(String.(collect(keys(tensors))))
-    allowed_names = model.tie_embeddings ?
-        union(expected_names, Set(["lm_head.weight"])) : expected_names
-    missing = setdiff(expected_names, actual_names)
-    unexpected = setdiff(actual_names, allowed_names)
-    isempty(missing) || throw(ArgumentError(
-        "missing HuggingFace tensors: $(_format_tensor_names(missing))",
-    ))
-    isempty(unexpected) || throw(ArgumentError(
-        "unexpected HuggingFace tensors: $(_format_tensor_names(unexpected))",
-    ))
+    _qwen3_validate_moe_tensor_names(model, actual_names)
 
     d_model = model.d_model
     embedding_hf = _expect_tensor(
@@ -1230,7 +1242,7 @@ end
 
 Load a local HuggingFace Qwen3 dense model directory into a `GPTModel`, Lux
 parameter tree, and Lux state tree. This function never downloads files.
-Pass `variant` to require an exact official Week 11 dense-family shape.
+Pass `variant` to require an exact official dense-family shape.
 `weight_dtype=BFloat16` keeps BF16 storage bits untouched and halves resident
 parameter memory; the resulting tree is consumed by `hf_qwen3_bf16_forward`
 (the Float32 forward paths expect `weight_dtype=Float32`).

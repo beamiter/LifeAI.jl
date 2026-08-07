@@ -10,7 +10,8 @@ using LifeAI:
     load_hf_qwen3_moe_model,
     load_safetensors,
     prefill,
-    qwen3_topk_routing
+    qwen3_topk_routing,
+    stream_hf_qwen3_moe_forward
 
 const _QWEN3_MOE_TINY_PARITY_DIR = joinpath(
     @__DIR__,
@@ -111,6 +112,24 @@ _qwen3_moe_hf_layout(array) = permutedims(array, (3, 2, 1))
     )
     @test direct_logits == trace.logits
 
+    streamed_trace = stream_hf_qwen3_moe_forward(
+        _QWEN3_MOE_TINY_PARITY_DIR,
+        tokens;
+        max_seq_len=16,
+    )
+    @test streamed_trace.embedding == trace.embedding
+    @test streamed_trace.blocks == trace.blocks
+    @test streamed_trace.router_logits == trace.router_logits
+    @test streamed_trace.final_hidden == trace.final_hidden
+    @test streamed_trace.logits == trace.logits
+    for layer in 0:(loaded.model.num_layers - 1)
+        expected_active = sort!(unique!(vcat(
+            [Int.(collect(selected)) .+ 1 for selected in
+                metadata.selected_experts_0_based[string(layer)]]...,
+        )))
+        @test streamed_trace.active_experts[layer + 1] == expected_active
+    end
+
     prompt_tokens = reshape(hf_token_ids(
         Int.(collect(metadata.prompt_ids_0_based));
         vocab_size=loaded.model.vocab_size,
@@ -140,6 +159,23 @@ _qwen3_moe_hf_layout(array) = permutedims(array, (3, 2, 1))
     @test prompt_logits ≈ expected_prompt atol = 5.0f-6 rtol = 5.0f-6
     @test decode_logits ≈ expected_decode atol = 5.0f-6 rtol = 5.0f-6
     @test argmax(vec(decode_logits)) == argmax(vec(expected_decode))
+
+    streamed_cache = stream_hf_qwen3_moe_forward(
+        _QWEN3_MOE_TINY_PARITY_DIR,
+        prompt_tokens;
+        decode_token,
+        max_seq_len=16,
+    )
+    @test streamed_cache.logits == prompt_logits
+    @test streamed_cache.decode_logits == decode_logits
+    @test all(
+        length(active) <= loaded.model.experts_per_token * length(prompt_tokens)
+        for active in streamed_cache.active_experts
+    )
+    @test all(
+        length(active) == loaded.model.experts_per_token
+        for active in streamed_cache.decode_active_experts
+    )
 
     static = init_static_kv_cache(loaded.model; batch_size=1)
     static_prompt, static, static_states = prefill(
