@@ -12,11 +12,32 @@ const EXPERT_HIDDEN_DIM = 768
 const NUM_EXPERTS = 128
 const EXPERTS_PER_TOKEN = 8
 const TOKEN_COUNTS = (32, 64, 128, 256)
-const SAMPLES = 15
+const SAMPLES = 50
 const INPUT_SEED = 20260832
 const LIFEAI_CUDA_EXT = Base.get_extension(LifeAI, :LifeAICUDAExt)
 
 elapsed_seconds(started) = (time_ns() - started) / 1.0e9
+
+function _legacy_pack_expert_major_tokens_kernel!(
+    grouped_tokens,
+    tokens,
+    route_permutation,
+    d_model,
+    experts_per_token,
+    pair_count,
+)
+    linear_index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x +
+        CUDA.threadIdx().x
+    if linear_index <= d_model * pair_count
+        model_index = (linear_index - 1) % d_model + 1
+        bucket_pair = (linear_index - 1) ÷ d_model + 1
+        original_pair = Int(route_permutation[bucket_pair])
+        token_index = (original_pair - 1) ÷ experts_per_token + 1
+        @inbounds grouped_tokens[model_index, bucket_pair] =
+            BFloat16(tokens[model_index, token_index])
+    end
+    return
+end
 
 function routes(token_count)
     expert_indices = Matrix{Int32}(undef, EXPERTS_PER_TOKEN, token_count)
@@ -50,6 +71,76 @@ function measured_samples(f)
     return output, samples
 end
 
+function legacy_grouped_bf16_dispatch(
+    tokens,
+    expert_indices,
+    routing_weights,
+    expert_parameters,
+)
+    num_experts = size(expert_parameters.gate_proj, 3)
+    d_model, num_tokens = size(tokens)
+    hidden_dim = size(expert_parameters.gate_proj, 1)
+    experts_per_token = size(expert_indices, 1)
+    pair_count = experts_per_token * num_tokens
+    buckets = LIFEAI_CUDA_EXT.qwen3_cuda_bucket_routes(
+        expert_indices,
+        num_experts,
+    )
+    grouped_tokens = CUDA.zeros(BFloat16, d_model, pair_count)
+    threads = 256
+    token_blocks = cld(length(grouped_tokens), threads)
+    CUDA.@cuda threads=threads blocks=token_blocks _legacy_pack_expert_major_tokens_kernel!(
+        grouped_tokens,
+        tokens,
+        buckets.route_permutation,
+        d_model,
+        experts_per_token,
+        pair_count,
+    )
+    gate = LIFEAI_CUDA_EXT.qwen3_cuda_grouped_bf16_matmul(
+        expert_parameters.gate_proj,
+        grouped_tokens,
+        buckets.sorted_experts,
+        buckets.expert_counts,
+        buckets.expert_offsets,
+    )
+    up = LIFEAI_CUDA_EXT.qwen3_cuda_grouped_bf16_matmul(
+        expert_parameters.up_proj,
+        grouped_tokens,
+        buckets.sorted_experts,
+        buckets.expert_counts,
+        buckets.expert_offsets,
+    )
+    grouped_hidden = BFloat16.((gate ./ (1.0f0 .+ exp.(-gate))) .* up)
+    grouped_output = LIFEAI_CUDA_EXT.qwen3_cuda_grouped_bf16_matmul(
+        expert_parameters.down_proj,
+        grouped_hidden,
+        buckets.sorted_experts,
+        buckets.expert_counts,
+        buckets.expert_offsets,
+    )
+    routed_output = CUDA.zeros(Float32, d_model, pair_count)
+    scatter_blocks = cld(length(routed_output), threads)
+    CUDA.@cuda threads=threads blocks=scatter_blocks LIFEAI_CUDA_EXT._qwen3_cuda_scatter_expert_major_output_kernel!(
+        routed_output,
+        grouped_output,
+        buckets.route_permutation,
+        d_model,
+        pair_count,
+    )
+    output = CUDA.zeros(Float32, d_model, num_tokens)
+    combine_blocks = cld(length(output), threads)
+    CUDA.@cuda threads=threads blocks=combine_blocks LIFEAI_CUDA_EXT._qwen3_cuda_combine_routes_kernel!(
+        output,
+        routed_output,
+        routing_weights,
+        d_model,
+        num_tokens,
+        experts_per_token,
+    )
+    return output
+end
+
 function benchmark_case(expert_parameters, token_count)
     tokens = CUDA.cu(randn(
         Xoshiro(INPUT_SEED + token_count),
@@ -72,28 +163,46 @@ function benchmark_case(expert_parameters, token_count)
             routing_weights,
             expert_parameters,
         )
+    legacy_grouped_wmma = () -> legacy_grouped_bf16_dispatch(
+        tokens,
+        expert_indices,
+        routing_weights,
+        expert_parameters,
+    )
 
     scalar_cold_started = time_ns()
     scalar_output = synchronize_call(scalar_bucketed)
     scalar_cold_seconds = elapsed_seconds(scalar_cold_started)
+    legacy_cold_started = time_ns()
+    legacy_output = synchronize_call(legacy_grouped_wmma)
+    legacy_cold_seconds = elapsed_seconds(legacy_cold_started)
     wmma_cold_started = time_ns()
     wmma_output = synchronize_call(grouped_wmma)
     wmma_cold_seconds = elapsed_seconds(wmma_cold_started)
     scalar_output, scalar_samples = measured_samples(scalar_bucketed)
+    legacy_output, legacy_samples = measured_samples(legacy_grouped_wmma)
     wmma_output, wmma_samples = measured_samples(grouped_wmma)
     scalar_median = median(scalar_samples)
+    legacy_median = median(legacy_samples)
     wmma_median = median(wmma_samples)
 
     return (;
         token_count,
         pair_count=token_count * EXPERTS_PER_TOKEN,
         scalar_bucketed_cold_seconds=scalar_cold_seconds,
+        legacy_grouped_wmma_cold_seconds=legacy_cold_seconds,
         grouped_wmma_cold_seconds=wmma_cold_seconds,
         scalar_bucketed_cuda_seconds=scalar_samples,
         scalar_bucketed_cuda_median_seconds=scalar_median,
+        legacy_grouped_wmma_cuda_seconds=legacy_samples,
+        legacy_grouped_wmma_cuda_median_seconds=legacy_median,
         grouped_wmma_cuda_seconds=wmma_samples,
         grouped_wmma_cuda_median_seconds=wmma_median,
         grouped_wmma_over_scalar_bucketed_speedup=scalar_median / wmma_median,
+        shared_workspace_over_legacy_speedup=legacy_median / wmma_median,
+        max_abs_shared_vs_legacy=maximum(abs.(
+            Array(wmma_output) .- Array(legacy_output),
+        )),
         max_abs_grouped_wmma_vs_scalar_bucketed=maximum(abs.(
             Array(wmma_output) .- Array(scalar_output),
         )),
@@ -130,7 +239,7 @@ function main(output_path)
         for token_count in TOKEN_COUNTS
     ]
     result = (;
-        schema_version=1,
+        schema_version=3,
         benchmark="qwen3_moe_cuda_grouped_bf16_dispatch",
         environment=(;
             julia_version=string(VERSION),
@@ -147,13 +256,16 @@ function main(output_path)
                 parameter -> sizeof(eltype(parameter)) * length(parameter),
                 expert_parameters,
             ),
-            wmma_tile=(m=16, n=16, k=16),
+            wmma_tile=(m=32, n=8, k=16),
         ),
         measurement=(;
             input_seed=INPUT_SEED,
             samples=SAMPLES,
             includes_route_bucketing=true,
-            includes_padding_pack_swiglu_down_unpack_and_combine=true,
+            includes_complete_swiglu_dispatch=true,
+            legacy_rebuilds_layout_and_pack_for_each_projection=true,
+            optimized_reuses_layout_and_padded_intermediates=true,
+            optimized_combines_directly_from_padded_output=true,
         ),
         cases,
     )

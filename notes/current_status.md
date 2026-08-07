@@ -6,7 +6,7 @@
 
 ## 当前活动阶段
 
-[`Chapter 24 — Qwen3 MoE 架构支持`](episodes/episode06_qwen3_moe_and_model_expansion/chapter24_qwen3_moe_architecture.md) 已于 2026-08-07 Open。CPU Float32 correctness、独立 Transformers tiny parity、CPU sparse token dispatch、路由驱动的 checkpoint expert streaming、官方 30B-A3B immutable 资产契约、compact Reactant/XLA CPU 与 RTX 4090 D CUDA indexed/bucketed dispatch 已完成。官方 revision `ad44e777…`、config/index SHA256、16 个 BF16 分片的大小/LFS SHA256、`18,867` 个 tensor 与 `30,532,122,624` 参数已冻结；`verify_qwen3_moe_checkpoint` 默认完整哈希约 61 GB 权重并 fail closed，也提供显式 fast preflight。CUDA 大型 prefill 在设备端稳定按 expert 分桶，官方宽度 synthetic BF16 的 32/64-token 加速为 `1.48× / 3.28×`；纯设备 grouped BF16 WMMA 实验路径在完整 128/256-token dispatch 上达到 `1.11× / 1.95×`。Chapter 24 `246 / 246`、默认全套 `5,909 / 5,909`，XLA `3 / 3`、CUDA `35 / 35`。官方 30B-A3B 权重下载与真实 parity/峰值内存延后，因此本章保持 Open。
+[`Chapter 24 — Qwen3 MoE 架构支持`](episodes/episode06_qwen3_moe_and_model_expansion/chapter24_qwen3_moe_architecture.md) 已于 2026-08-07 Open。CPU Float32 correctness、独立 Transformers tiny parity、CPU sparse token dispatch、路由驱动的 checkpoint expert streaming、官方 30B-A3B immutable 资产契约、compact Reactant/XLA CPU 与 RTX 4090 D CUDA indexed/bucketed dispatch 已完成。官方 revision `ad44e777…`、config/index SHA256、16 个 BF16 分片的大小/LFS SHA256、`18,867` 个 tensor 与 `30,532,122,624` 参数已冻结；`verify_qwen3_moe_checkpoint` 默认完整哈希约 61 GB 权重并 fail closed，也提供显式 fast preflight。CUDA grouped BF16 WMMA 实验路径现已复用 padded layout/intermediates、直接从 padded output combine，并以底层 `m32n8k16` 把 padding 粒度降至 8 routes；完整 32/64/128/256-token dispatch 达到 `1.12× / 1.08× / 1.55× / 2.60×`。Chapter 24 `246 / 246`、默认全套 `5,909 / 5,909`，XLA `3 / 3`、CUDA `38 / 38`。官方 30B-A3B 权重下载与真实 parity/峰值内存延后，因此本章保持 Open。
 
 [`Chapter 23 — Qwen3 XLA 设备端采样`](episodes/episode05_deployment_memory_and_sampling/chapter23_qwen3_xla_device_sampling.md) 已于 2026-08-01 Closed。temperature / top-k / top-p / inverse-CDF 采样策略整体进入编译好的 prefill/decode executable：宿主每 token 只送一个 4 字节 uniform、取回一个整数，不再传回 151,936 维 logits。策略用 `top_k` 次 masked reduction 提取候选（不排序），nucleus 改写为「严格排在候选之前的质量 < top_p」，inverse-CDF 仍按词表 index 顺序走。真实 Qwen3-0.6B 在本机 RTX 5080 CUDA XLA 上以同一串 uniform replay，与宿主策略 **38/38 token 完全一致**，decode 从 `23.66` 提升到 `237.23` tok/s（`10.03×`），已贴近 greedy 的 246 tok/s。`top_k` 是编译期常量，temperature/top_p 是运行期设备标量。
 
@@ -42,7 +42,7 @@
 - GPTModel：包括 token/可选 position embedding、多层 TransformerBlock、final norm 和 LM head；支持 embedding / LM head 单 kernel 权重共享，并可分离 projection bias 与 LM-head bias。
 - legacy 默认仍为 LayerNorm + GELU + untied；modern 配置可通过独立开关组合，不改变旧调用。
 - HuggingFace Qwen3 dense 导入：冻结 0.6B / 1.7B / 4B / 8B / 14B / 32B 六个官方规格与 config checksum，可自动识别或显式要求 variant；严格解析 config，读取 BF16/F32 safetensors 单文件或 index 分片，完整映射 embedding、attention、QK-Norm、MLP、final norm 与 tied/untied LM head；missing、unexpected、duplicate、shape/dtype/config 错误均 fail closed。六个真实 checkpoint 全部实跑逐层 parity：0.6B—4B 全量加载，8B—32B 流式加载。
-- Qwen3 MoE 导入（Chapter 24，Open）：Float32 top-k routing、逐 expert SwiGLU、all-sparse decoder topology、原始 `mlp.experts.N.*` 权重名映射和 full/dynamic/static cache 已完成 Transformers tiny parity；CPU 默认路径按 expert gather/compute/combine，只执行非零 routing pair，并保留全 expert oracle。`stream_hf_qwen3_moe_forward` 通过 header-only index 在路由后只读取 active experts，覆盖 prompt 与 dynamic cache decode；双分片 fixture 与 eager 逐位一致。官方 30B-A3B 的 immutable revision、30.53B 参数、config/index 与 16 分片 checksum 已形成代码级资产契约及 CLI verifier。Reactant/XLA CPU 使用 compact route-major fallback；RTX 4090 D CUDA 通过 lazy package extension 使用低 workspace indexed kernels，大型 prefill 再以纯设备 stable permutation/counts/offsets 改为 expert-major 权重访问。独立 grouped BF16 WMMA 路径已贯通 gate/up/SwiGLU/down/combine，但因两个 activation 边界会显式舍入到 BF16，当前保持实验入口。真实 30B-A3B parity 仍未完成。
+- Qwen3 MoE 导入（Chapter 24，Open）：Float32 top-k routing、逐 expert SwiGLU、all-sparse decoder topology、原始 `mlp.experts.N.*` 权重名映射和 full/dynamic/static cache 已完成 Transformers tiny parity；CPU 默认路径按 expert gather/compute/combine，只执行非零 routing pair，并保留全 expert oracle。`stream_hf_qwen3_moe_forward` 通过 header-only index 在路由后只读取 active experts，覆盖 prompt 与 dynamic cache decode；双分片 fixture 与 eager 逐位一致。官方 30B-A3B 的 immutable revision、30.53B 参数、config/index 与 16 分片 checksum 已形成代码级资产契约及 CLI verifier。Reactant/XLA CPU 使用 compact route-major fallback；RTX 4090 D CUDA 通过 lazy package extension 使用低 workspace indexed kernels，大型 prefill 再以纯设备 stable permutation/counts/offsets 改为 expert-major 权重访问。独立 grouped BF16 WMMA 路径复用一次 layout/pack 与 padded intermediates，使用底层 `m32n8k16` 和直接 padded combine；因两个 activation 边界会显式舍入到 BF16，当前保持实验入口。真实 30B-A3B parity 仍未完成。
 - Qwen3-Embedding-0.6B 导入（Chapter 22）：独立冻结 HF revision 和 8 个
   asset SHA256，严格区分 151,669 vocabulary、32K model context、
   SentenceTransformers base-model namespace 与 causal-LM contract；
@@ -151,17 +151,18 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 Chapter 24 compact dispatch 的 Reactant/XLA CPU 专项另计 `3 / 3`：
 128 experts/top-8/64 tokens 的 route pairs 为 `512 / 8,192`，编译
 `32.126 s`、steady median `38.616 ms`，对 dense oracle max-abs `9.09e-7`。
-RTX 4090 D CUDA 专项另计 `35 / 35`；indexed kernels 的单-token/64-token
+RTX 4090 D CUDA 专项另计 `38 / 38`；indexed kernels 的单-token/64-token
 steady median 为 `0.365 / 0.377 ms`，相对 route-major baseline 加速
 `1.32× / 1.57×`，64-token 相对单线程 CPU sparse 加速 `4.06×`；
 workspace 缩减 `118.15×`，两组 max-abs 均低于 `6.56e-7`。官方
 `2,048→768` 投影宽度的 BF16 indexed dispatch 为 `0.180 / 0.689 ms`
 （1/8 token）；32/64 token 自动切换到 bucketed，分别从
 `2.813 / 6.730 ms` 降至 `1.896 / 2.052 ms`，输出逐位一致。
-纯设备 grouped BF16 WMMA 单投影在 128/256 token 相对 scalar grouped
-达到 `1.54× / 2.57×`；包含 bucketing、三次投影、SwiGLU 与 combine 的
-完整实验路径相对现有 bucketed dispatch 达到 `1.11× / 1.95×`，
-32/64 token 仍只有 `0.92× / 0.87×`，所以未改生产分派。
+纯设备 grouped BF16 WMMA 使用 `m32n8k16` 后，单投影在 32/64/128/256
+token 相对 scalar grouped 达到 `1.03× / 1.18× / 1.61× / 2.32×`；
+共享 padded workspace 且直接 combine 的完整实验路径相对现有 bucketed
+dispatch 达到 `1.12× / 1.08× / 1.55× / 2.60×`。grouped 两种实现
+输出逐位相同；相对 Float32-activation bucketed 的 max-abs ≤ `1.86e-5`。
 Chapter 23 的真实 0.6B CUDA XLA 验收（同 uniform replay）38/38 token 一致、
 decode `237.23` vs `23.66` tok/s，报告顶层 `closed=true`。Chapter 22 加真实 Qwen3-Embedding-0.6B 权重为 `103 / 103`；Chapter 21 加真实 loopback socket opt-in 为 `116 / 116`；compact fixed-chunk prefill 在 Reactant CPU 编译执行 `5 / 5` 通过。
 

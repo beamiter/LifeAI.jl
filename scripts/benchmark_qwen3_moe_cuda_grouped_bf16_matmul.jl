@@ -140,7 +140,7 @@ function benchmark_case(weights, token_count)
     scalar_median = median(scalar_samples)
     wmma_median = median(wmma_samples)
     padded_pairs = sum(
-        count == 0 ? 0 : cld(Int(count), 16) * 16
+        count == 0 ? 0 : cld(Int(count), 8) * 8
         for count in route_data.host_counts
     )
 
@@ -175,7 +175,7 @@ function main(output_path)
     CUDA.synchronize()
     cases = [benchmark_case(weights, token_count) for token_count in TOKEN_COUNTS]
     result = (;
-        schema_version=1,
+        schema_version=2,
         benchmark="qwen3_moe_cuda_grouped_bf16_matmul",
         environment=(;
             julia_version=string(VERSION),
@@ -189,7 +189,7 @@ function main(output_path)
             num_experts=NUM_EXPERTS,
             experts_per_token=EXPERTS_PER_TOKEN,
             bf16_weight_bytes=sizeof(eltype(weights)) * length(weights),
-            wmma_tile=(m=16, n=16, k=16),
+            wmma_tile=(m=32, n=8, k=16),
         ),
         measurement=(;
             input_seed=INPUT_SEED,

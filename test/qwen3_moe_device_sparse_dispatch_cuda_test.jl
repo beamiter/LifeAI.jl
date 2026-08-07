@@ -113,6 +113,15 @@ end
     @test size(actual) == size(expected)
     @test eltype(actual_gpu) == Float32
     @test all(isfinite, actual)
+    layout = _QWEN3_MOE_CUDA_EXT._qwen3_cuda_grouped_bf16_layout(
+        CUDA.cu(expert_counts),
+        num_experts,
+        length(expert_ids),
+        8,
+    )
+    @test layout.route_tile == 8
+    @test layout.padded_capacity == length(expert_ids) + 7 * num_experts
+    @test Array(layout.padded_offsets) == Int32[1, 9, 9, 25, 33]
 end
 
 @testset "Qwen3 MoE CUDA grouped BF16 dispatch preserves routed SwiGLU semantics" begin

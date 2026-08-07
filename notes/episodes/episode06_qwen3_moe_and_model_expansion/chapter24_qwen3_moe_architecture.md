@@ -155,14 +155,22 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - 新增由 device expert counts/offsets 驱动的 `m16n16k16` WMMA 原语：每个 expert 在设备端补齐到 16 routes，pack 后以 BF16 输入、Float32 accumulation 做 grouped projection，再去除 padding；整个动态 route metadata 生命周期没有 host readback。CUDA.jl 当前 `m32n8k16` BF16 high-level fragment 构造存在 tuple-size 编译问题，因此使用同样受 Ampere 支持的 `m16n16k16`。
 - 原语扩展为完整实验 dispatch：稳定分桶、gate/up、SwiGLU、down、原 route 写回与 routing-weight combine 全部在设备完成。输入 token 与 post-SwiGLU hidden 在两次 WMMA 边界显式舍入到 BF16，其余累计为 Float32；专项新增 8 项，CUDA 合计 `35 / 35`。
 - 官方 `2,048→768`、128 experts/top-8 的单投影基准包含 padding/pack/unpack：128/256 token 相对 scalar grouped kernel 加速 `1.54× / 2.57×`；16/32 token 为 `0.72× / 0.91×`。原始结果为 `cuda_4090d_grouped_bf16_matmul.json`。
-- 完整三投影 dispatch（含 bucketing/combine）在 128/256 token 为 `1.11× / 1.95×`，32/64 token 为 `0.92× / 0.87×`；相对现有 Float32-activation bucketed 输出的 max-abs ≤ `1.86e-5`。原始结果为 `cuda_4090d_grouped_bf16_dispatch.json`。
+- 初始 `m16n16k16` 三投影 dispatch（含 bucketing/combine）在 128/256 token 为 `1.11× / 1.95×`，32/64 token 为 `0.92× / 0.87×`；相对现有 Float32-activation bucketed 输出的 max-abs ≤ `1.86e-5`。该初始基线冻结于 commit `80a41e2`，当前结果文件已由后续优化的 schema 3 取代。
 - 因小 batch 劣化且 activation 数值契约发生变化，本阶段保留独立实验 API，不改变生产 dispatch。下一步应复用三次 projection 的 padded offsets/packed buffers，并用真实 checkpoint 做逐层误差验收后再考虑只对超宽 prefill 启用。
+
+### 2026-08-07：grouped WMMA workspace 复用与 8-route tile
+
+- grouped 完整路径只构建一次 padded counts/offsets，token 直接 pack 到 padded expert-major buffer；gate/up 保留 padded Float32 输出，SwiGLU 后的 padded BF16 hidden 直接送入 down，不再为每个 projection 重建 layout 或做中间 unpack/repack。
+- 新增 inverse route permutation 与直接 padded combine kernel，最终 down 输出不再物化 `d_model × routed_pairs` 的 unpadded grouped/routed 两个中间矩阵。相对同样使用 8-route tile、但仍做三次独立 layout/pack 的 grouped 路径，新旧输出逐位相同，50 次同进程 32/64/128/256-token steady 加速为 `1.05× / 1.06× / 1.09× / 1.12×`。
+- CUDA.jl 高层 `m32n8k16` BF16 fragment 构造与实际底层 tuple size 不一致；改为直接调用 CUDA.jl 已验证的 low-level load/mma/store wrappers，输出维可被 32 整除时使用 `m32n8k16`，否则保留 `m16n16k16` fallback。官方 shape 的每 expert padding 因此由 16 降至 8 routes。
+- RTX 4090 D 的 50 次最终冻结完整 dispatch median：32/64/128/256 token 为 `1.622 / 1.662 / 1.673 / 1.853 ms`，现有 scalar bucketed 为 `1.814 / 1.788 / 2.601 / 4.826 ms`，对应 `1.12× / 1.08× / 1.55× / 2.60×`。单投影在相同 token 数为 `1.03× / 1.18× / 1.61× / 2.32×`；CUDA 专项增至 `38 / 38`。
+- 这一优化解决了 synthetic 官方宽度下的 32-token 性能下界，但 activation 舍入契约仍与生产 Float32 activation 不同；真实 checkpoint 验证恢复前继续保持实验 API，不自动接管生产 dispatch。
 
 ## Close 回顾
 
 - **完成了什么**：CPU Float32 correctness、独立 Transformers tiny parity、CPU sparse dispatch、真实 checkpoint 可复用的路由驱动 expert streaming，以及无 host routing fallback 的 compact Reactant/XLA CPU 与 RTX 4090 D CUDA 路径；本章仍 Open。
-- **验证证据**：MoE 专项 `246 / 246`、默认全套 `5,909 / 5,909`，XLA `3 / 3`、CUDA `35 / 35`；官方资产契约 `110 / 110`，双分片验证器成功路径新增 3 项。128-expert CPU 基准 `4.69×`；官方投影宽度 synthetic BF16 的生产 bucketed 策略在 32/64-token 达到 `1.48× / 3.28×`，实验 grouped WMMA 完整 dispatch 在 128/256-token 达到 `1.11× / 1.95×`。
+- **验证证据**：MoE 专项 `246 / 246`、默认全套 `5,909 / 5,909`，XLA `3 / 3`、CUDA `38 / 38`；官方资产契约 `110 / 110`，双分片验证器成功路径新增 3 项。128-expert CPU 基准 `4.69×`；官方投影宽度 synthetic BF16 的 production bucketed 策略在 32/64-token 达到 `1.48× / 3.28×`，实验 grouped WMMA 完整 dispatch 在 32/64/128/256-token 达到 `1.12× / 1.08× / 1.55× / 2.60×`。
 - **没有完成及原因**：本机没有官方 Qwen3-30B-A3B checkpoint，真实资产 checksum、逐层 parity、峰值内存仍未验证；CUDA indexed 单-token decode 仍慢于 CPU，需要 expert 分桶/grouped GEMM，而 XLA 仍使用物化 route 权重的 portable fallback。
 - **最重要的认知变化**：原始 Qwen3 MoE 没有 shared expert；同时，compact route pairs 能保证算术稀疏，却不会自动消除选中权重物化与 gather 带宽成本，生产加速仍需要融合/分桶。
 - **是否满足 Close 条件**：否。
-- **带到下一阶段的问题**：怎样复用 grouped WMMA 三次 projection 的 padding/pack workspace，并验证 BF16 activation 契约不会破坏真实模型逐层/logits/生成 parity；待 checkpoint 下载恢复后，再用现有 streamed prompt/cache decode 完成官方 30B-A3B 真实逐层 parity 与峰值内存实测？
+- **带到下一阶段的问题**：怎样在不改变生产 Float32 activation 契约的情况下提供显式 opt-in/profile gate，并验证 grouped BF16 activation 不会破坏真实模型逐层/logits/生成 parity；待 checkpoint 下载恢复后，再用现有 streamed prompt/cache decode 完成官方 30B-A3B 真实逐层 parity 与峰值内存实测？
