@@ -1,5 +1,6 @@
 module LifeAICUDAExt
 
+using BFloat16s: BFloat16
 import CUDA
 import LifeAI
 import LifeAI: qwen3_device_sparse_expert_dispatch
@@ -41,6 +42,372 @@ function _qwen3_cuda_finalize_route_offsets_kernel!(
             inclusive_counts[expert_index] + Int32(1)
     end
     return
+end
+
+function _qwen3_cuda_pad_expert_counts_kernel!(
+    padded_counts,
+    expert_counts,
+    num_experts,
+)
+    expert_index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x +
+        CUDA.threadIdx().x
+    if expert_index <= num_experts
+        count = expert_counts[expert_index]
+        @inbounds padded_counts[expert_index] =
+            ((count + Int32(15)) ÷ Int32(16)) * Int32(16)
+    end
+    return
+end
+
+function _qwen3_cuda_pack_grouped_bf16_inputs_kernel!(
+    padded_inputs,
+    inputs,
+    sorted_experts,
+    expert_offsets,
+    padded_offsets,
+    input_dim,
+    pair_count,
+)
+    linear_index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x +
+        CUDA.threadIdx().x
+    if linear_index <= input_dim * pair_count
+        input_index = (linear_index - 1) % input_dim + 1
+        pair_index = (linear_index - 1) ÷ input_dim + 1
+        expert_index = Int(sorted_experts[pair_index])
+        within_expert = pair_index - Int(expert_offsets[expert_index])
+        padded_pair = Int(padded_offsets[expert_index]) + within_expert
+        @inbounds padded_inputs[input_index, padded_pair] =
+            inputs[input_index, pair_index]
+    end
+    return
+end
+
+function _qwen3_cuda_grouped_bf16_wmma_kernel!(
+    padded_output,
+    weights,
+    padded_inputs,
+    padded_offsets,
+    output_dim,
+    input_dim,
+    num_experts,
+    output_tiles,
+)
+    block_index = CUDA.blockIdx().x
+    output_tile = (block_index - 1) % output_tiles + 1
+    route_tile = (block_index - 1) ÷ output_tiles + 1
+    output_start = (output_tile - 1) * 16 + 1
+    route_start = (route_tile - 1) * 16 + 1
+    padded_stop = Int(padded_offsets[num_experts + 1])
+    if route_start < padded_stop
+        expert_index = 1
+        while expert_index <= num_experts &&
+                route_start >= Int(padded_offsets[expert_index + 1])
+            expert_index += 1
+        end
+        config = CUDA.WMMA.Config{16,16,16,Float32}
+        accumulator = CUDA.WMMA.fill_c(0.0f0, config)
+        input_start = 1
+        while input_start <= input_dim
+            weight_linear =
+                output_start +
+                (input_start - 1) * output_dim +
+                (expert_index - 1) * output_dim * input_dim
+            input_linear = input_start + (route_start - 1) * input_dim
+            weight_fragment = CUDA.WMMA.load_a(
+                pointer(weights, weight_linear),
+                output_dim,
+                CUDA.WMMA.ColMajor,
+                config,
+            )
+            input_fragment = CUDA.WMMA.load_b(
+                pointer(padded_inputs, input_linear),
+                input_dim,
+                CUDA.WMMA.ColMajor,
+                config,
+            )
+            accumulator = CUDA.WMMA.mma(
+                weight_fragment,
+                input_fragment,
+                accumulator,
+                config,
+            )
+            input_start += 16
+        end
+        output_linear = output_start + (route_start - 1) * output_dim
+        CUDA.WMMA.store_d(
+            pointer(padded_output, output_linear),
+            accumulator,
+            output_dim,
+            CUDA.WMMA.ColMajor,
+            config,
+        )
+    end
+    return
+end
+
+function _qwen3_cuda_unpack_grouped_f32_output_kernel!(
+    output,
+    padded_output,
+    sorted_experts,
+    expert_offsets,
+    padded_offsets,
+    output_dim,
+    pair_count,
+)
+    linear_index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x +
+        CUDA.threadIdx().x
+    if linear_index <= output_dim * pair_count
+        output_index = (linear_index - 1) % output_dim + 1
+        pair_index = (linear_index - 1) ÷ output_dim + 1
+        expert_index = Int(sorted_experts[pair_index])
+        within_expert = pair_index - Int(expert_offsets[expert_index])
+        padded_pair = Int(padded_offsets[expert_index]) + within_expert
+        @inbounds output[output_index, pair_index] =
+            padded_output[output_index, padded_pair]
+    end
+    return
+end
+
+function _qwen3_cuda_pack_expert_major_tokens_kernel!(
+    grouped_tokens,
+    tokens,
+    route_permutation,
+    d_model,
+    experts_per_token,
+    pair_count,
+)
+    linear_index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x +
+        CUDA.threadIdx().x
+    if linear_index <= d_model * pair_count
+        model_index = (linear_index - 1) % d_model + 1
+        bucket_pair = (linear_index - 1) ÷ d_model + 1
+        original_pair = Int(route_permutation[bucket_pair])
+        token_index = (original_pair - 1) ÷ experts_per_token + 1
+        @inbounds grouped_tokens[model_index, bucket_pair] =
+            BFloat16(tokens[model_index, token_index])
+    end
+    return
+end
+
+function _qwen3_cuda_scatter_expert_major_output_kernel!(
+    routed_output,
+    grouped_output,
+    route_permutation,
+    d_model,
+    pair_count,
+)
+    linear_index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x +
+        CUDA.threadIdx().x
+    if linear_index <= d_model * pair_count
+        model_index = (linear_index - 1) % d_model + 1
+        bucket_pair = (linear_index - 1) ÷ d_model + 1
+        original_pair = Int(route_permutation[bucket_pair])
+        @inbounds routed_output[model_index, original_pair] =
+            grouped_output[model_index, bucket_pair]
+    end
+    return
+end
+
+"""
+    qwen3_cuda_grouped_bf16_matmul(
+        weights, inputs, sorted_experts, expert_counts, expert_offsets)
+
+Multiply BF16 expert matrices by expert-major BF16 route inputs using CUDA
+WMMA with Float32 accumulation. Dynamic route counts stay on device: each
+expert is padded to a 16-column tile, and the returned output removes padding
+while preserving expert-major route order.
+"""
+function qwen3_cuda_grouped_bf16_matmul(
+    weights::CUDA.CuArray{BFloat16,3},
+    inputs::CUDA.CuArray{BFloat16,2},
+    sorted_experts::CUDA.CuArray{I,1},
+    expert_counts::CUDA.CuArray{Int32,1},
+    expert_offsets::CUDA.CuArray{Int32,1},
+) where {I<:Integer}
+    CUDA.capability(CUDA.device()) >= v"8.0" || throw(ArgumentError(
+        "grouped BF16 WMMA requires an Ampere-or-newer CUDA device",
+    ))
+    output_dim, input_dim, num_experts = size(weights)
+    size(inputs, 1) == input_dim || throw(DimensionMismatch(
+        "grouped BF16 input width must match expert weight input width",
+    ))
+    pair_count = size(inputs, 2)
+    length(sorted_experts) == pair_count || throw(DimensionMismatch(
+        "sorted expert count must match grouped BF16 input routes",
+    ))
+    length(expert_counts) == num_experts || throw(DimensionMismatch(
+        "expert count vector must match grouped BF16 expert weights",
+    ))
+    length(expert_offsets) == num_experts + 1 || throw(DimensionMismatch(
+        "expert offsets must contain one boundary beyond the expert count",
+    ))
+    output_dim % 16 == 0 || throw(ArgumentError(
+        "grouped BF16 WMMA output dimension must be divisible by 16",
+    ))
+    input_dim % 16 == 0 || throw(ArgumentError(
+        "grouped BF16 WMMA input dimension must be divisible by 16",
+    ))
+    pair_count > 0 || throw(ArgumentError(
+        "grouped BF16 WMMA requires at least one route",
+    ))
+
+    threads = 256
+    expert_blocks = cld(num_experts, threads)
+    padded_counts = CUDA.zeros(Int32, num_experts)
+    CUDA.@cuda threads=threads blocks=expert_blocks _qwen3_cuda_pad_expert_counts_kernel!(
+        padded_counts,
+        expert_counts,
+        num_experts,
+    )
+    padded_inclusive = cumsum(padded_counts)
+    padded_offsets = CUDA.zeros(Int32, num_experts + 1)
+    CUDA.@cuda threads=threads blocks=expert_blocks _qwen3_cuda_finalize_route_offsets_kernel!(
+        padded_offsets,
+        padded_inclusive,
+        num_experts,
+    )
+
+    padded_capacity = pair_count + 15 * num_experts
+    padded_inputs = CUDA.zeros(BFloat16, input_dim, padded_capacity)
+    input_blocks = cld(input_dim * pair_count, threads)
+    CUDA.@cuda threads=threads blocks=input_blocks _qwen3_cuda_pack_grouped_bf16_inputs_kernel!(
+        padded_inputs,
+        inputs,
+        sorted_experts,
+        expert_offsets,
+        padded_offsets,
+        input_dim,
+        pair_count,
+    )
+    padded_output = CUDA.zeros(Float32, output_dim, padded_capacity)
+    output_tiles = output_dim ÷ 16
+    route_tiles = cld(padded_capacity, 16)
+    CUDA.@cuda threads=32 blocks=(output_tiles * route_tiles) _qwen3_cuda_grouped_bf16_wmma_kernel!(
+        padded_output,
+        weights,
+        padded_inputs,
+        padded_offsets,
+        output_dim,
+        input_dim,
+        num_experts,
+        output_tiles,
+    )
+    output = CUDA.zeros(Float32, output_dim, pair_count)
+    output_blocks = cld(output_dim * pair_count, threads)
+    CUDA.@cuda threads=threads blocks=output_blocks _qwen3_cuda_unpack_grouped_f32_output_kernel!(
+        output,
+        padded_output,
+        sorted_experts,
+        expert_offsets,
+        padded_offsets,
+        output_dim,
+        pair_count,
+    )
+    return output
+end
+
+"""
+    qwen3_cuda_grouped_bf16_sparse_expert_dispatch(
+        tokens, expert_indices, routing_weights, expert_parameters)
+
+Experimental tensor-core Qwen3 MoE dispatch. Routes and expert offsets remain
+on device. Tokens and the post-SwiGLU hidden state are rounded to BF16 at the
+two WMMA projection boundaries; WMMA accumulation and route combination use
+Float32. This explicit numerical contract is intentionally separate from the
+production indexed/bucketed Float32-activation dispatch.
+"""
+function qwen3_cuda_grouped_bf16_sparse_expert_dispatch(
+    tokens::CUDA.CuArray{Float32,2},
+    expert_indices::CUDA.CuArray{I,2},
+    routing_weights::CUDA.CuArray{R,2},
+    expert_parameters,
+) where {I<:Integer,R<:AbstractFloat}
+    num_experts = size(expert_parameters.gate_proj, 3)
+    d_model, num_tokens, num_experts = LifeAI._validate_qwen3_expert_parameters(
+        tokens,
+        num_experts,
+        expert_parameters,
+    )
+    size(expert_indices) == size(routing_weights) || throw(DimensionMismatch(
+        "compact expert indices and routing weights must have matching shapes",
+    ))
+    size(expert_indices, 2) == num_tokens || throw(DimensionMismatch(
+        "compact routing token count does not match expert input token count",
+    ))
+    experts_per_token = size(expert_indices, 1)
+    1 <= experts_per_token <= num_experts || throw(ArgumentError(
+        "compact routing route count must be in 1:num_experts",
+    ))
+    all(parameter -> parameter isa CUDA.CuArray{BFloat16,3}, (
+        expert_parameters.gate_proj,
+        expert_parameters.up_proj,
+        expert_parameters.down_proj,
+    )) || throw(ArgumentError(
+        "grouped BF16 dispatch requires BF16 CUDA expert projections",
+    ))
+
+    hidden_dim = size(expert_parameters.gate_proj, 1)
+    d_model % 16 == 0 || throw(ArgumentError(
+        "grouped BF16 dispatch model dimension must be divisible by 16",
+    ))
+    hidden_dim % 16 == 0 || throw(ArgumentError(
+        "grouped BF16 dispatch hidden dimension must be divisible by 16",
+    ))
+    pair_count = experts_per_token * num_tokens
+    buckets = qwen3_cuda_bucket_routes(expert_indices, num_experts)
+    grouped_tokens = CUDA.zeros(BFloat16, d_model, pair_count)
+    threads = 256
+    token_blocks = cld(length(grouped_tokens), threads)
+    CUDA.@cuda threads=threads blocks=token_blocks _qwen3_cuda_pack_expert_major_tokens_kernel!(
+        grouped_tokens,
+        tokens,
+        buckets.route_permutation,
+        d_model,
+        experts_per_token,
+        pair_count,
+    )
+    gate = qwen3_cuda_grouped_bf16_matmul(
+        expert_parameters.gate_proj,
+        grouped_tokens,
+        buckets.sorted_experts,
+        buckets.expert_counts,
+        buckets.expert_offsets,
+    )
+    up = qwen3_cuda_grouped_bf16_matmul(
+        expert_parameters.up_proj,
+        grouped_tokens,
+        buckets.sorted_experts,
+        buckets.expert_counts,
+        buckets.expert_offsets,
+    )
+    grouped_hidden = BFloat16.((gate ./ (1.0f0 .+ exp.(-gate))) .* up)
+    grouped_output = qwen3_cuda_grouped_bf16_matmul(
+        expert_parameters.down_proj,
+        grouped_hidden,
+        buckets.sorted_experts,
+        buckets.expert_counts,
+        buckets.expert_offsets,
+    )
+    routed_output = CUDA.zeros(Float32, d_model, pair_count)
+    scatter_blocks = cld(length(routed_output), threads)
+    CUDA.@cuda threads=threads blocks=scatter_blocks _qwen3_cuda_scatter_expert_major_output_kernel!(
+        routed_output,
+        grouped_output,
+        buckets.route_permutation,
+        d_model,
+        pair_count,
+    )
+    output = CUDA.zeros(Float32, d_model, num_tokens)
+    combine_blocks = cld(length(output), threads)
+    CUDA.@cuda threads=threads blocks=combine_blocks _qwen3_cuda_combine_routes_kernel!(
+        output,
+        routed_output,
+        routing_weights,
+        d_model,
+        num_tokens,
+        experts_per_token,
+    )
+    return output
 end
 
 """

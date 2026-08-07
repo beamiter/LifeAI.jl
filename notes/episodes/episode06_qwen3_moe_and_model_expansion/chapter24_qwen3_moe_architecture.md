@@ -53,7 +53,7 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 
 ## 风险与取舍
 
-- CPU 默认路径已经按 expert gather 被选 token；全 expert masked 版本保留为 `qwen3_dense_expert_reference` 数值 oracle。非 CPU Array 的标准 Lux 调用会进入 compact device path；Reactant/XLA CPU 使用可移植 route-major fallback，RTX 4090 D CUDA 通过 package extension 自动启用 indexed kernels。XLA fallback 仍物化 route 权重；CUDA 已消除此临时张量，但还不是 grouped GEMM / tensor-core fused kernel。
+- CPU 默认路径已经按 expert gather 被选 token；全 expert masked 版本保留为 `qwen3_dense_expert_reference` 数值 oracle。非 CPU Array 的标准 Lux 调用会进入 compact device path；Reactant/XLA CPU 使用可移植 route-major fallback，RTX 4090 D CUDA 通过 package extension 自动启用 indexed/bucketed kernels。XLA fallback 仍物化 route 权重；CUDA 另有纯设备 grouped BF16 WMMA 实验入口，但其 activation 舍入契约尚未替换生产路径。
 - `load_hf_qwen3_moe_model` 仍会把 expert 权重 stack 成三维数组，只适合 tiny fixture；`stream_hf_qwen3_moe_forward` 已提供真实 checkpoint 所需的 header-only、逐层、路由后按 active expert 读取生命周期，但尚未用本地 30B-A3B 资产实跑。
 - host `partialsortperm` 不是 CUDA/XLA 路由实现，不能把现有 Float32 CPU 通过写成 accelerator 已支持。
 - Qwen3 后续系列可能使用融合 expert tensor、shared expert、不同 attention 或 hybrid layer；必须按各自配置重新建立契约。
@@ -150,11 +150,19 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - 官方 `2,048→768` BF16 synthetic dispatch 中，bucketed 在 1/8/16 token 上仍慢于 indexed，因此 decode 和小 batch 不启用；32 token 为 `1.896 vs 2.813 ms`（`1.48×`），64 token 为 `2.052 vs 6.730 ms`（`3.28×`），输出逐位一致。小型 `128→64` 即使 64 token 仍慢约 16%，证明切换不能只看 token 数。
 - 生产 CUDA dispatch 采用保守双阈值：`num_tokens ≥ 32` 且 `d_model × expert_hidden_dim ≥ 1,048,576` 时进入 expert-major bucketed 路径，否则保留 token-major indexed。当前收益来自权重访问局部性，还不是 grouped GEMM 或 tensor-core kernel；cuBLAS grouped wrapper 仍要求宿主矩阵列表/动态尺寸，不能用它引入隐式 host route 同步。
 
+### 2026-08-07：纯设备 grouped BF16 tensor-core 实验路径
+
+- 新增由 device expert counts/offsets 驱动的 `m16n16k16` WMMA 原语：每个 expert 在设备端补齐到 16 routes，pack 后以 BF16 输入、Float32 accumulation 做 grouped projection，再去除 padding；整个动态 route metadata 生命周期没有 host readback。CUDA.jl 当前 `m32n8k16` BF16 high-level fragment 构造存在 tuple-size 编译问题，因此使用同样受 Ampere 支持的 `m16n16k16`。
+- 原语扩展为完整实验 dispatch：稳定分桶、gate/up、SwiGLU、down、原 route 写回与 routing-weight combine 全部在设备完成。输入 token 与 post-SwiGLU hidden 在两次 WMMA 边界显式舍入到 BF16，其余累计为 Float32；专项新增 8 项，CUDA 合计 `35 / 35`。
+- 官方 `2,048→768`、128 experts/top-8 的单投影基准包含 padding/pack/unpack：128/256 token 相对 scalar grouped kernel 加速 `1.54× / 2.57×`；16/32 token 为 `0.72× / 0.91×`。原始结果为 `cuda_4090d_grouped_bf16_matmul.json`。
+- 完整三投影 dispatch（含 bucketing/combine）在 128/256 token 为 `1.11× / 1.95×`，32/64 token 为 `0.92× / 0.87×`；相对现有 Float32-activation bucketed 输出的 max-abs ≤ `1.86e-5`。原始结果为 `cuda_4090d_grouped_bf16_dispatch.json`。
+- 因小 batch 劣化且 activation 数值契约发生变化，本阶段保留独立实验 API，不改变生产 dispatch。下一步应复用三次 projection 的 padded offsets/packed buffers，并用真实 checkpoint 做逐层误差验收后再考虑只对超宽 prefill 启用。
+
 ## Close 回顾
 
 - **完成了什么**：CPU Float32 correctness、独立 Transformers tiny parity、CPU sparse dispatch、真实 checkpoint 可复用的路由驱动 expert streaming，以及无 host routing fallback 的 compact Reactant/XLA CPU 与 RTX 4090 D CUDA 路径；本章仍 Open。
-- **验证证据**：MoE 专项 `246 / 246`、默认全套 `5,909 / 5,909`，XLA `3 / 3`、CUDA `27 / 27`；官方资产契约 `110 / 110`，双分片验证器成功路径新增 3 项。128-expert CPU 基准 `4.69×`；官方投影宽度 synthetic BF16 的生产策略保持 1/8/16-token indexed，并在 32/64-token bucketed 达到 `1.48× / 3.28×`，各设备路径均与相应 oracle 对齐。
+- **验证证据**：MoE 专项 `246 / 246`、默认全套 `5,909 / 5,909`，XLA `3 / 3`、CUDA `35 / 35`；官方资产契约 `110 / 110`，双分片验证器成功路径新增 3 项。128-expert CPU 基准 `4.69×`；官方投影宽度 synthetic BF16 的生产 bucketed 策略在 32/64-token 达到 `1.48× / 3.28×`，实验 grouped WMMA 完整 dispatch 在 128/256-token 达到 `1.11× / 1.95×`。
 - **没有完成及原因**：本机没有官方 Qwen3-30B-A3B checkpoint，真实资产 checksum、逐层 parity、峰值内存仍未验证；CUDA indexed 单-token decode 仍慢于 CPU，需要 expert 分桶/grouped GEMM，而 XLA 仍使用物化 route 权重的 portable fallback。
 - **最重要的认知变化**：原始 Qwen3 MoE 没有 shared expert；同时，compact route pairs 能保证算术稀疏，却不会自动消除选中权重物化与 gather 带宽成本，生产加速仍需要融合/分桶。
 - **是否满足 Close 条件**：否。
-- **带到下一阶段的问题**：怎样用 expert 分桶/grouped GEMM 或 tensor-core kernel 改善 CUDA 吞吐；待 checkpoint 下载恢复后，再用现有 streamed prompt/cache decode 完成官方 30B-A3B 真实逐层 parity 与峰值内存实测？
+- **带到下一阶段的问题**：怎样复用 grouped WMMA 三次 projection 的 padding/pack workspace，并验证 BF16 activation 契约不会破坏真实模型逐层/logits/生成 parity；待 checkpoint 下载恢复后，再用现有 streamed prompt/cache decode 完成官方 30B-A3B 真实逐层 parity 与峰值内存实测？

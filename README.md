@@ -46,7 +46,7 @@ Chapter 01—23 均已 Closed；[`Chapter 24 — Qwen3 MoE 架构支持`](notes/
   安全 streaming、context/options fail-closed 和 single-flight；轻量
   client 只读取 tokenizer，权重与 compiled executable 常驻 server。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
-- 原始 Qwen3 MoE 的 Float32 top-k router、逐 expert SwiGLU、full/dynamic/static cache、路由后按 active expert 流式读取，以及不复制 route 权重的 CUDA indexed dispatch；大型 prefill 会在设备端稳定按 expert 分桶，官方 BF16 投影宽度下的 32/64-token synthetic dispatch 相对 token-major 加速 `1.48× / 3.28×`。
+- 原始 Qwen3 MoE 的 Float32 top-k router、逐 expert SwiGLU、full/dynamic/static cache、路由后按 active expert 流式读取，以及不复制 route 权重的 CUDA indexed dispatch；大型 prefill 会在设备端稳定按 expert 分桶，官方 BF16 投影宽度下的 32/64-token synthetic dispatch 相对 token-major 加速 `1.48× / 3.28×`。另有纯设备 grouped BF16 WMMA 实验路径，完整 dispatch 在 128/256 token 达到 `1.11× / 1.95×`，尚未替换生产数值契约。
 - 六个官方 Qwen3 dense 规格的 immutable revision/config checksum、自动识别、显式 variant 校验、精确参数量；严格的 BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
 - Qwen3-Embedding-0.6B 的独立 immutable revision/8-asset checksum、
   151,669-vocabulary/32K contract、embedding tokenizer 尾 token 与

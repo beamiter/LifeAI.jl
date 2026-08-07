@@ -73,6 +73,95 @@ end
     @test all(isfinite, Array(production))
 end
 
+@testset "Qwen3 MoE CUDA grouped BF16 WMMA consumes device expert offsets" begin
+    output_dim = 64
+    input_dim = 32
+    num_experts = 4
+    expert_ids = Int32[1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4]
+    expert_counts = Int32[3, 0, 9, 5]
+    expert_offsets = Int32[1, 4, 4, 13, 18]
+    weights = BFloat16.(randn(
+        Xoshiro(20260825),
+        Float32,
+        output_dim,
+        input_dim,
+        num_experts,
+    ))
+    inputs = BFloat16.(randn(
+        Xoshiro(20260826),
+        Float32,
+        input_dim,
+        length(expert_ids),
+    ))
+    expected = Matrix{Float32}(undef, output_dim, length(expert_ids))
+    for pair_index in eachindex(expert_ids)
+        expert_index = expert_ids[pair_index]
+        expected[:, pair_index] =
+            Float32.(weights[:, :, expert_index]) *
+            Float32.(inputs[:, pair_index])
+    end
+    actual_gpu =
+        _QWEN3_MOE_CUDA_EXT.qwen3_cuda_grouped_bf16_matmul(
+            CUDA.cu(weights),
+            CUDA.cu(inputs),
+            CUDA.cu(expert_ids),
+            CUDA.cu(expert_counts),
+            CUDA.cu(expert_offsets),
+        )
+    actual = Array(actual_gpu)
+    @test actual ≈ expected atol = 2.0f-5 rtol = 2.0f-4
+    @test size(actual) == size(expected)
+    @test eltype(actual_gpu) == Float32
+    @test all(isfinite, actual)
+end
+
+@testset "Qwen3 MoE CUDA grouped BF16 dispatch preserves routed SwiGLU semantics" begin
+    d_model = 32
+    hidden_dim = 16
+    num_experts = 4
+    experts_per_token = 2
+    num_tokens = 5
+    tokens = randn(Xoshiro(20260828), Float32, d_model, num_tokens)
+    expert_indices = Int32[1 4 2 3 1; 3 2 4 1 2]
+    routing_weights = Float32[0.7 0.6 0.8 0.55 0.9; 0.3 0.4 0.2 0.45 0.1]
+    expert_parameters = (;
+        gate_proj=BFloat16.(randn(
+            Xoshiro(20260829), Float32, hidden_dim, d_model, num_experts,
+        )),
+        up_proj=BFloat16.(randn(
+            Xoshiro(20260830), Float32, hidden_dim, d_model, num_experts,
+        )),
+        down_proj=BFloat16.(randn(
+            Xoshiro(20260831), Float32, d_model, hidden_dim, num_experts,
+        )),
+    )
+    expected = zeros(Float32, d_model, num_tokens)
+    for token_index in 1:num_tokens, slot in 1:experts_per_token
+        expert_index = expert_indices[slot, token_index]
+        token = Float32.(BFloat16.(tokens[:, token_index]))
+        gate = Float32.(expert_parameters.gate_proj[:, :, expert_index]) * token
+        up = Float32.(expert_parameters.up_proj[:, :, expert_index]) * token
+        hidden = Float32.(BFloat16.((gate ./ (1.0f0 .+ exp.(-gate))) .* up))
+        routed = Float32.(
+            expert_parameters.down_proj[:, :, expert_index],
+        ) * hidden
+        expected[:, token_index] .+=
+            routing_weights[slot, token_index] .* routed
+    end
+    actual_gpu =
+        _QWEN3_MOE_CUDA_EXT.qwen3_cuda_grouped_bf16_sparse_expert_dispatch(
+            CUDA.cu(tokens),
+            CUDA.cu(expert_indices),
+            CUDA.cu(routing_weights),
+            map(CUDA.cu, expert_parameters),
+        )
+    actual = Array(actual_gpu)
+    @test actual ≈ expected atol = 5.0f-4 rtol = 5.0f-4
+    @test size(actual) == size(expected)
+    @test eltype(actual_gpu) == Float32
+    @test all(isfinite, actual)
+end
+
 @testset "Qwen3 MoE compact sparse dispatch runs on CUDA" begin
     layer = Qwen3SparseMoE(16, 12, 8, 2)
     parameters, state = Lux.setup(Xoshiro(20260817), layer)

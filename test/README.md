@@ -15,7 +15,7 @@
 - `qwen3_moe_sparse_dispatch_test`：只执行被路由 token-expert pair、跳过 inactive expert，并与全 expert oracle 对齐。
 - `qwen3_moe_device_sparse_dispatch_test`：紧凑 top-k route 表、route-major batched expert 计算与未选 expert 隔离。
 - `qwen3_moe_device_sparse_dispatch_xla_test`：同一紧凑 sparse dispatch kernel 的 Reactant/XLA 编译与数值一致性。
-- `qwen3_moe_device_sparse_dispatch_cuda_test`：CUDA indexed/bucketed kernels、稳定 expert route offsets、原 route 顺序写回、BF16 expert 权重、未选 `NaN` expert 隔离及 workspace contract。
+- `qwen3_moe_device_sparse_dispatch_cuda_test`：CUDA indexed/bucketed kernels、稳定 expert route offsets、原 route 顺序写回、grouped BF16 WMMA/SwiGLU、未选 `NaN` expert 隔离及 workspace contract。
 
 `fixtures/` 同样按被验证的能力命名。冻结 benchmark 和模型 reference 通过文件内容或 metadata 定位，测试不依赖时间编号目录。
 
