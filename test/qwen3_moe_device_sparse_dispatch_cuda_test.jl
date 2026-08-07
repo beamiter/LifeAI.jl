@@ -1,4 +1,5 @@
 using Test
+using BFloat16s: BFloat16
 using CUDA
 using Lux
 using Random: Xoshiro
@@ -37,6 +38,31 @@ CUDA.allowscalar(false)
     )
     @test actual ≈ reference.output atol = 3.0f-6 rtol = 3.0f-5
     @test actual ≈ reshape(Array(route_major_gpu), size(actual)) atol = 3.0f-6 rtol = 3.0f-5
+    @test size(actual) == size(x)
+    @test all(isfinite, actual)
+end
+
+@testset "Qwen3 MoE CUDA indexed dispatch accepts BF16 expert weights" begin
+    layer = Qwen3SparseMoE(16, 12, 8, 2)
+    parameters, state = Lux.setup(Xoshiro(20260820), layer)
+    x = randn(Xoshiro(20260821), Float32, 16, 7, 1)
+    experts_bf16 = map(
+        array -> BFloat16.(array),
+        parameters.experts,
+    )
+    reference_parameters = (;
+        gate=parameters.gate,
+        experts=map(array -> Float32.(array), experts_bf16),
+    )
+    gpu_parameters = (;
+        gate=CUDA.cu(parameters.gate),
+        experts=CUDA.cu(experts_bf16),
+    )
+    reference = qwen3_moe_device_forward(layer, x, reference_parameters)
+    actual_gpu, _ = layer(CUDA.cu(x), gpu_parameters, state)
+    actual = Array(actual_gpu)
+    @test eltype(gpu_parameters.experts.gate_proj) == BFloat16
+    @test actual ≈ reference.output atol = 3.0f-5 rtol = 3.0f-4
     @test size(actual) == size(x)
     @test all(isfinite, actual)
 end

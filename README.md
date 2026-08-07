@@ -21,7 +21,7 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 **阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的容量上限仍是已实证生成的 14B mixed RTN，日常部署则选择 Qwen3-8B BF16。8B 已同时具备 CUDA eager、XLA single-residency 4K 入口与 loopback 常驻 HTTP 服务；XLA 在 3,584+512 整窗上达到 1.48 秒 prefill、41.35 tok/s decode，并保留超过 2 GiB 物理显存。**
 
-Chapter 01—23 均已 Closed；最新的 [`Chapter 23 — Qwen3 XLA 设备端采样`](notes/episodes/episode05_deployment_memory_and_sampling/chapter23_qwen3_xla_device_sampling.md) 已通过真实 Qwen3-0.6B CUDA XLA 验收，同一组 uniform replay 下与宿主采样策略 38/38 token 一致，decode 达到 237.23 tok/s；当前没有 Open Chapter。
+Chapter 01—23 均已 Closed；[`Chapter 24 — Qwen3 MoE 架构支持`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter24_qwen3_moe_architecture.md) 正在 Open。当前已完成原始 Qwen3-30B-A3B 的架构、tiny Transformers parity、路由驱动 expert streaming、immutable 资产契约，以及 CPU/XLA/CUDA sparse dispatch；官方 61 GB checkpoint 的真实 parity 延后验证。
 
 目前已经具备：
 
@@ -46,6 +46,7 @@ Chapter 01—23 均已 Closed；最新的 [`Chapter 23 — Qwen3 XLA 设备端�
   安全 streaming、context/options fail-closed 和 single-flight；轻量
   client 只读取 tokenizer，权重与 compiled executable 常驻 server。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
+- 原始 Qwen3 MoE 的 Float32 top-k router、逐 expert SwiGLU、full/dynamic/static cache、路由后按 active expert 流式读取，以及不复制 route 权重的 CUDA indexed dispatch；官方 BF16 投影宽度下的 synthetic GPU 路径已实测。
 - 六个官方 Qwen3 dense 规格的 immutable revision/config checksum、自动识别、显式 variant 校验、精确参数量；严格的 BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
 - Qwen3-Embedding-0.6B 的独立 immutable revision/8-asset checksum、
   151,669-vocabulary/32K contract、embedding tokenizer 尾 token 与
@@ -73,7 +74,7 @@ Chapter 01—23 均已 Closed；最新的 [`Chapter 23 — Qwen3 XLA 设备端�
 尚未具备：
 
 - GPT-2 的 WebText 从零训练、论文 zero-shot quality、Medium/Large/XL、cross-attention 与分类 head 未复现；当前完成的是 124M 官方 checkpoint 的 Float32 推理/架构复现。
-- Qwen3 MoE、完整 40K context 的端到端真实推理、完整 AWQ/GPTQ、
+- Qwen3 MoE 官方 30B-A3B checkpoint 的真实逐层/logits/cache parity、完整 40K context 的端到端真实推理、完整 AWQ/GPTQ、
   activation/KV-cache 量化与量化 GEMM；dense 0.6B—32B 真实权重
   parity、native BF16、weight-only INT8/INT4 与 diagonal
   activation-aware clipping 已完成，不能再沿用早期“只验证 0.6B”的边界。

@@ -134,11 +134,19 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - 新增 `scripts/verify_qwen3_moe_checkpoint.jl MODEL_DIR [OUTPUT_JSON] [--fast]`，输出 revision、资产大小、校验强度、耗时和逐分片报告。默认测试冻结官方 config/manifest `110 / 110`；双分片 BF16 fixture 对验证器成功路径新增 3 项，Chapter 24 聚合 `246 / 246`。
 - 本阶段没有自动下载 61 GB 权重。仓库已经具备下载后的 fail-closed 验证入口，但真实逐层/logits/cache parity 与峰值 RSS 仍需本地完整 checkpoint 才能执行。
 
+### 2026-08-07：BF16 CUDA expert dispatch 与官方投影宽度
+
+- 官方 checkpoint 下载与真实 parity 本轮明确延后；已下载的约 64 MiB partial cache 保留在模型目录，可在后续阶段断点续传，本轮没有后台下载进程。
+- CUDA indexed 专项新增 BF16 expert 参数测试：router/input 保持 Float32，gate/up/down 以 BF16 驻留，kernel 显式用 Float32 累加；与同一组 BF16 数值转回 Float32 的 CPU sparse reference 对齐。CUDA 专项由 `9 / 9` 增至 `13 / 13`。
+- 新增 `scripts/benchmark_qwen3_moe_cuda_projection_widths.jl`，直接使用官方 `d_model=2,048`、expert hidden `768`、128 experts、top-8。完整三组 expert tensor 的 BF16/F32 容量分别为 `1,207,959,552 / 2,415,919,104` bytes，计时不包含 checkpoint I/O 或 router。
+- RTX 4090 D、15 次 steady：BF16 indexed dispatch 的 1-token / 8-token median 为 `0.204 / 0.687 ms`，相同数值的 Float32 权重为 `0.377 / 1.351 ms`，BF16 加速 `1.85× / 1.97×` 且输出逐位一致。原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cuda_4090d_bf16_projection_widths.json`。
+- 实验过“每个 dot-product 一个 thread block”的 shared-memory tiled reduction；在相同官方宽度上比现有“每个输出一个 thread”的 indexed kernel 慢 `2.6—6.0×`，原因是输出维与 route pair 已提供充足并行度，额外拆分产生过多 blocks 和 reduction 同步。该劣化路径未进入生产实现；下一步若继续优化，应做按 expert 分桶后的 GEMM/tensor-core 计算，而不是继续拆分单个 dot-product。
+
 ## Close 回顾
 
 - **完成了什么**：CPU Float32 correctness、独立 Transformers tiny parity、CPU sparse dispatch、真实 checkpoint 可复用的路由驱动 expert streaming，以及无 host routing fallback 的 compact Reactant/XLA CPU 与 RTX 4090 D CUDA 路径；本章仍 Open。
-- **验证证据**：MoE 专项 `246 / 246`、默认全套 `5,909 / 5,909`，XLA `3 / 3`、CUDA `9 / 9`；官方资产契约 `110 / 110`，双分片验证器成功路径新增 3 项。128-expert CPU 基准 `4.69×`，CUDA indexed 64-token prefill 相对 CPU `3.95×`，各设备路径均与 dense oracle 对齐。
+- **验证证据**：MoE 专项 `246 / 246`、默认全套 `5,909 / 5,909`，XLA `3 / 3`、CUDA `13 / 13`；官方资产契约 `110 / 110`，双分片验证器成功路径新增 3 项。128-expert CPU 基准 `4.69×`，CUDA indexed 64-token prefill 相对 CPU `3.95×`；官方投影宽度 synthetic BF16 dispatch 为 `0.204 / 0.687 ms`（1/8 token），各设备路径均与相应 oracle 对齐。
 - **没有完成及原因**：本机没有官方 Qwen3-30B-A3B checkpoint，真实资产 checksum、逐层 parity、峰值内存仍未验证；CUDA indexed 单-token decode 仍慢于 CPU，需要 expert 分桶/grouped GEMM，而 XLA 仍使用物化 route 权重的 portable fallback。
 - **最重要的认知变化**：原始 Qwen3 MoE 没有 shared expert；同时，compact route pairs 能保证算术稀疏，却不会自动消除选中权重物化与 gather 带宽成本，生产加速仍需要融合/分桶。
 - **是否满足 Close 条件**：否。
-- **带到下一阶段的问题**：怎样取得并冻结官方 30B-A3B 资产，用现有 streamed prompt/cache decode 完成真实逐层 parity 与峰值内存实测；随后再用 expert 分桶/grouped GEMM 改善单-token CUDA 吞吐？
+- **带到下一阶段的问题**：怎样用 expert 分桶/grouped GEMM 或 tensor-core kernel 改善 CUDA 吞吐；待 checkpoint 下载恢复后，再用现有 streamed prompt/cache decode 完成官方 30B-A3B 真实逐层 parity 与峰值内存实测？
