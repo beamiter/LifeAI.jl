@@ -11,6 +11,7 @@
 - `test_qwen3_embedding_memory`、`test_qwen3_device_sampling`：语义记忆和设备端采样。
 - `qwen3_moe_router_test`、`qwen3_moe_expert_mixture_test`、`qwen3_moe_weight_loading_test`、`qwen3_moe_cached_decode_test`：MoE 路由、专家混合输出、HF 权重映射、双分片流式加载与缓存解码。
 - `qwen3_moe_transformers_parity_test`：冻结 tiny checkpoint 的 router、逐层 hidden、full logits、路由后 active-expert streaming 与 cached decode 跨框架对齐。
+- `qwen3_moe_real_checkpoint_contract_test`：官方 30B-A3B immutable revision、config/index、16 个权重分片及 opt-in 本地资产完整性。
 - `qwen3_moe_sparse_dispatch_test`：只执行被路由 token-expert pair、跳过 inactive expert，并与全 expert oracle 对齐。
 - `qwen3_moe_device_sparse_dispatch_test`：紧凑 top-k route 表、route-major batched expert 计算与未选 expert 隔离。
 - `qwen3_moe_device_sparse_dispatch_xla_test`：同一紧凑 sparse dispatch kernel 的 Reactant/XLA 编译与数值一致性。

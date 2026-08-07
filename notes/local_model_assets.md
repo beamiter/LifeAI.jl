@@ -816,3 +816,32 @@ similarity max-abs 均低于 `0.01`，15 组 top-k 全一致。
 forward 为 `18.959 / 0.0641 s`，冷/热 embedding max-abs 为 `0`；
 token/mask、五档数值、15 组 top-k 与 semantic memory 门禁全部通过。
 普通沙箱内 `nvidia-smi` 因设备隔离失败，不代表宿主机驱动不可用。
+
+## Qwen3-30B-A3B 资产状态
+
+截至 2026-08-07，本机尚未下载 `Qwen/Qwen3-30B-A3B` 完整权重。已从
+官方 Hugging Face 仓库冻结 immutable revision：
+
+```text
+ad44e777bcd18fa416d9da3bd8f70d33ebb85d39
+```
+
+该 checkpoint 包含 16 个 BF16 safetensors 分片，文件共
+`61,066,575,648` bytes；index 记录 `18,867` 个 tensor、
+`61,064,245,248` tensor bytes，即 `30,532,122,624` 个参数。config、
+index 以及全部分片的大小和 SHA256 位于
+`test/fixtures/qwen3_moe_real_checkpoint/assets.json`。
+
+下载到持久目录后，先运行快速结构检查，再运行完整 61 GB 顺序哈希：
+
+```bash
+julia --project=. --startup-file=no \
+  scripts/verify_qwen3_moe_checkpoint.jl MODEL_DIR --fast
+
+julia --project=. --startup-file=no \
+  scripts/verify_qwen3_moe_checkpoint.jl MODEL_DIR asset-report.json
+```
+
+设置 `LIFEAI_QWEN3_30B_A3B_MODEL_DIR=MODEL_DIR` 后，默认测试会启用同一
+完整资产校验。当前记录只代表官方元数据契约已冻结，不代表真实权重
+parity 或峰值内存已经实跑。

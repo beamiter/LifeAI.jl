@@ -1,15 +1,19 @@
 using Test
 using JSON3
 using Lux
+using SHA: sha256
 using LifeAI:
     GPTModel,
+    Qwen3MoECheckpointSpec,
+    Qwen3MoEShardSpec,
     Qwen3SparseMoE,
     hf_qwen3_moe_forward_trace,
     hf_token_ids,
     load_hf_qwen3_moe_config,
     load_hf_qwen3_moe_model,
     load_hf_qwen3_moe_parameters,
-    stream_hf_qwen3_moe_forward
+    stream_hf_qwen3_moe_forward,
+    verify_qwen3_moe_checkpoint
 
 function _qwen3_moe_test_config(; kwargs...)
     return merge(
@@ -109,9 +113,12 @@ function _qwen3_moe_write_safetensors(path, tensors, names)
         row_major = ndims(values) <= 1 ?
             vec(values) :
             vec(permutedims(values, Tuple(reverse(1:ndims(values)))))
-        bytes = collect(reinterpret(UInt8, row_major))
+        bits = UInt16[
+            UInt16(reinterpret(UInt32, value) >> 16) for value in row_major
+        ]
+        bytes = collect(reinterpret(UInt8, bits))
         header[name] = Dict(
-            "dtype" => "F32",
+            "dtype" => "BF16",
             "shape" => collect(size(values)),
             "data_offsets" => [offset, offset + length(bytes)],
         )
@@ -146,9 +153,13 @@ function _qwen3_moe_write_sharded_checkpoint(directory, tensors)
             weight_map[name] = shard
         end
     end
+    tensor_bytes = sum(2 * length(tensor) for tensor in values(tensors))
     write(
         joinpath(directory, "model.safetensors.index.json"),
-        JSON3.write(Dict("weight_map" => weight_map)),
+        JSON3.write(Dict(
+            "metadata" => Dict("total_size" => tensor_bytes),
+            "weight_map" => weight_map,
+        )),
     )
     return weight_map
 end
@@ -204,6 +215,49 @@ end
         tensors = _qwen3_moe_test_tensors(model)
         weight_map = _qwen3_moe_write_sharded_checkpoint(directory, tensors)
 
+        shard_specs = Tuple(
+            Qwen3MoEShardSpec(
+                filename,
+                filesize(joinpath(directory, filename)),
+                bytes2hex(sha256(read(joinpath(directory, filename)))),
+            )
+            for filename in (
+                "model-00001-of-00002.safetensors",
+                "model-00002-of-00002.safetensors",
+            )
+        )
+        index_path = joinpath(directory, "model.safetensors.index.json")
+        tensor_bytes = sum(2 * length(tensor) for tensor in values(tensors))
+        test_spec = Qwen3MoECheckpointSpec(
+            :qwen3_moe_sharded_test,
+            "LifeAI/Qwen3-MoE-sharded-test",
+            "test-revision",
+            bytes2hex(sha256(read(config_path))),
+            bytes2hex(sha256(read(index_path))),
+            length(tensors),
+            tensor_bytes,
+            sum(shard.bytes for shard in shard_specs),
+            model.vocab_size,
+            model.d_model,
+            config.dense_mlp_hidden_dim,
+            model.mlp_hidden_dim,
+            model.num_layers,
+            model.num_heads,
+            model.num_kv_heads,
+            model.head_dim,
+            model.num_experts,
+            model.experts_per_token,
+            config.source_max_seq_len,
+            shard_specs,
+        )
+        asset_report = verify_qwen3_moe_checkpoint(
+            directory;
+            spec=test_spec,
+        )
+        @test asset_report.shard_checksums_verified
+        @test asset_report.tensor_count == length(tensors)
+        @test asset_report.tensor_bytes == tensor_bytes
+
         loaded = load_hf_qwen3_moe_model(directory; max_seq_len=16)
         tokens = reshape(hf_token_ids([0, 4, 7]; vocab_size=model.vocab_size), :, 1)
         eager = hf_qwen3_moe_forward_trace(
@@ -222,7 +276,6 @@ end
         @test streamed.logits == eager.logits
         @test all(!isempty, streamed.active_experts)
 
-        index_path = joinpath(directory, "model.safetensors.index.json")
         missing_name = "model.layers.0.mlp.experts.3.down_proj.weight"
         delete!(weight_map, missing_name)
         write(index_path, JSON3.write(Dict("weight_map" => weight_map)))

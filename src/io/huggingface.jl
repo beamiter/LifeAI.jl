@@ -2,6 +2,7 @@ using BFloat16s: BFloat16
 using JSON3
 using Lux
 using Random: Xoshiro
+using SHA: sha256
 
 const _SAFETENSORS_MAX_HEADER_BYTES = 100_000_000
 const _SAFETENSORS_DTYPES = Dict("BF16" => 2, "F32" => 4)
@@ -29,6 +30,168 @@ struct Qwen3DenseSpec
     rope_theta::Float32
     max_position_embeddings::Int
     tie_embeddings::Bool
+end
+
+"""One immutable safetensors shard in an official Qwen3 MoE checkpoint."""
+struct Qwen3MoEShardSpec
+    filename::String
+    bytes::Int
+    sha256::String
+end
+
+"""
+    Qwen3MoECheckpointSpec
+
+Frozen architecture, provenance, index, and shard metadata for the official
+`Qwen/Qwen3-30B-A3B` checkpoint. File hashes refer to the immutable Hugging
+Face revision, never the moving `main` branch.
+"""
+struct Qwen3MoECheckpointSpec
+    variant::Symbol
+    model_id::String
+    revision::String
+    config_sha256::String
+    index_sha256::String
+    index_tensor_count::Int
+    tensor_bytes::Int
+    shard_payload_bytes::Int
+    vocab_size::Int
+    d_model::Int
+    dense_mlp_hidden_dim::Int
+    moe_hidden_dim::Int
+    num_layers::Int
+    num_heads::Int
+    num_kv_heads::Int
+    head_dim::Int
+    num_experts::Int
+    experts_per_token::Int
+    max_position_embeddings::Int
+    shards::Tuple
+end
+
+const _QWEN3_30B_A3B_SPEC = Qwen3MoECheckpointSpec(
+    :qwen3_30b_a3b,
+    "Qwen/Qwen3-30B-A3B",
+    "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+    "2850ddb3bf7aecad20b611e2d44f3077fc8193f4827c93beddd4c02ad63c2297",
+    "df0d481ec595c55a0ba58426d517390c6214a566ec4ff1c8fc4bbce9f57b3c24",
+    18_867,
+    61_064_245_248,
+    61_066_575_648,
+    151_936,
+    2_048,
+    6_144,
+    768,
+    48,
+    32,
+    4,
+    128,
+    128,
+    8,
+    40_960,
+    (
+        Qwen3MoEShardSpec(
+            "model-00001-of-00016.safetensors",
+            3_999_417_504,
+            "454e77b346a61bfb201d54df60e15158838cf930617ee135113556204f2802b5",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00002-of-00016.safetensors",
+            3_999_974_192,
+            "47f015d6e5bb1782a834d75c06113c5e8c77ddca1cb7daf89686a4ec0deda19e",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00003-of-00016.safetensors",
+            3_997_360_832,
+            "ac0bf5990f2da995c1e8b77a3149dee71900b4fe1b8a614231dea9647193d96b",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00004-of-00016.safetensors",
+            3_999_975_056,
+            "89b01fd34a683c70fdb7f22c2e7090538d65063335ba0db46f3654642b17d1e5",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00005-of-00016.safetensors",
+            3_999_975_400,
+            "9849eb3584d928e35bf5956ccfd91b64207467e1fad8304aae68dc4d92d6d6d9",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00006-of-00016.safetensors",
+            3_999_975_400,
+            "f7a0f1525557d740158fb692986ad43506e1b5901e7406ae65808c6457bc53ad",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00007-of-00016.safetensors",
+            3_999_975_472,
+            "920702a50f27a009e5f676da3b02978dbd794f6ad7854f301d709136154c1a84",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00008-of-00016.safetensors",
+            3_997_362_064,
+            "a85bf0cc8a8047c116172d4c08cf4792eb59d4375032708ba3e1a7ffca0f708a",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00009-of-00016.safetensors",
+            3_999_975_408,
+            "25cd8aaed86b8e17685efb152912f92448ea3fffb1bdc247f257f04d05907604",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00010-of-00016.safetensors",
+            3_999_975_400,
+            "7c3307ee214797c4bc61c0994f81d690e768150df5f14d18edf84e53ba4810dc",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00011-of-00016.safetensors",
+            3_999_975_408,
+            "c658cad2842d36fa4c7c7f726f8515dc5670a3d80c94e13257d4e322ffe61988",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00012-of-00016.safetensors",
+            3_987_400_496,
+            "8cb898bc5e78492600053d1105c9ff61d7a719f5cc2802df63e41535a652cc26",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00013-of-00016.safetensors",
+            3_997_353_632,
+            "599594421f314cb8e8ab4474db0eb490cc6310585067e82d73821254b93319ce",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00014-of-00016.safetensors",
+            3_999_975_400,
+            "66d3294e9976b5f01d117a0a0bed768f128a8898eb6937e224d051de2961d363",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00015-of-00016.safetensors",
+            3_999_975_400,
+            "2fe000da4fc7399ff6303bb0daec8c415a5d850f5ea53863392758c77fc37664",
+        ),
+        Qwen3MoEShardSpec(
+            "model-00016-of-00016.safetensors",
+            1_087_928_584,
+            "0c979e314faf06e94a5e1841abd285d4e26e763c79c1abe7710d543192d9da48",
+        ),
+    ),
+)
+
+"""Return the frozen official Qwen3-30B-A3B checkpoint contract."""
+qwen3_moe_checkpoint_spec() = _QWEN3_30B_A3B_SPEC
+
+"""Return the exact parameter count implied by the MoE checkpoint spec."""
+function qwen3_moe_parameter_count(
+    spec::Qwen3MoECheckpointSpec=qwen3_moe_checkpoint_spec(),
+)
+    query_dim = spec.num_heads * spec.head_dim
+    kv_dim = spec.num_kv_heads * spec.head_dim
+    embeddings_and_head = 2 * spec.vocab_size * spec.d_model
+    attention = 2 * query_dim * spec.d_model +
+        2 * kv_dim * spec.d_model +
+        2 * spec.head_dim
+    norms = 2 * spec.d_model
+    router = spec.num_experts * spec.d_model
+    experts = 3 * spec.num_experts * spec.d_model * spec.moe_hidden_dim
+    return embeddings_and_head +
+        spec.num_layers * (attention + norms + router + experts) +
+        spec.d_model
 end
 
 const _QWEN3_DENSE_SPECS = (
@@ -991,6 +1154,157 @@ function _qwen3_validate_moe_tensor_names(
         "unexpected HuggingFace tensors: $(_format_tensor_names(unexpected))",
     ))
     return nothing
+end
+
+_qwen3_moe_sha256_file(path::AbstractString) = open(path, "r") do io
+    bytes2hex(sha256(io))
+end
+
+function _qwen3_moe_config_matches(config, spec::Qwen3MoECheckpointSpec)
+    return config.vocab_size == spec.vocab_size &&
+        config.d_model == spec.d_model &&
+        config.dense_mlp_hidden_dim == spec.dense_mlp_hidden_dim &&
+        config.mlp_hidden_dim == spec.moe_hidden_dim &&
+        config.num_layers == spec.num_layers &&
+        config.num_heads == spec.num_heads &&
+        config.num_kv_heads == spec.num_kv_heads &&
+        config.head_dim == spec.head_dim &&
+        config.num_experts == spec.num_experts &&
+        config.experts_per_token == spec.experts_per_token &&
+        config.source_max_seq_len == spec.max_position_embeddings &&
+        config.normalize_routing &&
+        !config.tie_embeddings
+end
+
+"""
+    verify_qwen3_moe_checkpoint(
+        model_dir;
+        spec=qwen3_moe_checkpoint_spec(),
+        verify_shard_checksums=true,
+    )
+
+Verify a local `Qwen/Qwen3-30B-A3B` directory against its frozen immutable
+revision. Config and index SHA256 are always checked, followed by the exact
+18,867-tensor name set, 16-shard assignment set, tensor byte count, and shard
+file sizes. Full 61 GB shard hashing can be skipped for a fast structural
+preflight by setting `verify_shard_checksums=false`; the returned report makes
+that weaker mode explicit.
+"""
+function verify_qwen3_moe_checkpoint(
+    model_dir::AbstractString;
+    spec::Qwen3MoECheckpointSpec=qwen3_moe_checkpoint_spec(),
+    verify_shard_checksums::Bool=true,
+)
+    isdir(model_dir) || throw(ArgumentError(
+        "model directory does not exist: $model_dir",
+    ))
+    config_path = joinpath(model_dir, "config.json")
+    index_path = joinpath(model_dir, "model.safetensors.index.json")
+    isfile(config_path) || throw(ArgumentError(
+        "required Qwen3 MoE config does not exist: $config_path",
+    ))
+    isfile(index_path) || throw(ArgumentError(
+        "required Qwen3 MoE index does not exist: $index_path",
+    ))
+
+    config_sha256 = _qwen3_moe_sha256_file(config_path)
+    config_sha256 == spec.config_sha256 || throw(ArgumentError(
+        "Qwen3 MoE config checksum mismatch: expected " *
+        "$(spec.config_sha256), computed $config_sha256",
+    ))
+    config = load_hf_qwen3_moe_config(
+        config_path;
+        max_seq_len=spec.max_position_embeddings,
+    )
+    _qwen3_moe_config_matches(config, spec) || throw(ArgumentError(
+        "config does not match the frozen $(spec.variant) architecture",
+    ))
+    model = GPTModel(config)
+    qwen3_moe_parameter_count(spec) * 2 == spec.tensor_bytes || throw(ArgumentError(
+        "frozen Qwen3 MoE parameter count does not match BF16 tensor bytes",
+    ))
+
+    index_sha256 = _qwen3_moe_sha256_file(index_path)
+    index_sha256 == spec.index_sha256 || throw(ArgumentError(
+        "Qwen3 MoE index checksum mismatch: expected $(spec.index_sha256), " *
+        "computed $index_sha256",
+    ))
+    index = _json_object(index_path)
+    metadata = _json_required(index, "metadata", index_path)
+    metadata isa JSON3.Object || throw(ArgumentError(
+        "safetensors index `metadata` must be an object: $index_path",
+    ))
+    total_size = _json_required(metadata, "total_size", index_path)
+    total_size isa Integer && Int(total_size) == spec.tensor_bytes ||
+        throw(ArgumentError(
+            "Qwen3 MoE index tensor byte count does not match frozen contract",
+        ))
+    weight_map = _json_required(index, "weight_map", index_path)
+    weight_map isa JSON3.Object || throw(ArgumentError(
+        "safetensors index `weight_map` must be an object: $index_path",
+    ))
+    length(weight_map) == spec.index_tensor_count || throw(ArgumentError(
+        "Qwen3 MoE index has $(length(weight_map)) tensors; expected " *
+        "$(spec.index_tensor_count)",
+    ))
+    actual_names = Set(String.(collect(keys(weight_map))))
+    _qwen3_validate_moe_tensor_names(model, actual_names)
+
+    expected_shards = Set(shard.filename for shard in spec.shards)
+    assigned_shards = Set{String}()
+    for raw_name in keys(weight_map)
+        shard = weight_map[raw_name]
+        shard isa AbstractString || throw(ArgumentError(
+            "safetensors shard assignment must be a string for $(String(raw_name))",
+        ))
+        push!(assigned_shards, String(shard))
+    end
+    assigned_shards == expected_shards || throw(ArgumentError(
+        "Qwen3 MoE index shard set does not match frozen contract",
+    ))
+
+    verified_shards = NamedTuple[]
+    for shard in spec.shards
+        path = joinpath(model_dir, shard.filename)
+        isfile(path) || throw(ArgumentError(
+            "required Qwen3 MoE shard does not exist: $path",
+        ))
+        actual_bytes = filesize(path)
+        actual_bytes == shard.bytes || throw(ArgumentError(
+            "Qwen3 MoE shard size mismatch for $(shard.filename): expected " *
+            "$(shard.bytes), found $actual_bytes",
+        ))
+        actual_sha256 = verify_shard_checksums ?
+            _qwen3_moe_sha256_file(path) : nothing
+        if verify_shard_checksums && actual_sha256 != shard.sha256
+            throw(ArgumentError(
+                "Qwen3 MoE shard checksum mismatch for $(shard.filename): " *
+                "expected $(shard.sha256), computed $actual_sha256",
+            ))
+        end
+        push!(verified_shards, (;
+            path=shard.filename,
+            bytes=actual_bytes,
+            sha256=actual_sha256,
+        ))
+    end
+    sum(shard.bytes for shard in spec.shards) == spec.shard_payload_bytes ||
+        throw(ArgumentError(
+            "frozen Qwen3 MoE shard sizes do not match payload byte total",
+        ))
+
+    return (;
+        spec,
+        source=abspath(model_dir),
+        config,
+        config_sha256,
+        index_sha256,
+        tensor_count=length(weight_map),
+        tensor_bytes=Int(total_size),
+        shard_payload_bytes=sum(shard.bytes for shard in spec.shards),
+        shard_checksums_verified=verify_shard_checksums,
+        shards=Tuple(verified_shards),
+    )
 end
 
 function _qwen3_moe_block_parameters(

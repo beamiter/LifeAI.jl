@@ -44,6 +44,9 @@ export load_hf_qwen3_config, load_safetensors, load_hf_qwen3_parameters
 export load_hf_qwen3_model, hf_token_ids, hf_qwen3_forward_trace
 export load_hf_qwen3_moe_config, load_hf_qwen3_moe_parameters
 export load_hf_qwen3_moe_model, hf_qwen3_moe_forward_trace
+export Qwen3MoECheckpointSpec, Qwen3MoEShardSpec
+export qwen3_moe_checkpoint_spec, qwen3_moe_parameter_count
+export verify_qwen3_moe_checkpoint
 export Qwen3EmbeddingSpec, qwen3_embedding_spec
 export qwen3_embedding_parameter_count
 export load_hf_qwen3_embedding_config, verify_qwen3_embedding_assets

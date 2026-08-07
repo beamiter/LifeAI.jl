@@ -31,7 +31,8 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 | XLA sparse dispatch | 高效推理 | compact top-k route + route-major gather/matmul/combine | XLA CPU 编译、correctness 与 steady latency | 已完成 |
 | CUDA sparse dispatch | 高效推理 | indexed hidden/down/combine kernels，不复制 route 权重 | 无 host fallback、correctness、workspace 与 prefill/decode 性能证据 | 已完成 |
 | MoE 按需 expert 流式加载 | 模型 / 工程 | header-only index、路由后按 active expert 读取、cache decode | 分片 fixture、tiny Transformers 逐位 parity、加载集合可观测 | 已完成 |
-| 官方真实权重验证 | 模型 / 工程 | 30B-A3B 资产清单、parity 报告 | checksum、逐层/logits/cache 与资源实测 | 计划中 |
+| 30B-A3B immutable 资产契约 | 模型 / 工程 | revision、config/index、16 分片大小与 SHA256 | 离线 manifest、opt-in 全资产校验 | 已完成 |
+| 官方真实权重 parity | 模型 / 工程 | streamed parity 报告 | 逐层/logits/cache 与峰值内存实测 | 计划中 |
 
 ## Close 条件
 
@@ -125,10 +126,18 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - 新增双分片 MoE checkpoint fixture：正常路径 eager/streamed 逐位一致，index 删除一个 expert tensor 后在计算前 fail closed，共 `5 / 5`。
 - Chapter 24 默认专项由 `117 / 117` 增至 `133 / 133`；完整默认套件 `5,796 / 5,796`。本机尚无 Qwen3-30B-A3B 权重，因此这一阶段只关闭加载生命周期与合成/独立 tiny correctness，不宣称真实 30B parity 或真实峰值内存。
 
+### 2026-08-07：Qwen3-30B-A3B immutable 资产契约
+
+- 从官方 `Qwen/Qwen3-30B-A3B` 仓库冻结 immutable revision `ad44e777bcd18fa416d9da3bd8f70d33ebb85d39`。原始 config SHA256 为 `2850ddb3…c2297`，index SHA256 为 `df0d481e…3c24`。
+- checkpoint 是 16 个 BF16 safetensors 分片：tensor payload `61,064,245,248` bytes，含 header 的分片文件共 `61,066,575,648` bytes；index 精确包含 `18,867` 个 tensor，对应 `30,532,122,624` 个参数。16 个分片的大小与 LFS SHA256 全部冻结在离线 manifest 和 `Qwen3MoECheckpointSpec`。
+- 新增 `verify_qwen3_moe_checkpoint`：config/index 始终校验 SHA256，并验证官方架构、完整 tensor name set、index metadata、分片 assignment 和文件大小；默认再顺序哈希全部 61 GB 权重，`verify_shard_checksums=false` 仅用于显式快速预检。
+- 新增 `scripts/verify_qwen3_moe_checkpoint.jl MODEL_DIR [OUTPUT_JSON] [--fast]`，输出 revision、资产大小、校验强度、耗时和逐分片报告。默认测试冻结官方 config/manifest `110 / 110`；双分片 BF16 fixture 对验证器成功路径新增 3 项，Chapter 24 聚合 `246 / 246`。
+- 本阶段没有自动下载 61 GB 权重。仓库已经具备下载后的 fail-closed 验证入口，但真实逐层/logits/cache parity 与峰值 RSS 仍需本地完整 checkpoint 才能执行。
+
 ## Close 回顾
 
 - **完成了什么**：CPU Float32 correctness、独立 Transformers tiny parity、CPU sparse dispatch、真实 checkpoint 可复用的路由驱动 expert streaming，以及无 host routing fallback 的 compact Reactant/XLA CPU 与 RTX 4090 D CUDA 路径；本章仍 Open。
-- **验证证据**：MoE 专项 `133 / 133`，默认全套 `5,796 / 5,796`，XLA `3 / 3`、CUDA `9 / 9`；128-expert CPU 基准 `4.69×`，CUDA indexed 64-token prefill 相对 CPU `3.95×`，各设备路径均与 dense oracle 对齐。
+- **验证证据**：MoE 专项 `246 / 246`、默认全套 `5,909 / 5,909`，XLA `3 / 3`、CUDA `9 / 9`；官方资产契约 `110 / 110`，双分片验证器成功路径新增 3 项。128-expert CPU 基准 `4.69×`，CUDA indexed 64-token prefill 相对 CPU `3.95×`，各设备路径均与 dense oracle 对齐。
 - **没有完成及原因**：本机没有官方 Qwen3-30B-A3B checkpoint，真实资产 checksum、逐层 parity、峰值内存仍未验证；CUDA indexed 单-token decode 仍慢于 CPU，需要 expert 分桶/grouped GEMM，而 XLA 仍使用物化 route 权重的 portable fallback。
 - **最重要的认知变化**：原始 Qwen3 MoE 没有 shared expert；同时，compact route pairs 能保证算术稀疏，却不会自动消除选中权重物化与 gather 带宽成本，生产加速仍需要融合/分桶。
 - **是否满足 Close 条件**：否。
