@@ -13,7 +13,7 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 1. **模型基础组件**：持续学习和实现 Attention、位置编码、Transformer、训练、推理加速等可复用能力。
 2. **智能体核心**：逐步加入记忆、规划、工具使用、反思、多模态理解和持续学习能力。
 3. **具身闭环**：让模型通过统一接口连接感知与行动，先在可验证的环境中运行，再走向机器狗、桌面机器人和其他实体设备。
-4. **学习过程记录**：用 weekly plan 推动小步交付，用月度总结沉淀结果、实验、失败和认知变化。
+4. **学习过程记录**：用 Chapter 推动小步交付，用 Episode 串联完整能力主线，沉淀结果、实验、失败和认知变化。
 
 这里所说的“有生命感”，不是只让模型表现得像某种人格，而是让系统在长期互动中体现出连续性、状态、记忆、主动性、适应性以及与环境真实连接的行动能力。
 
@@ -21,7 +21,7 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 **阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的容量上限仍是已实证生成的 14B mixed RTN，日常部署则选择 Qwen3-8B BF16。8B 已同时具备 CUDA eager、XLA single-residency 4K 入口与 loopback 常驻 HTTP 服务；XLA 在 3,584+512 整窗上达到 1.48 秒 prefill、41.35 tok/s decode，并保留超过 2 GiB 物理显存。**
 
-Week 01—22 均已 Closed；[`Week 22 — Qwen3-Embedding-0.6B 与最小语义记忆`](notes/week22_qwen3_embedding_memory.md) 已通过真实 CPU 与 RTX 4090 D CUDA BF16 验收。token ids / attention mask 逐项一致，1024/512/256/128/64 五档 embedding 与 similarity max-abs 均低于 0.01，15 组完整 top-k 和 semantic-memory 首项全部一致；当前没有 Open Week。
+Chapter 01—23 均已 Closed；最新的 [`Chapter 23 — Qwen3 XLA 设备端采样`](notes/episodes/episode05_deployment_memory_and_sampling/chapter23_qwen3_xla_device_sampling.md) 已通过真实 Qwen3-0.6B CUDA XLA 验收，同一组 uniform replay 下与宿主采样策略 38/38 token 一致，decode 达到 237.23 tok/s；当前没有 Open Chapter。
 
 目前已经具备：
 
@@ -79,7 +79,7 @@ Week 01—22 均已 Closed；[`Week 22 — Qwen3-Embedding-0.6B 与最小语义�
   activation-aware clipping 已完成，不能再沿用早期“只验证 0.6B”的边界。
 - 通用 Jinja、tools/tool-role chat template 与 agent tool loop；可用于真实任务的模型质量仍未评估。
 - 跨 step 状态、持久/增量长短期记忆、ANN/reranker、规划、工具使用、
-  反思等完整 agent loop；当前只有 Week 22 的内存内 dense exact
+  反思等完整 agent loop；当前只有 Chapter 22 的内存内 dense exact
   semantic retrieval baseline。
 - 视觉、听觉和传感器输入等多模态感知。
 - 面向仿真或实体机器人的 observation / action 抽象、控制链路与安全边界。
@@ -88,11 +88,11 @@ Week 01—22 均已 Closed；[`Week 22 — Qwen3-Embedding-0.6B 与最小语义�
 更详细的能力盘点、验证范围与建议里程碑见 [`notes/current_status.md`](notes/current_status.md)。
 
 大模型权重与真实 reference 存放在仓库外的持久模型目录，不使用易清理的
-`/tmp`，也不提交进 Git；历史资产机器使用 `/home/yj/models/`，Week 17
+`/tmp`，也不提交进 Git；历史资产机器使用 `/home/yj/models/`，Chapter 17
 验证机使用 `/home/ubuntu/models/modelscope/`。Qwen3 六尺寸（0.6B—32B）、
 Qwen3-Embedding-0.6B 与 GPT-2 124M 的完整资产和恢复命令见
 [`notes/local_model_assets.md`](notes/local_model_assets.md)，六个 Qwen3
-dense config 规格见 [`Week 11`](notes/week11_qwen3_dense_family.md)。
+dense config 规格见 [`Chapter 11`](notes/episodes/episode03_model_family_and_large_weights/chapter11_qwen3_dense_family.md)。
 
 ## 演进路线
 
@@ -112,12 +112,12 @@ dense config 规格见 [`Week 11`](notes/week11_qwen3_dense_family.md)。
 
 ## 记录节奏
 
-- **Week plan**：Week 是目标驱动的逻辑迭代，不与自然周绑定。每个 Week 先定义核心问题、交付物和 Close 条件；条件满足后立即复盘关闭，并开启下一个 Week。
-- **月度总结**：汇总一段时间内多个 Week 的能力变化、验证证据、关键学习、失败尝试、架构决策和下一阶段重点。
-- **状态快照**：每次 Week Close 后按需更新，只描述仓库此刻真实具备的能力，明确区分“已实现”“已验证”和“尚未开始”。
+- **Chapter**：目标驱动的逻辑研发章节，不与自然周绑定。每章先定义核心问题、交付物和 Close 条件；条件满足后立即复盘关闭。
+- **Episode**：围绕一条完整能力主线组织多个 Chapter，不与自然月绑定；主题闭环后总结验证证据、关键学习、失败尝试、架构决策和下一卷重点。
+- **状态快照**：每次 Chapter Close 后按需更新，只描述仓库此刻真实具备的能力，明确区分“已实现”“已验证”和“尚未开始”。
 
 ```text
-Open Week → 执行与验证 → 满足 Close 条件 → 复盘并更新状态 → Open Next Week
+Open Chapter → 执行与验证 → 满足 Close 条件 → 复盘并更新状态 → Open Next Chapter
 ```
 
 记录索引与模板见 [`notes/README.md`](notes/README.md)。
@@ -135,10 +135,13 @@ src/
 ├── train/         # Zygote / Reactant-XLA 训练
 └── generation/    # 共享采样/输入边界、文本生成与 KV Cache
 
-test/              # 默认测试与可选 XLA 测试
+test/              # 按能力命名的默认测试、fixture 与可选 XLA 测试
 examples/          # 最小训练和生成示例
 notebook/          # 可交互的原理与实验记录
-notes/             # 当前状态、weekly plan 与月度总结
+notes/
+├── README.md      # Episode / Chapter 总目录
+├── episodes/      # 按主题卷组织的 Chapter 正文
+└── templates/     # Episode / Chapter 模板
 ```
 
 ## 开始使用
@@ -187,7 +190,7 @@ model = GPTModel(
 )
 ```
 
-RTX 4090 D 上启动 Week 20 的 Qwen3-8B BF16 XLA 日常聊天：
+RTX 4090 D 上启动 Chapter 20 的 Qwen3-8B BF16 XLA 日常聊天：
 
 ```bash
 julia --project=. --startup-file=no \
@@ -201,7 +204,7 @@ XLA allocator 默认 fraction 为 `0.87` 且不预分配。首次进程仍需约
 1.5 分钟编译 prefill/decode executable；Reactant 0.2.275 当前只持久化
 autotune cache，不持久化完整 kernel executable。
 
-需要 temperature/top-k/top-p sampling 时保留 Week 19 CUDA eager 入口：
+需要 temperature/top-k/top-p sampling 时保留 Chapter 19 CUDA eager 入口：
 
 ```bash
 julia --project=. --startup-file=no \
@@ -292,11 +295,11 @@ LIFEAI_XLA_BACKEND=cpu julia --project=. examples/minigpt.jl
 ./scripts/benchmark_week03.sh
 ```
 
-脚本会分别记录首编译/首次执行、post-compile warm-up 和 steady-state 指标，并保留逐 iteration 原始耗时，生成 TSV 原始数据与 Markdown 汇总。默认使用 3 个 warm-up step 和 30 个正式样本，避免一次性 runtime settling 扭曲 p90。配置项和指标口径见 [`Week 03 四后端性能对比`](notes/week03_reproducible_training.md#四后端性能对比)。
+脚本会分别记录首编译/首次执行、post-compile warm-up 和 steady-state 指标，并保留逐 iteration 原始耗时，生成 TSV 原始数据与 Markdown 汇总。默认使用 3 个 warm-up step 和 30 个正式样本，避免一次性 runtime settling 扭曲 p90。配置项和指标口径见 [`Chapter 03 四后端性能对比`](notes/episodes/episode01_transformer_and_training_foundations/chapter03_reproducible_training.md#四后端性能对比)。
 
 其中 XLA+GPU 会额外对比 no-cache、dynamic KV Cache 和 static KV Cache，并报告不同 shape 导致的 executable 数量与 cold compilation 总成本。
 
-运行 Week 04 的五配置 CPU 对照，以及 baseline / modern 四后端 benchmark：
+运行 Chapter 04 的五配置 CPU 对照，以及 baseline / modern 四后端 benchmark：
 
 ```bash
 ./scripts/benchmark_week04.sh

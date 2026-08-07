@@ -16,7 +16,7 @@ using SHA: sha256
 using Sockets
 using Statistics: median
 
-const WEEK20_CUDA_REFERENCE_SHA256 =
+const QWEN3_XLA_DEPLOYMENT_CUDA_REFERENCE_SHA256 =
     "83f62afbbb470b695b6990a3b86a8860407a37874354d6b039e1ce19917e2747"
 const LOOPBACK_HOST = "127.0.0.1"
 const REUSE_REQUESTS = 10
@@ -297,7 +297,7 @@ function main(args)
         joinpath(dirname(abspath(profile_path)), profile.asset_manifest)
     asset_manifest_sha256 = file_sha256(asset_manifest_path)
     reference_sha256 = file_sha256(reference_path)
-    reference_sha256 == WEEK20_CUDA_REFERENCE_SHA256 || error(
+    reference_sha256 == QWEN3_XLA_DEPLOYMENT_CUDA_REFERENCE_SHA256 || error(
         "CUDA reference SHA256 is not the frozen Week20 oracle",
     )
     reference = JSON3.read(read(reference_path, String))

@@ -1,11 +1,11 @@
 # Qwen3 HF config.json ↔ LifeAI.jl gpt_config 映射契约
 
-> 状态：Week 06 冻结输入契约；Week 07 已实现并通过真实 Qwen3-0.6B 数值验证；Week 11 已冻结并离线覆盖六个官方 dense 尺寸。
+> 状态：Chapter 06 冻结输入契约；Chapter 07 已实现并通过真实 Qwen3-0.6B 数值验证；Chapter 11 已冻结并离线覆盖六个官方 dense 尺寸。
 >
 > 参照对象：HuggingFace `Qwen/Qwen3-0.6B` 的 `config.json`（`Qwen3ForCausalLM` /
 > `model_type: qwen3`）。字段值以 0.6B 为例，规则适用于全部 Qwen3 dense 型号。
 
-## Week 11 官方 dense family 规格
+## Chapter 11 官方 dense family 规格
 
 | variant | hidden / Q width | MLP | layers | Q / KV heads | tied | 参数量 |
 | --- | ---: | ---: | ---: | ---: | --- | ---: |
@@ -21,7 +21,7 @@
 六个冻结 config 的 `head_dim=128`、`num_key_value_heads=8`、
 `max_position_embeddings=40960`。公开 API `qwen3_dense_specs()` 保存各模型
 immutable revision 与 config SHA256；默认测试使用
-`test/fixtures/week11_qwen3_dense_family/specs.json`，不联网。
+`test/fixtures/qwen3_dense_family/specs.json`，不联网。
 
 ## 结构字段映射
 
@@ -31,7 +31,7 @@ immutable revision 与 config SHA256；默认测试使用
 | `hidden_size` | 1024 | `d_model` | 直接对应 |
 | `num_hidden_layers` | 28 | `num_layers` | 直接对应 |
 | `num_attention_heads` | 16 | `num_heads` | 直接对应 |
-| `num_key_value_heads` | 8 | `num_kv_heads` | Week 06 新增；GQA 分组 |
+| `num_key_value_heads` | 8 | `num_kv_heads` | Chapter 06 新增；GQA 分组 |
 | `head_dim` | 128 | `head_dim` | 独立于 `hidden_size ÷ num_heads`（1024/16=64 ≠ 128） |
 | `intermediate_size` | 3072 | `mlp_hidden_dim` | SwiGLU hidden 维度 |
 | `hidden_act` | `"silu"` | `mlp_type=:swiglu` | HF 的 silu + gate/up/down 即 SwiGLU |
@@ -41,11 +41,11 @@ immutable revision 与 config SHA256；默认测试使用
 | `max_position_embeddings` | 40960 | `max_seq_len` | 实际加载可取更小值以控制 RoPE cache 与静态 KV cache 内存 |
 | `attention_bias` | false | `use_bias=false` | Qwen3 全部投影无 bias |
 | `tie_word_embeddings` | true (0.6B/1.7B/4B)、false (8B+) | `tie_embeddings` | 直接对应 |
-| `torch_dtype` | `"bfloat16"` | —（加载策略） | Week 07：读 bf16 → 转 Float32 推理；不进入 config |
+| `torch_dtype` | `"bfloat16"` | —（加载策略） | Chapter 07：读 bf16 → 转 Float32 推理；不进入 config |
 | `sliding_window` / `use_sliding_window` | null / false | — | Qwen3 dense 不用 SWA；出现 true 应显式报错 |
 | `attention_dropout` | 0.0 | — | 推理路径无 dropout；非 0 时应显式报错 |
 
-固定语义（无 HF 字段，属于 Qwen3 架构本身，Week 06 已实现并测试）：
+固定语义（无 HF 字段，属于 Qwen3 架构本身，Chapter 06 已实现并测试）：
 
 - QK-Norm 位置：head reshape 之后、RoPE 之前；per-head、作用于 `head_dim` 维；
   `q_norm` / `k_norm` 各自有独立可学习 scale（`(head_dim,)`）。
@@ -53,7 +53,7 @@ immutable revision 与 config SHA256；默认测试使用
 - KV 分组语义：query head `h` 使用 KV head `(h-1) ÷ (num_heads ÷ num_kv_heads) + 1`
   （与 HF `repeat_kv` 的连续展开一致；已用 reference 测试钉死）。
 
-## 权重名映射（Week 07 已实现）
+## 权重名映射（Chapter 07 已实现）
 
 | HF 参数名 | LifeAI 参数树路径 | 布局说明 |
 | --- | --- | --- |
@@ -82,9 +82,9 @@ immutable revision 与 config SHA256；默认测试使用
 2. **head 切分顺序**：HF Q/K/V 投影输出按 head-major 排列
    （head h 占据 `(h-1)*head_dim+1 : h*head_dim` 行）；LifeAI 的
    `reshape(·, head_dim, num_heads, …)` 假设相同排列——已与 repeat_kv
-   语义一起在 Week 06 测试中钉死，Week 07 直接沿用。
+   语义一起在 Chapter 06 测试中钉死，Chapter 07 直接沿用。
 3. **RoPE 配对约定**：HF Qwen3 使用 rotate_half（前半/后半配对），历史
-   LifeAI 默认使用相邻偶奇配对（interleaved），两者不等价。Week 07 已选择
+   LifeAI 默认使用相邻偶奇配对（interleaved），两者不等价。Chapter 07 已选择
    在模型与三类推理路径中增加 `rope_style=:rotate_half`，并用逐层 HF fixture
    验证；legacy config 和 checkpoint 继续默认 `:interleaved`。
 4. **dtype**：bf16 权重转 Float32 后与 HF bf16 推理存在固有数值差；对齐

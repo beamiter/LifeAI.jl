@@ -9,13 +9,29 @@ length(ARGS) in (1, 2) || error(
 model_dir = abspath(ARGS[1])
 query = length(ARGS) == 2 ?
     ARGS[2] :
-    "项目里的 embedding 和 semantic memory 是在哪一周实现的？"
+    "项目里的 embedding 和 semantic memory 是在哪一章实现的？"
 
 note_paths = [
-    joinpath(@__DIR__, "..", "notes", "week22_qwen3_embedding_memory.md"),
-    joinpath(@__DIR__, "..", "notes", "week21_qwen3_xla_resident_service.md"),
-    joinpath(@__DIR__, "..", "notes", "week17_qwen3_calibrated_int4.md"),
-    joinpath(@__DIR__, "..", "notes", "week05_tokenizer_data_pipeline.md"),
+    joinpath(
+        @__DIR__, "..", "notes", "episodes",
+        "episode05_deployment_memory_and_sampling",
+        "chapter22_qwen3_embedding_memory.md",
+    ),
+    joinpath(
+        @__DIR__, "..", "notes", "episodes",
+        "episode05_deployment_memory_and_sampling",
+        "chapter21_qwen3_xla_resident_service.md",
+    ),
+    joinpath(
+        @__DIR__, "..", "notes", "episodes",
+        "episode04_efficient_inference_and_quantization",
+        "chapter17_qwen3_calibrated_int4.md",
+    ),
+    joinpath(
+        @__DIR__, "..", "notes", "episodes",
+        "episode01_transformer_and_training_foundations",
+        "chapter05_tokenizer_data_pipeline.md",
+    ),
 ]
 function note_excerpt(path)
     text = read(path, String)

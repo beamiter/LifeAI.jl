@@ -1,47 +1,29 @@
-# LifeAI.jl 研发记录
+# LifeAI.jl 研发之书
 
-这里记录 LifeAI.jl 从模型基本组件走向智能体和具身系统的长期演进。
+这里记录 LifeAI.jl 从模型基本组件走向智能体和具身系统的长期演进。研发记录按书本目录组织：一个 **Episode** 汇聚一段完整的能力主线，一个 **Chapter** 负责一个可验证的逻辑研发阶段。
 
-## 索引
+## 目录
 
 - [`current_status.md`](current_status.md)：最新项目状态、能力边界和近期里程碑。
-- [`local_model_assets.md`](local_model_assets.md)：本机持久模型目录约定、Qwen3/GPT-2 revision/checksum 与 reference 复现命令。
-- [`week01_transformer.md`](week01_transformer.md)：Week 01，项目骨架、Attention、RoPE 与 Transformer 基础。
-- [`week02_gpt_xla_kv_cache.md`](week02_gpt_xla_kv_cache.md)：Week 02，最小 GPT、XLA 训练与 KV Cache 增量推理。
-- [`week03_reproducible_training.md`](week03_reproducible_training.md)：Week 03（Closed），checkpoint、断点续训、validation / perplexity、梯度裁剪与 KV Cache 基线。
-- [`week04_model_modernization.md`](week04_model_modernization.md)：Week 04（Closed），RMSNorm、SwiGLU、embedding / LM head 权重共享及独立对照实验。
-- [`week05_tokenizer_data_pipeline.md`](week05_tokenizer_data_pipeline.md)：Week 05（Closed），byte-level / byte-BPE、Tokenizer artifact 版本化与无泄漏中文数据管线。
-- [`week06_gqa_qwen3_parity.md`](week06_gqa_qwen3_parity.md)：Week 06（Closed），GQA、QK-Norm 与 Qwen3 dense 结构 parity，Qwen3 复现三阶段计划第一步。
-- [`week07_hf_weight_loading.md`](week07_hf_weight_loading.md)：Week 07（Closed），safetensors / BF16 权重加载、HF config 映射与 Qwen3-0.6B logits / KV-cache 对齐。
-- [`week08_hf_tokenizer_text_parity.md`](week08_hf_tokenizer_text_parity.md)：Week 08（Closed），HuggingFace Qwen3 tokenizer 导入、基础 chat template 与 text→text greedy generation parity，Qwen3 三阶段复现闭环。
-- [`week09_qwen3_sampling_performance.md`](week09_qwen3_sampling_performance.md)：Week 09（Closed），Qwen3 官方 temperature/top-k/top-p 采样 fidelity、40,959 长位置 HF RoPE reference 与真实 CPU/CUDA/XLA 推理基线。
-- [`week10_gpt2_hf_parity.md`](week10_gpt2_hf_parity.md)：Week 10（Closed），经典 GPT-2 124M 的 learned absolute position、HF Conv1D 权重、byte-level BPE、逐层 logits、cache/text parity 与 CPU/CUDA 基线。
-- [`week11_qwen3_dense_family.md`](week11_qwen3_dense_family.md)：Week 11（Closed），冻结并显式覆盖 Qwen3 0.6B—32B 六个 dense 尺寸的 config/topology/参数量、tied/untied head 与宽 attention contract。
-- [`week12_qwen3_dense_real_weights.md`](week12_qwen3_dense_real_weights.md)：Week 12（Closed），1.7B / 4B 真实权重经分片 safetensors 完成逐层 parity，loader 零改动一次通过；tied 三尺寸全部实跑，8B+ 保持内存边界。
-- [`week13_qwen3_streamed_large_weights.md`](week13_qwen3_streamed_large_weights.md)：Week 13（Closed），流式 / 逐层加载（与全量路径逐位一致）完成 8B / 14B / 32B 真实权重逐层 parity，32B 峰值 8.9 GiB；Qwen3 dense 六尺寸真实验证闭环完成。
-- [`week14_qwen3_bf16_compute.md`](week14_qwen3_bf16_compute.md)：Week 14（Closed），native BF16 混合精度推理路径逐算子镜像 HF 语义；0.6B—8B 与 HF BF16 argmax 零失配、16 步 greedy 完全一致，8B 完成本机首个 >4B 全量驻留生成。
-- [`week15_qwen3_bf16_accel.md`](week15_qwen3_bf16_accel.md)：Week 15（Closed），BF16 推理落地 RTX 5080——向量化路径与 CPU 循环逐位相同，CUDA parity/greedy 全对、吞吐 8—15 tok/s（33—92×），XLA BF16 编译 prefill steady 1.36 ms。
-- [`week16_qwen3_xla_decode_quant.md`](week16_qwen3_xla_decode_quant.md)：Week 16（Closed），XLA BF16 compiled decode 设备端 greedy 246 tok/s（eager 16.1×）且与 HF 全对；RTN INT8/INT4 让 8B/14B 首次 GPU 驻留，8B 近乎无损、14B INT4 漂移如实冻结。
-- [`week17_qwen3_calibrated_int4.md`](week17_qwen3_calibrated_int4.md)：Week 17（Closed），reconstruction-calibrated INT4、按层/投影/LM-head 的 INT4/INT8/BF16 计划与精确参数预算；RTX 4090 D 上 14B 全 INT8 和 mixed RTN 均 16/16 greedy，mixed MSE 虽降低全局 logit error 却只有 4/16，负结果如实冻结。
-- [`week18_qwen3_activation_calibration.md`](week18_qwen3_activation_calibration.md)：Week 18（Closed），独立校准 token、fail-closed per-channel activation second moment 与 GPU 逐层采集均完成；14B 同布局 activation-aware 仍为 4/16（第 5 token 分歧），未守住 mixed RTN 16/16，负结果冻结。
-- [`week19_qwen3_8b_4090d_deployment.md`](week19_qwen3_8b_4090d_deployment.md)：Week 19（Closed），把 8B BF16 落成 RTX 4090 D 日常本地运行入口；4K 总 context、静态 KV、分块 last-logit prefill、EOS/采样/多轮历史裁剪均完成，3,584+512 整窗与 2 GiB 显存余量通过真实硬件验收。
-- [`week20_qwen3_8b_xla_deployment.md`](week20_qwen3_8b_xla_deployment.md)：Week 20（Closed），把 Qwen3-8B BF16 落成 RTX 4090 D 上的 XLA single-residency 4K greedy 入口；compact 参数树只传输一次，CUDA reference 96/96 token 一致，3,584-token prefill 1.50 s、整窗 decode 41.13 tok/s，并以 200 ms 连续采样守住 2 GiB 物理显存余量。
-- [`week21_qwen3_xla_resident_service.md`](week21_qwen3_xla_resident_service.md)：Week 21（Closed），把 Week 20 的单进程 compiled session 落成仅监听本机的常驻 HTTP 服务；15 个真实请求只 load 一次、CUDA oracle 96/96、整窗 41.35 tok/s，独立客户端复用同一参数树、executable 与静态 KV cache。
-- [`week22_qwen3_embedding_memory.md`](week22_qwen3_embedding_memory.md)：Week 22（Closed），独立冻结 Qwen3-Embedding-0.6B contract/tokenizer/资产，复用 native BF16 主干完成 last-token pooling、五档 MRL 与 dense exact semantic memory；真实 CPU reference 的 token/mask、15 组 top-k 全一致，embedding/similarity max-abs 均低于 0.01。
-- [`week23_qwen3_xla_device_sampling.md`](week23_qwen3_xla_device_sampling.md)：Week 23（Closed），把 temperature/top-k/top-p/inverse-CDF 采样策略整体 lower 进编译好的 decode executable，宿主每 token 只送一个 uniform、取回一个整数；真实 0.6B CUDA XLA 同 uniform replay 38/38 token 与宿主策略一致，decode 从 23.66 提升到 237.23 tok/s（10.03×）。
-- [`qwen3_hf_config_mapping.md`](qwen3_hf_config_mapping.md)：Qwen3 HF `config.json` 与 `gpt_config` 的字段、权重名与布局映射契约（Week 07 已实现并验证）。
-- [`weekly/`](weekly/)：Week plan、实验过程和 Close 回顾。
-- [`monthly/`](monthly/)：月度总结和跨周能力变化。
+- [`local_model_assets.md`](local_model_assets.md)：本机持久模型目录、revision/checksum 与 reference 复现命令。
+- [`qwen3_hf_config_mapping.md`](qwen3_hf_config_mapping.md)：Qwen3 HF 配置、权重名与布局映射契约。
+- [`Episode 01 — Transformer 与训练基础`](episodes/episode01_transformer_and_training_foundations/README.md)：Chapter 01–05。
+- [`Episode 02 — Qwen3 端到端对齐`](episodes/episode02_qwen3_end_to_end_parity/README.md)：Chapter 06–09。
+- [`Episode 03 — 模型家族与大权重验证`](episodes/episode03_model_family_and_large_weights/README.md)：Chapter 10–13。
+- [`Episode 04 — 高效推理与量化`](episodes/episode04_efficient_inference_and_quantization/README.md)：Chapter 14–18。
+- [`Episode 05 — 部署、记忆与设备采样`](episodes/episode05_deployment_memory_and_sampling/README.md)：Chapter 19–23。
 
-## Week 的含义
+## Episode 与 Chapter
 
-这里的 Week 是一个**逻辑研发阶段**，不是七天自然周：
+Episode 是围绕一条能力主线组织的“卷”，不再按自然月归档。它负责给出主题、阅读顺序、阶段结果和下一卷的衔接。
 
-1. Open 一个 Week，写清核心问题、预期结果和 Close 条件。
+Chapter 是目标驱动的逻辑研发章节，不对应自然周：
+
+1. Open 一个 Chapter，写清核心问题、预期结果和 Close 条件。
 2. 围绕目标实现、学习和验证，不为填满时间而增加任务。
-3. Close 条件提前满足时，立即关闭当前 Week 并完成回顾。
-4. 未完成项只有在仍然重要时才进入下一个 Week。
-5. Close 后更新项目状态，再 Open 下一阶段。
+3. Close 条件提前满足时，立即关闭当前 Chapter 并完成回顾。
+4. 未完成项只有在仍然重要时才进入下一 Chapter。
+5. 一个主题形成完整能力闭环后，完成 Episode 回顾并进入下一卷。
 
 ## 记录原则
 
@@ -51,4 +33,9 @@
 4. **围绕能力积累**：每项工作说明它增强了模型、智能体、具身闭环或工程基础中的哪一部分。
 5. **保留历史语境**：旧计划可以过期，但不重写当时的判断；用新的状态快照说明后续结果。
 
-开启新的 Week 或编写月度总结时，可以分别复制 [`weekly/TEMPLATE.md`](weekly/TEMPLATE.md) 和 [`monthly/TEMPLATE.md`](monthly/TEMPLATE.md)。
+## 新建记录
+
+- 新开研发章节：复制 [`templates/CHAPTER.md`](templates/CHAPTER.md)。
+- 新开主题卷：复制 [`templates/EPISODE.md`](templates/EPISODE.md)，并在对应 Episode 目录中维护章节顺序。
+
+历史测试、fixture、benchmark 和外部 reference 仍保留 `weekXX` 技术标识。这些名称是既有可复现资产的稳定路径，不再承担文档组织含义。

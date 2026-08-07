@@ -1,0 +1,111 @@
+{
+  "source": "Qwen3 calibrated INT4 quantization plans, tensor-byte contracts, and Qwen3-14B RTX 4090 D validation",
+  "frozen_at": "2026-07-29",
+  "int4_mse_clip_ratios": [
+    1.0,
+    0.99,
+    0.975,
+    0.95,
+    0.925,
+    0.9,
+    0.875,
+    0.85,
+    0.8
+  ],
+  "plan_sha256": {
+    "plan_int4_mse.json": "7fc8d109216b629ca8a244e22084f2f4d8b33fd095a850257b7b4224175a0101",
+    "plan_mixed_24g.json": "e1a863e879436ca14d651a1bff0c0459dc3b15b96e8ee198999736a9a7d680f2",
+    "plan_mixed_24g_rtn.json": "0ac0d9267d786b0d1a9bf723c09d285c09ddcfd92bdb296b5df30761c6635148"
+  },
+  "qwen3_14b": {
+    "variant": "qwen3_14b",
+    "revision": "40c069824f4251a91eefaf281ebe4c544efd3e18",
+    "weight_shards_bytes": 29536665640,
+    "int8_tensor_bytes": 15555608064,
+    "int8_tensor_gib": 14.48728895187378,
+    "pure_int4_g128_tensor_bytes": 8988846080,
+    "pure_int4_g128_tensor_gib": 8.371515274047852,
+    "int4_g128_int8_lm_head_tensor_bytes": 9354100224,
+    "int4_g128_int8_lm_head_tensor_gib": 8.711684703826904,
+    "mixed_24g_tensor_bytes": 12985006080,
+    "mixed_24g_tensor_gib": 12.093229293823242
+  },
+  "reference": {
+    "transformers_version": "4.51.0",
+    "torch_version": "2.7.1+cpu",
+    "compute_dtype": "bfloat16",
+    "greedy_steps": 16,
+    "reference_json_sha256": "35755f087cd09313c5e2cffd80bb49bc8adee18b8845f2aa8546b01e7e1b3294",
+    "reference_safetensors_sha256": "e76e8bb6a782c3bc4a4db2bca8f250230d4460a1b70c04d81796ecb3278dde5c"
+  },
+  "hardware_validation": {
+    "required": true,
+    "status": "complete",
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "driver_version": "570.153.02",
+    "cuda_jl_version": "6.2.1",
+    "gpu_total_bytes": 25238568960,
+    "model_source": "ModelScope Qwen/Qwen3-14B master",
+    "model_matches_frozen_huggingface_revision": true,
+    "runs": {
+      "int8": {
+        "plan": "global INT8",
+        "load_seconds": 248.427120476,
+        "host_maxrss_bytes": 24762519552,
+        "estimated_tree_bytes": 15555608064,
+        "host_tree_bytes": 15555608064,
+        "gpu_tree_bytes": 15569256448,
+        "vram_used_bytes": 25182076928,
+        "cold_seconds": 39.843803179,
+        "warm_greedy_seconds": 19.608342634,
+        "warm_tokens_per_second": 0.815979213472979,
+        "logits_max_abs": 1.4375,
+        "logits_mean_abs": 0.13747391,
+        "logits_argmax_equal": true,
+        "decode_max_abs": 0.40625,
+        "decode_argmax_equal": true,
+        "greedy_agreement": 16,
+        "greedy_first_divergence": null
+      },
+      "mixed_mse": {
+        "plan": "plan_mixed_24g.json",
+        "load_seconds": 273.594670531,
+        "host_maxrss_bytes": 21778444288,
+        "estimated_tree_bytes": 12985006080,
+        "host_tree_bytes": 12985006080,
+        "gpu_tree_bytes": 12985565184,
+        "vram_used_bytes": 24181473280,
+        "cold_seconds": 67.484654167,
+        "warm_greedy_seconds": 42.445142043,
+        "warm_tokens_per_second": 0.37695715528035795,
+        "logits_max_abs": 3.6289062,
+        "logits_mean_abs": 0.36034447,
+        "logits_argmax_equal": true,
+        "decode_max_abs": 1.015625,
+        "decode_argmax_equal": true,
+        "greedy_agreement": 4,
+        "greedy_first_divergence": 5
+      },
+      "mixed_rtn": {
+        "plan": "plan_mixed_24g_rtn.json",
+        "load_seconds": 259.59699686,
+        "host_maxrss_bytes": 21408534528,
+        "estimated_tree_bytes": 12985006080,
+        "host_tree_bytes": 12985006080,
+        "gpu_tree_bytes": 12985565184,
+        "vram_used_bytes": 24263196672,
+        "cold_seconds": 66.344231754,
+        "warm_greedy_seconds": 42.487666172,
+        "warm_tokens_per_second": 0.3765798746212198,
+        "logits_max_abs": 4.3203125,
+        "logits_mean_abs": 0.42933297,
+        "logits_argmax_equal": true,
+        "decode_max_abs": 1.125,
+        "decode_argmax_equal": true,
+        "greedy_agreement": 16,
+        "greedy_first_divergence": null
+      }
+    },
+    "finding": "MSE calibration lowered full-logit reconstruction error versus the same mixed RTN layout, but reduced 16-step greedy agreement from 16/16 to 4/16; reconstruction error is not a generation-fidelity proxy."
+  }
+}

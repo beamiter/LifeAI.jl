@@ -16,7 +16,7 @@ using Statistics: median
 
 # This script closes one frozen Week20 experiment. A caller-supplied oracle is
 # not sufficient: its exact digest is pinned after the independent CUDA export.
-const WEEK20_CUDA_REFERENCE_SHA256 =
+const QWEN3_XLA_DEPLOYMENT_CUDA_REFERENCE_SHA256 =
     "83f62afbbb470b695b6990a3b86a8860407a37874354d6b039e1ce19917e2747"
 
 length(ARGS) in (3, 4) || error(
@@ -44,7 +44,7 @@ asset_manifest_path = isabspath(profile.asset_manifest) ?
     joinpath(dirname(abspath(profile_path)), profile.asset_manifest)
 asset_manifest_sha256 = bytes2hex(sha256(read(asset_manifest_path)))
 reference_sha256 = bytes2hex(sha256(read(reference_path)))
-reference_sha256 == WEEK20_CUDA_REFERENCE_SHA256 || error(
+reference_sha256 == QWEN3_XLA_DEPLOYMENT_CUDA_REFERENCE_SHA256 || error(
     "CUDA reference SHA256 is not the frozen Week20 oracle",
 )
 reference = JSON3.read(read(reference_path, String))

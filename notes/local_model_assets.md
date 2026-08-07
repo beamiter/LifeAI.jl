@@ -1,7 +1,7 @@
 # 本地模型资产与持久化约定
 
 大模型权重、下载缓存和真实 reference 不放在 `/tmp`，也不提交到
-LifeAI.jl 仓库。Week 09—16 的历史 RTX 5080 资产机统一使用：
+LifeAI.jl 仓库。Chapter 09—16 的历史 RTX 5080 资产机统一使用：
 
 ```text
 /home/yj/models/huggingface/<organization>/<model>/<revision>/
@@ -9,7 +9,7 @@ LifeAI.jl 仓库。Week 09—16 的历史 RTX 5080 资产机统一使用：
 
 每个 revision 自包含配置、tokenizer 和权重；LifeAI 生成的真实 reference 放在模型 revision 目录内的 `lifeai-references/<week-or-purpose>/`。仓库只保存生成/验证脚本、checksum、可重复命令和小型 benchmark 结果。
 
-Week 17 的 RTX 4090 D 验证机用户目录不同，ModelScope 官方下载放在
+Chapter 17 的 RTX 4090 D 验证机用户目录不同，ModelScope 官方下载放在
 `/home/ubuntu/models/modelscope/`；该例外在本页单独记录。无论下载源和
 宿主路径如何，能否复用资产都以冻结 revision 的逐文件 SHA256 为准。
 
@@ -27,13 +27,13 @@ c1899de289a04d12100db370d81485cdf75e47ca
 /home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca/
 ```
 
-Week 09 sampled reference：
+Chapter 09 sampled reference：
 
 ```text
 /home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca/lifeai-references/week09-sampling/
 ```
 
-Week 09 long-position RoPE reference：
+Chapter 09 long-position RoPE reference：
 
 ```text
 /home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca/lifeai-references/week09-rope/
@@ -48,21 +48,21 @@ Week 09 long-position RoPE reference：
 | `tokenizer_config.json` | `d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101` |
 | `generation_config.json` | `2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2` |
 | `model.safetensors` | `f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b` |
-| Week 09 `reference.json` | `b879c6f8203ec1d45134534b0f9f6185e6db0d78415f3989e757fc1a9caf64d1` |
-| Week 09 `reference.safetensors` | `0d3d2ed57f7edcb820a376979489dbac27951d3714a3bf39c410d25b7c3d6581` |
-| Week 09 RoPE `reference.json` | `2158095b305ced45cc7c9d03ddb0cb9f77d246fde9f66dbe1aa9d31062799fb5` |
-| Week 09 RoPE `reference.safetensors` | `3e42d148d9553ff691751c02c306b4f8f12c687f4743cb9c443ad296af996c65` |
+| Chapter 09 `reference.json` | `b879c6f8203ec1d45134534b0f9f6185e6db0d78415f3989e757fc1a9caf64d1` |
+| Chapter 09 `reference.safetensors` | `0d3d2ed57f7edcb820a376979489dbac27951d3714a3bf39c410d25b7c3d6581` |
+| Chapter 09 RoPE `reference.json` | `2158095b305ced45cc7c9d03ddb0cb9f77d246fde9f66dbe1aa9d31062799fb5` |
+| Chapter 09 RoPE `reference.safetensors` | `3e42d148d9553ff691751c02c306b4f8f12c687f4743cb9c443ad296af996c65` |
 
-## 当前 Qwen3-1.7B 与 Qwen3-4B 资产（Week 12）
+## 当前 Qwen3-1.7B 与 Qwen3-4B 资产（Chapter 12）
 
-Week 12 下载了 1.7B 与 4B 的完整权重资产，目录遵循顶部约定：
+Chapter 12 下载了 1.7B 与 4B 的完整权重资产，目录遵循顶部约定：
 
 ```text
 /home/yj/models/huggingface/Qwen/Qwen3-1.7B/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e/
 /home/yj/models/huggingface/Qwen/Qwen3-4B/1cfa9a7208912126459214e8b04321603b3df60c/
 ```
 
-Week 12 逐层 parity reference 位于各自 revision 目录内的
+Chapter 12 逐层 parity reference 位于各自 revision 目录内的
 `lifeai-references/week12-parity/`。两个 revision 的
 `tokenizer.json`、`tokenizer_config.json`、`generation_config.json` 与
 0.6B 资产字节相同（SHA256 一致）。
@@ -87,7 +87,7 @@ Week 12 逐层 parity reference 位于各自 revision 目录内的
 | `model-00003-of-00003.safetensors` | `e4bf436957184f4eeb86a80e9db394503f1f56446b2e6b7edeac5b81470f4ca1` |
 
 同一 reference 的离线副本（含 parity 结果）位于
-`test/fixtures/week12_qwen3_dense_real_weights/assets.json`。
+`test/fixtures/qwen3_dense_real_weights/assets.json`。
 
 ### 恢复下载与 reference
 
@@ -115,9 +115,9 @@ julia --project=. --startup-file=no scripts/verify_qwen3_parity.jl \
   MODEL_DIR MODEL_DIR/lifeai-references/week12-parity
 ```
 
-## 当前 Qwen3-8B / 14B / 32B 资产（Week 13）
+## 当前 Qwen3-8B / 14B / 32B 资产（Chapter 13）
 
-Week 13 下载了三个 untied 尺寸的完整权重资产：
+Chapter 13 下载了三个 untied 尺寸的完整权重资产：
 
 ```text
 /home/yj/models/huggingface/Qwen/Qwen3-8B/b968826d9c46dd6066d109eabc6255188de91218/
@@ -127,9 +127,9 @@ Week 13 下载了三个 untied 尺寸的完整权重资产：
 
 三个 revision 的 `tokenizer.json`、`tokenizer_config.json`、
 `generation_config.json` 与 0.6B 资产字节相同；`config.json` SHA256 与
-Week 11 冻结值一致。Week 13 逐层 parity reference 位于各自 revision 目录
+Chapter 11 冻结值一致。Chapter 13 逐层 parity reference 位于各自 revision 目录
 的 `lifeai-references/week13-parity/`。全部权重分片 SHA256 的离线副本在
-`test/fixtures/week13_qwen3_streamed_large_weights/assets.json`；下表只列
+`test/fixtures/qwen3_streamed_large_weights/assets.json`；下表只列
 index 与首末分片，完整清单以 fixture 为准。
 
 | 模型 | 文件 | SHA256 |
@@ -144,7 +144,7 @@ index 与首末分片，完整清单以 fixture 为准。
 | 32B | `model-00001-of-00017.safetensors` | `52562b2ff97b61764260273e71bf5b4cf8a66f569399398f26dec0300fcf1316` |
 | 32B | `model-00017-of-00017.safetensors` | `1f47c318fcd7797c0f85b4233cb754438b10e795b8bc874889090c416a94bd38` |
 
-### 恢复下载与 reference（Week 13）
+### 恢复下载与 reference（Chapter 13）
 
 ```bash
 # 下载（8B 5 分片 / 14B 8 分片 / 32B 17 分片，文件名见各自 index）
@@ -169,9 +169,9 @@ julia --project=. --startup-file=no scripts/verify_qwen3_streamed_parity.jl \
 `LIFEAI_QWEN3_8B/14B/32B_MODEL_DIR`（流式）必须分两个 `Pkg.test` 进程
 运行；五个 integration 同进程会因 Julia 堆跨 testset 累积被 OOM KILL。
 
-## Week 14 BF16 reference 与验证
+## Chapter 14 BF16 reference 与验证
 
-Week 14 的 HF BF16 逐层 reference（含 16 步 greedy token）位于四个
+Chapter 14 的 HF BF16 逐层 reference（含 16 步 greedy token）位于四个
 revision 目录的 `lifeai-references/week14-bf16-parity/`：
 
 ```bash
@@ -191,16 +191,16 @@ BF16 opt-in 进程协议：`LIFEAI_QWEN3_BF16_0_6B/1_7B/4B_MODEL_DIR` 可在
 ```bash
 LIFEAI_QWEN3_BF16_8B_MODEL_DIR=/home/yj/models/huggingface/Qwen/Qwen3-8B/b968826d9c46dd6066d109eabc6255188de91218 \
 julia --project=. --startup-file=no --heap-size-hint=2G -e \
-  'using Test, JSON3, Lux; import LifeAI; include("test/test_week14.jl")'
+  'using Test, JSON3, Lux; import LifeAI; include("test/test_qwen3_bf16_compute.jl")'
 ```
 
 `--heap-size-hint=2G` 必需：它强制激进 GC，把峰值 RSS 压到 ≈ 18.5 GiB
 （实测 125/125 通过）；不带 hint 时 GC 滞后会在共享内存机器上触发
 OOM KILL。
 
-## Week 15 CUDA / XLA BF16 验证
+## Chapter 15 CUDA / XLA BF16 验证
 
-复用 Week 14 的 `week14-bf16-parity` reference（不重复导出）。注意加载
+复用 Chapter 14 的 `week14-bf16-parity` reference（不重复导出）。注意加载
 顺序：**脚本必须先 `using LuxCUDA` / `using Reactant` 再 `using
 LifeAI`**，否则 cuDNN 初始化失败。
 
@@ -217,7 +217,7 @@ julia --project=. --startup-file=no scripts/verify_qwen3_bf16_xla.jl \
 CUDA opt-in 测试（`Pkg.test` 内可三尺寸同进程，累计 GPU 树 ≈ 11.9 GiB）：
 `LIFEAI_QWEN3_BF16_CUDA_0_6B/1_7B/4B_MODEL_DIR`。
 
-## Week 16 XLA compiled decode 与量化验证
+## Chapter 16 XLA compiled decode 与量化验证
 
 14B 的 HF BF16 reference（offload 导出）位于
 `Qwen3-14B/<revision>/lifeai-references/week16-bf16-parity/`。
@@ -235,7 +235,7 @@ julia --project=. --startup-file=no --heap-size-hint=3G scripts/verify_qwen3_qua
 量化验证是 GPU 独占任务，且宿主内存紧张时（本机常有其他负载）14B 加载
 可能被 OOM KILL——重试前用 `free -g` 确认 ≥ 15 GiB 可用。
 
-## Week 17 RTX 4090 D / Qwen3-14B 量化验证
+## Chapter 17 RTX 4090 D / Qwen3-14B 量化验证
 
 验证机：
 
@@ -255,7 +255,7 @@ ModelScope 官方仓库下载目录：
 8 个权重分片合计 `29,536,665,640` bytes；配置、tokenizer、index 与全部
 分片 SHA256 均和 HuggingFace 冻结 revision
 `40c069824f4251a91eefaf281ebe4c544efd3e18` 一致。完整期望 checksum 继续
-以 `test/fixtures/week13_qwen3_streamed_large_weights/assets.json` 为准，
+以 `test/fixtures/qwen3_streamed_large_weights/assets.json` 为准，
 不为下载源复制第二份清单。
 
 BF16 reference：
@@ -289,23 +289,23 @@ julia --threads=auto --project=. --startup-file=no --heap-size-hint=3G \
 # mixed MSE：4/16；full-logits error 低于同布局 RTN，但序列 fidelity 更差
 julia --threads=auto --project=. --startup-file=no --heap-size-hint=3G \
   scripts/verify_qwen3_quant_cuda.jl "$MODEL_DIR" "$REFERENCE_DIR" int4 \
-  test/fixtures/week17_qwen3_calibrated_int4/plan_mixed_24g.json
+  test/fixtures/qwen3_calibrated_int4/plan_mixed_24g.json
 
 # 同布局 mixed RTN：16/16；tensor tree 12.093 GiB
 julia --threads=auto --project=. --startup-file=no --heap-size-hint=3G \
   scripts/verify_qwen3_quant_cuda.jl "$MODEL_DIR" "$REFERENCE_DIR" int4 \
-  test/fixtures/week17_qwen3_calibrated_int4/plan_mixed_24g_rtn.json
+  test/fixtures/qwen3_calibrated_int4/plan_mixed_24g_rtn.json
 ```
 
 精确 bytes、load/cold/warm、误差与 greedy 指标冻结在
-`test/fixtures/week17_qwen3_calibrated_int4/assets.json`。三组必须用独立
+`test/fixtures/qwen3_calibrated_int4/assets.json`。三组必须用独立
 Julia 进程，避免 CUDA allocator 的跨组状态污染；全 INT8 是极限驻留证据，
 不是有安全余量的部署配置。
 
-## Week 18 activation-aware INT4 验证
+## Chapter 18 activation-aware INT4 验证
 
-Week 18 复用上述 Qwen3-14B 权重和 BF16 reference，不新增模型下载。
-独立校准 token 由仓库自有的多语种/代码/数学短语生成，不包含 Week 17
+Chapter 18 复用上述 Qwen3-14B 权重和 BF16 reference，不新增模型下载。
+独立校准 token 由仓库自有的多语种/代码/数学短语生成，不包含 Chapter 17
 evaluation token sequence：
 
 ```bash
@@ -313,11 +313,11 @@ evaluation token sequence：
   scripts/export_qwen3_calibration_tokens.py \
   --revision 40c069824f4251a91eefaf281ebe4c544efd3e18 \
   /home/ubuntu/models/modelscope/Qwen/Qwen3-14B \
-  test/fixtures/week18_qwen3_activation_calibration/calibration_tokens.json
+  test/fixtures/qwen3_activation_aware_int4/calibration_tokens.json
 ```
 
 fixture SHA256 为
-`5709c3ca3cfb2c6752e355a5212f7e18d30c3a940304de075db18bfb2b1cdc80`，
+`0c61c44e8dcebf0eaea75ff320ebdf9f9ab377f20276f5430abf54c654cbb6f2`，
 包含 8×32=256 tokens。GPU 校准和验证命令：
 
 ```bash
@@ -326,21 +326,21 @@ REFERENCE_DIR=$MODEL_DIR/lifeai-references/week17-bf16-parity
 
 julia --project=. scripts/verify_qwen3_quant_cuda.jl \
   "$MODEL_DIR" "$REFERENCE_DIR" int4 \
-  test/fixtures/week18_qwen3_activation_calibration/plan_mixed_24g_activation.json \
-  test/fixtures/week18_qwen3_activation_calibration/calibration_tokens.json
+  test/fixtures/qwen3_activation_aware_int4/plan_mixed_24g_activation.json \
+  test/fixtures/qwen3_activation_aware_int4/calibration_tokens.json
 ```
 
 实测 calibration `248.32 s`、load `489.23 s`、tree `12.093 GiB`、VRAM
 `21.474 GiB`；logits max/mean error `3.4238 / 0.42865`，greedy 4/16，
 首次分歧第 5 token。精确 provenance 与指标位于
-`test/fixtures/week18_qwen3_activation_calibration/assets.json`。这是
+`test/fixtures/qwen3_activation_aware_int4/assets.json`。这是
 diagonal activation second-moment clipping 的负结果，不代表完整
 AWQ/GPTQ 已验证。
 
-## Week 11 Qwen3 dense family config reference
+## Chapter 11 Qwen3 dense family config reference
 
-Week 11 冻结全部六个官方 config contract；Week 12 下载 1.7B/4B 权重，
-Week 13 下载 8B/14B/32B 权重，至此六个尺寸的完整资产均在本地。六个
+Chapter 11 冻结全部六个官方 config contract；Chapter 12 下载 1.7B/4B 权重，
+Chapter 13 下载 8B/14B/32B 权重，至此六个尺寸的完整资产均在本地。六个
 config 的不可变 revision 与 SHA256 为：
 
 | model | revision | `config.json` SHA256 |
@@ -353,7 +353,7 @@ config 的不可变 revision 与 SHA256 为：
 | Qwen3-32B | `9216db5781bf21249d130ec9da846c4624c16137` | `97e295b63283935788fac5e4f8860862a56d4089538cafc93f0431f2ebe483bb` |
 
 同一 reference 的小型离线副本位于
-`test/fixtures/week11_qwen3_dense_family/specs.json`。未来若下载其他尺寸权重，
+`test/fixtures/qwen3_dense_family/specs.json`。未来若下载其他尺寸权重，
 仍应遵守本页顶部的持久目录布局，并为真实逐层 reference 单独记录模型权重和
 分片 index checksum。
 
@@ -368,9 +368,9 @@ config 的不可变 revision 与 SHA256 为：
   --local-dir /home/yj/models/huggingface/Qwen/Qwen3-0.6B/c1899de289a04d12100db370d81485cdf75e47ca
 ```
 
-## Week 19 RTX 4090 D / Qwen3-8B 日常部署
+## Chapter 19 RTX 4090 D / Qwen3-8B 日常部署
 
-Week 19 复用 Week 13 冻结的官方 revision：
+Chapter 19 复用 Chapter 13 冻结的官方 revision：
 
 ```text
 model_id: Qwen/Qwen3-8B
@@ -399,7 +399,7 @@ modelscope download Qwen/Qwen3-8B \
   --max-workers 5
 ```
 
-ModelScope 的 `master` 不是 provenance 身份。下载后必须逐文件匹配 Week 13
+ModelScope 的 `master` 不是 provenance 身份。下载后必须逐文件匹配 Chapter 13
 冻结的 Hugging Face revision checksum；任一权重、config 或 tokenizer
 不匹配，都不能运行 deployment benchmark。
 
@@ -448,7 +448,7 @@ julia --project=. --startup-file=no \
 
 `--local-dir` 内的 `.cache/huggingface/` 保存下载元数据和断点续传状态；不要把该目录移动到 `/tmp`。
 
-## Week 09 reference 与验证
+## Chapter 09 reference 与验证
 
 ```bash
 /home/yj/projects/jwm/.venv/bin/python scripts/export_qwen3_sampling_reference.py \
@@ -466,7 +466,7 @@ julia --project=. --startup-file=no scripts/verify_qwen3_sampling_parity.jl \
   --revision c1899de289a04d12100db370d81485cdf75e47ca
 ```
 
-仓库内 `test/fixtures/week09_qwen3_rope/` 保留上述 RoPE reference 的同 checksum 小型副本，使 position 0/2048/32767/40959 的独立 Transformers 对照可进入默认离线测试；它不是模型权重或下载缓存。
+仓库内 `test/fixtures/qwen3_rope_long_context/` 保留上述 RoPE reference 的同 checksum 小型副本，使 position 0/2048/32767/40959 的独立 Transformers 对照可进入默认离线测试；它不是模型权重或下载缓存。
 
 ## 当前 GPT-2 124M 资产
 
@@ -483,7 +483,7 @@ openai-community/gpt2
 /home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e/
 ```
 
-Week 10 Transformers reference：
+Chapter 10 Transformers reference：
 
 ```text
 /home/yj/models/huggingface/openai-community/gpt2/607a30d783dfa663caf39e06633721c8d4cfcd7e/lifeai_week10_reference/
@@ -518,12 +518,12 @@ julia --project=. --startup-file=no scripts/verify_gpt2_parity.jl \
 
 - `/home/yj/models/` 是本机持久资产目录，不是 Git 仓库的一部分；系统备份策略需要单独覆盖它。
 - 每个实验必须记录 model id、完整 revision、文件 checksum、reference 环境版本和计算 dtype。
-- 删除或替换某个 revision 前，先确认没有 weekly reference、benchmark 或 checkpoint 指向它。
+- 删除或替换某个 revision 前，先确认没有 Chapter reference、benchmark 或 checkpoint 指向它。
 - 仓库内的 `artifacts/` 与该模型目录没有关系；保持用户已有内容不受自动 staging 影响。
 
-## Week 20 RTX 4090 D / Qwen3-8B XLA 单驻留部署
+## Chapter 20 RTX 4090 D / Qwen3-8B XLA 单驻留部署
 
-Week 20 继续使用 Week 19 已校验的同一份本地 Qwen3-8B 资产：
+Chapter 20 继续使用 Chapter 19 已校验的同一份本地 Qwen3-8B 资产：
 
 ```text
 model_id: Qwen/Qwen3-8B
@@ -534,7 +534,7 @@ verified files: 10
 verified bytes: 16,392,983,007
 ```
 
-资产的下载/provenance 边界与 Week 19 相同：ModelScope `master` 只作为
+资产的下载/provenance 边界与 Chapter 19 相同：ModelScope `master` 只作为
 下载通道，身份仍由冻结的 Hugging Face revision 和逐文件 SHA256 决定。
 任一文件不匹配时，reference、benchmark 和默认 CLI 都应 fail closed。
 
@@ -667,15 +667,15 @@ julia --project=. --startup-file=no \
 当前 XLA 日常 profile 只冻结 batch-1 greedy。CLI 保留 chat template、
 system/thinking、history 裁剪、流式 tokenizer bytes、`/clear` 与 EOF
 处理；sampling、40K context、FlashAttention、persistent executable
-cache 和单次 device-side decode loop 均不在 Week 20 的关闭范围内。
+cache 和单次 device-side decode loop 均不在 Chapter 20 的关闭范围内。
 
-权重仍保存在仓库外；Week 20 的 deterministic CUDA oracle、最终 JSON
+权重仍保存在仓库外；Chapter 20 的 deterministic CUDA oracle、最终 JSON
 和 200 ms 显存 CSV 体积较小，作为关闭证据进入 Git。0.95/0.89 的失败
 中间产物继续只保存在本机，不提交。
 
-## Week 21 Qwen3-8B XLA 常驻本地服务
+## Chapter 21 Qwen3-8B XLA 常驻本地服务
 
-Week 21 继续使用上节完全相同的 model directory、revision、asset
+Chapter 21 继续使用上节完全相同的 model directory、revision、asset
 manifest 和 4K XLA profile，不复制或修改模型文件。常驻 server：
 
 ```bash
@@ -726,10 +726,10 @@ SHA256 e006940214ecabb3802dda178faaad994491cfeae2fc2cfd3425a0d71c2d960b
 ```
 
 Reactant 0.2.275 的 persistent kernel/autotune cache 不保存完整 PJRT
-executable；server 退出后仍会冷启动。Week 21 的承诺是一个长寿命进程
+executable；server 退出后仍会冷启动。Chapter 21 的承诺是一个长寿命进程
 服务多个客户端，不是把 kernel cache 文件描述成跨进程 executable cache。
 
-## Week 22 Qwen3-Embedding-0.6B
+## Chapter 22 Qwen3-Embedding-0.6B
 
 本机模型目录：
 
@@ -755,7 +755,7 @@ Hugging Face revision
 | `model.safetensors` | 1,191,586,416 | `0437e45c94563b09e13cb7a64478fc406947a93cb34a7e05870fc8dcd48e23fd` |
 
 机器可读清单为
-`test/fixtures/week22_qwen3_embedding/assets.json`，SHA256
+`test/fixtures/qwen3_embedding_memory/assets.json`，SHA256
 `f02a10758da8b561a9d111823e26d0f4cca05ad905408d3737842c2342bf7782`。
 模型权重不进入 Git。
 
@@ -784,19 +784,19 @@ tokenizers `0.21.4`、PyTorch `2.7.1+cpu` 与 Transformers `4.51.3`。
 ```bash
 .venv/bin/python scripts/export_qwen3_embedding_reference.py \
   --model-dir /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B \
-  --output test/fixtures/week22_qwen3_embedding/reference.json
+  --output test/fixtures/qwen3_embedding_memory/reference.json
 
 julia --threads=8 --project=. --startup-file=no \
   scripts/verify_qwen3_embedding_parity.jl \
   /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B \
-  test/fixtures/week22_qwen3_embedding/reference.json \
+  test/fixtures/qwen3_embedding_memory/reference.json \
   benchmark_results/week22/qwen3_embedding_0_6b_cpu.json
 
 LIFEAI_WEEK22_EMBEDDING_DEVICE=cuda \
 julia --threads=8 --project=. --startup-file=no \
   scripts/verify_qwen3_embedding_parity.jl \
   /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B \
-  test/fixtures/week22_qwen3_embedding/reference.json \
+  test/fixtures/qwen3_embedding_memory/reference.json \
   benchmark_results/week22/qwen3_embedding_0_6b_cuda.json
 ```
 
