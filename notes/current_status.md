@@ -6,7 +6,7 @@
 
 ## 当前活动阶段
 
-[`Chapter 24 — Qwen3 MoE 架构支持`](episodes/episode06_qwen3_moe_and_model_expansion/chapter24_qwen3_moe_architecture.md) 已于 2026-08-07 Open。CPU Float32 correctness、独立 Transformers tiny parity 与 CPU sparse token dispatch 已完成：top-k router、expert SwiGLU、`GPTModel`/KV cache、strict config/逐 expert 权重映射及跨框架逐层对齐进入主线。CPU 默认只计算被选 token-expert pair；128 experts/top-8 缩小基准将 pair 从 8,192 降到 512，median 加速 `4.69×`，与 dense oracle max-abs `3.58e-7`。Chapter 24 专项 `103 / 103`；当前仍没有 CUDA/XLA sparse dispatch 或真实 30B 权重 parity，因此本章保持 Open。
+[`Chapter 24 — Qwen3 MoE 架构支持`](episodes/episode06_qwen3_moe_and_model_expansion/chapter24_qwen3_moe_architecture.md) 已于 2026-08-07 Open。CPU Float32 correctness、独立 Transformers tiny parity、CPU sparse token dispatch、compact Reactant/XLA CPU 与 RTX 4090 D CUDA indexed dispatch 已完成：top-k router、expert SwiGLU、`GPTModel`/KV cache、strict config/逐 expert 权重映射及跨框架逐层对齐进入主线。三条执行路径都只向 `top_k × tokens` route pairs 执行 expert MLP；128 experts/top-8 将 pair 从 8,192 降到 512。CUDA indexed kernels 直接读取原始 expert 权重，64-token workspace 相对 route-major 降低 `118.15×`，steady `0.388 ms`，相对旧 CUDA baseline `1.45×`、相对 CPU sparse `3.95×`；单-token `0.368 ms` 仍只有 CPU 的 `0.196×`。Chapter 24 专项 `117 / 117`，XLA `3 / 3`、CUDA `9 / 9`；真实 30B 权重 parity 尚未完成，因此本章保持 Open。
 
 [`Chapter 23 — Qwen3 XLA 设备端采样`](episodes/episode05_deployment_memory_and_sampling/chapter23_qwen3_xla_device_sampling.md) 已于 2026-08-01 Closed。temperature / top-k / top-p / inverse-CDF 采样策略整体进入编译好的 prefill/decode executable：宿主每 token 只送一个 4 字节 uniform、取回一个整数，不再传回 151,936 维 logits。策略用 `top_k` 次 masked reduction 提取候选（不排序），nucleus 改写为「严格排在候选之前的质量 < top_p」，inverse-CDF 仍按词表 index 顺序走。真实 Qwen3-0.6B 在本机 RTX 5080 CUDA XLA 上以同一串 uniform replay，与宿主策略 **38/38 token 完全一致**，decode 从 `23.66` 提升到 `237.23` tok/s（`10.03×`），已贴近 greedy 的 246 tok/s。`top_k` 是编译期常量，temperature/top_p 是运行期设备标量。
 
@@ -42,7 +42,7 @@
 - GPTModel：包括 token/可选 position embedding、多层 TransformerBlock、final norm 和 LM head；支持 embedding / LM head 单 kernel 权重共享，并可分离 projection bias 与 LM-head bias。
 - legacy 默认仍为 LayerNorm + GELU + untied；modern 配置可通过独立开关组合，不改变旧调用。
 - HuggingFace Qwen3 dense 导入：冻结 0.6B / 1.7B / 4B / 8B / 14B / 32B 六个官方规格与 config checksum，可自动识别或显式要求 variant；严格解析 config，读取 BF16/F32 safetensors 单文件或 index 分片，完整映射 embedding、attention、QK-Norm、MLP、final norm 与 tied/untied LM head；missing、unexpected、duplicate、shape/dtype/config 错误均 fail closed。六个真实 checkpoint 全部实跑逐层 parity：0.6B—4B 全量加载，8B—32B 流式加载。
-- Qwen3 MoE 初始导入（Chapter 24，Open）：Float32 top-k routing、逐 expert SwiGLU、all-sparse decoder topology、原始 `mlp.experts.N.*` 权重名映射和 full/dynamic/static cache 已完成 Transformers tiny parity；CPU 默认路径按 expert gather/compute/combine，只执行非零 routing pair，并保留全 expert oracle。CUDA/XLA 与真实大权重仍未完成。
+- Qwen3 MoE 初始导入（Chapter 24，Open）：Float32 top-k routing、逐 expert SwiGLU、all-sparse decoder topology、原始 `mlp.experts.N.*` 权重名映射和 full/dynamic/static cache 已完成 Transformers tiny parity；CPU 默认路径按 expert gather/compute/combine，只执行非零 routing pair，并保留全 expert oracle。Reactant/XLA CPU 使用 compact route-major fallback；RTX 4090 D CUDA 通过 lazy package extension 使用不复制 route 权重的 indexed hidden/down/combine kernels。grouped GEMM 与真实大权重仍未完成。
 - Qwen3-Embedding-0.6B 导入（Chapter 22）：独立冻结 HF revision 和 8 个
   asset SHA256，严格区分 151,669 vocabulary、32K model context、
   SentenceTransformers base-model namespace 与 causal-LM contract；
@@ -145,7 +145,7 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-2026-08-07 复核默认套件，共 `5,766 / 5,766` 项测试通过；Chapter 24
+2026-08-07 复核默认套件，共 `5,780 / 5,780` 项测试通过；Chapter 24
 Transformers parity 阶段为 `5,750 / 5,750`。分项统计：其中 Chapter 05 专项
 3,094 项、Chapter 06 专项 112 项、Chapter 07 离线专项 54 项、Chapter 08
 离线专项 61 项、Chapter 09 离线专项 67 项、Chapter 10 离线专项 37 项、
@@ -153,7 +153,14 @@ Chapter 11 专项 91 项、Chapter 12 离线专项 85 项、Chapter 13 离线专
 283 项、Chapter 14 离线专项 77 项、Chapter 15 专项 82 项、Chapter 16
 专项 168 项、Chapter 17 专项 83 项、Chapter 18 专项 133 项、Chapter 19
 专项 80 项、Chapter 20 专项 105 项、Chapter 21 专项 109 项、Chapter 22
-离线专项 93 项、Chapter 23 离线专项 81 项、Chapter 24 专项 103 项。
+离线专项 93 项、Chapter 23 离线专项 81 项、Chapter 24 专项 117 项。
+Chapter 24 compact dispatch 的 Reactant/XLA CPU 专项另计 `3 / 3`：
+128 experts/top-8/64 tokens 的 route pairs 为 `512 / 8,192`，编译
+`32.126 s`、steady median `38.616 ms`，对 dense oracle max-abs `9.09e-7`。
+RTX 4090 D CUDA 专项另计 `9 / 9`；indexed kernels 的单-token/64-token
+steady median 为 `0.368 / 0.388 ms`，相对 route-major baseline 加速
+`1.32× / 1.45×`，64-token 相对单线程 CPU sparse 加速 `3.95×`；
+workspace 缩减 `118.15×`，两组 max-abs 均低于 `6.56e-7`。
 Chapter 23 的真实 0.6B CUDA XLA 验收（同 uniform replay）38/38 token 一致、
 decode `237.23` vs `23.66` tok/s，报告顶层 `closed=true`。Chapter 22 加真实 Qwen3-Embedding-0.6B 权重为 `103 / 103`；Chapter 21 加真实 loopback socket opt-in 为 `116 / 116`；compact fixed-chunk prefill 在 Reactant CPU 编译执行 `5 / 5` 通过。
 
@@ -245,8 +252,9 @@ Chapter 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定�
 - BF16/量化训练、FP8、完整 GPTQ/AWQ/Hessian/block reconstruction、
   KV cache/激活量化与生产级 MoE sparse accelerator；32B GPU 驻留
   （INT4 约 16.4 GiB）仍出界。Chapter 24 当前完成 CPU Float32
-  correctness oracle、独立 tiny Transformers parity 与 CPU sparse dispatch，
-  但尚无 CUDA/XLA sparse accelerator 或真实大权重路径。
+  correctness oracle、独立 tiny Transformers parity、CPU sparse dispatch 与
+  Reactant/XLA CPU compact fallback 与 RTX 4090 D CUDA indexed kernels，但
+  尚无 grouped-GEMM/tensor-core sparse accelerator 或真实大权重路径。
   Chapter 18 只实现 diagonal activation second-moment 加权，并且与 Chapter 17
   weight-MSE 一样不保证 greedy fidelity；量化推理仍每 token 全量反量化。
   XLA 日常部署目前为 Qwen3-8B、batch 1、greedy、4K 总窗口；device-side

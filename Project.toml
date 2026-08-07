@@ -3,6 +3,9 @@ uuid = "97d4aa85-b24f-40f3-9546-923fb8deb5c5"
 version = "0.1.0"
 authors = ["beamiter <beamiter@163.com>"]
 
+[extensions]
+LifeAICUDAExt = "CUDA"
+
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 BFloat16s = "ab4f0b2a-ad5b-11e8-123f-65d77653426b"

@@ -132,6 +132,7 @@ end
     include("qwen3_moe_cached_decode_test.jl")
     include("qwen3_moe_transformers_parity_test.jl")
     include("qwen3_moe_sparse_dispatch_test.jl")
+    include("qwen3_moe_device_sparse_dispatch_test.jl")
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
@@ -145,5 +146,12 @@ if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
         include("test_qwen3_dense_family_xla.jl")
         include("test_qwen3_xla_deployment_xla.jl")
         include("test_qwen3_device_sampling_xla.jl")
+        include("qwen3_moe_device_sparse_dispatch_xla_test.jl")
+    end
+end
+
+if lowercase(get(ENV, "LIFEAI_TEST_CUDA", "false")) in ("1", "true", "yes")
+    @testset "CUDA sparse accelerator paths" begin
+        include("qwen3_moe_device_sparse_dispatch_cuda_test.jl")
     end
 end

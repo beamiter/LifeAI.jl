@@ -28,7 +28,8 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 | `qwen3_moe` config 与权重映射 | 工程 | strict config parser、逐 expert stack loader | tiny HF 命名 fixture、错误输入 fail closed | 已完成 |
 | 独立 Transformers tiny reference | 模型 | hidden/router/logits fixture | 跨框架逐层 parity | 已完成 |
 | CPU sparse token dispatch | 高效推理 | 只执行被选 token-expert pair 的 gather/compute/combine | 与 dense oracle 对齐，inactive expert 不执行 | 已完成 |
-| CUDA/XLA sparse dispatch | 高效推理 | 无 host routing fallback 的设备路径 | correctness 不变，编译与性能证据 | 计划中 |
+| XLA sparse dispatch | 高效推理 | compact top-k route + route-major gather/matmul/combine | XLA CPU 编译、correctness 与 steady latency | 已完成 |
+| CUDA sparse dispatch | 高效推理 | indexed hidden/down/combine kernels，不复制 route 权重 | 无 host fallback、correctness、workspace 与 prefill/decode 性能证据 | 已完成 |
 | 官方真实权重验证 | 模型 / 工程 | streamed loader、资产清单、parity 报告 | checksum、逐层/logits/cache 与资源实测 | 计划中 |
 
 ## Close 条件
@@ -50,7 +51,7 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 
 ## 风险与取舍
 
-- CPU 默认路径已经按 expert gather 被选 token；全 expert masked 版本保留为 `qwen3_dense_expert_reference` 数值 oracle。CUDA/XLA 仍未实现，不能从 CPU 结果推断 accelerator 已支持。
+- CPU 默认路径已经按 expert gather 被选 token；全 expert masked 版本保留为 `qwen3_dense_expert_reference` 数值 oracle。非 CPU Array 的标准 Lux 调用会进入 compact device path；Reactant/XLA CPU 使用可移植 route-major fallback，RTX 4090 D CUDA 通过 package extension 自动启用 indexed kernels。XLA fallback 仍物化 route 权重；CUDA 已消除此临时张量，但还不是 grouped GEMM / tensor-core fused kernel。
 - 初始 loader 会把 expert 权重 stack 成三维数组，只适合 tiny fixture；真实 30B/235B 必须使用 streamed reader 和按需生命周期。
 - host `partialsortperm` 不是 CUDA/XLA 路由实现，不能把现有 Float32 CPU 通过写成 accelerator 已支持。
 - Qwen3 后续系列可能使用融合 expert tensor、shared expert、不同 attention 或 hybrid layer；必须按各自配置重新建立契约。
@@ -88,11 +89,38 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - 128 experts / top-8 / 64 tokens / `d_model=128` / expert hidden 64、BLAS 单线程的 7 次 steady CPU 对照：执行 pair 从 `8,192` 降到 `512`（16×），sparse median `1.416 ms`，dense median `6.637 ms`，加速 `4.69×`，max-abs `3.58e-7`。原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cpu_reference.json`。
 - sparse dispatch 新增 `16 / 16`，Transformers parity 仍为 `44 / 44`；Chapter 24 累计 `103 / 103`，默认全套 `5,766 / 5,766`。
 
+### 2026-08-07：compact device routing 与 XLA sparse dispatch
+
+- 新增 `qwen3_device_topk_routing`：固定 `top-k` 次 reduction/select，直接生成 `(top_k, tokens)` 的 expert index 与 routing weight，不构造生产用 dense routing table，也不调用 host `partialsortperm`。
+- 新增 `qwen3_device_sparse_expert_dispatch`：把 `top_k × tokens` 展平为 route pairs，只 gather 被选 expert 的 gate/up/down 权重，以 batched matmul 执行 SwiGLU，再按 token 维 combine。标准 `Qwen3SparseMoE` Lux 调用对非 CPU `Array` 自动采用该路径。
+- CPU 内容化测试覆盖 compact routing 重建、显式最高 expert-index tie-break、dense oracle 数值一致性和未选 `NaN` expert 隔离，共新增 `14 / 14`。
+- Reactant/XLA CPU 对标准 Lux 调用完成真实编译与执行，专项 `3 / 3`；kernel 内没有 `findall`、scalar indexing 或 data-dependent Julia branch。
+- 128 experts / top-8 / 64 tokens / `d_model=128` / expert hidden 64 的 XLA CPU 冻结实测：route entries 为 `512`，相对 dense `8,192` pairs 缩减 `16×`；编译 `32.126 s`，7 次 steady median `38.616 ms`，对 dense oracle max-abs `9.09e-7`。结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/xla_cpu_reference.json`。
+- 该 XLA CPU latency 明显慢于已冻结的 host CPU sparse median `1.416 ms`：当前 route-major 实现会物化每个 route 的选中权重，证明“没有计算未选 expert”尚不等于 accelerator kernel 已高效融合；后续 CUDA 实测继续验证这一开销边界。
+- Chapter 24 累计 `117 / 117`，默认全套 `5,780 / 5,780`；XLA 新专项另计 `3 / 3`。
+
+### 2026-08-07：RTX 4090 D CUDA route-major baseline
+
+- 宿主机 `nvidia-smi` 确认 RTX 4090 D、driver `570.153.02`；CUDA.jl 使用 runtime `12.9.0`，设备可用显存约 `23.99 GiB`。此前“CUDA driver 不可用”来自文件/设备隔离沙箱，不能作为宿主机能力结论。
+- 标准 Lux 设备前向直接接受 `CuArray` 参数与输入；数值对齐和未选 `NaN` expert 隔离共 `5 / 5`，没有打开 CUDA scalar indexing。
+- 同一 128 experts / top-8 / `d_model=128` / expert hidden 64、15 次 steady 实测：单-token decode 为 `0.493 ms`，单线程 CPU sparse 为 `0.0774 ms`（CUDA/CPU `0.157×`）；64-token prefill 为 `0.569 ms`，CPU 为 `1.617 ms`（CUDA `2.84×`）。max-abs 分别为 `2.98e-7` 与 `7.38e-7`。
+- 首个 CUDA shape 的 cold kernel/JIT 为 `9.915 s`；64-token case 复用 kernel 后 cold call 为 `8.99 ms`。route pairs 仍严格缩减 `16×`，但单-token 需要物化 `0.75 MiB` 选中权重，64-token 需要 `48 MiB`，解释了 decode launch/gather 开销和下一步融合方向。
+- 原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cuda_4090d_reference.json`。这一结果验收基础 CUDA 执行路径，并作为后续 indexed kernels 的冻结优化前 baseline。
+
+### 2026-08-07：CUDA indexed expert kernels
+
+- 将 CUDA 专用实现放入 `LifeAICUDAExt` package extension：普通 `using LifeAI` 不加载或初始化 CUDA；调用方显式加载 CUDA 后，`CuArray` 自动 dispatch 到专用方法，CPU/XLA 仍使用主模块内的 portable fallback。
+- 三个 kernel 分别直接从原始 `(hidden, d_model, experts)` 权重按 route expert index 计算 SwiGLU hidden、down projection 和 top-k combine，不再 gather/复制每条 route 的 gate/up/down 矩阵。旧实现保留为 `qwen3_route_major_expert_dispatch` benchmark oracle。
+- CUDA 专项扩展为 `9 / 9`：indexed vs dense、indexed vs route-major、inactive `NaN` expert 隔离，以及精确 workspace byte contract 全部通过；max-abs 对 dense oracle ≤ `6.56e-7`。
+- 128 experts/top-8 下，单-token 临时空间从 `0.75 MiB` 降到 `6.50 KiB`，64-token 从 `48 MiB` 降到 `416 KiB`，两组都是 `118.15×` 缩减。
+- RTX 4090 D、15 次同进程 steady 对照：单-token indexed `0.368 ms` vs route-major `0.486 ms`（`1.32×`），64-token indexed `0.388 ms` vs route-major `0.563 ms`（`1.45×`）。64-token 相对单线程 CPU sparse 为 `3.95×`；单-token仍只有 CPU 的 `0.196×`，说明下一瓶颈已从权重物化转为小 kernel launch 与标量 dot-product 效率。
+- 原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cuda_4090d_indexed_kernels.json`。这三个直接索引 kernel 是低 workspace correctness/performance baseline，尚未使用 expert 分桶后的 grouped GEMM 或 tensor cores。
+
 ## Close 回顾
 
-- **完成了什么**：CPU Float32 correctness、独立 Transformers tiny parity 和真实 CPU sparse dispatch；本章仍 Open。
-- **验证证据**：MoE 专项 `103 / 103`，默认全套 `5,766 / 5,766`，缩小 128-expert CPU 基准 `4.69×`。
-- **没有完成及原因**：CUDA/XLA sparse dispatch 和真实大权重尚未执行。
-- **最重要的认知变化**：原始 Qwen3 MoE 没有 shared expert；不能把后续 Qwen MoE 变体的结构预设到本章。
+- **完成了什么**：CPU Float32 correctness、独立 Transformers tiny parity、CPU sparse dispatch，以及无 host routing fallback 的 compact Reactant/XLA CPU 与 RTX 4090 D CUDA 路径；本章仍 Open。
+- **验证证据**：MoE 专项 `117 / 117`，默认全套 `5,780 / 5,780`，XLA `3 / 3`、CUDA `9 / 9`；128-expert CPU 基准 `4.69×`，CUDA indexed 64-token prefill 相对 CPU `3.95×`，各设备路径均与 dense oracle 对齐。
+- **没有完成及原因**：官方真实大权重的流式 expert 生命周期尚未实现；CUDA indexed 单-token decode 仍慢于 CPU，需要 expert 分桶/grouped GEMM，而 XLA 仍使用物化 route 权重的 portable fallback。
+- **最重要的认知变化**：原始 Qwen3 MoE 没有 shared expert；同时，compact route pairs 能保证算术稀疏，却不会自动消除选中权重物化与 gather 带宽成本，生产加速仍需要融合/分桶。
 - **是否满足 Close 条件**：否。
-- **带到下一阶段的问题**：怎样在不产生动态 host 控制流的前提下表达 XLA top-k dispatch，并控制 128 experts 的编译图规模？
+- **带到下一阶段的问题**：怎样把真实 checkpoint 的 expert 流式生命周期接入 cache decode，并用 expert 分桶/grouped GEMM 改善单-token CUDA 吞吐？
