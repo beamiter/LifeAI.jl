@@ -1389,3 +1389,83 @@ function hf_qwen3_forward_trace(
         states,
     )
 end
+
+"""
+    hf_qwen3_moe_forward_trace(model, tokens, ps, st)
+
+Run the eager Qwen3 MoE path while exposing each router's pre-top-k logits in
+addition to the standard embedding/block/final/logit trace. This mirrors the
+decoder block explicitly so the routing input is observed at the same point as
+HuggingFace: after the post-attention RMSNorm and before expert dispatch.
+"""
+function hf_qwen3_moe_forward_trace(
+    model::GPTModel,
+    tokens,
+    ps,
+    st::NamedTuple,
+)
+    model.mlp_type === :qwen3_moe || throw(ArgumentError(
+        "MoE tracing requires mlp_type=:qwen3_moe",
+    ))
+    ndims(tokens) == 2 || throw(DimensionMismatch(
+        "`tokens` must have shape (seq_len, batch)",
+    ))
+    _validate_token_ids(tokens, model.vocab_size)
+
+    x, st_embedding = model.token_embedding(
+        tokens,
+        ps.token_embedding,
+        st.token_embedding,
+    )
+    x = _add_position_embedding(model, x, ps, 1)
+    embedding = x
+    block_outputs = Any[]
+    router_outputs = Any[]
+    state_values = Any[]
+    block_names = keys(model.blocks.layers)
+
+    for name in block_names
+        block = getproperty(model.blocks.layers, name)
+        block_ps = getproperty(ps.blocks, name)
+        block_st = getproperty(st.blocks, name)
+
+        x_norm1, st_norm1 = block.norm1(x, block_ps.norm1, block_st.norm1)
+        attn_out, st_attn = block.attn(x_norm1, block_ps.attn, block_st.attn)
+        residual = x .+ attn_out
+        x_norm2, st_norm2 = block.norm2(
+            residual,
+            block_ps.norm2,
+            block_st.norm2,
+        )
+        router_logits = block_ps.mlp.gate.weight * reshape(x_norm2, model.d_model, :)
+        mlp_out, st_mlp = block.mlp(x_norm2, block_ps.mlp, block_st.mlp)
+        x = residual .+ mlp_out
+
+        push!(router_outputs, router_logits)
+        push!(block_outputs, x)
+        push!(state_values, (;
+            norm1=st_norm1,
+            attn=st_attn,
+            norm2=st_norm2,
+            mlp=st_mlp,
+        ))
+    end
+
+    st_blocks = NamedTuple{Tuple(block_names)}(Tuple(state_values))
+    final_hidden, st_final = model.final_norm(x, ps.final_norm, st.final_norm)
+    logits, st_lm = _project_logits(model, final_hidden, ps, st.lm_head)
+    states = (;
+        token_embedding=st_embedding,
+        blocks=st_blocks,
+        final_norm=st_final,
+        lm_head=st_lm,
+    )
+    return (;
+        embedding,
+        blocks=Tuple(block_outputs),
+        router_logits=Tuple(router_outputs),
+        final_hidden,
+        logits,
+        states,
+    )
+end

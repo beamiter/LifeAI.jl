@@ -6,7 +6,7 @@
 
 ## 当前活动阶段
 
-[`Chapter 24 — Qwen3 MoE 架构支持`](episodes/episode06_qwen3_moe_and_model_expansion/chapter24_qwen3_moe_architecture.md) 已于 2026-08-07 Open。首个 CPU Float32 correctness slice 已完成：top-k router、expert SwiGLU、`GPTModel`/KV cache 集成、strict `qwen3_moe` config 和原始逐 expert HuggingFace 权重映射进入主线；四个按内容命名的专项 `43 / 43` 通过，相关 Dense 回归 `145 / 145` 通过。当前实现仍会计算全部 expert，且没有独立 Transformers fixture、CUDA/XLA sparse dispatch 或真实 30B 权重 parity，因此本章保持 Open。
+[`Chapter 24 — Qwen3 MoE 架构支持`](episodes/episode06_qwen3_moe_and_model_expansion/chapter24_qwen3_moe_architecture.md) 已于 2026-08-07 Open。CPU Float32 correctness slice 与独立 Transformers tiny parity 已完成：top-k router、expert SwiGLU、`GPTModel`/KV cache、strict `qwen3_moe` config、原始逐 expert 权重映射，以及 router/逐层/full/cached decode 跨框架对齐进入主线。Chapter 24 专项 `87 / 87`；最大误差为 router `5.96e-8`、block `7.45e-9`、final hidden `3.58e-7`、logits `8.94e-8`。当前实现仍会计算全部 expert，且没有 CUDA/XLA sparse dispatch 或真实 30B 权重 parity，因此本章保持 Open。
 
 [`Chapter 23 — Qwen3 XLA 设备端采样`](episodes/episode05_deployment_memory_and_sampling/chapter23_qwen3_xla_device_sampling.md) 已于 2026-08-01 Closed。temperature / top-k / top-p / inverse-CDF 采样策略整体进入编译好的 prefill/decode executable：宿主每 token 只送一个 4 字节 uniform、取回一个整数，不再传回 151,936 维 logits。策略用 `top_k` 次 masked reduction 提取候选（不排序），nucleus 改写为「严格排在候选之前的质量 < top_p」，inverse-CDF 仍按词表 index 顺序走。真实 Qwen3-0.6B 在本机 RTX 5080 CUDA XLA 上以同一串 uniform replay，与宿主策略 **38/38 token 完全一致**，decode 从 `23.66` 提升到 `237.23` tok/s（`10.03×`），已贴近 greedy 的 246 tok/s。`top_k` 是编译期常量，temperature/top_p 是运行期设备标量。
 
@@ -145,15 +145,15 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-2026-08-07 复核默认套件，共 `5,706 / 5,706` 项测试通过；此前
-2026-08-01 基线为 `5,663 / 5,663`。分项统计：其中 Chapter 05 专项
+2026-08-07 复核默认套件，共 `5,750 / 5,750` 项测试通过；Chapter 24
+第一阶段提交时为 `5,706 / 5,706`。分项统计：其中 Chapter 05 专项
 3,094 项、Chapter 06 专项 112 项、Chapter 07 离线专项 54 项、Chapter 08
 离线专项 61 项、Chapter 09 离线专项 67 项、Chapter 10 离线专项 37 项、
 Chapter 11 专项 91 项、Chapter 12 离线专项 85 项、Chapter 13 离线专项
 283 项、Chapter 14 离线专项 77 项、Chapter 15 专项 82 项、Chapter 16
 专项 168 项、Chapter 17 专项 83 项、Chapter 18 专项 133 项、Chapter 19
 专项 80 项、Chapter 20 专项 105 项、Chapter 21 专项 109 项、Chapter 22
-离线专项 93 项、Chapter 23 离线专项 81 项、Chapter 24 初始专项 43 项。
+离线专项 93 项、Chapter 23 离线专项 81 项、Chapter 24 专项 87 项。
 Chapter 23 的真实 0.6B CUDA XLA 验收（同 uniform replay）38/38 token 一致、
 decode `237.23` vs `23.66` tok/s，报告顶层 `closed=true`。Chapter 22 加真实 Qwen3-Embedding-0.6B 权重为 `103 / 103`；Chapter 21 加真实 loopback socket opt-in 为 `116 / 116`；compact fixed-chunk prefill 在 Reactant CPU 编译执行 `5 / 5` 通过。
 
@@ -244,8 +244,9 @@ Chapter 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定�
 - 通用 Jinja chat template、Qwen3 tools/tool-role 分支、JSON schema 工具注入与 agent tool loop；Chapter 08 只完成已冻结的无 tools 基础 chat 子集。
 - BF16/量化训练、FP8、完整 GPTQ/AWQ/Hessian/block reconstruction、
   KV cache/激活量化与生产级 MoE sparse accelerator；32B GPU 驻留
-  （INT4 约 16.4 GiB）仍出界。Chapter 24 当前只有 CPU Float32
-  correctness oracle、tiny 权重映射与 cache 集成。
+  （INT4 约 16.4 GiB）仍出界。Chapter 24 当前完成 CPU Float32
+  correctness oracle 与独立 tiny Transformers parity，但尚无 sparse
+  accelerator 或真实大权重路径。
   Chapter 18 只实现 diagonal activation second-moment 加权，并且与 Chapter 17
   weight-MSE 一样不保证 greedy fidelity；量化推理仍每 token 全量反量化。
   XLA 日常部署目前为 Qwen3-8B、batch 1、greedy、4K 总窗口；device-side

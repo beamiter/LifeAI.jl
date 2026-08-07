@@ -38,7 +38,7 @@ export qwen3_dense_parameter_count
 export load_hf_qwen3_config, load_safetensors, load_hf_qwen3_parameters
 export load_hf_qwen3_model, hf_token_ids, hf_qwen3_forward_trace
 export load_hf_qwen3_moe_config, load_hf_qwen3_moe_parameters
-export load_hf_qwen3_moe_model
+export load_hf_qwen3_moe_model, hf_qwen3_moe_forward_trace
 export Qwen3EmbeddingSpec, qwen3_embedding_spec
 export qwen3_embedding_parameter_count
 export load_hf_qwen3_embedding_config, verify_qwen3_embedding_assets

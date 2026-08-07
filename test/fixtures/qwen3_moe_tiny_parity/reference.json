@@ -1,0 +1,67 @@
+{
+  "checksums": {
+    "config_sha256": "26611b7b260794f74f78d5705e3414e91b30025ccb5fa0a472945d9afa8c127f",
+    "generation_config_sha256": "a056282ddb08f4b1246c7979cc6c2419b67bfaa49d8cdaa98f79ee38cf5ea284",
+    "model_sha256": "b0816ff62fb1f2f544cb0e15934013ca50dc04e458f3d788a7bf84ff9d6da399",
+    "reference_sha256": "95314518f2d89e730eda79e3124953b6479542f70eea1a560176605ffecfaa4f",
+    "script_sha256": "fb1bfa37e3e883c5b58f72dc42f8d6ee977b19122c2b5a434af5e183889b938e"
+  },
+  "decode_id_0_based": 9,
+  "dtype": "float32",
+  "input_ids_0_based": [
+    0,
+    3,
+    6,
+    9
+  ],
+  "model_type": "qwen3_moe",
+  "prompt_ids_0_based": [
+    0,
+    3,
+    6
+  ],
+  "schema_version": 1,
+  "selected_experts_0_based": {
+    "0": [
+      [
+        0,
+        2
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        3,
+        1
+      ]
+    ],
+    "1": [
+      [
+        0,
+        2
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        3,
+        1
+      ]
+    ]
+  },
+  "versions": {
+    "python": "3.10.12",
+    "torch": "2.7.1+cpu",
+    "transformers": "4.51.3"
+  }
+}

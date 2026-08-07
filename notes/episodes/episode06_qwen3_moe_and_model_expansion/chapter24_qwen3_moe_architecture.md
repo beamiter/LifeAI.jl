@@ -26,7 +26,7 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 | top-k router 与 expert SwiGLU correctness oracle | 模型 | `Qwen3SparseMoE`、Float32 routing | 独立手写 reference 对拍 | 已完成 |
 | GPT decoder 与 KV cache 集成 | 模型 / 推理 | `GPTModel(..., mlp_type=:qwen3_moe)` | full/dynamic/static logits 一致 | 已完成 |
 | `qwen3_moe` config 与权重映射 | 工程 | strict config parser、逐 expert stack loader | tiny HF 命名 fixture、错误输入 fail closed | 已完成 |
-| 独立 Transformers tiny reference | 模型 | hidden/router/logits fixture | 跨框架逐层 parity | 进行中 |
+| 独立 Transformers tiny reference | 模型 | hidden/router/logits fixture | 跨框架逐层 parity | 已完成 |
 | 真正 sparse token dispatch | 高效推理 | 只执行被选 expert 的 CPU/CUDA/XLA 路径 | correctness 不变，未选 expert 不计算 | 计划中 |
 | 官方真实权重验证 | 模型 / 工程 | streamed loader、资产清单、parity 报告 | checksum、逐层/logits/cache 与资源实测 | 计划中 |
 
@@ -65,11 +65,25 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - 四个按测试内容命名的专项共 `43 / 43` 通过：router 13、expert mixture 6、config/weight mapping 18、cached decode 6。
 - Dense 回归：Qwen3 HF weight loading `54 / 54`、dense family `91 / 91` 通过。
 
+### 2026-08-07：独立 Transformers tiny parity
+
+- 新增 `scripts/export_qwen3_moe_tiny_reference.py`，使用项目 `.venv` 中的 Python 3.10.12、PyTorch 2.7.1+cpu、Transformers 4.51.3，从官方 `Qwen3MoeForCausalLM` 独立生成 2-layer / 4-expert / top-2 Float32 checkpoint。
+- config、generation config、模型权重、reference tensors 和生成脚本的 SHA256 全部冻结在 `reference.json`；重新生成命令：
+
+  ```bash
+  .venv/bin/python scripts/export_qwen3_moe_tiny_reference.py \
+    test/fixtures/qwen3_moe_tiny_parity
+  ```
+
+- `hf_qwen3_moe_forward_trace` 显式观测 post-attention RMSNorm 后、expert dispatch 前的 router logits；没有用 LifeAI 结果生成 reference。
+- 两层共 8 个 token-router 决策的 top-2 expert 顺序和归一化权重全部一致。最大绝对误差：router `5.96e-8`、block `7.45e-9`、final hidden `3.58e-7`、full logits `8.94e-8`、prompt/decode logits `5.96e-8`；embedding 逐位相同。
+- Transformers parity 专项 `44 / 44`，Chapter 24 累计 `87 / 87`；默认全套 `5,750 / 5,750` 通过。
+
 ## Close 回顾
 
-- **完成了什么**：首个 CPU Float32 correctness slice；本章仍 Open。
-- **验证证据**：MoE 专项 `43 / 43`，Dense 相关回归 `145 / 145`。
-- **没有完成及原因**：独立 Transformers fixture、sparse accelerator dispatch 和真实大权重尚未执行。
+- **完成了什么**：CPU Float32 correctness slice 和独立 Transformers tiny parity；本章仍 Open。
+- **验证证据**：MoE 专项 `87 / 87`，默认全套 `5,750 / 5,750`。
+- **没有完成及原因**：sparse accelerator dispatch 和真实大权重尚未执行。
 - **最重要的认知变化**：原始 Qwen3 MoE 没有 shared expert；不能把后续 Qwen MoE 变体的结构预设到本章。
 - **是否满足 Close 条件**：否。
 - **带到下一阶段的问题**：怎样在不产生动态 host 控制流的前提下表达 XLA top-k dispatch，并控制 128 experts 的编译图规模？
