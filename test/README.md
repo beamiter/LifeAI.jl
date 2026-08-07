@@ -9,6 +9,7 @@
 - `test_qwen3_bf16_*`、`test_qwen3_*quantization*`、`test_qwen3_*int4`：BF16、加速和量化。
 - `test_qwen3_*deployment*`、`test_qwen3_resident_http_service`：本地部署与服务。
 - `test_qwen3_embedding_memory`、`test_qwen3_device_sampling`：语义记忆和设备端采样。
+- `qwen3_moe_router_test`、`qwen3_moe_expert_mixture_test`、`qwen3_moe_weight_loading_test`、`qwen3_moe_cached_decode_test`：MoE 路由、专家混合输出、HF 权重映射与缓存解码。
 
 `fixtures/` 同样按被验证的能力命名。冻结 benchmark 和模型 reference 通过文件内容或 metadata 定位，测试不依赖时间编号目录。
 

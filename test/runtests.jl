@@ -125,6 +125,13 @@ end
     include("test_qwen3_device_sampling.jl")
 end
 
+@testset "Qwen3 MoE architecture" begin
+    include("qwen3_moe_router_test.jl")
+    include("qwen3_moe_expert_mixture_test.jl")
+    include("qwen3_moe_weight_loading_test.jl")
+    include("qwen3_moe_cached_decode_test.jl")
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA KV cache" begin
         include("test_xla_kv_cache.jl")

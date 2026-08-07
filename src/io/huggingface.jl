@@ -400,6 +400,131 @@ function load_hf_qwen3_config(
     )
 end
 
+"""
+    load_hf_qwen3_moe_config(path; max_seq_len=nothing)
+
+Parse a HuggingFace `qwen3_moe` configuration into the constructor contract
+accepted by `GPTModel`. Chapter 24 supports the original Qwen3 MoE topology in
+which every decoder layer is sparse (`decoder_sparse_step == 1` and no
+`mlp_only_layers`). Unsupported hybrid dense/sparse schedules fail closed.
+"""
+function load_hf_qwen3_moe_config(
+    path::AbstractString;
+    max_seq_len=nothing,
+)
+    config = _json_object(path)
+
+    model_type = _json_required(config, "model_type", path)
+    model_type == "qwen3_moe" || throw(ArgumentError(
+        "unsupported HuggingFace model_type $(repr(model_type)); expected `qwen3_moe`",
+    ))
+    if haskey(config, "architectures")
+        architectures = config["architectures"]
+        architectures isa JSON3.Array || throw(ArgumentError(
+            "`architectures` must be an array in $path",
+        ))
+        "Qwen3MoeForCausalLM" in architectures || throw(ArgumentError(
+            "config does not declare `Qwen3MoeForCausalLM` in $path",
+        ))
+    end
+
+    _json_required(config, "hidden_act", path) == "silu" || throw(ArgumentError(
+        "Qwen3 MoE requires hidden_act=`silu`",
+    ))
+    _required_bool(config, "attention_bias", path) && throw(ArgumentError(
+        "Qwen3 MoE attention bias is not supported",
+    ))
+    attention_dropout = _json_required(config, "attention_dropout", path)
+    attention_dropout isa Real && iszero(attention_dropout) || throw(ArgumentError(
+        "Qwen3 MoE requires zero attention_dropout",
+    ))
+
+    use_sliding_window = haskey(config, "use_sliding_window") ?
+        config["use_sliding_window"] : false
+    use_sliding_window isa Bool || throw(ArgumentError(
+        "`use_sliding_window` must be a boolean in $path",
+    ))
+    use_sliding_window && throw(ArgumentError("sliding-window attention is not supported"))
+    haskey(config, "sliding_window") && config["sliding_window"] !== nothing &&
+        throw(ArgumentError("sliding-window attention is not supported"))
+    haskey(config, "rope_scaling") && config["rope_scaling"] !== nothing &&
+        throw(ArgumentError("RoPE scaling is not supported"))
+
+    decoder_sparse_step = _required_int(config, "decoder_sparse_step", path)
+    decoder_sparse_step == 1 || throw(ArgumentError(
+        "only all-sparse Qwen3 MoE layers are supported",
+    ))
+    mlp_only_layers = _json_required(config, "mlp_only_layers", path)
+    mlp_only_layers isa JSON3.Array || throw(ArgumentError(
+        "`mlp_only_layers` must be an array in $path",
+    ))
+    isempty(mlp_only_layers) || throw(ArgumentError(
+        "dense mlp_only_layers are not supported",
+    ))
+
+    vocab_size = _required_int(config, "vocab_size", path)
+    d_model = _required_int(config, "hidden_size", path)
+    num_layers = _required_int(config, "num_hidden_layers", path)
+    num_heads = _required_int(config, "num_attention_heads", path)
+    num_kv_heads = _required_int(config, "num_key_value_heads", path)
+    head_dim = _required_int(config, "head_dim", path)
+    dense_mlp_hidden_dim = _required_int(config, "intermediate_size", path)
+    mlp_hidden_dim = _required_int(config, "moe_intermediate_size", path)
+    num_experts = _required_int(config, "num_experts", path)
+    experts_per_token = _required_int(config, "num_experts_per_tok", path)
+    experts_per_token <= num_experts || throw(ArgumentError(
+        "num_experts_per_tok must not exceed num_experts",
+    ))
+    normalize_routing = _required_bool(config, "norm_topk_prob", path)
+    max_positions = _required_int(config, "max_position_embeddings", path)
+    num_heads % num_kv_heads == 0 || throw(ArgumentError(
+        "num_attention_heads must be divisible by num_key_value_heads",
+    ))
+    iseven(head_dim) || throw(ArgumentError("Qwen3 MoE head_dim must be even for RoPE"))
+
+    resolved_max_seq_len = max_seq_len === nothing ? max_positions : Int(max_seq_len)
+    1 <= resolved_max_seq_len <= max_positions || throw(ArgumentError(
+        "max_seq_len must be in 1:$max_positions; got $resolved_max_seq_len",
+    ))
+    rms_norm_eps = _json_required(config, "rms_norm_eps", path)
+    rms_norm_eps isa Real && rms_norm_eps > 0 || throw(ArgumentError(
+        "`rms_norm_eps` must be positive in $path",
+    ))
+    rope_theta = _json_required(config, "rope_theta", path)
+    rope_theta isa Real && rope_theta > 0 || throw(ArgumentError(
+        "`rope_theta` must be positive in $path",
+    ))
+    tie_embeddings = _required_bool(config, "tie_word_embeddings", path)
+
+    return (;
+        vocab_size,
+        d_model,
+        num_heads,
+        num_kv_heads,
+        num_layers,
+        head_dim,
+        mlp_hidden_dim,
+        use_bias=false,
+        is_causal=true,
+        use_rope=true,
+        use_qk_norm=true,
+        qk_norm_epsilon=Float32(rms_norm_eps),
+        max_seq_len=resolved_max_seq_len,
+        rope_theta=Float32(rope_theta),
+        rope_style=:rotate_half,
+        norm_epsilon=Float32(rms_norm_eps),
+        norm_type=:rmsnorm,
+        mlp_type=:qwen3_moe,
+        tie_embeddings,
+        num_experts,
+        experts_per_token,
+        normalize_routing,
+        dense_mlp_hidden_dim,
+        source_max_seq_len=max_positions,
+        qwen3_model_type=:moe,
+    )
+end
+
 function _read_le_uint64(io)
     bytes = read(io, 8)
     length(bytes) == 8 || throw(ArgumentError("safetensors file is shorter than 8 bytes"))
@@ -807,6 +932,123 @@ function _qwen3_block_parameters(
     return (; norm1, attn, norm2, mlp)
 end
 
+function _qwen3_moe_expected_tensor_names(model::GPTModel)
+    names = Set(["model.embed_tokens.weight", "model.norm.weight"])
+    for layer in 0:(model.num_layers - 1)
+        prefix = "model.layers.$layer"
+        union!(names, [
+            "$prefix.input_layernorm.weight",
+            "$prefix.self_attn.q_proj.weight",
+            "$prefix.self_attn.k_proj.weight",
+            "$prefix.self_attn.v_proj.weight",
+            "$prefix.self_attn.o_proj.weight",
+            "$prefix.self_attn.q_norm.weight",
+            "$prefix.self_attn.k_norm.weight",
+            "$prefix.post_attention_layernorm.weight",
+            "$prefix.mlp.gate.weight",
+        ])
+        for expert in 0:(model.num_experts - 1)
+            expert_prefix = "$prefix.mlp.experts.$expert"
+            union!(names, [
+                "$expert_prefix.gate_proj.weight",
+                "$expert_prefix.up_proj.weight",
+                "$expert_prefix.down_proj.weight",
+            ])
+        end
+    end
+    model.tie_embeddings || push!(names, "lm_head.weight")
+    return names
+end
+
+function _qwen3_moe_block_parameters(
+    model::GPTModel,
+    tensors::AbstractDict,
+    layer::Int,
+)
+    d_model = model.d_model
+    q_dim = model.num_heads * model.head_dim
+    kv_dim = model.num_kv_heads * model.head_dim
+    hidden_dim = model.mlp_hidden_dim
+    prefix = "model.layers.$layer"
+
+    norm1 = (; scale=reshape(_expect_tensor(
+        tensors,
+        "$prefix.input_layernorm.weight",
+        (d_model,),
+    ), d_model, 1, 1))
+    attn = (;
+        q_proj=(; weight=_expect_tensor(
+            tensors,
+            "$prefix.self_attn.q_proj.weight",
+            (q_dim, d_model),
+        )),
+        k_proj=(; weight=_expect_tensor(
+            tensors,
+            "$prefix.self_attn.k_proj.weight",
+            (kv_dim, d_model),
+        )),
+        v_proj=(; weight=_expect_tensor(
+            tensors,
+            "$prefix.self_attn.v_proj.weight",
+            (kv_dim, d_model),
+        )),
+        o_proj=(; weight=_expect_tensor(
+            tensors,
+            "$prefix.self_attn.o_proj.weight",
+            (d_model, q_dim),
+        )),
+        q_norm=(; scale=_expect_tensor(
+            tensors,
+            "$prefix.self_attn.q_norm.weight",
+            (model.head_dim,),
+        )),
+        k_norm=(; scale=_expect_tensor(
+            tensors,
+            "$prefix.self_attn.k_norm.weight",
+            (model.head_dim,),
+        )),
+    )
+    norm2 = (; scale=reshape(_expect_tensor(
+        tensors,
+        "$prefix.post_attention_layernorm.weight",
+        (d_model,),
+    ), d_model, 1, 1))
+
+    gate = (; weight=_expect_tensor(
+        tensors,
+        "$prefix.mlp.gate.weight",
+        (model.num_experts, d_model),
+    ))
+    gate_values = Vector{Any}(undef, model.num_experts)
+    up_values = Vector{Any}(undef, model.num_experts)
+    down_values = Vector{Any}(undef, model.num_experts)
+    for expert in 0:(model.num_experts - 1)
+        expert_prefix = "$prefix.mlp.experts.$expert"
+        gate_values[expert + 1] = reshape(_expect_tensor(
+            tensors,
+            "$expert_prefix.gate_proj.weight",
+            (hidden_dim, d_model),
+        ), hidden_dim, d_model, 1)
+        up_values[expert + 1] = reshape(_expect_tensor(
+            tensors,
+            "$expert_prefix.up_proj.weight",
+            (hidden_dim, d_model),
+        ), hidden_dim, d_model, 1)
+        down_values[expert + 1] = reshape(_expect_tensor(
+            tensors,
+            "$expert_prefix.down_proj.weight",
+            (d_model, hidden_dim),
+        ), d_model, hidden_dim, 1)
+    end
+    experts = (;
+        gate_proj=cat(gate_values...; dims=3),
+        up_proj=cat(up_values...; dims=3),
+        down_proj=cat(down_values...; dims=3),
+    )
+    mlp = (; gate, experts)
+    return (; norm1, attn, norm2, mlp)
+end
+
 """
     load_hf_qwen3_parameters(model, tensors)
 
@@ -889,6 +1131,78 @@ function load_hf_qwen3_parameters(
 end
 
 """
+    load_hf_qwen3_moe_parameters(model, tensors)
+
+Strictly map an original-format HuggingFace Qwen3 MoE state dict. Expert
+matrices named `mlp.experts.N.{gate,up,down}_proj.weight` are stacked along a
+third expert dimension in the LifeAI parameter tree.
+"""
+function load_hf_qwen3_moe_parameters(
+    model::GPTModel,
+    tensors::AbstractDict,
+)
+    model.norm_type === :rmsnorm || throw(ArgumentError("Qwen3 MoE requires RMSNorm"))
+    model.mlp_type === :qwen3_moe || throw(ArgumentError(
+        "Qwen3 MoE loading requires mlp_type=:qwen3_moe",
+    ))
+    model.use_qk_norm || throw(ArgumentError("Qwen3 MoE requires QK-Norm"))
+    model.use_rope && model.rope_style === :rotate_half || throw(ArgumentError(
+        "Qwen3 MoE requires rotate_half RoPE",
+    ))
+    model.use_bias && throw(ArgumentError(
+        "Qwen3 MoE loading requires bias-free projections",
+    ))
+
+    expected_names = _qwen3_moe_expected_tensor_names(model)
+    actual_names = Set(String.(collect(keys(tensors))))
+    allowed_names = model.tie_embeddings ?
+        union(expected_names, Set(["lm_head.weight"])) : expected_names
+    missing = setdiff(expected_names, actual_names)
+    unexpected = setdiff(actual_names, allowed_names)
+    isempty(missing) || throw(ArgumentError(
+        "missing HuggingFace tensors: $(_format_tensor_names(missing))",
+    ))
+    isempty(unexpected) || throw(ArgumentError(
+        "unexpected HuggingFace tensors: $(_format_tensor_names(unexpected))",
+    ))
+
+    d_model = model.d_model
+    embedding_hf = _expect_tensor(
+        tensors,
+        "model.embed_tokens.weight",
+        (model.vocab_size, d_model),
+    )
+    if model.tie_embeddings && haskey(tensors, "lm_head.weight")
+        tied_head = _expect_tensor(
+            tensors,
+            "lm_head.weight",
+            (model.vocab_size, d_model),
+        )
+        tied_head == embedding_hf || throw(ArgumentError(
+            "tied Qwen3 MoE lm_head.weight does not equal model.embed_tokens.weight",
+        ))
+    end
+    token_embedding = (; weight=permutedims(embedding_hf, (2, 1)))
+
+    block_values = ntuple(model.num_layers) do julia_layer
+        _qwen3_moe_block_parameters(model, tensors, julia_layer - 1)
+    end
+    block_names = Tuple(Symbol("layer_$layer") for layer in 1:model.num_layers)
+    blocks = NamedTuple{block_names}(block_values)
+    final_norm = (; scale=reshape(_expect_tensor(
+        tensors,
+        "model.norm.weight",
+        (d_model,),
+    ), d_model, 1, 1))
+    lm_head = model.tie_embeddings ? (;) : (; weight=_expect_tensor(
+        tensors,
+        "lm_head.weight",
+        (model.vocab_size, d_model),
+    ))
+    return (; token_embedding, blocks, final_norm, lm_head)
+end
+
+"""
     hf_token_ids(ids; vocab_size=nothing)
 
 Convert HuggingFace's 0-based token ids to LifeAI's public 1-based token ids.
@@ -951,6 +1265,40 @@ function load_hf_qwen3_model(
         states,
         config,
         variant=dense_spec,
+        source=abspath(model_dir),
+    )
+end
+
+"""
+    load_hf_qwen3_moe_model(model_dir; max_seq_len=2048, weight_dtype=Float32)
+
+Load an original-format local HuggingFace Qwen3 MoE checkpoint. This initial
+Chapter 24 path is an in-memory correctness loader intended for tiny fixtures
+and architecture parity; production-size expert streaming is a separate close
+condition because the official checkpoints cannot fit in the dense loader's
+host-memory envelope.
+"""
+function load_hf_qwen3_moe_model(
+    model_dir::AbstractString;
+    max_seq_len=2048,
+    weight_dtype::Type=Float32,
+)
+    isdir(model_dir) || throw(ArgumentError("model directory does not exist: $model_dir"))
+    config = load_hf_qwen3_moe_config(
+        joinpath(model_dir, "config.json");
+        max_seq_len,
+    )
+    model = GPTModel(config)
+    tensors = load_safetensors(model_dir; target_dtype=weight_dtype)
+    parameters = load_hf_qwen3_moe_parameters(model, tensors)
+    empty!(tensors)
+    GC.gc(false)
+    states = Lux.initialstates(Xoshiro(0), model)
+    return (;
+        model,
+        parameters,
+        states,
+        config,
         source=abspath(model_dir),
     )
 end

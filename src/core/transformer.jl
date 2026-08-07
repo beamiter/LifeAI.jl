@@ -34,7 +34,8 @@ Structure:
 
 The attention layer follows the existing `MultiHeadAttention` implementation and can
 optionally enable RoPE on Q/K. `norm_type` independently selects LayerNorm or
-RMSNorm, while `mlp_type` selects GELU, GPT-2 GELU-New, or SwiGLU.
+RMSNorm, while `mlp_type` selects GELU, GPT-2 GELU-New, SwiGLU, or Qwen3
+sparse MoE.
 """
 @concrete struct TransformerBlock <: AbstractLuxContainerLayer{(
     :norm1,
@@ -59,6 +60,9 @@ RMSNorm, while `mlp_type` selects GELU, GPT-2 GELU-New, or SwiGLU.
     norm_type::Symbol
     mlp_type::Symbol
     norm_epsilon::Float32
+    num_experts::Int
+    experts_per_token::Int
+    normalize_routing::Bool
 end
 
 function _validate_norm_type(norm_type::Symbol)
@@ -69,8 +73,9 @@ function _validate_norm_type(norm_type::Symbol)
 end
 
 function _validate_mlp_type(mlp_type::Symbol)
-    mlp_type in (:gelu, :gelu_new, :swiglu) || throw(ArgumentError(
-        "`mlp_type` must be `:gelu`, `:gelu_new`, or `:swiglu`; got $(repr(mlp_type))",
+    mlp_type in (:gelu, :gelu_new, :swiglu, :qwen3_moe) || throw(ArgumentError(
+        "`mlp_type` must be `:gelu`, `:gelu_new`, `:swiglu`, or `:qwen3_moe`; " *
+        "got $(repr(mlp_type))",
     ))
     return mlp_type
 end
@@ -123,8 +128,18 @@ function _make_mlp(
     mlp_hidden_dim::Int,
     mlp_type::Symbol,
     use_bias::Bool,
+    num_experts::Int,
+    experts_per_token::Int,
+    normalize_routing::Bool,
 )
     _validate_mlp_type(mlp_type)
+    mlp_type === :qwen3_moe && return Qwen3SparseMoE(
+        d_model,
+        mlp_hidden_dim,
+        num_experts,
+        experts_per_token;
+        normalize_routing,
+    )
     mlp_type === :swiglu && return SwiGLU(
         d_model,
         mlp_hidden_dim;
@@ -156,12 +171,29 @@ function TransformerBlock(
     norm_epsilon::Real=1.0f-5,
     norm_type::Symbol=:layernorm,
     mlp_type::Symbol=:gelu,
+    num_experts::Int=0,
+    experts_per_token::Int=0,
+    normalize_routing::Bool=true,
 )
     @assert d_model > 0 "`d_model` must be positive"
     @assert num_heads > 0 "`num_heads` must be positive"
     @assert norm_epsilon > 0 "`norm_epsilon` must be positive"
     _validate_norm_type(norm_type)
     _validate_mlp_type(mlp_type)
+    if mlp_type === :qwen3_moe
+        num_experts > 0 || throw(ArgumentError("Qwen3 MoE requires num_experts > 0"))
+        1 <= experts_per_token <= num_experts || throw(ArgumentError(
+            "Qwen3 MoE experts_per_token must be in 1:num_experts",
+        ))
+        use_bias && throw(ArgumentError("Qwen3 MoE experts are bias-free"))
+    else
+        num_experts == 0 || throw(ArgumentError(
+            "num_experts is only valid with mlp_type=:qwen3_moe",
+        ))
+        experts_per_token == 0 || throw(ArgumentError(
+            "experts_per_token is only valid with mlp_type=:qwen3_moe",
+        ))
+    end
 
     resolved_mlp_hidden_dim = _resolve_mlp_hidden_dim(
         d_model,
@@ -195,6 +227,9 @@ function TransformerBlock(
         resolved_mlp_hidden_dim,
         mlp_type,
         use_bias,
+        num_experts,
+        experts_per_token,
+        normalize_routing,
     )
 
     return TransformerBlock(
@@ -214,6 +249,9 @@ function TransformerBlock(
         norm_type,
         mlp_type,
         Float32(norm_epsilon),
+        num_experts,
+        experts_per_token,
+        normalize_routing,
     )
 end
 

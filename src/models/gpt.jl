@@ -65,6 +65,9 @@ and use the cache's absolute decode position.
     tie_embeddings::Bool
     use_qk_norm::Bool
     qk_norm_epsilon::Float32
+    num_experts::Int
+    experts_per_token::Int
+    normalize_routing::Bool
 end
 
 function GPTModel(
@@ -90,6 +93,9 @@ function GPTModel(
     norm_type::Symbol=:layernorm,
     mlp_type::Symbol=:gelu,
     tie_embeddings::Bool=false,
+    num_experts::Int=0,
+    experts_per_token::Int=0,
+    normalize_routing::Bool=true,
 )
     @assert vocab_size > 0 "`vocab_size` must be positive"
     @assert d_model > 0 "`d_model` must be positive"
@@ -151,6 +157,9 @@ function GPTModel(
             norm_epsilon,
             norm_type,
             mlp_type,
+            num_experts,
+            experts_per_token,
+            normalize_routing,
         ),
         num_layers,
     )...)
@@ -191,6 +200,9 @@ function GPTModel(
         tie_embeddings,
         use_qk_norm,
         Float32(qk_norm_epsilon),
+        num_experts,
+        experts_per_token,
+        normalize_routing,
     )
 end
 
@@ -224,6 +236,9 @@ function gpt_config(model::GPTModel)
         norm_type=model.norm_type,
         mlp_type=model.mlp_type,
         tie_embeddings=model.tie_embeddings,
+        num_experts=model.num_experts,
+        experts_per_token=model.experts_per_token,
+        normalize_routing=model.normalize_routing,
     )
 end
 
@@ -246,6 +261,11 @@ function GPTModel(config::NamedTuple)
         config.position_embedding_type : (config.use_rope ? :rope : :none)
     lm_head_bias = hasproperty(config, :lm_head_bias) ?
         config.lm_head_bias : config.use_bias
+    num_experts = hasproperty(config, :num_experts) ? Int(config.num_experts) : 0
+    experts_per_token = hasproperty(config, :experts_per_token) ?
+        Int(config.experts_per_token) : 0
+    normalize_routing = hasproperty(config, :normalize_routing) ?
+        config.normalize_routing : true
 
     return GPTModel(
         config.vocab_size,
@@ -269,6 +289,9 @@ function GPTModel(config::NamedTuple)
         norm_type,
         mlp_type,
         tie_embeddings,
+        num_experts,
+        experts_per_token,
+        normalize_routing,
     )
 end
 
