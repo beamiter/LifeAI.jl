@@ -11,6 +11,7 @@
 - `test_qwen3_embedding_memory`、`test_qwen3_device_sampling`：语义记忆和设备端采样。
 - `qwen3_moe_router_test`、`qwen3_moe_expert_mixture_test`、`qwen3_moe_weight_loading_test`、`qwen3_moe_cached_decode_test`：MoE 路由、专家混合输出、HF 权重映射与缓存解码。
 - `qwen3_moe_transformers_parity_test`：冻结 tiny checkpoint 的 router、逐层 hidden、full logits 与 cached decode 跨框架对齐。
+- `qwen3_moe_sparse_dispatch_test`：只执行被路由 token-expert pair、跳过 inactive expert，并与全 expert oracle 对齐。
 
 `fixtures/` 同样按被验证的能力命名。冻结 benchmark 和模型 reference 通过文件内容或 metadata 定位，测试不依赖时间编号目录。
 

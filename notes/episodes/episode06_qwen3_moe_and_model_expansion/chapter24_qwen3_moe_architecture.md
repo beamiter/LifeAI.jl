@@ -27,7 +27,8 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 | GPT decoder 与 KV cache 集成 | 模型 / 推理 | `GPTModel(..., mlp_type=:qwen3_moe)` | full/dynamic/static logits 一致 | 已完成 |
 | `qwen3_moe` config 与权重映射 | 工程 | strict config parser、逐 expert stack loader | tiny HF 命名 fixture、错误输入 fail closed | 已完成 |
 | 独立 Transformers tiny reference | 模型 | hidden/router/logits fixture | 跨框架逐层 parity | 已完成 |
-| 真正 sparse token dispatch | 高效推理 | 只执行被选 expert 的 CPU/CUDA/XLA 路径 | correctness 不变，未选 expert 不计算 | 计划中 |
+| CPU sparse token dispatch | 高效推理 | 只执行被选 token-expert pair 的 gather/compute/combine | 与 dense oracle 对齐，inactive expert 不执行 | 已完成 |
+| CUDA/XLA sparse dispatch | 高效推理 | 无 host routing fallback 的设备路径 | correctness 不变，编译与性能证据 | 计划中 |
 | 官方真实权重验证 | 模型 / 工程 | streamed loader、资产清单、parity 报告 | checksum、逐层/logits/cache 与资源实测 | 计划中 |
 
 ## Close 条件
@@ -49,7 +50,7 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 
 ## 风险与取舍
 
-- 当前 `Qwen3SparseMoE` 为 correctness oracle，会计算全部 expert 再遮罩；数值正确不代表具备 MoE 的计算优势。
+- CPU 默认路径已经按 expert gather 被选 token；全 expert masked 版本保留为 `qwen3_dense_expert_reference` 数值 oracle。CUDA/XLA 仍未实现，不能从 CPU 结果推断 accelerator 已支持。
 - 初始 loader 会把 expert 权重 stack 成三维数组，只适合 tiny fixture；真实 30B/235B 必须使用 streamed reader 和按需生命周期。
 - host `partialsortperm` 不是 CUDA/XLA 路由实现，不能把现有 Float32 CPU 通过写成 accelerator 已支持。
 - Qwen3 后续系列可能使用融合 expert tensor、shared expert、不同 attention 或 hybrid layer；必须按各自配置重新建立契约。
@@ -79,11 +80,19 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - 两层共 8 个 token-router 决策的 top-2 expert 顺序和归一化权重全部一致。最大绝对误差：router `5.96e-8`、block `7.45e-9`、final hidden `3.58e-7`、full logits `8.94e-8`、prompt/decode logits `5.96e-8`；embedding 逐位相同。
 - Transformers parity 专项 `44 / 44`，Chapter 24 累计 `87 / 87`；默认全套 `5,750 / 5,750` 通过。
 
+### 2026-08-07：CPU sparse token dispatch
+
+- `qwen3_sparse_expert_dispatch` 按 expert gather 非零 routing token，完成 SwiGLU 后按原 token index combine；`Qwen3SparseMoE` 默认前向不再计算未选 token-expert pair。
+- `Qwen3MoEDispatchStats` 显式记录 active experts、逐 expert token 数、实际 routed pairs 和 dense oracle pairs，避免仅凭实现名称宣称稀疏。
+- inactive expert 测试把三个未选 expert 的 gate/up/down 全部写成 `NaN`：sparse 输出保持全 finite，而 dense oracle 被 `NaN × 0` 污染，证明未选 expert 没有进入矩阵乘法。
+- 128 experts / top-8 / 64 tokens / `d_model=128` / expert hidden 64、BLAS 单线程的 7 次 steady CPU 对照：执行 pair 从 `8,192` 降到 `512`（16×），sparse median `1.416 ms`，dense median `6.637 ms`，加速 `4.69×`，max-abs `3.58e-7`。原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cpu_reference.json`。
+- sparse dispatch 新增 `16 / 16`，Transformers parity 仍为 `44 / 44`；Chapter 24 累计 `103 / 103`，默认全套 `5,766 / 5,766`。
+
 ## Close 回顾
 
-- **完成了什么**：CPU Float32 correctness slice 和独立 Transformers tiny parity；本章仍 Open。
-- **验证证据**：MoE 专项 `87 / 87`，默认全套 `5,750 / 5,750`。
-- **没有完成及原因**：sparse accelerator dispatch 和真实大权重尚未执行。
+- **完成了什么**：CPU Float32 correctness、独立 Transformers tiny parity 和真实 CPU sparse dispatch；本章仍 Open。
+- **验证证据**：MoE 专项 `103 / 103`，默认全套 `5,766 / 5,766`，缩小 128-expert CPU 基准 `4.69×`。
+- **没有完成及原因**：CUDA/XLA sparse dispatch 和真实大权重尚未执行。
 - **最重要的认知变化**：原始 Qwen3 MoE 没有 shared expert；不能把后续 Qwen MoE 变体的结构预设到本章。
 - **是否满足 Close 条件**：否。
 - **带到下一阶段的问题**：怎样在不产生动态 host 控制流的前提下表达 XLA top-k dispatch，并控制 128 experts 的编译图规模？

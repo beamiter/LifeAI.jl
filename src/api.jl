@@ -10,6 +10,8 @@ export manual_scaled_dot_product_attention
 export batched_scaled_dot_product_attention
 export repeat_kv
 export RMSNormLayer, SwiGLU, Qwen3SparseMoE, qwen3_topk_routing
+export Qwen3MoEDispatchStats, qwen3_dense_expert_reference
+export qwen3_sparse_expert_dispatch, qwen3_moe_forward_with_stats
 export TransformerBlock, gelu_new
 export RoPE, apply_rope
 export SamplingSchedule

@@ -13,7 +13,7 @@
 ## 预期能力变化
 
 - **模型基本组件**：具备 Qwen3 top-k router、稀疏 expert SwiGLU 和 MoE decoder block。
-- **训练与推理**：先建立 Float32 correctness oracle，再推进 sparse dispatch 与 CUDA/XLA。
+- **训练与推理**：Float32 correctness oracle 和 CPU sparse dispatch 已完成，下一步推进无 host fallback 的 CUDA/XLA dispatch。
 - **HuggingFace 互操作**：严格解析 `qwen3_moe` config，映射官方 expert 权重并完成逐层/logits/cache parity。
 - **工程与测试**：测试文件按 router、expert mixture、权重加载和 cached decode 的实际内容命名。
 

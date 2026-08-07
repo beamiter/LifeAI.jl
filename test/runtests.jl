@@ -131,6 +131,7 @@ end
     include("qwen3_moe_weight_loading_test.jl")
     include("qwen3_moe_cached_decode_test.jl")
     include("qwen3_moe_transformers_parity_test.jl")
+    include("qwen3_moe_sparse_dispatch_test.jl")
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

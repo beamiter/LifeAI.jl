@@ -20,3 +20,6 @@ benchmark_results/week21/*
 benchmark_results/week22/*
 !benchmark_results/week22/qwen3_embedding_0_6b_cpu.json
 !benchmark_results/week22/qwen3_embedding_0_6b_cuda.json
+!benchmark_results/qwen3_moe_sparse_dispatch/
+benchmark_results/qwen3_moe_sparse_dispatch/*
+!benchmark_results/qwen3_moe_sparse_dispatch/cpu_reference.json
