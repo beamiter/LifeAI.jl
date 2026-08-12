@@ -170,6 +170,8 @@ mutable struct HFQwen3MoEOffloadSession
     expert_workspace_reuses::Int
     expert_pointer_table_bytes::Int
     expert_workspace_bytes::Int
+    expert_read_buffer_reuse::Bool
+    expert_read_buffer_pool
     expert_read_mode::Symbol
     expert_miss_pipeline::Symbol
     expert_read_workers::Int
@@ -199,6 +201,7 @@ struct _Qwen3MoEScatteredExperts
 end
 
 function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
+    read_buffer_pool = session.expert_read_buffer_pool
     return (;
         budget_bytes=session.expert_cache_budget_bytes,
         policy=session.expert_cache_policy,
@@ -224,6 +227,13 @@ function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
         workspace_reuses=session.expert_workspace_reuses,
         pointer_table_bytes=session.expert_pointer_table_bytes,
         workspace_bytes=session.expert_workspace_bytes,
+        read_buffer_reuse=session.expert_read_buffer_reuse,
+        read_buffer_count=read_buffer_pool === nothing ?
+            0 : read_buffer_pool.buffer_count,
+        read_buffer_bytes=read_buffer_pool === nothing ?
+            0 : read_buffer_pool.buffer_count * read_buffer_pool.buffer_bytes,
+        read_buffer_borrows=read_buffer_pool === nothing ?
+            0 : read_buffer_pool.borrows[],
         read_mode=session.expert_read_mode,
         miss_pipeline=session.expert_miss_pipeline,
         read_workers=session.expert_read_workers,
@@ -266,6 +276,28 @@ function _qwen3_moe_validate_expert_read_mode(mode::Symbol)
 end
 
 _qwen3_moe_default_expert_read_workers() = min(8, Threads.nthreads())
+
+function _qwen3_moe_expert_read_buffer_pool(
+    reader::HFSafetensorsReader,
+    enabled::Bool,
+    cache_budget_bytes::Int,
+    read_mode::Symbol,
+    miss_pipeline::Symbol,
+    read_workers::Int,
+)
+    enabled && cache_budget_bytes > 0 && read_mode === :tensor ||
+        return nothing
+    expert_bytes = maximum((
+        location.data_stop - location.data_start
+        for (name, location) in reader.locations
+        if occursin(".mlp.experts.", name)
+    ); init=0)
+    expert_bytes > 0 || throw(ArgumentError(
+        "Qwen3 MoE checkpoint contains no expert projection payloads",
+    ))
+    buffer_count = miss_pipeline === :overlapped ? read_workers : 1
+    return _SafetensorsReadBufferPool(buffer_count, expert_bytes)
+end
 
 # Portable devices can overlap independent host reads, but pinned asynchronous
 # uploads are accelerator-specific. LifeAICUDAExt supplies the CUDA methods.
@@ -319,6 +351,10 @@ function _qwen3_moe_reset_expert_traffic!(
     session.expert_read_tasks = 0
     session.expert_parallel_read_layers = 0
     session.expert_pinned_bytes_uploaded = 0
+    session.expert_read_buffer_pool === nothing ||
+        _reset_safetensors_read_buffer_pool!(
+            session.expert_read_buffer_pool,
+        )
     return session
 end
 
@@ -406,7 +442,8 @@ end
 """
     configure_hf_qwen3_moe_expert_cache!(
         session; budget_bytes, policy, dispatch, gc_interval_layers,
-        read_mode, miss_pipeline, read_workers, pinned_upload)
+        read_buffer_reuse, read_mode, miss_pipeline, read_workers,
+        pinned_upload)
 
 Clear the existing expert cache and reconfigure its byte budget and eviction
 policy while retaining the resident model, static KV buffers and compiled
@@ -421,6 +458,7 @@ function configure_hf_qwen3_moe_expert_cache!(
     policy::Symbol=session.expert_cache_policy,
     dispatch::Symbol=session.expert_cache_dispatch,
     gc_interval_layers::Integer=session.expert_gc_interval_layers,
+    read_buffer_reuse::Bool=session.expert_read_buffer_reuse,
     read_mode::Symbol=session.expert_read_mode,
     miss_pipeline::Symbol=session.expert_miss_pipeline,
     read_workers::Integer=session.expert_read_workers,
@@ -462,11 +500,21 @@ function configure_hf_qwen3_moe_expert_cache!(
         throw(ArgumentError(
             "pinned expert upload is not supported by the selected device",
         ))
+    read_buffer_pool = _qwen3_moe_expert_read_buffer_pool(
+        session.reader,
+        read_buffer_reuse,
+        budget,
+        validated_read_mode,
+        validated_pipeline,
+        workers,
+    )
     clear_hf_qwen3_moe_expert_cache!(session)
     session.expert_cache_budget_bytes = budget
     session.expert_cache_policy = validated_policy
     session.expert_cache_dispatch = validated_dispatch
     session.expert_gc_interval_layers = gc_interval
+    session.expert_read_buffer_reuse = read_buffer_reuse
+    session.expert_read_buffer_pool = read_buffer_pool
     session.expert_read_mode = validated_read_mode
     session.expert_miss_pipeline = validated_pipeline
     session.expert_read_workers = workers
@@ -589,23 +637,42 @@ function _qwen3_moe_read_expert_host(
             ),
         )
     else
-        (;
+        read_parameters(raw_buffer) = (;
             gate_proj=_expect_tensor(
-                session.tensors,
+                read_safetensors_tensor(
+                    session.reader,
+                    gate_name;
+                    target_dtype=session.tensors.target_dtype,
+                    raw_buffer,
+                ),
                 gate_name,
                 (hidden_dim, d_model),
             ),
             up_proj=_expect_tensor(
-                session.tensors,
+                read_safetensors_tensor(
+                    session.reader,
+                    up_name;
+                    target_dtype=session.tensors.target_dtype,
+                    raw_buffer,
+                ),
                 up_name,
                 (hidden_dim, d_model),
             ),
             down_proj=_expect_tensor(
-                session.tensors,
+                read_safetensors_tensor(
+                    session.reader,
+                    down_name;
+                    target_dtype=session.tensors.target_dtype,
+                    raw_buffer,
+                ),
                 down_name,
                 (d_model, hidden_dim),
             ),
         )
+        pool = session.expert_read_buffer_pool
+        pool === nothing ?
+            read_parameters(nothing) :
+            _with_safetensors_read_buffer(read_parameters, pool)
     end
     entry_bytes = _qwen3_moe_tree_bytes(host_parameters)
     return (;
@@ -1193,6 +1260,9 @@ original per-layer behavior; `0` disables forced GC). Request reset retains
 cached experts. `expert_miss_pipeline=:overlapped` uses a bounded number of
 host reader tasks for independent active-expert misses. Its default worker
 count is the smaller of eight and the current Julia thread count;
+`expert_read_buffer_reuse=true` gives each bounded reader task one reusable
+raw projection buffer in `:tensor` mode; the buffer is returned immediately
+after the three final owning matrices are decoded;
 `expert_read_mode=:coalesced` reads exactly adjacent down/gate/up projection
 ranges with one shard read per expert; `:shared_open` retains three interleaved
 read/decode steps under one shard open, while `:tensor` preserves separate opens;
@@ -1210,6 +1280,7 @@ function load_hf_qwen3_moe_offload_session(
     expert_cache_policy::Symbol=:global_lru,
     expert_cache_dispatch::Symbol=:materialized,
     expert_gc_interval_layers::Integer=1,
+    expert_read_buffer_reuse::Bool=true,
     expert_read_mode::Symbol=:tensor,
     expert_miss_pipeline::Symbol=:sequential,
     expert_read_workers::Integer=_qwen3_moe_default_expert_read_workers(),
@@ -1271,6 +1342,14 @@ function load_hf_qwen3_moe_offload_session(
         Set(String.(collect(keys(reader)))),
     )
     tensors = _StreamedTensors(reader, BFloat16)
+    read_buffer_pool = _qwen3_moe_expert_read_buffer_pool(
+        reader,
+        expert_read_buffer_reuse,
+        cache_budget,
+        read_mode,
+        miss_pipeline,
+        read_workers,
+    )
 
     resident_blocks = Vector{Any}(undef, model.num_layers)
     resident_parameter_bytes = 0
@@ -1369,6 +1448,8 @@ function load_hf_qwen3_moe_offload_session(
         0,
         0,
         0,
+        expert_read_buffer_reuse,
+        read_buffer_pool,
         read_mode,
         miss_pipeline,
         read_workers,

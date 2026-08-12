@@ -983,7 +983,17 @@ function _expect_tensor(
 )
     haskey(tensors, name) || throw(ArgumentError("missing HuggingFace tensor `$name`"))
     tensor = tensors[name]
-    tensor isa AbstractArray || throw(ArgumentError("HuggingFace tensor `$name` is not an array"))
+    tensor isa AbstractArray || throw(ArgumentError(
+        "HuggingFace tensor `$name` is not an array",
+    ))
+    return _expect_tensor(tensor, name, expected_shape)
+end
+
+function _expect_tensor(
+    tensor::AbstractArray,
+    name::String,
+    expected_shape::Tuple,
+)
     size(tensor) == expected_shape || throw(DimensionMismatch(
         "HuggingFace tensor `$name` has shape $(size(tensor)); expected $expected_shape",
     ))

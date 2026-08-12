@@ -26,6 +26,54 @@ struct HFSafetensorsReader
     locations::Dict{String,_SafetensorsTensorLocation}
 end
 
+mutable struct _SafetensorsReadBufferPool
+    buffers::Channel{Vector{UInt8}}
+    buffer_count::Int
+    buffer_bytes::Int
+    borrows::Threads.Atomic{Int}
+end
+
+function _SafetensorsReadBufferPool(
+    buffer_count::Integer,
+    buffer_bytes::Integer,
+)
+    count = Int(buffer_count)
+    bytes = Int(buffer_bytes)
+    count > 0 || throw(ArgumentError(
+        "safetensors read buffer_count must be positive",
+    ))
+    bytes >= 0 || throw(ArgumentError(
+        "safetensors read buffer_bytes must be non-negative",
+    ))
+    buffers = Channel{Vector{UInt8}}(count)
+    for _ in 1:count
+        put!(buffers, Vector{UInt8}(undef, bytes))
+    end
+    return _SafetensorsReadBufferPool(
+        buffers,
+        count,
+        bytes,
+        Threads.Atomic{Int}(0),
+    )
+end
+
+function _with_safetensors_read_buffer(f, pool::_SafetensorsReadBufferPool)
+    buffer = take!(pool.buffers)
+    Threads.atomic_add!(pool.borrows, 1)
+    try
+        return f(buffer)
+    finally
+        put!(pool.buffers, buffer)
+    end
+end
+
+function _reset_safetensors_read_buffer_pool!(
+    pool::_SafetensorsReadBufferPool,
+)
+    pool.borrows[] = 0
+    return pool
+end
+
 Base.haskey(reader::HFSafetensorsReader, name::AbstractString) =
     haskey(reader.locations, String(name))
 Base.keys(reader::HFSafetensorsReader) = keys(reader.locations)
@@ -145,24 +193,34 @@ function read_safetensors_tensor(
     reader::HFSafetensorsReader,
     name::AbstractString;
     target_dtype::Type=Float32,
+    raw_buffer::Union{Nothing,Vector{UInt8}}=nothing,
 )
     target_dtype in (Float32, BFloat16) || throw(ArgumentError(
         "streamed safetensors loading only supports Float32 or BFloat16",
     ))
     location = _reader_location(reader, name)
-    raw = open(location.path, "r") do io
+    return open(location.path, "r") do io
         seek(io, location.data_base + location.data_start)
-        bytes = read(io, location.data_stop - location.data_start)
-        length(bytes) == location.data_stop - location.data_start ||
+        byte_count = location.data_stop - location.data_start
+        raw = if raw_buffer === nothing
+            read(io, byte_count)
+        else
+            resize!(raw_buffer, byte_count)
+            bytes_read = readbytes!(io, raw_buffer, byte_count; all=true)
+            bytes_read == byte_count || throw(ArgumentError(
+                "truncated data for safetensors tensor `$name`",
+            ))
+            raw_buffer
+        end
+        length(raw) == byte_count ||
             throw(ArgumentError("truncated data for safetensors tensor `$name`"))
-        bytes
+        _decode_safetensors_values(
+            raw,
+            location.dtype,
+            location.shape;
+            target_dtype,
+        )
     end
-    return _decode_safetensors_values(
-        raw,
-        location.dtype,
-        location.shape;
-        target_dtype,
-    )
 end
 
 """

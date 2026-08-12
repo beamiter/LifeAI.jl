@@ -21,7 +21,7 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 **阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、直接消费分散 BF16 cache matrices 并有界复用状态的 CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。**
 
-Chapter 01—33 均已 Closed。[`Chapter 33 — Qwen3 MoE safetensors decode copy elision`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter33_qwen3_moe_decode_copy_elision.md) 保持 Chapter 32 选出的逐 tensor 读取和 8-worker overlap，只移除最终 `permutedims` 前的冗余同 dtype 线性副本。真实 30B-A3B English32 cold/revisit 的 Julia allocation 从约 `86.326 GB` 降到 `57.646 GB`（均为 `33.22%`），减少量与 `28.680 GB` logical BF16 payload 对齐，所有输出 exact；相邻实验的微小 latency 变化不泛化为通用 speedup。
+Chapter 01—34 均已 Closed。[`Chapter 34 — Qwen3 MoE bounded safetensors read-buffer reuse`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter34_qwen3_moe_read_buffer_reuse.md) 在 Chapter 33 copy elision 之后按 reader worker 有界复用 raw projection buffers；真实 8-worker pool 只常驻 24 MiB。30B-A3B English32 同进程 A/B 的 cold/revisit Julia allocation 从约 `57.647 GB` 降到 `28.967 GB`（均为 `49.75%`），时延分别加速 `1.215× / 1.337×`，所有输出 exact；最终 host matrices 与 H2D ownership 保持不变。
 
 目前已经具备：
 

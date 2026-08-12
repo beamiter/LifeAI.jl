@@ -283,7 +283,7 @@
     },
     "source_sha256": {
         "benchmark_script": "cb9580657b155c9d1ef9579cb44bf2b9c486da59432ef92372dab7d35e96d42e",
-        "offload_implementation": "eb770d5ea88bd0bd504ffd8f5ee1724d002fd0b6859cf7e13e1094bf070ce804",
+        "offload_implementation": "9525b439ef9c88714edcb5636bfeaa7878f00bdbb1405427938f5e2aaa1dbc25",
         "cuda_extension": "95ad5a4c2fc6d6446eb026c443952ba86bd2ee64e6bf4bf996ce0f472d8b333c"
     }
 }

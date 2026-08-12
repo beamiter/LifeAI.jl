@@ -79,6 +79,6 @@
   },
   "source_sha256": {
     "benchmark_script": "60886a68b5e68fcfdc95ca2e13418deb4ca56e18e0346cf6169e5896cf877afd",
-    "offload_implementation": "eb770d5ea88bd0bd504ffd8f5ee1724d002fd0b6859cf7e13e1094bf070ce804"
+    "offload_implementation": "9525b439ef9c88714edcb5636bfeaa7878f00bdbb1405427938f5e2aaa1dbc25"
   }
 }

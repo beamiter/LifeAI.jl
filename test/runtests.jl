@@ -211,6 +211,14 @@ end
             "qwen3_moe_decode_copy_elision_test.jl",
         ))
     end
+
+    @testset "Chapter 34 — Qwen3 MoE read-buffer reuse" begin
+        include(chapter_test(
+            "episode06_qwen3_moe_and_model_expansion",
+            "chapter34_qwen3_moe_read_buffer_reuse",
+            "qwen3_moe_read_buffer_reuse_test.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
