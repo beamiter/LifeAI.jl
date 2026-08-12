@@ -33,3 +33,6 @@ benchmark_results/qwen3_moe_sparse_dispatch/*
 !benchmark_results/qwen3_moe_real_parity/
 benchmark_results/qwen3_moe_real_parity/*
 !benchmark_results/qwen3_moe_real_parity/summary.json
+!benchmark_results/qwen3_moe_cuda_offload/
+benchmark_results/qwen3_moe_cuda_offload/*
+!benchmark_results/qwen3_moe_cuda_offload/summary.json

@@ -637,6 +637,20 @@ function qwen3_cuda_grouped_bf16_sparse_expert_dispatch(
     return output
 end
 
+function LifeAI._qwen3_grouped_bf16_expert_dispatch(
+    tokens::CUDA.CuArray{Float32,2},
+    expert_indices::CUDA.CuArray{I,2},
+    routing_weights::CUDA.CuArray{R,2},
+    expert_parameters,
+) where {I<:Integer,R<:AbstractFloat}
+    return qwen3_cuda_grouped_bf16_sparse_expert_dispatch(
+        tokens,
+        expert_indices,
+        routing_weights,
+        expert_parameters,
+    )
+end
+
 """
     qwen3_cuda_bucket_routes(expert_indices, num_experts)
 

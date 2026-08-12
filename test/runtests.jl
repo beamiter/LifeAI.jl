@@ -139,6 +139,14 @@ end
         include(chapter_test(episode, chapter, "qwen3_moe_sparse_dispatch_test.jl"))
         include(chapter_test(episode, chapter, "qwen3_moe_device_sparse_dispatch_test.jl"))
     end
+
+    @testset "Chapter 25 — Qwen3 MoE GPU offload" begin
+        include(chapter_test(
+            "episode06_qwen3_moe_and_model_expansion",
+            "chapter25_qwen3_moe_gpu_offload",
+            "qwen3_moe_offload_contract_test.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

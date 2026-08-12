@@ -76,6 +76,10 @@ export HFQwen3BF16Session, init_hf_qwen3_bf16_session
 export load_hf_qwen3_bf16_session, reset_hf_qwen3_bf16_session!
 export prefill_hf_qwen3_bf16!, decode_hf_qwen3_bf16!
 export generate_hf_qwen3_bf16!, generate_hf_text!, fit_qwen3_chat_context
+export HFQwen3MoEOffloadSession, qwen3_moe_offload_plan
+export load_hf_qwen3_moe_offload_session
+export reset_hf_qwen3_moe_offload_session!
+export prefill_hf_qwen3_moe_offload!, decode_hf_qwen3_moe_offload!
 export Qwen3XLAWindowPlan, plan_qwen3_xla_window
 export qwen3_xla_pad_prompt, qwen3_xla_key_positions
 export HFQwen3BF16XLASession, load_hf_qwen3_bf16_xla_session

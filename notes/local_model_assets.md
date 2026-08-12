@@ -900,3 +900,25 @@ MODEL_DIR/lifeai-references/chapter24-real-parity/float32/
 `4.39e-5 / 1.53e-5`；native BF16 路由槽位重合 `95.92%`，两组 logits
 max-abs 均为 `0.3125`，两种口径 argmax 全一致。完整摘要与 checksum 位于
 `benchmark_results/qwen3_moe_real_parity/summary.json`。
+
+Chapter 25 的 RTX 4090 D resident/offload 复现实验直接复用 BF16 reference：
+
+```bash
+julia --project=. scripts/benchmark_qwen3_moe_cuda_offload.jl \
+  MODEL_DIR \
+  MODEL_DIR/lifeai-references/chapter24-real-parity/bfloat16 \
+  /tmp/qwen3_moe_cuda_offload_grouped.json \
+  true
+
+julia --project=. scripts/benchmark_qwen3_moe_cuda_offload.jl \
+  MODEL_DIR \
+  MODEL_DIR/lifeai-references/chapter24-real-parity/bfloat16 \
+  /tmp/qwen3_moe_cuda_offload_scalar.json \
+  false
+```
+
+两条命令都会实际分配 40,960-token BF16 static KV。可再追加第 5 个参数
+`PROMPT_REPEAT`，例如 `true 16` 把冻结的两 token pattern 扩为 32-token
+宽 prefill。仓库只提交精简结果
+`benchmark_results/qwen3_moe_cuda_offload/summary.json`；原始逐次报告仍留在
+本机临时目录。

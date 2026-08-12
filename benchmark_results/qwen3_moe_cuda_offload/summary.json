@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-08-12",
+  "model_id": "Qwen/Qwen3-30B-A3B",
+  "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+  "compute_dtype": "bfloat16",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090 D",
+    "compute_capability": "8.9",
+    "total_memory_bytes": 25757220864
+  },
+  "session": {
+    "context_tokens": 40960,
+    "batch_size": 1,
+    "resident_parameter_bytes": 2459856896,
+    "maximum_active_expert_layer_bytes": 1207959552,
+    "kv_cache_bytes": 4026531840,
+    "working_set_floor_bytes": 7694348288,
+    "full_context_cache_allocated": true,
+    "load_seconds": 15.823191335
+  },
+  "two_token_reference": {
+    "grouped": {
+      "steady_prefill_seconds": 12.14546354,
+      "steady_decode_seconds": 5.579678235,
+      "prefill_expert_bytes_read": 6936330240,
+      "decode_expert_bytes_read": 3623878656,
+      "prompt_active_experts_minimum": 14,
+      "prompt_active_experts_maximum": 16,
+      "prefill_logits_max_abs": 0.421875,
+      "decode_logits_max_abs": 0.2890625,
+      "prefill_argmax_match": true,
+      "decode_argmax_match": true,
+      "repeat_exact": true
+    },
+    "scalar_production": {
+      "steady_prefill_seconds": 11.39305741,
+      "steady_decode_seconds": 5.015803814,
+      "prefill_expert_bytes_read": 6926893056,
+      "decode_expert_bytes_read": 3623878656,
+      "prompt_active_experts_minimum": 14,
+      "prompt_active_experts_maximum": 16,
+      "prefill_logits_max_abs": 0.3125,
+      "decode_logits_max_abs": 0.25,
+      "prefill_argmax_match": true,
+      "decode_argmax_match": true,
+      "repeat_exact": true
+    },
+    "grouped_over_scalar_speedup": {
+      "prefill": 0.9380504393659397,
+      "decode": 0.8989414089395067
+    }
+  },
+  "thirty_two_token_reference": {
+    "prompt_pattern": "repeat([1, 9707], 16)",
+    "grouped": {
+      "steady_prefill_seconds": 23.820747967,
+      "steady_decode_seconds": 4.627329415,
+      "prefill_expert_bytes_read": 13306429440,
+      "decode_expert_bytes_read": 3623878656,
+      "prompt_active_experts_minimum": 21,
+      "prompt_active_experts_maximum": 38,
+      "prompt_active_experts_mean": 29.375,
+      "prefill_argmax_1_based": 2,
+      "decode_argmax_1_based": 359
+    },
+    "scalar_production": {
+      "steady_prefill_seconds": 26.019590042,
+      "steady_decode_seconds": 6.177867162,
+      "prefill_expert_bytes_read": 13259243520,
+      "decode_expert_bytes_read": 3623878656,
+      "prompt_active_experts_minimum": 21,
+      "prompt_active_experts_maximum": 38,
+      "prompt_active_experts_mean": 29.270833333333332,
+      "prefill_argmax_1_based": 2,
+      "decode_argmax_1_based": 359
+    },
+    "grouped_over_scalar_speedup": {
+      "prefill": 1.092307851879637,
+      "decode": 1.3350826379409602
+    },
+    "path_argmax_match": true
+  },
+  "decision": {
+    "small_route_batches": "scalar_production",
+    "wide_prefill_from_tested_tokens": 32,
+    "wide_prefill_dispatch": "grouped_bf16_wmma",
+    "full_window_prefill_executed": false
+  },
+  "source_sha256": {
+    "benchmark_script": "c1dadf015b815a3674ba494e147fcf5193bcdf2842d0af55a43fbc512cf4ea38",
+    "offload_implementation": "6a59052a19d4ddd94dc373f9645c63fd2c4e2a82f21a79ae59aa061250e359e1"
+  }
+}
