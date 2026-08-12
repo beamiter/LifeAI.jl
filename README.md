@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 BF16 GPU resident/offload session：40,960-token KV 常驻，active experts 按层从官方 checkpoint 流式上传，真实 prompt/decode 与 Transformers 保持 argmax。**
+**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 BF16 GPU resident/offload session：40,960-token KV 常驻，active experts 按层从官方 checkpoint 流式上传；可选的 byte-budgeted device LRU 能跨请求复用 experts，真实 prompt/decode 与 Transformers 保持 argmax。**
 
-Chapter 01—25 均已 Closed。[`Chapter 25 — Qwen3-30B-A3B GPU resident/offload session`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter25_qwen3_moe_gpu_offload.md) 已把 Chapter 24 的路由驱动 expert streaming、40K static KV 与 grouped BF16 WMMA 接成真实 RTX 4090 D session。40K cache 已实际分配；2-token prompt/decode 与 Transformers BF16 reference argmax 一致；32-token grouped steady 相对 scalar production 的 prefill/decode 加速为 `1.092× / 1.335×`。
+Chapter 01—26 均已 Closed。[`Chapter 26 — Qwen3 MoE active-expert device cache`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter26_qwen3_moe_expert_cache.md) 为 Chapter 25 的真实 30B-A3B offload session 加入可选 device LRU。8 GiB 冻结 case 容纳 892 个 expert-layer entries、无淘汰；重复请求的 expert read/upload 均为零，prefill/decode/request 相对 warm fill 加速 `1.775× / 1.533× / 1.722×`，fill/hit logits 逐位一致。
 
 目前已经具备：
 
@@ -46,7 +46,7 @@ Chapter 01—25 均已 Closed。[`Chapter 25 — Qwen3-30B-A3B GPU resident/offl
   安全 streaming、context/options fail-closed 和 single-flight；轻量
   client 只读取 tokenizer，权重与 compiled executable 常驻 server。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
-- 原始 Qwen3 MoE 的 Float32 top-k router、逐 expert SwiGLU、full/dynamic/static cache，以及 Float32/native BF16 的路由后 active-expert 流式读取。官方 30B-A3B 的 48 层 prompt/cache-decode parity 已冻结：Float32 top-8 集合 `1,152 / 1,152` 一致、BF16 路由槽位重合 `95.92%`，两种模式最终 argmax 均一致。`HFQwen3MoEOffloadSession` 让 attention/router/norm/LM head 与 40K KV 常驻 GPU，expert 在路由后按层读取并用局部 id 交给 scalar 或 grouped WMMA；最坏工作集硬下限 `7.166 GiB`。
+- 原始 Qwen3 MoE 的 Float32 top-k router、逐 expert SwiGLU、full/dynamic/static cache，以及 Float32/native BF16 的路由后 active-expert 流式读取。官方 30B-A3B 的 48 层 prompt/cache-decode parity 已冻结：Float32 top-8 集合 `1,152 / 1,152` 一致、BF16 路由槽位重合 `95.92%`，两种模式最终 argmax 均一致。`HFQwen3MoEOffloadSession` 让 attention/router/norm/LM head 与 40K KV 常驻 GPU，expert 在路由后按层读取并用局部 id 交给 scalar 或 grouped WMMA；最坏工作集硬下限 `7.166 GiB`。可选 device LRU 按实际 expert-layer bytes 预算，request reset 保留缓存并支持显式清空。
 - 六个官方 Qwen3 dense 规格的 immutable revision/config checksum、自动识别、显式 variant 校验、精确参数量；严格的 BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
 - Qwen3-Embedding-0.6B 的独立 immutable revision/8-asset checksum、
   151,669-vocabulary/32K contract、embedding tokenizer 尾 token 与
@@ -74,7 +74,7 @@ Chapter 01—25 均已 Closed。[`Chapter 25 — Qwen3-30B-A3B GPU resident/offl
 尚未具备：
 
 - GPT-2 的 WebText 从零训练、论文 zero-shot quality、Medium/Large/XL、cross-attention 与分类 head 未复现；当前完成的是 124M 官方 checkpoint 的 Float32 推理/架构复现。
-- Qwen3 MoE 官方 30B-A3B checkpoint 的 40K cache 容量与短/32-token GPU offload 已实跑，但 full-window 40K prefill、长序列生成质量、跨请求 active-expert cache/异步预取、完整 AWQ/GPTQ、
+- Qwen3 MoE 官方 30B-A3B checkpoint 的 40K cache 容量、短/32-token GPU offload 与跨请求 active-expert device LRU 已实跑，但 full-window 40K prefill、长序列生成质量、长自然文本 cache budget、异步预取/pinned-memory 双缓冲、完整 AWQ/GPTQ、
   activation/KV-cache 量化与量化 GEMM；30B 的 48 层 prompt/cache-decode 真实 parity 与 dense 0.6B—32B 真实权重
   parity、native BF16、weight-only INT8/INT4 与 diagonal
   activation-aware clipping 已完成，不能再沿用早期“只验证 0.6B”的边界。

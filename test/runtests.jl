@@ -147,6 +147,14 @@ end
             "qwen3_moe_offload_contract_test.jl",
         ))
     end
+
+    @testset "Chapter 26 — Qwen3 MoE expert cache" begin
+        include(chapter_test(
+            "episode06_qwen3_moe_and_model_expansion",
+            "chapter26_qwen3_moe_expert_cache",
+            "qwen3_moe_expert_cache_contract_test.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

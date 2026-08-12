@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-08-12",
+  "model_id": "Qwen/Qwen3-30B-A3B",
+  "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+  "compute_dtype": "bfloat16",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090 D",
+    "compute_capability": "8.9",
+    "free_before_bytes": 24030150656,
+    "free_ready_bytes": 17503748096,
+    "free_final_bytes": 4345298944
+  },
+  "session": {
+    "context_tokens": 40960,
+    "prompt_tokens": 2,
+    "decode_tokens": 1,
+    "dispatch": "active-expert-local-remap-production-scalar-f32-accumulation",
+    "load_seconds": 15.805615696
+  },
+  "cache": {
+    "policy": "device_lru_expert_layer",
+    "budget_bytes": 8589934592,
+    "entry_bytes": 9437184,
+    "entries": 892,
+    "current_bytes": 8417968128,
+    "peak_bytes": 8417968128,
+    "utilization": 0.97998046875,
+    "evictions": 0,
+    "retained_across_request_reset": true,
+    "explicit_clear_supported": true
+  },
+  "warm_fill": {
+    "prefill_seconds": 18.737545283,
+    "decode_seconds": 4.53661752,
+    "request_seconds": 23.274162803,
+    "prefill_expert_bytes_read": 6926893056,
+    "prefill_expert_bytes_uploaded": 6926893056,
+    "prefill_cache_hits": 0,
+    "prefill_cache_misses": 734,
+    "decode_expert_bytes_read": 1491075072,
+    "decode_expert_bytes_uploaded": 1491075072,
+    "decode_cache_hits": 226,
+    "decode_cache_misses": 158
+  },
+  "warm_hit": {
+    "prefill_seconds": 10.557860431,
+    "decode_seconds": 2.958940268,
+    "request_seconds": 13.516800699,
+    "prefill_expert_bytes_read": 0,
+    "prefill_expert_bytes_uploaded": 0,
+    "prefill_cache_hits": 734,
+    "prefill_cache_misses": 0,
+    "decode_expert_bytes_read": 0,
+    "decode_expert_bytes_uploaded": 0,
+    "decode_cache_hits": 384,
+    "decode_cache_misses": 0
+  },
+  "warm_hit_over_fill_speedup": {
+    "prefill": 1.7747483408648594,
+    "decode": 1.5331899629952246,
+    "request": 1.7218691997672102
+  },
+  "parity": {
+    "prefill_logits_max_abs": 0.3125,
+    "prefill_logits_mean_abs": 0.06340887,
+    "prefill_argmax_match": true,
+    "decode_logits_max_abs": 0.25,
+    "decode_logits_mean_abs": 0.04114199,
+    "decode_argmax_match": true,
+    "cold_vs_first_hit_exact": true,
+    "warm_fill_vs_hit_exact": true
+  },
+  "decision": {
+    "default_cache_budget_bytes": 0,
+    "recommended_frozen_request_budget_bytes": 8589934592,
+    "arbitrary_request_zero_eviction_guaranteed": false,
+    "pinned_memory_or_async_prefetch_implemented": false
+  },
+  "source_sha256": {
+    "benchmark_script": "60886a68b5e68fcfdc95ca2e13418deb4ca56e18e0346cf6169e5896cf877afd",
+    "offload_implementation": "f25abe4150f061be4109c023f189aafe7c6b6b397f719599276650020438a07c"
+  }
+}

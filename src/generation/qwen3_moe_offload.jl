@@ -144,9 +144,196 @@ mutable struct HFQwen3MoEOffloadSession
     source::String
     resident_parameter_bytes::Int
     expert_bytes_read::Int
+    expert_bytes_uploaded::Int
+    expert_cache_budget_bytes::Int
+    expert_cache_bytes::Int
+    expert_cache_peak_bytes::Int
+    expert_cache::Dict{Tuple{Int,Int},Any}
+    expert_cache_last_used::Dict{Tuple{Int,Int},Int}
+    expert_cache_clock::Int
+    expert_cache_hits::Int
+    expert_cache_misses::Int
+    expert_cache_evictions::Int
 end
 
-function _qwen3_moe_load_active_experts(
+struct _Qwen3MoEExpertCacheEntry
+    gate_proj
+    up_proj
+    down_proj
+    bytes::Int
+end
+
+function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
+    return (;
+        budget_bytes=session.expert_cache_budget_bytes,
+        current_bytes=session.expert_cache_bytes,
+        peak_bytes=session.expert_cache_peak_bytes,
+        entries=length(session.expert_cache),
+        hits=session.expert_cache_hits,
+        misses=session.expert_cache_misses,
+        evictions=session.expert_cache_evictions,
+        bytes_read=session.expert_bytes_read,
+        bytes_uploaded=session.expert_bytes_uploaded,
+    )
+end
+
+function _qwen3_moe_reset_expert_traffic!(
+    session::HFQwen3MoEOffloadSession,
+)
+    session.expert_bytes_read = 0
+    session.expert_bytes_uploaded = 0
+    session.expert_cache_hits = 0
+    session.expert_cache_misses = 0
+    session.expert_cache_evictions = 0
+    return session
+end
+
+"""
+    clear_hf_qwen3_moe_expert_cache!(session)
+
+Drop logical ownership of all cached expert-layer tensors while retaining the
+resident model, static KV buffers and request position. Request traffic counters
+are unchanged; the next prefill resets them as usual.
+"""
+function clear_hf_qwen3_moe_expert_cache!(
+    session::HFQwen3MoEOffloadSession,
+)
+    empty!(session.expert_cache)
+    empty!(session.expert_cache_last_used)
+    session.expert_cache_bytes = 0
+    session.expert_cache_peak_bytes = 0
+    GC.gc(false)
+    return session
+end
+
+function _qwen3_moe_touch_expert_cache!(
+    session::HFQwen3MoEOffloadSession,
+    key::Tuple{Int,Int},
+)
+    session.expert_cache_clock = Base.checked_add(
+        session.expert_cache_clock,
+        1,
+    )
+    session.expert_cache_last_used[key] = session.expert_cache_clock
+    return nothing
+end
+
+function _qwen3_moe_make_expert_cache_room!(
+    session::HFQwen3MoEOffloadSession,
+    entry_bytes::Int,
+    protected::Set{Tuple{Int,Int}},
+)
+    while session.expert_cache_bytes + entry_bytes >
+            session.expert_cache_budget_bytes
+        candidates = filter(
+            key -> !(key in protected),
+            collect(keys(session.expert_cache)),
+        )
+        isempty(candidates) && return false
+        victim = candidates[argmin([
+            session.expert_cache_last_used[key]
+            for key in candidates
+        ])]
+        entry = pop!(session.expert_cache, victim)
+        delete!(session.expert_cache_last_used, victim)
+        session.expert_cache_bytes -= entry.bytes
+        session.expert_cache_evictions = Base.checked_add(
+            session.expert_cache_evictions,
+            1,
+        )
+    end
+    return true
+end
+
+function _qwen3_moe_read_expert(
+    session::HFQwen3MoEOffloadSession,
+    expert::Int,
+    layer::Int,
+)
+    model = session.model
+    hidden_dim = model.mlp_hidden_dim
+    d_model = model.d_model
+    prefix = "model.layers.$layer.mlp.experts.$(expert - 1)"
+    host_parameters = (;
+        gate_proj=_expect_tensor(
+            session.tensors,
+            "$prefix.gate_proj.weight",
+            (hidden_dim, d_model),
+        ),
+        up_proj=_expect_tensor(
+            session.tensors,
+            "$prefix.up_proj.weight",
+            (hidden_dim, d_model),
+        ),
+        down_proj=_expect_tensor(
+            session.tensors,
+            "$prefix.down_proj.weight",
+            (d_model, hidden_dim),
+        ),
+    )
+    entry_bytes = _qwen3_moe_tree_bytes(host_parameters)
+    session.expert_bytes_read = Base.checked_add(
+        session.expert_bytes_read,
+        entry_bytes,
+    )
+    device_parameters = session.to_device(host_parameters)
+    session.expert_bytes_uploaded = Base.checked_add(
+        session.expert_bytes_uploaded,
+        entry_bytes,
+    )
+    host_parameters = nothing
+    return _Qwen3MoEExpertCacheEntry(
+        device_parameters.gate_proj,
+        device_parameters.up_proj,
+        device_parameters.down_proj,
+        entry_bytes,
+    )
+end
+
+function _qwen3_moe_cached_expert(
+    session::HFQwen3MoEOffloadSession,
+    expert::Int,
+    layer::Int,
+    protected::Set{Tuple{Int,Int}},
+)
+    key = (layer + 1, expert)
+    cached = get(session.expert_cache, key, nothing)
+    if cached !== nothing
+        session.expert_cache_hits = Base.checked_add(
+            session.expert_cache_hits,
+            1,
+        )
+        _qwen3_moe_touch_expert_cache!(session, key)
+        return cached
+    end
+
+    session.expert_cache_misses = Base.checked_add(
+        session.expert_cache_misses,
+        1,
+    )
+    entry = _qwen3_moe_read_expert(session, expert, layer)
+    can_store = entry.bytes <= session.expert_cache_budget_bytes &&
+        _qwen3_moe_make_expert_cache_room!(
+            session,
+            entry.bytes,
+            protected,
+        )
+    if can_store
+        session.expert_cache[key] = entry
+        session.expert_cache_bytes = Base.checked_add(
+            session.expert_cache_bytes,
+            entry.bytes,
+        )
+        session.expert_cache_peak_bytes = max(
+            session.expert_cache_peak_bytes,
+            session.expert_cache_bytes,
+        )
+        _qwen3_moe_touch_expert_cache!(session, key)
+    end
+    return entry
+end
+
+function _qwen3_moe_load_uncached_active_experts(
     session::HFQwen3MoEOffloadSession,
     active_experts::Vector{Int},
     layer::Int,
@@ -181,15 +368,62 @@ function _qwen3_moe_load_active_experts(
         up_proj=cat(up_values...; dims=3),
         down_proj=cat(down_values...; dims=3),
     )
+    payload_bytes = _qwen3_moe_tree_bytes(host_parameters)
     session.expert_bytes_read = Base.checked_add(
         session.expert_bytes_read,
-        _qwen3_moe_tree_bytes(host_parameters),
+        payload_bytes,
     )
     parameters = session.to_device(host_parameters)
+    session.expert_bytes_uploaded = Base.checked_add(
+        session.expert_bytes_uploaded,
+        payload_bytes,
+    )
     host_parameters = nothing
     gate_values = nothing
     up_values = nothing
     down_values = nothing
+    GC.gc(false)
+    return parameters
+end
+
+function _qwen3_moe_load_active_experts(
+    session::HFQwen3MoEOffloadSession,
+    active_experts::Vector{Int},
+    layer::Int,
+)
+    session.expert_cache_budget_bytes == 0 &&
+        return _qwen3_moe_load_uncached_active_experts(
+            session,
+            active_experts,
+            layer,
+        )
+    model = session.model
+    hidden_dim = model.mlp_hidden_dim
+    d_model = model.d_model
+    protected = Set((layer + 1, expert) for expert in active_experts)
+    entries = [
+        _qwen3_moe_cached_expert(
+            session,
+            expert,
+            layer,
+            protected,
+        )
+        for expert in active_experts
+    ]
+    parameters = (;
+        gate_proj=cat((
+            reshape(entry.gate_proj, hidden_dim, d_model, 1)
+            for entry in entries
+        )...; dims=3),
+        up_proj=cat((
+            reshape(entry.up_proj, hidden_dim, d_model, 1)
+            for entry in entries
+        )...; dims=3),
+        down_proj=cat((
+            reshape(entry.down_proj, d_model, hidden_dim, 1)
+            for entry in entries
+        )...; dims=3),
+    )
     GC.gc(false)
     return parameters
 end
@@ -354,13 +588,18 @@ Construct a BF16 Qwen3 MoE session whose attention/router/norm/LM-head tensors
 and static KV cache stay on `to_device`, while active expert tensors stream one
 layer at a time. Passing `to_device=CUDA.cu` activates CUDA without coupling
 the core package API to CUDA. `grouped_experts=true` selects the CUDA grouped
-BF16 tensor-core extension when available.
+BF16 tensor-core extension when available. A positive
+`expert_cache_budget_bytes` enables a device-side LRU keyed by
+`(one_based_layer, one_based_expert)`; the default zero preserves pure
+streaming. Request reset retains cached experts, while
+`clear_hf_qwen3_moe_expert_cache!` releases their logical ownership.
 """
 function load_hf_qwen3_moe_offload_session(
     model_dir::AbstractString;
     context_tokens::Integer=4096,
     prefill_chunk_tokens::Integer=128,
     grouped_experts::Bool=true,
+    expert_cache_budget_bytes::Integer=0,
     to_device=identity,
     on_resident_layer=nothing,
 )
@@ -369,6 +608,7 @@ function load_hf_qwen3_moe_offload_session(
     ))
     context = Int(context_tokens)
     chunk = Int(prefill_chunk_tokens)
+    cache_budget = Int(expert_cache_budget_bytes)
     config = load_hf_qwen3_moe_config(
         joinpath(model_dir, "config.json");
         max_seq_len=context,
@@ -377,6 +617,9 @@ function load_hf_qwen3_moe_offload_session(
     _qwen3_validate_moe_semantics(model)
     0 < chunk <= context || throw(ArgumentError(
         "prefill_chunk_tokens must be in 1:context_tokens",
+    ))
+    cache_budget >= 0 || throw(ArgumentError(
+        "expert_cache_budget_bytes must be non-negative",
     ))
     reader = open_safetensors_reader(model_dir)
     _qwen3_validate_moe_tensor_names(
@@ -451,6 +694,16 @@ function load_hf_qwen3_moe_offload_session(
         abspath(model_dir),
         resident_parameter_bytes,
         0,
+        0,
+        cache_budget,
+        0,
+        0,
+        Dict{Tuple{Int,Int},Any}(),
+        Dict{Tuple{Int,Int},Int}(),
+        0,
+        0,
+        0,
+        0,
     )
 end
 
@@ -459,16 +712,17 @@ function reset_hf_qwen3_moe_offload_session!(
     session::HFQwen3MoEOffloadSession,
 )
     session.position = 0
-    session.expert_bytes_read = 0
+    _qwen3_moe_reset_expert_traffic!(session)
     return session
 end
 
 """
     prefill_hf_qwen3_moe_offload!(session, prompt_tokens)
 
-Reset and prefill a batch-one prompt in bounded chunks. The result contains
-host logits for the final prompt token plus per-chunk active expert ids and
-the exact expert payload bytes read from safetensors.
+Reset and prefill a batch-one prompt in bounded chunks. Expert cache tensors are
+retained across this request reset. The result contains host logits for the final
+prompt token, per-chunk active expert ids, exact read/upload byte counts and
+request-scoped cache traffic.
 """
 function prefill_hf_qwen3_moe_offload!(
     session::HFQwen3MoEOffloadSession,
@@ -489,6 +743,10 @@ function prefill_hf_qwen3_moe_offload!(
             length(tokens),
         )
         before = session.expert_bytes_read
+        before_uploaded = session.expert_bytes_uploaded
+        before_hits = session.expert_cache_hits
+        before_misses = session.expert_cache_misses
+        before_evictions = session.expert_cache_evictions
         result = _qwen3_moe_offload_chunk!(
             session,
             reshape(tokens[first_index:last_index], :, 1),
@@ -500,6 +758,12 @@ function prefill_hf_qwen3_moe_offload!(
             last_token=last_index,
             active_experts=result.active_experts,
             expert_bytes_read=session.expert_bytes_read - before,
+            expert_bytes_uploaded=
+                session.expert_bytes_uploaded - before_uploaded,
+            expert_cache_hits=session.expert_cache_hits - before_hits,
+            expert_cache_misses=session.expert_cache_misses - before_misses,
+            expert_cache_evictions=
+                session.expert_cache_evictions - before_evictions,
         ))
     end
     return (;
@@ -507,10 +771,16 @@ function prefill_hf_qwen3_moe_offload!(
         position=session.position,
         chunks=Tuple(chunks),
         expert_bytes_read=session.expert_bytes_read,
+        expert_bytes_uploaded=session.expert_bytes_uploaded,
+        expert_cache=qwen3_moe_expert_cache_stats(session),
     )
 end
 
-"""Decode one batch-one token using the session's resident static KV cache."""
+"""
+Decode one batch-one token using the session's resident static KV cache and
+optional expert cache. Returned read/upload and cache counters are for this
+decode step; the nested cache stats cover the current prefill/decode request.
+"""
 function decode_hf_qwen3_moe_offload!(
     session::HFQwen3MoEOffloadSession,
     token,
@@ -524,11 +794,21 @@ function decode_hf_qwen3_moe_offload!(
     ))
     _validate_generation_ids(values, session.model.vocab_size)
     before = session.expert_bytes_read
+    before_uploaded = session.expert_bytes_uploaded
+    before_hits = session.expert_cache_hits
+    before_misses = session.expert_cache_misses
+    before_evictions = session.expert_cache_evictions
     result = _qwen3_moe_offload_chunk!(session, reshape(values, 1, 1))
     return (;
         logits=result.logits,
         position=session.position,
         active_experts=result.active_experts,
         expert_bytes_read=session.expert_bytes_read - before,
+        expert_bytes_uploaded=session.expert_bytes_uploaded - before_uploaded,
+        expert_cache_hits=session.expert_cache_hits - before_hits,
+        expert_cache_misses=session.expert_cache_misses - before_misses,
+        expert_cache_evictions=
+            session.expert_cache_evictions - before_evictions,
+        expert_cache=qwen3_moe_expert_cache_stats(session),
     )
 end

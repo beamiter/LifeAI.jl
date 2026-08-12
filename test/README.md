@@ -13,7 +13,8 @@ test/
     │   └── ...
     └── episode06_qwen3_moe_and_model_expansion/
         ├── chapter24_qwen3_moe_architecture/
-        └── chapter25_qwen3_moe_gpu_offload/
+        ├── chapter25_qwen3_moe_gpu_offload/
+        └── chapter26_qwen3_moe_expert_cache/
 ```
 
 ## Chapter 索引
@@ -45,6 +46,7 @@ test/
 | 05 | 23 | XLA device-resident sampling |
 | 06 | 24 | Qwen3 MoE router、Float32/BF16 streaming、CPU/XLA/CUDA sparse dispatch、真实资产与 30B parity |
 | 06 | 25 | 30B-A3B resident/offload 内存预算、全局→活跃 expert 路由映射与 GPU session contract |
+| 06 | 26 | byte-budgeted device expert LRU、跨请求命中、显式清空与真实 30B I/O/latency 证据 |
 
 `fixtures/` 只存在于拥有该证据的 Chapter 目录中。跨 Chapter 复用 fixture 时，
 测试显式引用其原始 Chapter，不复制第二份数据。`support/` 只存放无独立产品能力

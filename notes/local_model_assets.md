@@ -922,3 +922,21 @@ julia --project=. scripts/benchmark_qwen3_moe_cuda_offload.jl \
 宽 prefill。仓库只提交精简结果
 `benchmark_results/qwen3_moe_cuda_offload/summary.json`；原始逐次报告仍留在
 本机临时目录。
+
+Chapter 26 在同一模型、reference 与 40K-capacity session 上复现 device
+expert LRU；最后一个参数是 cache GiB：
+
+```bash
+julia --project=. scripts/benchmark_qwen3_moe_cuda_expert_cache.jl \
+  MODEL_DIR \
+  MODEL_DIR/lifeai-references/chapter24-real-parity/bfloat16 \
+  /tmp/qwen3_moe_cuda_expert_cache_8g.json \
+  8
+```
+
+该命令依次运行 cold fill/first hit、只清空 expert cache、warm fill/warm hit，
+不会在中途重载 resident tree、40K KV、compiled kernels 或 allocator pool。冻结
+摘要为 `benchmark_results/qwen3_moe_cuda_expert_cache/summary.json`：8 GiB
+预算实际缓存 892 个 expert-layer entries、`8,417,968,128` bytes，重复请求
+read/upload 为零，request 相对 warm fill 加速 `1.722×`。这个零淘汰结论只
+绑定冻结的 2-token prompt + 1-token decode；任意请求不作零淘汰保证。

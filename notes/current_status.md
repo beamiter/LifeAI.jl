@@ -2,9 +2,11 @@
 
 ## 一句话判断
 
-项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**，原始 Qwen3-30B-A3B MoE 也完成 61 GB 资产校验、Float32/native BF16 真实 parity，以及 RTX 4090 D 的 40K-capacity BF16 GPU resident/offload session。项目具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化。Qwen3-Embedding-0.6B 的独立 checkpoint/tokenizer contract、五档 MRL 与 dense exact semantic memory 也已完成真实 BF16 parity。RTX 4090 D 上，dense 14B mixed RTN 是已实证生成上限；日常 8B BF16 已完成 XLA single-residency 4K greedy 部署与 loopback 常驻 HTTP 服务。30B-A3B 则以非 expert 常驻、active experts 按层上传的方式运行，32-token grouped WMMA 相对 scalar production 的端到端 prefill/decode 加速为 `1.092× / 1.335×`。
+项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**，原始 Qwen3-30B-A3B MoE 也完成 61 GB 资产校验、Float32/native BF16 真实 parity，以及 RTX 4090 D 的 40K-capacity BF16 GPU resident/offload session。项目具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化。Qwen3-Embedding-0.6B 的独立 checkpoint/tokenizer contract、五档 MRL 与 dense exact semantic memory 也已完成真实 BF16 parity。RTX 4090 D 上，dense 14B mixed RTN 是已实证生成上限；日常 8B BF16 已完成 XLA single-residency 4K greedy 部署与 loopback 常驻 HTTP 服务。30B-A3B 则以非 expert 常驻、active experts 按层上传的方式运行；可选的 byte-budgeted device LRU 在 8 GiB 冻结 case 上消除全部重复 expert I/O，并将重复 request 加速 `1.722×`。
 
 ## 当前活动阶段
+
+[`Chapter 26 — Qwen3 MoE active-expert device cache`](episodes/episode06_qwen3_moe_and_model_expansion/chapter26_qwen3_moe_expert_cache.md) 已于 2026-08-12 Closed。`HFQwen3MoEOffloadSession` 新增默认关闭、按实际 tensor bytes 预算的 device LRU，key 为 one-based layer/expert；request reset 保留缓存，显式 clear 撤销缓存 tensor 的逻辑所有权。真实 30B-A3B 8 GiB case 容纳 892 entries、`8.418 GB`，零淘汰且最终仍有 `4.346 GB` GPU free。重复请求 prefill 734 次、decode 384 次全部命中，expert read/upload 从 `8.418 GB` 降到零；prefill/decode/request 相对 warm fill 加速 `1.775× / 1.533× / 1.722×`，fill/hit exact 且 Transformers BF16 reference argmax 一致。该零淘汰结论只适用于冻结短请求；长自然文本、pinned-memory 与异步预取仍未完成。
 
 [`Chapter 25 — Qwen3-30B-A3B GPU resident/offload session`](episodes/episode06_qwen3_moe_and_model_expansion/chapter25_qwen3_moe_gpu_offload.md) 已于 2026-08-12 Closed。真实官方 30B-A3B 现在以 attention/router/norm/LM head 常驻、active experts 逐层从 safetensors 上传的方式在 RTX 4090 D 运行；40,960-token BF16 static KV `3.75 GiB` 已实际分配，常驻参数 `2.291 GiB`，加最坏单层 experts 的工作集硬下限为 `7.166 GiB`。2-token prompt/decode 与 Transformers BF16 reference argmax 均一致；32-token grouped steady 为 `23.82 / 4.63 s`，相对 scalar production `26.02 / 6.18 s` 为 `1.092× / 1.335×`。小 2-token case 的 grouped 只有 `0.938× / 0.899×`，因此宽 prefill 才启用 WMMA。完整 40K window 填充和长序列质量仍未声称完成。
 
@@ -44,7 +46,7 @@
 - GPTModel：包括 token/可选 position embedding、多层 TransformerBlock、final norm 和 LM head；支持 embedding / LM head 单 kernel 权重共享，并可分离 projection bias 与 LM-head bias。
 - legacy 默认仍为 LayerNorm + GELU + untied；modern 配置可通过独立开关组合，不改变旧调用。
 - HuggingFace Qwen3 dense 导入：冻结 0.6B / 1.7B / 4B / 8B / 14B / 32B 六个官方规格与 config checksum，可自动识别或显式要求 variant；严格解析 config，读取 BF16/F32 safetensors 单文件或 index 分片，完整映射 embedding、attention、QK-Norm、MLP、final norm 与 tied/untied LM head；missing、unexpected、duplicate、shape/dtype/config 错误均 fail closed。六个真实 checkpoint 全部实跑逐层 parity：0.6B—4B 全量加载，8B—32B 流式加载。
-- Qwen3 MoE 导入（Chapter 24–25，Closed）：Float32 top-k routing、逐 expert SwiGLU、all-sparse decoder topology、原始 `mlp.experts.N.*` 权重名映射和 full/dynamic/static cache 已完成 Transformers tiny/官方 30B parity。`stream_hf_qwen3_moe_forward` 以 header-only index 在路由后只读取 active experts，可选择 Float32/native BF16；官方 immutable revision、30.53B 参数、config/index 与 16 分片 checksum 已形成代码级资产契约。Reactant/XLA CPU 使用 compact route-major fallback；RTX 4090 D 具备 indexed/bucketed/grouped WMMA，并由 `HFQwen3MoEOffloadSession` 将真实 streamer、全容量 static KV 和局部 active-expert tensor 接成可运行的 30B session。
+- Qwen3 MoE 导入（Chapter 24–26，Closed）：Float32 top-k routing、逐 expert SwiGLU、all-sparse decoder topology、原始 `mlp.experts.N.*` 权重名映射和 full/dynamic/static cache 已完成 Transformers tiny/官方 30B parity。`stream_hf_qwen3_moe_forward` 以 header-only index 在路由后只读取 active experts，可选择 Float32/native BF16；官方 immutable revision、30.53B 参数、config/index 与 16 分片 checksum 已形成代码级资产契约。Reactant/XLA CPU 使用 compact route-major fallback；RTX 4090 D 具备 indexed/bucketed/grouped WMMA，并由 `HFQwen3MoEOffloadSession` 将真实 streamer、全容量 static KV、局部 active-expert tensor 和可选 device LRU 接成可运行的 30B session。
 - Qwen3-Embedding-0.6B 导入（Chapter 22）：独立冻结 HF revision 和 8 个
   asset SHA256，严格区分 151,669 vocabulary、32K model context、
   SentenceTransformers base-model namespace 与 causal-LM contract；
@@ -147,9 +149,11 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-2026-08-12 最新复核默认套件，共 `5,948 / 5,948` 项测试通过；Chapter 24
-默认专项为 `285 / 285`。该计数包含官方 30B-A3B immutable 资产契约、
-Float32/BF16 tiny streaming 与真实 parity 冻结报告契约，不包含需显式启用的 XLA/CUDA accelerator 专项。
+2026-08-12 最新复核默认套件，共 `6,043 / 6,043` 项测试通过；Episode 06
+为 `380 / 380`，其中 Chapter 24/25/26 分别为
+`285 / 41 / 54`。该计数包含官方 30B-A3B immutable 资产契约、
+Float32/BF16 tiny streaming、真实 parity/offload/cache 冻结报告契约和
+device LRU 生命周期/淘汰测试，不包含需显式启用的 XLA/CUDA accelerator 专项。
 Chapter 24 compact dispatch 的 Reactant/XLA CPU 专项另计 `3 / 3`：
 128 experts/top-8/64 tokens 的 route pairs 为 `512 / 8,192`，编译
 `32.126 s`、steady median `38.616 ms`，对 dense oracle max-abs `9.09e-7`。
