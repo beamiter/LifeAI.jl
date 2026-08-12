@@ -719,7 +719,7 @@ function _semantic_array(values::AbstractVector, shape::Vector{Int})
 end
 
 function _decode_safetensors_values(
-    raw::Vector{UInt8},
+    raw::AbstractVector{UInt8},
     dtype::String,
     shape::Vector{Int};
     target_dtype::Type=Float32,

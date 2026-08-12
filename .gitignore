@@ -54,3 +54,6 @@ benchmark_results/qwen3_moe_cuda_async_miss_pipeline/*
 !benchmark_results/qwen3_moe_cuda_read_worker_sweep/
 benchmark_results/qwen3_moe_cuda_read_worker_sweep/*
 !benchmark_results/qwen3_moe_cuda_read_worker_sweep/summary.json
+!benchmark_results/qwen3_moe_cuda_coalesced_reads/
+benchmark_results/qwen3_moe_cuda_coalesced_reads/*
+!benchmark_results/qwen3_moe_cuda_coalesced_reads/summary.json

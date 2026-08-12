@@ -51,7 +51,8 @@ export Qwen3EmbeddingSpec, qwen3_embedding_spec
 export qwen3_embedding_parameter_count
 export load_hf_qwen3_embedding_config, verify_qwen3_embedding_assets
 export load_hf_qwen3_embedding_model, load_hf_qwen3_embedding_bundle
-export HFSafetensorsReader, open_safetensors_reader, read_safetensors_tensor
+export HFSafetensorsReader, open_safetensors_reader, read_safetensors_tensor,
+    read_safetensors_tensors
 export stream_hf_qwen3_forward, stream_hf_qwen3_moe_forward
 export load_hf_qwen3_compact_model, load_hf_qwen3_compact_bundle
 export hf_qwen3_bf16_forward

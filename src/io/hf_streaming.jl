@@ -165,6 +165,95 @@ function read_safetensors_tensor(
     )
 end
 
+"""
+    read_safetensors_tensors(
+        reader, names; target_dtype=Float32, coalesce_adjacent=true)
+
+Read several tensors while coalescing exactly adjacent byte ranges from the
+same safetensors shard. Results are keyed by the requested tensor names.
+Disjoint ranges share one file open but remain separate reads, so the method
+never reads unrelated tensor payloads merely to bridge a gap. Set
+`coalesce_adjacent=false` to retain a separate read/decode step for every
+requested tensor while still sharing one file open per shard.
+"""
+function read_safetensors_tensors(
+    reader::HFSafetensorsReader,
+    names;
+    target_dtype::Type=Float32,
+    coalesce_adjacent::Bool=true,
+)
+    target_dtype in (Float32, BFloat16) || throw(ArgumentError(
+        "streamed safetensors loading only supports Float32 or BFloat16",
+    ))
+    requested = String.(collect(names))
+    length(unique(requested)) == length(requested) || throw(ArgumentError(
+        "streamed safetensors batch names must be unique",
+    ))
+    locations = [_reader_location(reader, name) for name in requested]
+    values = Vector{Any}(undef, length(requested))
+    indices_by_path = Dict{String,Vector{Int}}()
+    for (index, location) in enumerate(locations)
+        push!(get!(indices_by_path, location.path, Int[]), index)
+    end
+
+    for (path, path_indices) in indices_by_path
+        open(path, "r") do io
+            if !coalesce_adjacent
+                for index in path_indices
+                    location = locations[index]
+                    seek(io, location.data_base + location.data_start)
+                    raw = read(io, location.data_stop - location.data_start)
+                    length(raw) == location.data_stop - location.data_start ||
+                        throw(ArgumentError(
+                            "truncated data for safetensors tensor `$(requested[index])`",
+                        ))
+                    values[index] = _decode_safetensors_values(
+                        raw,
+                        location.dtype,
+                        location.shape;
+                        target_dtype,
+                    )
+                end
+                return
+            end
+            sort!(path_indices; by=index -> locations[index].data_start)
+            first_index = 1
+            while first_index <= length(path_indices)
+                last_index = first_index
+                while last_index < length(path_indices)
+                    previous = locations[path_indices[last_index]]
+                    following = locations[path_indices[last_index + 1]]
+                    previous.data_stop == following.data_start || break
+                    last_index += 1
+                end
+                group_indices = @view path_indices[first_index:last_index]
+                group_start = locations[first(group_indices)].data_start
+                group_stop = locations[last(group_indices)].data_stop
+                location = locations[first(group_indices)]
+                seek(io, location.data_base + group_start)
+                raw = read(io, group_stop - group_start)
+                length(raw) == group_stop - group_start || throw(ArgumentError(
+                    "truncated data for coalesced safetensors tensors",
+                ))
+                for index in group_indices
+                    tensor_location = locations[index]
+                    relative_start = tensor_location.data_start - group_start + 1
+                    relative_stop = tensor_location.data_stop - group_start
+                    tensor_raw = @view raw[relative_start:relative_stop]
+                    values[index] = _decode_safetensors_values(
+                        tensor_raw,
+                        tensor_location.dtype,
+                        tensor_location.shape;
+                        target_dtype,
+                    )
+                end
+                first_index = last_index + 1
+            end
+        end
+    end
+    return Dict(requested[index] => values[index] for index in eachindex(requested))
+end
+
 # Minimal AbstractDict facade so `_expect_tensor` and the shared block mapping
 # work identically on the streamed reader and the in-memory state dict.
 struct _StreamedTensors <: AbstractDict{String,Any}

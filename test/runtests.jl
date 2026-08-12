@@ -195,6 +195,14 @@ end
             "qwen3_moe_read_worker_sweep_test.jl",
         ))
     end
+
+    @testset "Chapter 32 — Qwen3 MoE coalesced reads" begin
+        include(chapter_test(
+            "episode06_qwen3_moe_and_model_expansion",
+            "chapter32_qwen3_moe_coalesced_reads",
+            "qwen3_moe_coalesced_reads_test.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

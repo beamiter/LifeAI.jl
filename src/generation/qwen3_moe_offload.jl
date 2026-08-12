@@ -170,6 +170,7 @@ mutable struct HFQwen3MoEOffloadSession
     expert_workspace_reuses::Int
     expert_pointer_table_bytes::Int
     expert_workspace_bytes::Int
+    expert_read_mode::Symbol
     expert_miss_pipeline::Symbol
     expert_read_workers::Int
     expert_pinned_upload::Bool
@@ -223,6 +224,7 @@ function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
         workspace_reuses=session.expert_workspace_reuses,
         pointer_table_bytes=session.expert_pointer_table_bytes,
         workspace_bytes=session.expert_workspace_bytes,
+        read_mode=session.expert_read_mode,
         miss_pipeline=session.expert_miss_pipeline,
         read_workers=session.expert_read_workers,
         pinned_upload=session.expert_pinned_upload,
@@ -254,6 +256,13 @@ function _qwen3_moe_validate_expert_miss_pipeline(pipeline::Symbol)
         "expert_miss_pipeline must be :sequential or :overlapped",
     ))
     return pipeline
+end
+
+function _qwen3_moe_validate_expert_read_mode(mode::Symbol)
+    mode in (:tensor, :shared_open, :coalesced) || throw(ArgumentError(
+        "expert_read_mode must be :tensor, :shared_open or :coalesced",
+    ))
+    return mode
 end
 
 _qwen3_moe_default_expert_read_workers() = min(8, Threads.nthreads())
@@ -397,7 +406,7 @@ end
 """
     configure_hf_qwen3_moe_expert_cache!(
         session; budget_bytes, policy, dispatch, gc_interval_layers,
-        miss_pipeline, read_workers, pinned_upload)
+        read_mode, miss_pipeline, read_workers, pinned_upload)
 
 Clear the existing expert cache and reconfigure its byte budget and eviction
 policy while retaining the resident model, static KV buffers and compiled
@@ -412,6 +421,7 @@ function configure_hf_qwen3_moe_expert_cache!(
     policy::Symbol=session.expert_cache_policy,
     dispatch::Symbol=session.expert_cache_dispatch,
     gc_interval_layers::Integer=session.expert_gc_interval_layers,
+    read_mode::Symbol=session.expert_read_mode,
     miss_pipeline::Symbol=session.expert_miss_pipeline,
     read_workers::Integer=session.expert_read_workers,
     pinned_upload::Bool=session.expert_pinned_upload,
@@ -422,6 +432,7 @@ function configure_hf_qwen3_moe_expert_cache!(
     ))
     validated_policy = _qwen3_moe_validate_expert_cache_policy(policy)
     validated_dispatch = _qwen3_moe_validate_expert_cache_dispatch(dispatch)
+    validated_read_mode = _qwen3_moe_validate_expert_read_mode(read_mode)
     validated_pipeline = _qwen3_moe_validate_expert_miss_pipeline(
         miss_pipeline,
     )
@@ -456,6 +467,7 @@ function configure_hf_qwen3_moe_expert_cache!(
     session.expert_cache_policy = validated_policy
     session.expert_cache_dispatch = validated_dispatch
     session.expert_gc_interval_layers = gc_interval
+    session.expert_read_mode = validated_read_mode
     session.expert_miss_pipeline = validated_pipeline
     session.expert_read_workers = workers
     session.expert_pinned_upload = pinned_upload
@@ -546,23 +558,55 @@ function _qwen3_moe_read_expert_host(
     hidden_dim = model.mlp_hidden_dim
     d_model = model.d_model
     prefix = "model.layers.$layer.mlp.experts.$(expert - 1)"
-    host_parameters = (;
-        gate_proj=_expect_tensor(
-            session.tensors,
-            "$prefix.gate_proj.weight",
-            (hidden_dim, d_model),
-        ),
-        up_proj=_expect_tensor(
-            session.tensors,
-            "$prefix.up_proj.weight",
-            (hidden_dim, d_model),
-        ),
-        down_proj=_expect_tensor(
-            session.tensors,
-            "$prefix.down_proj.weight",
-            (d_model, hidden_dim),
-        ),
-    )
+    gate_name = "$prefix.gate_proj.weight"
+    up_name = "$prefix.up_proj.weight"
+    down_name = "$prefix.down_proj.weight"
+    host_parameters = if session.expert_read_mode !== :tensor
+        names = session.expert_read_mode === :coalesced ?
+            (down_name, gate_name, up_name) :
+            (gate_name, up_name, down_name)
+        values = read_safetensors_tensors(
+            session.reader,
+            names;
+            target_dtype=session.tensors.target_dtype,
+            coalesce_adjacent=session.expert_read_mode === :coalesced,
+        )
+        (;
+            gate_proj=_expect_tensor(
+                values,
+                gate_name,
+                (hidden_dim, d_model),
+            ),
+            up_proj=_expect_tensor(
+                values,
+                up_name,
+                (hidden_dim, d_model),
+            ),
+            down_proj=_expect_tensor(
+                values,
+                down_name,
+                (d_model, hidden_dim),
+            ),
+        )
+    else
+        (;
+            gate_proj=_expect_tensor(
+                session.tensors,
+                gate_name,
+                (hidden_dim, d_model),
+            ),
+            up_proj=_expect_tensor(
+                session.tensors,
+                up_name,
+                (hidden_dim, d_model),
+            ),
+            down_proj=_expect_tensor(
+                session.tensors,
+                down_name,
+                (d_model, hidden_dim),
+            ),
+        )
+    end
     entry_bytes = _qwen3_moe_tree_bytes(host_parameters)
     return (;
         parameters=host_parameters,
@@ -1149,6 +1193,9 @@ original per-layer behavior; `0` disables forced GC). Request reset retains
 cached experts. `expert_miss_pipeline=:overlapped` uses a bounded number of
 host reader tasks for independent active-expert misses. Its default worker
 count is the smaller of eight and the current Julia thread count;
+`expert_read_mode=:coalesced` reads exactly adjacent down/gate/up projection
+ranges with one shard read per expert; `:shared_open` retains three interleaved
+read/decode steps under one shard open, while `:tensor` preserves separate opens;
 `expert_pinned_upload` additionally enables accelerator-specific pinned
 asynchronous transfers. Neither mode speculates beyond the current layer's
 completed router. Meanwhile, `clear_hf_qwen3_moe_expert_cache!` releases their
@@ -1163,6 +1210,7 @@ function load_hf_qwen3_moe_offload_session(
     expert_cache_policy::Symbol=:global_lru,
     expert_cache_dispatch::Symbol=:materialized,
     expert_gc_interval_layers::Integer=1,
+    expert_read_mode::Symbol=:tensor,
     expert_miss_pipeline::Symbol=:sequential,
     expert_read_workers::Integer=_qwen3_moe_default_expert_read_workers(),
     expert_pinned_upload::Bool=false,
@@ -1182,6 +1230,7 @@ function load_hf_qwen3_moe_offload_session(
         expert_cache_dispatch,
     )
     gc_interval = Int(expert_gc_interval_layers)
+    read_mode = _qwen3_moe_validate_expert_read_mode(expert_read_mode)
     miss_pipeline = _qwen3_moe_validate_expert_miss_pipeline(
         expert_miss_pipeline,
     )
@@ -1320,6 +1369,7 @@ function load_hf_qwen3_moe_offload_session(
         0,
         0,
         0,
+        read_mode,
         miss_pipeline,
         read_workers,
         expert_pinned_upload,

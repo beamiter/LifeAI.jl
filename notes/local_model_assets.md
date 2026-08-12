@@ -1035,3 +1035,23 @@ cold 的 1/2/4/8-worker 中位为 `48.181 / 30.614 / 20.737 / 16.962 s`，
 revisit 为 `37.349 / 23.316 / 17.015 / 14.553 s`。cold 每轮实际读存储约
 `26.236 GB`，revisit 为 `0`；所有输出 exact。overlapped pipeline 未显式指定
 worker 时现在使用 `min(8, Threads.nthreads())`，仍可通过 API 显式覆盖。
+
+Chapter 32 在完全相同的 English32、4 GiB layer-balanced、scattered、gc8 与
+8-worker 条件下，比较独立 tensor、shared-open 和严格相邻 coalesced reads：
+
+```bash
+julia --threads=8 --project=. \
+  scripts/benchmark_qwen3_moe_cuda_coalesced_reads.jl \
+  MODEL_DIR \
+  /tmp/qwen3_moe_cuda_coalesced_reads.json
+```
+
+脚本按三种不同顺序各运行一轮，每个配置均包含
+`POSIX_FADV_DONTNEED` cold 与零 storage-read revisit，并记录 `/proc/self/io`
+及 Julia allocation/GC。冻结报告位于
+`benchmark_results/qwen3_moe_cuda_coalesced_reads/summary.json`：coalesced
+把 cold/revisit read syscalls 从 `9,413 / 9,368` 降到 `3,304 / 3,298`
+（减少 `64.90% / 64.80%`），但 request median 从 `17.122 / 14.589 s`
+恶化到 `21.221 / 19.488 s`。shared-open 为 `17.147 / 14.586 s`，与 tensor
+无可归因差异。因此 `expert_read_mode` 默认保持 `:tensor`；另外两种模式只作
+显式实验选项，不作为性能建议。
