@@ -80,6 +80,7 @@ export HFQwen3MoEOffloadSession, qwen3_moe_offload_plan
 export load_hf_qwen3_moe_offload_session
 export reset_hf_qwen3_moe_offload_session!
 export clear_hf_qwen3_moe_expert_cache!, qwen3_moe_expert_cache_stats
+export configure_hf_qwen3_moe_expert_cache!
 export prefill_hf_qwen3_moe_offload!, decode_hf_qwen3_moe_offload!
 export Qwen3XLAWindowPlan, plan_qwen3_xla_window
 export qwen3_xla_pad_prompt, qwen3_xla_key_positions

@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-08-12",
+  "model_id": "Qwen/Qwen3-30B-A3B",
+  "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+  "compute_dtype": "bfloat16",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090 D",
+    "compute_capability": "8.9",
+    "free_before_bytes": 24027922432,
+    "free_ready_bytes": 17520328704
+  },
+  "session": {
+    "context_tokens": 40960,
+    "prefill_chunk_tokens": 128,
+    "load_seconds": 15.432716576,
+    "resident_parameter_bytes": 2459856896,
+    "dispatch": "active-expert-local-remap-production-scalar-f32-accumulation"
+  },
+  "workload": {
+    "trace": "english_32 -> chinese_32 -> english_32",
+    "tokens_per_prompt": 32,
+    "decode_tokens_per_request": 1,
+    "english_text_sha256": "6f193bc5b69fd5ad659a031e3f17d83115ed89d39242d4560313031b93815072",
+    "chinese_text_sha256": "be050cac7a748c4ae066ee6d70a377e8658df56f11fa11eb6f88a0cdb245c0dd",
+    "english_tokens_sha256": "0f06ce74166c11acb516970ec217b6ef52c9592f2ecd88067189d26959f74927",
+    "chinese_tokens_sha256": "f1891213344e3c3090a18c938bf8e15b4810a6db8295fe9a71e81a537ab37484",
+    "tokenizer_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+  },
+  "configurations": {
+    "global_8gib": {
+      "policy": "global_lru",
+      "budget_bytes": 8589934592,
+      "total_slot_capacity": 910,
+      "trace_cache_hits": 435,
+      "trace_cache_misses": 8759,
+      "trace_hit_rate": 0.04731346530345878,
+      "trace_expert_bytes_read": 82660294656,
+      "trace_seconds": 553.9444581949999,
+      "english_revisit_hit_rate": 0.05112540192926045,
+      "english_revisit_evictions": 2951,
+      "gpu_free_final_bytes": 3748855808,
+      "english_revisit_exact": true
+    },
+    "balanced_4gib": {
+      "policy": "layer_balanced_lru",
+      "budget_bytes": 4294967296,
+      "total_slot_capacity": 455,
+      "layer_slot_capacity": 9,
+      "trace_cache_hits": 1110,
+      "trace_cache_misses": 8084,
+      "trace_hit_rate": 0.12073091146399825,
+      "trace_expert_bytes_read": 76290195456,
+      "trace_seconds": 519.351627054,
+      "english_revisit_hit_rate": 0.1742765273311897,
+      "english_revisit_evictions": 297,
+      "gpu_free_final_bytes": 7440629760,
+      "english_revisit_exact": true
+    },
+    "balanced_6gib": {
+      "policy": "layer_balanced_lru",
+      "budget_bytes": 6442450944,
+      "total_slot_capacity": 682,
+      "layer_slot_capacity": 14,
+      "trace_cache_hits": 1637,
+      "trace_cache_misses": 7557,
+      "trace_hit_rate": 0.1780509027626713,
+      "trace_expert_bytes_read": 71316799488,
+      "trace_seconds": 512.828499288,
+      "english_revisit_hit_rate": 0.27781350482315115,
+      "english_revisit_evictions": 202,
+      "gpu_free_final_bytes": 4275503104,
+      "english_revisit_exact": true
+    },
+    "balanced_8gib": {
+      "policy": "layer_balanced_lru",
+      "budget_bytes": 8589934592,
+      "total_slot_capacity": 910,
+      "layer_slot_capacity": 18,
+      "trace_cache_hits": 2074,
+      "trace_cache_misses": 7120,
+      "trace_hit_rate": 0.2255819012399391,
+      "trace_expert_bytes_read": 67192750080,
+      "trace_seconds": 511.75838506300005,
+      "english_revisit_hit_rate": 0.34662379421221867,
+      "english_revisit_evictions": 216,
+      "gpu_free_final_bytes": 1883635712,
+      "english_revisit_exact": true
+    }
+  },
+  "comparisons": {
+    "balanced_8gib_over_global_8gib": {
+      "hit_rate_delta": 0.1782684359364803,
+      "bytes_read_reduction": 0.18712181755908208,
+      "speedup": 1.082433574833965
+    },
+    "balanced_4gib_over_global_8gib": {
+      "bytes_read_reduction": 0.07706359173421629,
+      "speedup": 1.0666077265170542
+    },
+    "balanced_8gib_over_balanced_4gib": {
+      "bytes_read_reduction": 0.11924789708065309,
+      "speedup": 1.0148375526667046
+    }
+  },
+  "decision": {
+    "default_policy": "global_lru",
+    "recommended_frozen_trace_policy": "layer_balanced_lru",
+    "recommended_frozen_trace_budget_bytes": 4294967296,
+    "reason": "4 GiB retained 7.44 GB GPU free and was within 1.5% of the 8 GiB trace time",
+    "arbitrary_workload_budget_guaranteed": false,
+    "device_concat_or_gc_optimized": false,
+    "pinned_memory_or_async_prefetch_implemented": false
+  },
+  "source_sha256": {
+    "benchmark_script": "bd861b33f96f8b6308617eaa72a1add10930c11bf8c1fe70d287a237a9334dc8",
+    "offload_implementation": "31e61d12c71bcb912aae6d57fec29f7bde58743075076a49a1a4e76a10529601"
+  }
+}

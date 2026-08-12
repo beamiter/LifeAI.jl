@@ -146,6 +146,7 @@ mutable struct HFQwen3MoEOffloadSession
     expert_bytes_read::Int
     expert_bytes_uploaded::Int
     expert_cache_budget_bytes::Int
+    expert_cache_policy::Symbol
     expert_cache_bytes::Int
     expert_cache_peak_bytes::Int
     expert_cache::Dict{Tuple{Int,Int},Any}
@@ -166,6 +167,7 @@ end
 function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
     return (;
         budget_bytes=session.expert_cache_budget_bytes,
+        policy=session.expert_cache_policy,
         current_bytes=session.expert_cache_bytes,
         peak_bytes=session.expert_cache_peak_bytes,
         entries=length(session.expert_cache),
@@ -175,6 +177,13 @@ function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
         bytes_read=session.expert_bytes_read,
         bytes_uploaded=session.expert_bytes_uploaded,
     )
+end
+
+function _qwen3_moe_validate_expert_cache_policy(policy::Symbol)
+    policy in (:global_lru, :layer_balanced_lru) || throw(ArgumentError(
+        "expert_cache_policy must be :global_lru or :layer_balanced_lru",
+    ))
+    return policy
 end
 
 function _qwen3_moe_reset_expert_traffic!(
@@ -206,6 +215,31 @@ function clear_hf_qwen3_moe_expert_cache!(
     return session
 end
 
+"""
+    configure_hf_qwen3_moe_expert_cache!(session; budget_bytes, policy)
+
+Clear the existing expert cache and reconfigure its byte budget and eviction
+policy while retaining the resident model, static KV buffers and compiled
+kernels. `:global_lru` preserves the original policy;
+`:layer_balanced_lru` reserves an approximately equal number of expert slots
+per decoder layer to resist sequential layer-scan thrashing.
+"""
+function configure_hf_qwen3_moe_expert_cache!(
+    session::HFQwen3MoEOffloadSession;
+    budget_bytes::Integer=session.expert_cache_budget_bytes,
+    policy::Symbol=session.expert_cache_policy,
+)
+    budget = Int(budget_bytes)
+    budget >= 0 || throw(ArgumentError(
+        "expert cache budget_bytes must be non-negative",
+    ))
+    validated_policy = _qwen3_moe_validate_expert_cache_policy(policy)
+    clear_hf_qwen3_moe_expert_cache!(session)
+    session.expert_cache_budget_bytes = budget
+    session.expert_cache_policy = validated_policy
+    return session
+end
+
 function _qwen3_moe_touch_expert_cache!(
     session::HFQwen3MoEOffloadSession,
     key::Tuple{Int,Int},
@@ -234,13 +268,48 @@ function _qwen3_moe_make_expert_cache_room!(
             session.expert_cache_last_used[key]
             for key in candidates
         ])]
-        entry = pop!(session.expert_cache, victim)
-        delete!(session.expert_cache_last_used, victim)
-        session.expert_cache_bytes -= entry.bytes
-        session.expert_cache_evictions = Base.checked_add(
-            session.expert_cache_evictions,
-            1,
-        )
+        _qwen3_moe_evict_expert_cache!(session, victim)
+    end
+    return true
+end
+
+function _qwen3_moe_evict_expert_cache!(
+    session::HFQwen3MoEOffloadSession,
+    key::Tuple{Int,Int},
+)
+    entry = pop!(session.expert_cache, key)
+    delete!(session.expert_cache_last_used, key)
+    session.expert_cache_bytes -= entry.bytes
+    session.expert_cache_evictions = Base.checked_add(
+        session.expert_cache_evictions,
+        1,
+    )
+    return nothing
+end
+
+function _qwen3_moe_make_layer_cache_room!(
+    session::HFQwen3MoEOffloadSession,
+    layer::Int,
+    entry_bytes::Int,
+    protected::Set{Tuple{Int,Int}},
+)
+    total_slots = session.expert_cache_budget_bytes ÷ entry_bytes
+    base_slots, extra_layers = divrem(total_slots, session.model.num_layers)
+    layer_slots = base_slots + (layer <= extra_layers ? 1 : 0)
+    layer_slots == 0 && return false
+    layer_keys = filter(
+        key -> key[1] == layer,
+        collect(keys(session.expert_cache)),
+    )
+    while length(layer_keys) >= layer_slots
+        candidates = filter(key -> !(key in protected), layer_keys)
+        isempty(candidates) && return false
+        victim = candidates[argmin([
+            session.expert_cache_last_used[key]
+            for key in candidates
+        ])]
+        _qwen3_moe_evict_expert_cache!(session, victim)
+        filter!(key -> key != victim, layer_keys)
     end
     return true
 end
@@ -312,7 +381,15 @@ function _qwen3_moe_cached_expert(
         1,
     )
     entry = _qwen3_moe_read_expert(session, expert, layer)
+    policy_allows_store = session.expert_cache_policy === :global_lru ||
+        _qwen3_moe_make_layer_cache_room!(
+            session,
+            layer + 1,
+            entry.bytes,
+            protected,
+        )
     can_store = entry.bytes <= session.expert_cache_budget_bytes &&
+        policy_allows_store &&
         _qwen3_moe_make_expert_cache_room!(
             session,
             entry.bytes,
@@ -591,7 +668,9 @@ the core package API to CUDA. `grouped_experts=true` selects the CUDA grouped
 BF16 tensor-core extension when available. A positive
 `expert_cache_budget_bytes` enables a device-side LRU keyed by
 `(one_based_layer, one_based_expert)`; the default zero preserves pure
-streaming. Request reset retains cached experts, while
+streaming. `expert_cache_policy=:global_lru` preserves the original policy;
+`:layer_balanced_lru` partitions entry capacity across layers to resist
+sequential scan thrashing. Request reset retains cached experts, while
 `clear_hf_qwen3_moe_expert_cache!` releases their logical ownership.
 """
 function load_hf_qwen3_moe_offload_session(
@@ -600,6 +679,7 @@ function load_hf_qwen3_moe_offload_session(
     prefill_chunk_tokens::Integer=128,
     grouped_experts::Bool=true,
     expert_cache_budget_bytes::Integer=0,
+    expert_cache_policy::Symbol=:global_lru,
     to_device=identity,
     on_resident_layer=nothing,
 )
@@ -609,6 +689,9 @@ function load_hf_qwen3_moe_offload_session(
     context = Int(context_tokens)
     chunk = Int(prefill_chunk_tokens)
     cache_budget = Int(expert_cache_budget_bytes)
+    cache_policy = _qwen3_moe_validate_expert_cache_policy(
+        expert_cache_policy,
+    )
     config = load_hf_qwen3_moe_config(
         joinpath(model_dir, "config.json");
         max_seq_len=context,
@@ -696,6 +779,7 @@ function load_hf_qwen3_moe_offload_session(
         0,
         0,
         cache_budget,
+        cache_policy,
         0,
         0,
         Dict{Tuple{Int,Int},Any}(),

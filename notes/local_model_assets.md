@@ -940,3 +940,22 @@ julia --project=. scripts/benchmark_qwen3_moe_cuda_expert_cache.jl \
 预算实际缓存 892 个 expert-layer entries、`8,417,968,128` bytes，重复请求
 read/upload 为零，request 相对 warm fill 加速 `1.722×`。这个零淘汰结论只
 绑定冻结的 2-token prompt + 1-token decode；任意请求不作零淘汰保证。
+
+Chapter 27 直接使用模型目录里的冻结 tokenizer，运行一次 resident load 后在
+同一 40K-capacity session 内切换 global 8 GiB 与 layer-balanced 4/6/8 GiB：
+
+```bash
+julia --project=. \
+  scripts/benchmark_qwen3_moe_cuda_layer_balanced_cache.jl \
+  MODEL_DIR \
+  /tmp/qwen3_moe_cuda_layer_balanced_cache.json
+```
+
+默认 workload 固定为 `English32 → Chinese32 → English32`，每条 prompt 后
+greedy decode 1 token；文本、token ids 与 tokenizer SHA256 均写入报告。脚本
+先用 2-token prompt 编译路径，再只清空逻辑 expert cache 并依次 sweep，避免
+重复 resident load/compile。精简摘要位于
+`benchmark_results/qwen3_moe_cuda_layer_balanced_cache/summary.json`：同为
+8 GiB 时 layer-balanced 相对 global 少读 `18.71%`、加速 `1.082×`；冻结
+trace 推荐 4 GiB，因为它只比 balanced 8 GiB 慢 `1.48%`，却保留
+`7,440,629,760` bytes GPU free。该推荐不泛化到任意 workload。
