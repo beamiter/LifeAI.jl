@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-08-12",
+  "model_id": "Qwen/Qwen3-30B-A3B",
+  "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+  "compute_dtype": "bfloat16",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090 D",
+    "compute_capability": "8.9",
+    "free_before_bytes": 24091099136,
+    "free_ready_bytes": 17581539328
+  },
+  "session": {
+    "context_tokens": 40960,
+    "prompt_tokens": 2,
+    "decode_tokens": 1,
+    "cache_budget_bytes": 8589934592,
+    "cache_policy": "global_lru",
+    "load_seconds": 14.110345664
+  },
+  "configurations": {
+    "materialized_gc1": {
+      "dispatch": "materialized",
+      "gc_interval_layers": 1,
+      "fill_request_seconds": 43.005491824,
+      "hit_prefill_seconds": 9.750050165,
+      "hit_decode_seconds": 2.727325499,
+      "hit_request_seconds": 12.477375664,
+      "hit_expert_bytes_read": 0,
+      "hit_expert_bytes_uploaded": 0,
+      "hit_active_materializations": 96,
+      "hit_active_materialization_bytes": 10550771712,
+      "hit_scattered_dispatches": 0,
+      "hit_pointer_bytes_uploaded": 0,
+      "hit_forced_gc_calls": 96,
+      "fill_vs_hit_exact": true
+    },
+    "scattered_gc1": {
+      "dispatch": "scattered",
+      "gc_interval_layers": 1,
+      "fill_request_seconds": 10.301800391,
+      "hit_prefill_seconds": 0.120079704,
+      "hit_decode_seconds": 0.120531625,
+      "hit_request_seconds": 0.240611329,
+      "hit_expert_bytes_read": 0,
+      "hit_expert_bytes_uploaded": 0,
+      "hit_active_materializations": 0,
+      "hit_active_materialization_bytes": 0,
+      "hit_scattered_dispatches": 96,
+      "hit_pointer_bytes_uploaded": 26832,
+      "hit_forced_gc_calls": 96,
+      "fill_vs_hit_exact": true
+    },
+    "scattered_gc8": {
+      "dispatch": "scattered",
+      "gc_interval_layers": 8,
+      "fill_request_seconds": 11.550578005,
+      "hit_prefill_seconds": 0.077993006,
+      "hit_decode_seconds": 0.072528732,
+      "hit_request_seconds": 0.150521738,
+      "hit_expert_bytes_read": 0,
+      "hit_expert_bytes_uploaded": 0,
+      "hit_cache_hits": 1118,
+      "hit_cache_misses": 0,
+      "hit_cache_entries": 892,
+      "hit_cache_current_bytes": 8417968128,
+      "hit_active_materializations": 0,
+      "hit_active_materialization_bytes": 0,
+      "hit_scattered_dispatches": 96,
+      "hit_pointer_bytes_uploaded": 26832,
+      "hit_forced_gc_calls": 12,
+      "gpu_free_start_bytes": 17535401984,
+      "gpu_free_final_bytes": 9102753792,
+      "fill_vs_hit_exact": true
+    },
+    "scattered_gc0": {
+      "dispatch": "scattered",
+      "gc_interval_layers": 0,
+      "hit_request_seconds": 0.140985145,
+      "hit_active_materialization_bytes": 0,
+      "hit_forced_gc_calls": 0,
+      "repeat_count": 100,
+      "repeat_request_seconds_median": 0.108707714,
+      "repeat_request_seconds_minimum": 0.105286379,
+      "repeat_request_seconds_maximum": 0.728796974,
+      "repeat_exact": true,
+      "repeat_zero_io": true,
+      "repeat_allocator_free_drift_bytes": -1006632960,
+      "fill_vs_hit_exact": true
+    }
+  },
+  "comparisons": {
+    "scattered_gc1_over_materialized": {
+      "hit_request_speedup": 51.85697496396772,
+      "materialization_bytes_eliminated": 10550771712
+    },
+    "scattered_gc8_over_scattered_gc1": {
+      "hit_request_speedup": 1.5985154848530911,
+      "forced_gc_call_reduction": 84
+    },
+    "scattered_gc8_over_materialized": {
+      "hit_prefill_speedup": 125.01185253713646,
+      "hit_decode_speedup": 37.603380395510015,
+      "hit_request_speedup": 82.89417747754148
+    },
+    "scattered_gc0_over_scattered_gc8": {
+      "single_hit_request_speedup": 1.0676425378007024,
+      "forced_gc_call_reduction": 12
+    }
+  },
+  "correctness": {
+    "all_fill_vs_hit_exact": true,
+    "all_cross_configuration_exact": true,
+    "prefill_logits_max_abs": 0.3125,
+    "prefill_argmax_match": true,
+    "decode_logits_max_abs": 0.25,
+    "decode_argmax_match": true
+  },
+  "decision": {
+    "default_dispatch": "materialized",
+    "recommended_frozen_workload_dispatch": "scattered",
+    "recommended_frozen_workload_gc_interval_layers": 8,
+    "reason": "gc8 retained the 82.89x hit-request speedup with stable measured GPU free memory; gc0 lost 1006632960 allocator-free bytes and had a 0.7288 s tail over 100 repeats",
+    "grouped_scattered_supported": false,
+    "positive_device_cache_required": true,
+    "portable_scattered_kernel_implemented": false,
+    "arbitrary_long_workload_stability_guaranteed": false,
+    "pointer_table_reuse_implemented": false,
+    "pinned_memory_or_async_prefetch_implemented": false
+  },
+  "source_sha256": {
+    "benchmark_script": "71c6227fc701e51f052a188dbfcd535d051da4c334e29f6f981c41fcc6ef5fe0",
+    "offload_implementation": "0cd9a3074a1eb1af63386869ab07d58950f3e75e0fd2431b2f0c3210e9a11dc9",
+    "cuda_extension": "98864faeeb6ddc39c3ccb8e588147a8577d2070201990af513a653bd2ac4d50d"
+  }
+}

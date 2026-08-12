@@ -738,6 +738,104 @@ function _qwen3_cuda_swiglu_routes_kernel!(
     return
 end
 
+@inline function _qwen3_cuda_scattered_weight(
+    pointers,
+    expert_index,
+    row_index,
+    column_index,
+    row_count,
+)
+    raw_pointer = @inbounds pointers[expert_index]
+    pointer = reinterpret(Core.LLVMPtr{BFloat16,CUDA.AS.Global}, raw_pointer)
+    linear_index = row_index + (column_index - 1) * row_count
+    return @inbounds unsafe_load(pointer, linear_index)
+end
+
+function _qwen3_cuda_scattered_swiglu_routes_kernel!(
+    hidden,
+    tokens,
+    expert_indices,
+    gate_pointers,
+    up_pointers,
+    d_model,
+    hidden_dim,
+    experts_per_token,
+    pair_count,
+)
+    linear_index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x +
+        CUDA.threadIdx().x
+    if linear_index <= hidden_dim * pair_count
+        hidden_index = (linear_index - 1) % hidden_dim + 1
+        pair_index = (linear_index - 1) ÷ hidden_dim + 1
+        token_index = (pair_index - 1) ÷ experts_per_token + 1
+        expert_index = Int(expert_indices[pair_index])
+        gate = 0.0f0
+        up = 0.0f0
+        @inbounds for input_index in 1:d_model
+            token = Float32(tokens[input_index, token_index])
+            gate = muladd(
+                Float32(_qwen3_cuda_scattered_weight(
+                    gate_pointers,
+                    expert_index,
+                    hidden_index,
+                    input_index,
+                    hidden_dim,
+                )),
+                token,
+                gate,
+            )
+            up = muladd(
+                Float32(_qwen3_cuda_scattered_weight(
+                    up_pointers,
+                    expert_index,
+                    hidden_index,
+                    input_index,
+                    hidden_dim,
+                )),
+                token,
+                up,
+            )
+        end
+        @inbounds hidden[hidden_index, pair_index] =
+            (gate / (1.0f0 + exp(-gate))) * up
+    end
+    return
+end
+
+function _qwen3_cuda_scattered_down_routes_kernel!(
+    routed_output,
+    hidden,
+    expert_indices,
+    down_pointers,
+    d_model,
+    hidden_dim,
+    pair_count,
+)
+    linear_index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x +
+        CUDA.threadIdx().x
+    if linear_index <= d_model * pair_count
+        output_index = (linear_index - 1) % d_model + 1
+        pair_index = (linear_index - 1) ÷ d_model + 1
+        expert_index = Int(expert_indices[pair_index])
+        value = 0.0f0
+        @inbounds for hidden_index in 1:hidden_dim
+            value = muladd(
+                Float32(_qwen3_cuda_scattered_weight(
+                    down_pointers,
+                    expert_index,
+                    output_index,
+                    hidden_index,
+                    d_model,
+                )),
+                hidden[hidden_index, pair_index],
+                value,
+            )
+        end
+        @inbounds routed_output[output_index, pair_index] = value
+    end
+    return
+end
+
 function _qwen3_cuda_down_routes_kernel!(
     routed_output,
     hidden,
@@ -807,6 +905,59 @@ function _qwen3_cuda_bucketed_swiglu_routes_kernel!(
     return
 end
 
+function _qwen3_cuda_scattered_bucketed_swiglu_routes_kernel!(
+    hidden,
+    tokens,
+    route_permutation,
+    sorted_experts,
+    gate_pointers,
+    up_pointers,
+    d_model,
+    hidden_dim,
+    experts_per_token,
+    pair_count,
+)
+    linear_index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x +
+        CUDA.threadIdx().x
+    if linear_index <= hidden_dim * pair_count
+        hidden_index = (linear_index - 1) % hidden_dim + 1
+        bucket_pair = (linear_index - 1) ÷ hidden_dim + 1
+        original_pair = Int(route_permutation[bucket_pair])
+        token_index = (original_pair - 1) ÷ experts_per_token + 1
+        expert_index = Int(sorted_experts[bucket_pair])
+        gate = 0.0f0
+        up = 0.0f0
+        @inbounds for input_index in 1:d_model
+            token = Float32(tokens[input_index, token_index])
+            gate = muladd(
+                Float32(_qwen3_cuda_scattered_weight(
+                    gate_pointers,
+                    expert_index,
+                    hidden_index,
+                    input_index,
+                    hidden_dim,
+                )),
+                token,
+                gate,
+            )
+            up = muladd(
+                Float32(_qwen3_cuda_scattered_weight(
+                    up_pointers,
+                    expert_index,
+                    hidden_index,
+                    input_index,
+                    hidden_dim,
+                )),
+                token,
+                up,
+            )
+        end
+        @inbounds hidden[hidden_index, bucket_pair] =
+            (gate / (1.0f0 + exp(-gate))) * up
+    end
+    return
+end
+
 function _qwen3_cuda_bucketed_down_routes_kernel!(
     routed_output,
     hidden,
@@ -828,6 +979,42 @@ function _qwen3_cuda_bucketed_down_routes_kernel!(
         @inbounds for hidden_index in 1:hidden_dim
             value = muladd(
                 Float32(down_proj[output_index, hidden_index, expert_index]),
+                hidden[hidden_index, bucket_pair],
+                value,
+            )
+        end
+        @inbounds routed_output[output_index, original_pair] = value
+    end
+    return
+end
+
+function _qwen3_cuda_scattered_bucketed_down_routes_kernel!(
+    routed_output,
+    hidden,
+    route_permutation,
+    sorted_experts,
+    down_pointers,
+    d_model,
+    hidden_dim,
+    pair_count,
+)
+    linear_index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x +
+        CUDA.threadIdx().x
+    if linear_index <= d_model * pair_count
+        output_index = (linear_index - 1) % d_model + 1
+        bucket_pair = (linear_index - 1) ÷ d_model + 1
+        original_pair = Int(route_permutation[bucket_pair])
+        expert_index = Int(sorted_experts[bucket_pair])
+        value = 0.0f0
+        @inbounds for hidden_index in 1:hidden_dim
+            value = muladd(
+                Float32(_qwen3_cuda_scattered_weight(
+                    down_pointers,
+                    expert_index,
+                    output_index,
+                    hidden_index,
+                    d_model,
+                )),
                 hidden[hidden_index, bucket_pair],
                 value,
             )
@@ -1015,6 +1202,122 @@ function _qwen3_cuda_use_bucketed_dispatch(
     num_tokens::Int,
 )
     return num_tokens >= 32 && d_model * hidden_dim >= 1_048_576
+end
+
+function LifeAI._qwen3_scattered_expert_dispatch(
+    tokens::CUDA.CuArray{Float32,2},
+    expert_indices::CUDA.CuArray{I,2},
+    routing_weights::CUDA.CuArray{R,2},
+    scattered::LifeAI._Qwen3MoEScatteredExperts,
+) where {I<:Integer,R<:AbstractFloat}
+    entries = scattered.entries
+    num_experts = length(entries)
+    num_experts > 0 || throw(ArgumentError(
+        "scattered expert dispatch requires at least one expert",
+    ))
+    d_model, num_tokens = size(tokens)
+    d_model == scattered.d_model || throw(DimensionMismatch(
+        "scattered expert d_model does not match tokens",
+    ))
+    size(expert_indices) == size(routing_weights) || throw(DimensionMismatch(
+        "compact expert indices and routing weights must have matching shapes",
+    ))
+    size(expert_indices, 2) == num_tokens || throw(DimensionMismatch(
+        "compact routing token count does not match expert input token count",
+    ))
+    experts_per_token = size(expert_indices, 1)
+    1 <= experts_per_token <= num_experts || throw(ArgumentError(
+        "compact routing route count must be in 1:num_experts",
+    ))
+    hidden_dim = scattered.hidden_dim
+    all(entries) do entry
+        entry.gate_proj isa CUDA.CuArray{BFloat16,2} &&
+            entry.up_proj isa CUDA.CuArray{BFloat16,2} &&
+            entry.down_proj isa CUDA.CuArray{BFloat16,2} &&
+            size(entry.gate_proj) == (hidden_dim, d_model) &&
+            size(entry.up_proj) == (hidden_dim, d_model) &&
+            size(entry.down_proj) == (d_model, hidden_dim)
+    end || throw(ArgumentError(
+        "scattered CUDA dispatch requires consistently shaped BF16 CuMatrix experts",
+    ))
+
+    gate_pointers = CUDA.cu(CUDA.CuPtr{BFloat16}[
+        pointer(entry.gate_proj)
+        for entry in entries
+    ])
+    up_pointers = CUDA.cu(CUDA.CuPtr{BFloat16}[
+        pointer(entry.up_proj)
+        for entry in entries
+    ])
+    down_pointers = CUDA.cu(CUDA.CuPtr{BFloat16}[
+        pointer(entry.down_proj)
+        for entry in entries
+    ])
+    pointer_bytes_uploaded = 3 * num_experts * sizeof(CUDA.CuPtr{BFloat16})
+    pair_count = experts_per_token * num_tokens
+    hidden = similar(tokens, Float32, hidden_dim, pair_count)
+    routed_output = similar(tokens, Float32, d_model, pair_count)
+    output = similar(tokens, Float32, d_model, num_tokens)
+    threads = 256
+    hidden_blocks = cld(hidden_dim * pair_count, threads)
+    down_blocks = cld(d_model * pair_count, threads)
+    combine_blocks = cld(d_model * num_tokens, threads)
+
+    if _qwen3_cuda_use_bucketed_dispatch(d_model, hidden_dim, num_tokens)
+        buckets = qwen3_cuda_bucket_routes(expert_indices, num_experts)
+        CUDA.@cuda threads=threads blocks=hidden_blocks _qwen3_cuda_scattered_bucketed_swiglu_routes_kernel!(
+            hidden,
+            tokens,
+            buckets.route_permutation,
+            buckets.sorted_experts,
+            gate_pointers,
+            up_pointers,
+            d_model,
+            hidden_dim,
+            experts_per_token,
+            pair_count,
+        )
+        CUDA.@cuda threads=threads blocks=down_blocks _qwen3_cuda_scattered_bucketed_down_routes_kernel!(
+            routed_output,
+            hidden,
+            buckets.route_permutation,
+            buckets.sorted_experts,
+            down_pointers,
+            d_model,
+            hidden_dim,
+            pair_count,
+        )
+    else
+        CUDA.@cuda threads=threads blocks=hidden_blocks _qwen3_cuda_scattered_swiglu_routes_kernel!(
+            hidden,
+            tokens,
+            expert_indices,
+            gate_pointers,
+            up_pointers,
+            d_model,
+            hidden_dim,
+            experts_per_token,
+            pair_count,
+        )
+        CUDA.@cuda threads=threads blocks=down_blocks _qwen3_cuda_scattered_down_routes_kernel!(
+            routed_output,
+            hidden,
+            expert_indices,
+            down_pointers,
+            d_model,
+            hidden_dim,
+            pair_count,
+        )
+    end
+    CUDA.@cuda threads=threads blocks=combine_blocks _qwen3_cuda_combine_routes_kernel!(
+        output,
+        routed_output,
+        routing_weights,
+        d_model,
+        num_tokens,
+        experts_per_token,
+    )
+    return (; output, pointer_bytes_uploaded)
 end
 
 function qwen3_device_sparse_expert_dispatch(

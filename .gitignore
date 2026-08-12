@@ -42,3 +42,6 @@ benchmark_results/qwen3_moe_cuda_expert_cache/*
 !benchmark_results/qwen3_moe_cuda_layer_balanced_cache/
 benchmark_results/qwen3_moe_cuda_layer_balanced_cache/*
 !benchmark_results/qwen3_moe_cuda_layer_balanced_cache/summary.json
+!benchmark_results/qwen3_moe_cuda_scattered_cache/
+benchmark_results/qwen3_moe_cuda_scattered_cache/*
+!benchmark_results/qwen3_moe_cuda_scattered_cache/summary.json

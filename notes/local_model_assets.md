@@ -959,3 +959,22 @@ greedy decode 1 token；文本、token ids 与 tokenizer SHA256 均写入报告�
 8 GiB 时 layer-balanced 相对 global 少读 `18.71%`、加速 `1.082×`；冻结
 trace 推荐 4 GiB，因为它只比 balanced 8 GiB 慢 `1.48%`，却保留
 `7,440,629,760` bytes GPU free。该推荐不泛化到任意 workload。
+
+Chapter 28 复用同一 BF16 reference 和 8 GiB cache，在一次 resident load 中
+依次比较 materialized/scattered dispatch 与 1/8/0 层 forced-GC interval：
+
+```bash
+julia --project=. \
+  scripts/benchmark_qwen3_moe_cuda_scattered_cache.jl \
+  MODEL_DIR \
+  MODEL_DIR/lifeai-references/chapter24-real-parity/bfloat16 \
+  /tmp/qwen3_moe_cuda_scattered_cache.json
+```
+
+脚本默认对 `scattered + gc0` 额外运行 100 次全命中请求，用于发现用显存回收
+换最低单次延迟的问题；可通过 `LIFEAI_MOE_SCATTERED_REPEAT_HITS` 改变次数。
+精简摘要位于 `benchmark_results/qwen3_moe_cuda_scattered_cache/summary.json`：
+推荐 `scattered + gc8` 将冻结 hit request 从 `12.477 s` 降到 `0.151 s`
+（`82.89×`），同时消除 `10,550,771,712` active materialization bytes。
+`gc0` 的 100 次结果虽中位 `0.109 s`，但 allocator free 下降 `0.9375 GiB`，
+因此只保留为负面证据，不作为长期服务建议。

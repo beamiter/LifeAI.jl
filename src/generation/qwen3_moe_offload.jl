@@ -147,6 +147,8 @@ mutable struct HFQwen3MoEOffloadSession
     expert_bytes_uploaded::Int
     expert_cache_budget_bytes::Int
     expert_cache_policy::Symbol
+    expert_cache_dispatch::Symbol
+    expert_gc_interval_layers::Int
     expert_cache_bytes::Int
     expert_cache_peak_bytes::Int
     expert_cache::Dict{Tuple{Int,Int},Any}
@@ -155,6 +157,11 @@ mutable struct HFQwen3MoEOffloadSession
     expert_cache_hits::Int
     expert_cache_misses::Int
     expert_cache_evictions::Int
+    expert_active_materializations::Int
+    expert_active_materialization_bytes::Int
+    expert_scattered_dispatches::Int
+    expert_pointer_bytes_uploaded::Int
+    expert_forced_gc_calls::Int
 end
 
 struct _Qwen3MoEExpertCacheEntry
@@ -164,10 +171,18 @@ struct _Qwen3MoEExpertCacheEntry
     bytes::Int
 end
 
+struct _Qwen3MoEScatteredExperts
+    entries::Vector{_Qwen3MoEExpertCacheEntry}
+    hidden_dim::Int
+    d_model::Int
+end
+
 function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
     return (;
         budget_bytes=session.expert_cache_budget_bytes,
         policy=session.expert_cache_policy,
+        dispatch=session.expert_cache_dispatch,
+        gc_interval_layers=session.expert_gc_interval_layers,
         current_bytes=session.expert_cache_bytes,
         peak_bytes=session.expert_cache_peak_bytes,
         entries=length(session.expert_cache),
@@ -176,7 +191,20 @@ function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
         evictions=session.expert_cache_evictions,
         bytes_read=session.expert_bytes_read,
         bytes_uploaded=session.expert_bytes_uploaded,
+        active_materializations=session.expert_active_materializations,
+        active_materialization_bytes=
+            session.expert_active_materialization_bytes,
+        scattered_dispatches=session.expert_scattered_dispatches,
+        pointer_bytes_uploaded=session.expert_pointer_bytes_uploaded,
+        forced_gc_calls=session.expert_forced_gc_calls,
     )
+end
+
+function _qwen3_moe_validate_expert_cache_dispatch(dispatch::Symbol)
+    dispatch in (:materialized, :scattered) || throw(ArgumentError(
+        "expert_cache_dispatch must be :materialized or :scattered",
+    ))
+    return dispatch
 end
 
 function _qwen3_moe_validate_expert_cache_policy(policy::Symbol)
@@ -194,7 +222,69 @@ function _qwen3_moe_reset_expert_traffic!(
     session.expert_cache_hits = 0
     session.expert_cache_misses = 0
     session.expert_cache_evictions = 0
+    session.expert_active_materializations = 0
+    session.expert_active_materialization_bytes = 0
+    session.expert_scattered_dispatches = 0
+    session.expert_pointer_bytes_uploaded = 0
+    session.expert_forced_gc_calls = 0
     return session
+end
+
+function _qwen3_moe_materialize_active_experts(
+    session::HFQwen3MoEOffloadSession,
+    scattered::_Qwen3MoEScatteredExperts,
+)
+    parameters = (;
+        gate_proj=cat((
+            reshape(
+                entry.gate_proj,
+                scattered.hidden_dim,
+                scattered.d_model,
+                1,
+            )
+            for entry in scattered.entries
+        )...; dims=3),
+        up_proj=cat((
+            reshape(
+                entry.up_proj,
+                scattered.hidden_dim,
+                scattered.d_model,
+                1,
+            )
+            for entry in scattered.entries
+        )...; dims=3),
+        down_proj=cat((
+            reshape(
+                entry.down_proj,
+                scattered.d_model,
+                scattered.hidden_dim,
+                1,
+            )
+            for entry in scattered.entries
+        )...; dims=3),
+    )
+    bytes = sum(entry.bytes for entry in scattered.entries)
+    session.expert_active_materializations = Base.checked_add(
+        session.expert_active_materializations,
+        1,
+    )
+    session.expert_active_materialization_bytes = Base.checked_add(
+        session.expert_active_materialization_bytes,
+        bytes,
+    )
+    return parameters
+end
+
+# Portable devices retain the materialized dispatch. LifeAICUDAExt specializes
+# this hook to index cached expert matrices through a compact device pointer
+# table and returns `(output, pointer_bytes_uploaded)`.
+function _qwen3_scattered_expert_dispatch(
+    tokens,
+    expert_indices,
+    routing_weights,
+    scattered::_Qwen3MoEScatteredExperts,
+)
+    return nothing
 end
 
 """
@@ -216,27 +306,45 @@ function clear_hf_qwen3_moe_expert_cache!(
 end
 
 """
-    configure_hf_qwen3_moe_expert_cache!(session; budget_bytes, policy)
+    configure_hf_qwen3_moe_expert_cache!(
+        session; budget_bytes, policy, dispatch, gc_interval_layers)
 
 Clear the existing expert cache and reconfigure its byte budget and eviction
 policy while retaining the resident model, static KV buffers and compiled
 kernels. `:global_lru` preserves the original policy;
 `:layer_balanced_lru` reserves an approximately equal number of expert slots
-per decoder layer to resist sequential layer-scan thrashing.
+per decoder layer to resist sequential layer-scan thrashing. Dispatch and
+forced-GC cadence can be changed in the same cold-cache transition.
 """
 function configure_hf_qwen3_moe_expert_cache!(
     session::HFQwen3MoEOffloadSession;
     budget_bytes::Integer=session.expert_cache_budget_bytes,
     policy::Symbol=session.expert_cache_policy,
+    dispatch::Symbol=session.expert_cache_dispatch,
+    gc_interval_layers::Integer=session.expert_gc_interval_layers,
 )
     budget = Int(budget_bytes)
     budget >= 0 || throw(ArgumentError(
         "expert cache budget_bytes must be non-negative",
     ))
     validated_policy = _qwen3_moe_validate_expert_cache_policy(policy)
+    validated_dispatch = _qwen3_moe_validate_expert_cache_dispatch(dispatch)
+    gc_interval = Int(gc_interval_layers)
+    gc_interval >= 0 || throw(ArgumentError(
+        "expert cache gc_interval_layers must be non-negative",
+    ))
+    validated_dispatch === :scattered && session.grouped_experts &&
+        throw(ArgumentError(
+            "scattered expert cache dispatch does not support grouped experts",
+        ))
+    validated_dispatch === :scattered && budget == 0 && throw(ArgumentError(
+        "scattered expert cache dispatch requires a positive cache budget",
+    ))
     clear_hf_qwen3_moe_expert_cache!(session)
     session.expert_cache_budget_bytes = budget
     session.expert_cache_policy = validated_policy
+    session.expert_cache_dispatch = validated_dispatch
+    session.expert_gc_interval_layers = gc_interval
     return session
 end
 
@@ -487,22 +595,22 @@ function _qwen3_moe_load_active_experts(
         )
         for expert in active_experts
     ]
-    parameters = (;
-        gate_proj=cat((
-            reshape(entry.gate_proj, hidden_dim, d_model, 1)
-            for entry in entries
-        )...; dims=3),
-        up_proj=cat((
-            reshape(entry.up_proj, hidden_dim, d_model, 1)
-            for entry in entries
-        )...; dims=3),
-        down_proj=cat((
-            reshape(entry.down_proj, d_model, hidden_dim, 1)
-            for entry in entries
-        )...; dims=3),
-    )
-    GC.gc(false)
-    return parameters
+    return _Qwen3MoEScatteredExperts(entries, hidden_dim, d_model)
+end
+
+function _qwen3_moe_maybe_collect!(
+    session::HFQwen3MoEOffloadSession,
+    layer_index::Int,
+)
+    interval = session.expert_gc_interval_layers
+    if interval > 0 && layer_index % interval == 0
+        GC.gc(false)
+        session.expert_forced_gc_calls = Base.checked_add(
+            session.expert_forced_gc_calls,
+            1,
+        )
+    end
+    return nothing
 end
 
 function _qwen3_moe_offload_block(
@@ -579,33 +687,61 @@ function _qwen3_moe_offload_block(
     host_routes = Array(routed.expert_indices)
     remapped = _qwen3_local_expert_routes(host_routes, model.num_experts)
     local_indices = session.to_device(remapped.local_indices)
-    expert_parameters = _qwen3_moe_load_active_experts(
+    loaded_experts = _qwen3_moe_load_active_experts(
         session,
         remapped.active_experts,
         layer_index - 1,
     )
     expert_tokens = reshape(_bf16a_f32(normed2), model.d_model, :)
-    expert_output = if session.grouped_experts
-        _qwen3_grouped_bf16_expert_dispatch(
+    scattered_result = if loaded_experts isa _Qwen3MoEScatteredExperts &&
+            session.expert_cache_dispatch === :scattered
+        _qwen3_scattered_expert_dispatch(
             expert_tokens,
             local_indices,
             routed.routing_weights,
-            expert_parameters,
+            loaded_experts,
         )
     else
-        qwen3_device_sparse_expert_dispatch(
-            expert_tokens,
-            local_indices,
-            routed.routing_weights,
-            expert_parameters,
+        nothing
+    end
+    expert_output = if scattered_result !== nothing
+        session.expert_scattered_dispatches = Base.checked_add(
+            session.expert_scattered_dispatches,
+            1,
         )
+        session.expert_pointer_bytes_uploaded = Base.checked_add(
+            session.expert_pointer_bytes_uploaded,
+            scattered_result.pointer_bytes_uploaded,
+        )
+        scattered_result.output
+    else
+        expert_parameters = loaded_experts isa _Qwen3MoEScatteredExperts ?
+            _qwen3_moe_materialize_active_experts(
+                session,
+                loaded_experts,
+            ) : loaded_experts
+        if session.grouped_experts
+            _qwen3_grouped_bf16_expert_dispatch(
+                expert_tokens,
+                local_indices,
+                routed.routing_weights,
+                expert_parameters,
+            )
+        else
+            qwen3_device_sparse_expert_dispatch(
+                expert_tokens,
+                local_indices,
+                routed.routing_weights,
+                expert_parameters,
+            )
+        end
     end
     output = BFloat16.(
         _bf16a_f32(residual) .+
         reshape(expert_output, model.d_model, num_tokens, batch_size)
     )
-    expert_parameters = nothing
-    GC.gc(false)
+    loaded_experts = nothing
+    _qwen3_moe_maybe_collect!(session, layer_index)
     return output, updated_cache, remapped.active_experts
 end
 
@@ -670,7 +806,11 @@ BF16 tensor-core extension when available. A positive
 `(one_based_layer, one_based_expert)`; the default zero preserves pure
 streaming. `expert_cache_policy=:global_lru` preserves the original policy;
 `:layer_balanced_lru` partitions entry capacity across layers to resist
-sequential scan thrashing. Request reset retains cached experts, while
+sequential scan thrashing. `expert_cache_dispatch=:scattered` lets supported
+accelerators index cached expert matrices through device pointers instead of
+materializing an active 3D tensor. `expert_gc_interval_layers` controls forced
+GC frequency (`1` preserves the original per-layer behavior; `0` disables
+forced GC). Request reset retains cached experts, while
 `clear_hf_qwen3_moe_expert_cache!` releases their logical ownership.
 """
 function load_hf_qwen3_moe_offload_session(
@@ -680,6 +820,8 @@ function load_hf_qwen3_moe_offload_session(
     grouped_experts::Bool=true,
     expert_cache_budget_bytes::Integer=0,
     expert_cache_policy::Symbol=:global_lru,
+    expert_cache_dispatch::Symbol=:materialized,
+    expert_gc_interval_layers::Integer=1,
     to_device=identity,
     on_resident_layer=nothing,
 )
@@ -692,6 +834,10 @@ function load_hf_qwen3_moe_offload_session(
     cache_policy = _qwen3_moe_validate_expert_cache_policy(
         expert_cache_policy,
     )
+    cache_dispatch = _qwen3_moe_validate_expert_cache_dispatch(
+        expert_cache_dispatch,
+    )
+    gc_interval = Int(expert_gc_interval_layers)
     config = load_hf_qwen3_moe_config(
         joinpath(model_dir, "config.json");
         max_seq_len=context,
@@ -703,6 +849,15 @@ function load_hf_qwen3_moe_offload_session(
     ))
     cache_budget >= 0 || throw(ArgumentError(
         "expert_cache_budget_bytes must be non-negative",
+    ))
+    gc_interval >= 0 || throw(ArgumentError(
+        "expert_gc_interval_layers must be non-negative",
+    ))
+    cache_dispatch === :scattered && grouped_experts && throw(ArgumentError(
+        "scattered expert cache dispatch does not support grouped_experts=true",
+    ))
+    cache_dispatch === :scattered && cache_budget == 0 && throw(ArgumentError(
+        "scattered expert cache dispatch requires a positive cache budget",
     ))
     reader = open_safetensors_reader(model_dir)
     _qwen3_validate_moe_tensor_names(
@@ -780,10 +935,17 @@ function load_hf_qwen3_moe_offload_session(
         0,
         cache_budget,
         cache_policy,
+        cache_dispatch,
+        gc_interval,
         0,
         0,
         Dict{Tuple{Int,Int},Any}(),
         Dict{Tuple{Int,Int},Int}(),
+        0,
+        0,
+        0,
+        0,
+        0,
         0,
         0,
         0,

@@ -163,6 +163,14 @@ end
             "qwen3_moe_layer_balanced_cache_test.jl",
         ))
     end
+
+    @testset "Chapter 28 — Qwen3 MoE scattered cache" begin
+        include(chapter_test(
+            "episode06_qwen3_moe_and_model_expansion",
+            "chapter28_qwen3_moe_scattered_cache",
+            "qwen3_moe_scattered_cache_test.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
@@ -183,5 +191,6 @@ end
 if lowercase(get(ENV, "LIFEAI_TEST_CUDA", "false")) in ("1", "true", "yes")
     @testset "CUDA episode extensions" begin
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter24_qwen3_moe_architecture", "qwen3_moe_device_sparse_dispatch_cuda_test.jl"))
+        include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter28_qwen3_moe_scattered_cache", "qwen3_moe_scattered_cache_cuda_test.jl"))
     end
 end
