@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-08-12",
+  "model_id": "Qwen/Qwen3-30B-A3B",
+  "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+  "compute_dtype": "bfloat16",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090 D",
+    "compute_capability": "8.9",
+    "free_before_bytes": 23787208704,
+    "free_ready_bytes": 17320247296
+  },
+  "session": {
+    "context_tokens": 40960,
+    "prompt_tokens": 2,
+    "decode_tokens": 1,
+    "cache_budget_bytes": 8589934592,
+    "cache_policy": "global_lru",
+    "dispatch": "scattered",
+    "load_seconds": 14.821901675
+  },
+  "reuse_state": {
+    "pointer_plans_per_layer_limit": 4,
+    "workspace_shapes_limit": 4,
+    "pointer_plan_signature": "ordered expert ids plus monotonic entry generations",
+    "cache_clear_invalidates_state": true,
+    "pointer_table_bytes": 26832,
+    "workspace_bytes": 294912,
+    "retains_expert_tensor_owners": false
+  },
+  "configurations": {
+    "scattered_reuse_gc8": {
+      "gc_interval_layers": 8,
+      "fill_pointer_table_builds": 96,
+      "fill_pointer_table_reuses": 0,
+      "fill_workspace_allocations": 2,
+      "fill_workspace_reuses": 94,
+      "hit_request_seconds": 0.169752492,
+      "hit_expert_bytes_read": 0,
+      "hit_expert_bytes_uploaded": 0,
+      "hit_pointer_bytes_uploaded": 0,
+      "hit_pointer_table_builds": 0,
+      "hit_pointer_table_reuses": 96,
+      "hit_workspace_allocations": 0,
+      "hit_workspace_reuses": 96,
+      "hit_forced_gc_calls": 12,
+      "repeat_count": 100,
+      "repeat_request_seconds_median": 0.180437112,
+      "repeat_request_seconds_p95": 0.20083423895,
+      "repeat_request_seconds_maximum": 0.483239793,
+      "repeat_exact": true,
+      "repeat_zero_io": true,
+      "repeat_pointer_reuse_only": true,
+      "repeat_workspace_reuse_only": true,
+      "gpu_free_before_repeats_bytes": 8751153152,
+      "gpu_free_after_repeats_bytes": 8838184960,
+      "gpu_free_after_reclaim_bytes": 8848736256,
+      "allocator_free_drift_bytes": 87031808,
+      "live_free_drift_after_reclaim_bytes": 97583104,
+      "fill_vs_hit_exact": true
+    },
+    "scattered_reuse_gc0": {
+      "gc_interval_layers": 0,
+      "hit_request_seconds": 0.13605053,
+      "hit_expert_bytes_read": 0,
+      "hit_expert_bytes_uploaded": 0,
+      "hit_pointer_bytes_uploaded": 0,
+      "hit_pointer_table_builds": 0,
+      "hit_pointer_table_reuses": 96,
+      "hit_workspace_allocations": 0,
+      "hit_workspace_reuses": 96,
+      "hit_forced_gc_calls": 0,
+      "repeat_count": 500,
+      "repeat_request_seconds_median": 0.149057997,
+      "repeat_request_seconds_p95": 0.28329971065,
+      "repeat_request_seconds_maximum": 0.758368522,
+      "repeat_exact": true,
+      "repeat_zero_io": true,
+      "repeat_pointer_reuse_only": true,
+      "repeat_workspace_reuse_only": true,
+      "gpu_free_before_repeats_bytes": 8870035456,
+      "gpu_free_after_repeats_bytes": 7984119808,
+      "gpu_free_after_reclaim_bytes": 8935571456,
+      "allocator_free_drift_bytes": -885915648,
+      "live_free_drift_after_reclaim_bytes": 65536000,
+      "fill_vs_hit_exact": true
+    }
+  },
+  "comparisons": {
+    "chapter29_hit_over_chapter28_hit": {
+      "pointer_bytes_uploaded_reduction": 26832,
+      "pointer_table_build_reduction": 96,
+      "workspace_allocation_reduction": 96,
+      "latency_speedup_claimed": false
+    },
+    "gc0_over_gc8": {
+      "repeat_median_speedup": 1.2105161456047207,
+      "allocator_free_drift_delta_bytes": -972947456,
+      "maximum_latency_delta_seconds": 0.275128729
+    },
+    "chapter29_gc0_over_chapter28_gc0": {
+      "repeat_count": 500,
+      "chapter28_repeat_count": 100,
+      "chapter28_allocator_free_drift_bytes": -1006632960,
+      "chapter29_allocator_free_drift_bytes": -885915648,
+      "chapter29_live_free_drift_after_reclaim_bytes": 65536000
+    }
+  },
+  "correctness": {
+    "all_fill_vs_hit_exact": true,
+    "cross_configuration_exact": true,
+    "prefill_logits_max_abs": 0.3125,
+    "prefill_argmax_match": true,
+    "decode_logits_max_abs": 0.25,
+    "decode_argmax_match": true
+  },
+  "decision": {
+    "recommended_frozen_workload_dispatch": "scattered",
+    "recommended_frozen_workload_gc_interval_layers": 8,
+    "reason": "gc8 kept all 100 requests on the bounded reuse path with stable checkpointed free memory; gc0 recovered after explicit reclaim but accumulated 885915648 allocator bytes and retained a 0.758 s tail",
+    "gc0_live_leak_observed": false,
+    "gc0_long_running_recommended": false,
+    "pointer_and_workspace_reuse_enabled_implicitly": true,
+    "arbitrary_long_workload_stability_guaranteed": false,
+    "route_attention_workspace_reuse_implemented": false,
+    "pinned_memory_or_async_prefetch_implemented": false
+  },
+  "source_sha256": {
+    "benchmark_script": "d1ea17ac90a65eca67233fd3e2794d6f5053c37c05585d363d3d4c9f25d0fda3",
+    "offload_implementation": "42a491bf6b6bd4355bd1a666a5a695f756b8e192c8a95a2d5058eea1b9161ce3",
+    "cuda_extension": "7ebd589c467902170233efb0bbb2197bd3f541c3e695a05f8a93b430e8b363e5"
+  }
+}

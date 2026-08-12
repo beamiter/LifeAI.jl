@@ -16,7 +16,8 @@ test/
         ├── chapter25_qwen3_moe_gpu_offload/
         ├── chapter26_qwen3_moe_expert_cache/
         ├── chapter27_qwen3_moe_layer_balanced_cache/
-        └── chapter28_qwen3_moe_scattered_cache/
+        ├── chapter28_qwen3_moe_scattered_cache/
+        └── chapter29_qwen3_moe_scattered_reuse/
 ```
 
 ## Chapter 索引
@@ -51,6 +52,7 @@ test/
 | 06 | 26 | byte-budgeted device expert LRU、跨请求命中、显式清空与真实 30B I/O/latency 证据 |
 | 06 | 27 | scan-resistant layer-balanced LRU、运行时预算重配与自然文本 cache sweep |
 | 06 | 28 | CUDA scattered pointer-table dispatch、active tensor materialization/GC 消除 |
+| 06 | 29 | scattered pointer-table/workspace 有界复用、cache clear 失效与长期命中生命周期 |
 
 `fixtures/` 只存在于拥有该证据的 Chapter 目录中。跨 Chapter 复用 fixture 时，
 测试显式引用其原始 Chapter，不复制第二份数据。`support/` 只存放无独立产品能力

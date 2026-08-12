@@ -45,7 +45,7 @@ const QWEN3_MOE_SCATTERED_CUDA_FIXTURE = joinpath(
     @test scattered_hit.expert_cache.active_materializations == 0
     @test scattered_hit.expert_cache.active_materialization_bytes == 0
     @test scattered_hit.expert_cache.scattered_dispatches == 2
-    @test scattered_hit.expert_cache.pointer_bytes_uploaded == 192
+    @test scattered_first.expert_cache.pointer_bytes_uploaded == 192
     @test scattered_hit.expert_cache.forced_gc_calls == 0
     @test materialized_hit.expert_cache.active_materializations == 2
     @test materialized_hit.expert_cache.active_materialization_bytes == 8 * 144

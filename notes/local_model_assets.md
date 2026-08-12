@@ -978,3 +978,22 @@ julia --project=. \
 （`82.89×`），同时消除 `10,550,771,712` active materialization bytes。
 `gc0` 的 100 次结果虽中位 `0.109 s`，但 allocator free 下降 `0.9375 GiB`，
 因此只保留为负面证据，不作为长期服务建议。
+
+Chapter 29 在同一 session contract 上验证有界 pointer-plan/workspace reuse；默认
+运行 `gc8 × 100` 和 `gc0 × 500` 次全命中请求：
+
+```bash
+julia --project=. \
+  scripts/benchmark_qwen3_moe_cuda_scattered_reuse.jl \
+  MODEL_DIR \
+  MODEL_DIR/lifeai-references/chapter24-real-parity/bfloat16 \
+  /tmp/qwen3_moe_cuda_scattered_reuse.json
+```
+
+可用 `LIFEAI_MOE_REUSE_GC8_REPEATS` 和 `LIFEAI_MOE_REUSE_GC0_REPEATS`
+调整窗口。每 1/10 窗口记录一次 GPU free，末尾同步后再显式 GC/reclaim，从而
+区分 allocator pool 高水位和 live leak。冻结摘要位于
+`benchmark_results/qwen3_moe_cuda_scattered_reuse/summary.json`：真实 hit 的
+96 次调用均零 pointer build/upload 与 workspace allocation；`gc8` 100 次 free
+不下降。`gc0` 500 次运行中 pool 扩张 `885,915,648` bytes，但 reclaim 后完全
+恢复，说明没有 live leak、仍存在尾延迟/高水位，长期建议继续使用 `gc8`。

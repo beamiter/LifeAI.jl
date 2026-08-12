@@ -1204,11 +1204,145 @@ function _qwen3_cuda_use_bucketed_dispatch(
     return num_tokens >= 32 && d_model * hidden_dim >= 1_048_576
 end
 
+struct _Qwen3CUDAScatteredPointerPlan
+    expert_ids::Vector{Int}
+    generations::Vector{Int}
+    gate_host::Vector{CUDA.CuPtr{BFloat16}}
+    up_host::Vector{CUDA.CuPtr{BFloat16}}
+    down_host::Vector{CUDA.CuPtr{BFloat16}}
+    gate_device
+    up_device
+    down_device
+    bytes::Int
+end
+
+struct _Qwen3CUDAScatteredWorkspace
+    hidden
+    routed_output
+    output
+    bytes::Int
+end
+
+mutable struct _Qwen3CUDAScatteredDispatchState
+    pointer_plans::Dict{Int,Vector{_Qwen3CUDAScatteredPointerPlan}}
+    workspaces::Dict{Tuple{Int,Int},_Qwen3CUDAScatteredWorkspace}
+    workspace_last_used::Dict{Tuple{Int,Int},Int}
+    clock::Int
+    pointer_table_bytes::Int
+    workspace_bytes::Int
+end
+
+_qwen3_cuda_scattered_state() = _Qwen3CUDAScatteredDispatchState(
+    Dict{Int,Vector{_Qwen3CUDAScatteredPointerPlan}}(),
+    Dict{Tuple{Int,Int},_Qwen3CUDAScatteredWorkspace}(),
+    Dict{Tuple{Int,Int},Int}(),
+    0,
+    0,
+    0,
+)
+
+function _qwen3_cuda_scattered_pointer_plan!(
+    state::_Qwen3CUDAScatteredDispatchState,
+    layer_index::Int,
+    expert_ids::Vector{Int},
+    generations::Vector{Int},
+    entries,
+)
+    plans = get!(state.pointer_plans, layer_index) do
+        _Qwen3CUDAScatteredPointerPlan[]
+    end
+    plan_index = findfirst(plans) do plan
+        plan.expert_ids == expert_ids &&
+            plan.generations == generations
+    end
+    if plan_index !== nothing
+        return plans[plan_index], false, true
+    end
+
+    gate_host = CUDA.CuPtr{BFloat16}[
+        pointer(entry.gate_proj)
+        for entry in entries
+    ]
+    up_host = CUDA.CuPtr{BFloat16}[
+        pointer(entry.up_proj)
+        for entry in entries
+    ]
+    down_host = CUDA.CuPtr{BFloat16}[
+        pointer(entry.down_proj)
+        for entry in entries
+    ]
+    bytes = 3 * length(entries) * sizeof(CUDA.CuPtr{BFloat16})
+    plan = _Qwen3CUDAScatteredPointerPlan(
+        copy(expert_ids),
+        copy(generations),
+        gate_host,
+        up_host,
+        down_host,
+        CUDA.cu(gate_host),
+        CUDA.cu(up_host),
+        CUDA.cu(down_host),
+        bytes,
+    )
+    if length(plans) >= 4
+        evicted = popfirst!(plans)
+        state.pointer_table_bytes -= evicted.bytes
+    end
+    push!(plans, plan)
+    state.pointer_table_bytes = Base.checked_add(
+        state.pointer_table_bytes,
+        bytes,
+    )
+    return plan, true, false
+end
+
+function _qwen3_cuda_scattered_workspace!(
+    state::_Qwen3CUDAScatteredDispatchState,
+    tokens,
+    hidden_dim::Int,
+    pair_count::Int,
+)
+    d_model, num_tokens = size(tokens)
+    key = (num_tokens, pair_count)
+    state.clock = Base.checked_add(state.clock, 1)
+    existing = get(state.workspaces, key, nothing)
+    if existing !== nothing
+        state.workspace_last_used[key] = state.clock
+        return existing, false, true
+    end
+
+    if length(state.workspaces) >= 4
+        victim = argmin(state.workspace_last_used)
+        evicted = pop!(state.workspaces, victim)
+        delete!(state.workspace_last_used, victim)
+        state.workspace_bytes -= evicted.bytes
+    end
+    hidden = similar(tokens, Float32, hidden_dim, pair_count)
+    routed_output = similar(tokens, Float32, d_model, pair_count)
+    output = similar(tokens, Float32, d_model, num_tokens)
+    bytes = sizeof(Float32) * (
+        hidden_dim * pair_count +
+        d_model * pair_count +
+        d_model * num_tokens
+    )
+    workspace = _Qwen3CUDAScatteredWorkspace(
+        hidden,
+        routed_output,
+        output,
+        bytes,
+    )
+    state.workspaces[key] = workspace
+    state.workspace_last_used[key] = state.clock
+    state.workspace_bytes = Base.checked_add(state.workspace_bytes, bytes)
+    return workspace, true, false
+end
+
 function LifeAI._qwen3_scattered_expert_dispatch(
     tokens::CUDA.CuArray{Float32,2},
     expert_indices::CUDA.CuArray{I,2},
     routing_weights::CUDA.CuArray{R,2},
     scattered::LifeAI._Qwen3MoEScatteredExperts,
+    existing_state,
+    layer_index::Int,
 ) where {I<:Integer,R<:AbstractFloat}
     entries = scattered.entries
     num_experts = length(entries)
@@ -1241,23 +1375,31 @@ function LifeAI._qwen3_scattered_expert_dispatch(
         "scattered CUDA dispatch requires consistently shaped BF16 CuMatrix experts",
     ))
 
-    gate_pointers = CUDA.cu(CUDA.CuPtr{BFloat16}[
-        pointer(entry.gate_proj)
-        for entry in entries
-    ])
-    up_pointers = CUDA.cu(CUDA.CuPtr{BFloat16}[
-        pointer(entry.up_proj)
-        for entry in entries
-    ])
-    down_pointers = CUDA.cu(CUDA.CuPtr{BFloat16}[
-        pointer(entry.down_proj)
-        for entry in entries
-    ])
-    pointer_bytes_uploaded = 3 * num_experts * sizeof(CUDA.CuPtr{BFloat16})
+    state = existing_state isa _Qwen3CUDAScatteredDispatchState ?
+        existing_state : _qwen3_cuda_scattered_state()
+    pointer_plan, pointer_table_built, pointer_table_reused =
+        _qwen3_cuda_scattered_pointer_plan!(
+            state,
+            layer_index,
+            scattered.expert_ids,
+            scattered.generations,
+            entries,
+        )
+    gate_pointers = pointer_plan.gate_device
+    up_pointers = pointer_plan.up_device
+    down_pointers = pointer_plan.down_device
+    pointer_bytes_uploaded = pointer_table_built ? pointer_plan.bytes : 0
     pair_count = experts_per_token * num_tokens
-    hidden = similar(tokens, Float32, hidden_dim, pair_count)
-    routed_output = similar(tokens, Float32, d_model, pair_count)
-    output = similar(tokens, Float32, d_model, num_tokens)
+    workspace, workspace_allocated, workspace_reused =
+        _qwen3_cuda_scattered_workspace!(
+            state,
+            tokens,
+            hidden_dim,
+            pair_count,
+        )
+    hidden = workspace.hidden
+    routed_output = workspace.routed_output
+    output = workspace.output
     threads = 256
     hidden_blocks = cld(hidden_dim * pair_count, threads)
     down_blocks = cld(d_model * pair_count, threads)
@@ -1317,7 +1459,17 @@ function LifeAI._qwen3_scattered_expert_dispatch(
         num_tokens,
         experts_per_token,
     )
-    return (; output, pointer_bytes_uploaded)
+    return (;
+        output,
+        state,
+        pointer_bytes_uploaded,
+        pointer_table_built,
+        pointer_table_reused,
+        workspace_allocated,
+        workspace_reused,
+        pointer_table_bytes=state.pointer_table_bytes,
+        workspace_bytes=state.workspace_bytes,
+    )
 end
 
 function qwen3_device_sparse_expert_dispatch(

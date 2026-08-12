@@ -154,6 +154,7 @@ mutable struct HFQwen3MoEOffloadSession
     expert_cache::Dict{Tuple{Int,Int},Any}
     expert_cache_last_used::Dict{Tuple{Int,Int},Int}
     expert_cache_clock::Int
+    expert_cache_entry_generation::Int
     expert_cache_hits::Int
     expert_cache_misses::Int
     expert_cache_evictions::Int
@@ -162,6 +163,13 @@ mutable struct HFQwen3MoEOffloadSession
     expert_scattered_dispatches::Int
     expert_pointer_bytes_uploaded::Int
     expert_forced_gc_calls::Int
+    expert_scattered_state
+    expert_pointer_table_builds::Int
+    expert_pointer_table_reuses::Int
+    expert_workspace_allocations::Int
+    expert_workspace_reuses::Int
+    expert_pointer_table_bytes::Int
+    expert_workspace_bytes::Int
 end
 
 struct _Qwen3MoEExpertCacheEntry
@@ -169,9 +177,12 @@ struct _Qwen3MoEExpertCacheEntry
     up_proj
     down_proj
     bytes::Int
+    generation::Int
 end
 
 struct _Qwen3MoEScatteredExperts
+    expert_ids::Vector{Int}
+    generations::Vector{Int}
     entries::Vector{_Qwen3MoEExpertCacheEntry}
     hidden_dim::Int
     d_model::Int
@@ -197,6 +208,12 @@ function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
         scattered_dispatches=session.expert_scattered_dispatches,
         pointer_bytes_uploaded=session.expert_pointer_bytes_uploaded,
         forced_gc_calls=session.expert_forced_gc_calls,
+        pointer_table_builds=session.expert_pointer_table_builds,
+        pointer_table_reuses=session.expert_pointer_table_reuses,
+        workspace_allocations=session.expert_workspace_allocations,
+        workspace_reuses=session.expert_workspace_reuses,
+        pointer_table_bytes=session.expert_pointer_table_bytes,
+        workspace_bytes=session.expert_workspace_bytes,
     )
 end
 
@@ -227,6 +244,10 @@ function _qwen3_moe_reset_expert_traffic!(
     session.expert_scattered_dispatches = 0
     session.expert_pointer_bytes_uploaded = 0
     session.expert_forced_gc_calls = 0
+    session.expert_pointer_table_builds = 0
+    session.expert_pointer_table_reuses = 0
+    session.expert_workspace_allocations = 0
+    session.expert_workspace_reuses = 0
     return session
 end
 
@@ -277,12 +298,15 @@ end
 
 # Portable devices retain the materialized dispatch. LifeAICUDAExt specializes
 # this hook to index cached expert matrices through a compact device pointer
-# table and returns `(output, pointer_bytes_uploaded)`.
+# table. The opaque state owns bounded pointer plans and shape-keyed workspaces
+# across calls; cache clear/reconfigure invalidates it.
 function _qwen3_scattered_expert_dispatch(
     tokens,
     expert_indices,
     routing_weights,
     scattered::_Qwen3MoEScatteredExperts,
+    state,
+    layer_index::Int,
 )
     return nothing
 end
@@ -301,6 +325,9 @@ function clear_hf_qwen3_moe_expert_cache!(
     empty!(session.expert_cache_last_used)
     session.expert_cache_bytes = 0
     session.expert_cache_peak_bytes = 0
+    session.expert_scattered_state = nothing
+    session.expert_pointer_table_bytes = 0
+    session.expert_workspace_bytes = 0
     GC.gc(false)
     return session
 end
@@ -459,11 +486,16 @@ function _qwen3_moe_read_expert(
         entry_bytes,
     )
     host_parameters = nothing
+    session.expert_cache_entry_generation = Base.checked_add(
+        session.expert_cache_entry_generation,
+        1,
+    )
     return _Qwen3MoEExpertCacheEntry(
         device_parameters.gate_proj,
         device_parameters.up_proj,
         device_parameters.down_proj,
         entry_bytes,
+        session.expert_cache_entry_generation,
     )
 end
 
@@ -595,7 +627,13 @@ function _qwen3_moe_load_active_experts(
         )
         for expert in active_experts
     ]
-    return _Qwen3MoEScatteredExperts(entries, hidden_dim, d_model)
+    return _Qwen3MoEScatteredExperts(
+        copy(active_experts),
+        [entry.generation for entry in entries],
+        entries,
+        hidden_dim,
+        d_model,
+    )
 end
 
 function _qwen3_moe_maybe_collect!(
@@ -700,6 +738,8 @@ function _qwen3_moe_offload_block(
             local_indices,
             routed.routing_weights,
             loaded_experts,
+            session.expert_scattered_state,
+            layer_index,
         )
     else
         nothing
@@ -713,6 +753,26 @@ function _qwen3_moe_offload_block(
             session.expert_pointer_bytes_uploaded,
             scattered_result.pointer_bytes_uploaded,
         )
+        session.expert_scattered_state = scattered_result.state
+        session.expert_pointer_table_builds = Base.checked_add(
+            session.expert_pointer_table_builds,
+            scattered_result.pointer_table_built ? 1 : 0,
+        )
+        session.expert_pointer_table_reuses = Base.checked_add(
+            session.expert_pointer_table_reuses,
+            scattered_result.pointer_table_reused ? 1 : 0,
+        )
+        session.expert_workspace_allocations = Base.checked_add(
+            session.expert_workspace_allocations,
+            scattered_result.workspace_allocated ? 1 : 0,
+        )
+        session.expert_workspace_reuses = Base.checked_add(
+            session.expert_workspace_reuses,
+            scattered_result.workspace_reused ? 1 : 0,
+        )
+        session.expert_pointer_table_bytes =
+            scattered_result.pointer_table_bytes
+        session.expert_workspace_bytes = scattered_result.workspace_bytes
         scattered_result.output
     else
         expert_parameters = loaded_experts isa _Qwen3MoEScatteredExperts ?
@@ -808,9 +868,12 @@ streaming. `expert_cache_policy=:global_lru` preserves the original policy;
 `:layer_balanced_lru` partitions entry capacity across layers to resist
 sequential scan thrashing. `expert_cache_dispatch=:scattered` lets supported
 accelerators index cached expert matrices through device pointers instead of
-materializing an active 3D tensor. `expert_gc_interval_layers` controls forced
-GC frequency (`1` preserves the original per-layer behavior; `0` disables
-forced GC). Request reset retains cached experts, while
+materializing an active 3D tensor. CUDA sessions retain bounded pointer plans
+and dispatch workspaces across layers/requests; expert-entry generations guard
+against stale pointer reuse, and cache clear/reconfigure drops the state.
+`expert_gc_interval_layers` controls forced GC frequency (`1` preserves the
+original per-layer behavior; `0` disables forced GC). Request reset retains
+cached experts, while
 `clear_hf_qwen3_moe_expert_cache!` releases their logical ownership.
 """
 function load_hf_qwen3_moe_offload_session(
@@ -944,6 +1007,14 @@ function load_hf_qwen3_moe_offload_session(
         0,
         0,
         0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        nothing,
         0,
         0,
         0,
