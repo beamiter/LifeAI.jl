@@ -51,7 +51,7 @@ RoPE remains an attention-level option and is enabled through `TransformerBlock(
 
 ## Suggested Immediate Tests
 
-Add a `test/test_transformer.jl` with these basic checks:
+Add a `test/episodes/episode01_transformer_and_training_foundations/chapter01_transformer/test_transformer.jl` with these basic checks:
 
 - `TransformerBlock` forward keeps shape unchanged.
 - Output values are finite.
@@ -63,13 +63,13 @@ Then include it from `test/runtests.jl`:
 
 ```julia
 @testset "TransformerBlock" begin
-    include("test_transformer.jl")
+    include("episodes/episode01_transformer_and_training_foundations/chapter01_transformer/test_transformer.jl")
 end
 ```
 
 ## TODO
 
-- Add `test/test_transformer.jl` and run the full test suite.
+- Add `test/episodes/episode01_transformer_and_training_foundations/chapter01_transformer/test_transformer.jl` and run the full test suite.
 - Implement a minimal GPT model that stacks multiple `TransformerBlock`s.
 - Implement token embedding and LM head.
 - Implement `Tokenizer` in `src/data/tokenizer.jl`.

@@ -135,7 +135,7 @@ GQA benchmark + HF config 契约草案
 
 ### 2026-07-21 实施记录
 
-1. **回归 fixture**：将 HEAD 版本 `attention.jl` 加载到隔离模块，与新实现在相同 seed 下对比：默认配置（`num_kv_heads=num_heads`、`use_qk_norm=false`）参数树 `==`、前向输出逐元素 `==`。测试中另以字面量冻结 legacy 初始化流（`test/test_qwen3_gqa_qknorm.jl`）。
+1. **回归 fixture**：将 HEAD 版本 `attention.jl` 加载到隔离模块，与新实现在相同 seed 下对比：默认配置（`num_kv_heads=num_heads`、`use_qk_norm=false`）参数树 `==`、前向输出逐元素 `==`。测试中另以字面量冻结 legacy 初始化流（`test/episodes/episode02_qwen3_end_to_end_parity/chapter06_gqa_qwen3_parity/test_qwen3_gqa_qknorm.jl`）。
 2. **GQA 语义**：`manual_scaled_dot_product_attention` 扩展为循环 reference（`kv = (h-1) ÷ groups + 1`）；`repeat_kv`（`repeat(; inner)` 连续展开）与 HF `repeat_kv` 布局一致；高效路径 `_grouped_scaled_dot_product_attention` 把 query group 折入行维，不物化重复 K/V。三路在 `(H, Hk) ∈ {(4,4),(4,2),(4,1),(8,2),(6,3),(8,1)}` × causal on/off 下逐元素一致（atol 1e-5），另用常量签名测试钉死 head→KV 路由。
 3. **QK-Norm**：per-head RMSNorm（`head_dim` 维、独立 q/k scale、RoPE 之前），与手写 reference 一致；关闭时参数树与 legacy 完全相同（`initialparameters` 覆盖保持 RNG 流逐字段顺序不变）。
 4. **KV cache**：动态 / 静态 cache 只存 `num_kv_heads` 份 K/V（测试断言形状）；`_scaled_dot_product_attention_valid_prefix` 支持分组，groups=1 走原路径。gqa / gqa+qk_norm / mqa+qk_norm 三配置全部通过 full / dynamic / static correctness matrix。

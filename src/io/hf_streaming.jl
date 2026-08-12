@@ -358,7 +358,12 @@ function _read_embedding_rows(
     tokens::AbstractMatrix{<:Integer},
     d_model::Int,
     vocab_size::Int,
+    ;
+    target_dtype::Type=Float32,
 )
+    target_dtype in (Float32, BFloat16) || throw(ArgumentError(
+        "embedding row loading only supports Float32 or BFloat16",
+    ))
     location = _reader_location(reader, name)
     location.shape == [vocab_size, d_model] || throw(DimensionMismatch(
         "HuggingFace tensor `$name` has shape $(Tuple(location.shape)); " *
@@ -367,7 +372,7 @@ function _read_embedding_rows(
     element_bytes = _SAFETENSORS_DTYPES[location.dtype]
     row_bytes = d_model * element_bytes
     seq_len, batch_size = size(tokens)
-    x = Array{Float32}(undef, d_model, seq_len, batch_size)
+    x = Array{target_dtype}(undef, d_model, seq_len, batch_size)
     open(location.path, "r") do io
         for batch in 1:batch_size, position in 1:seq_len
             token = Int(tokens[position, batch])
@@ -382,7 +387,8 @@ function _read_embedding_rows(
             x[:, position, batch] = _decode_safetensors_values(
                 raw,
                 location.dtype,
-                [d_model],
+                [d_model];
+                target_dtype,
             )
         end
     end
@@ -423,6 +429,7 @@ end
         tokens;
         decode_token=nothing,
         max_seq_len=64,
+        compute_dtype=Float32,
         variant=nothing,
     )
 
@@ -737,6 +744,270 @@ function _streamed_qwen3_moe_block_with_kv_cache(
     )
 end
 
+function _streamed_qwen3_moe_bf16_experts(
+    model::GPTModel,
+    tensors::_StreamedTensors,
+    x::AbstractArray{BFloat16,3},
+    routing::Matrix,
+    layer::Int,
+)
+    tokens = reshape(x, model.d_model, :)
+    output = zeros(BFloat16, size(tokens))
+    active_experts = Int[]
+    prefix = "model.layers.$layer.mlp.experts"
+    for expert in 1:model.num_experts
+        token_indices = findall(!iszero, view(routing, expert, :))
+        isempty(token_indices) && continue
+        push!(active_experts, expert)
+        expert_tokens = reshape(tokens[:, token_indices], model.d_model, :, 1)
+        expert_prefix = "$prefix.$(expert - 1)"
+
+        gate_weight = _expect_tensor(
+            tensors,
+            "$expert_prefix.gate_proj.weight",
+            (model.mlp_hidden_dim, model.d_model),
+        )
+        gate = _bf16_linear(gate_weight, expert_tokens)
+        gate_weight = nothing
+        up_weight = _expect_tensor(
+            tensors,
+            "$expert_prefix.up_proj.weight",
+            (model.mlp_hidden_dim, model.d_model),
+        )
+        up = _bf16_linear(up_weight, expert_tokens)
+        up_weight = nothing
+        gate_f = Float32.(gate)
+        activated = BFloat16.(gate_f ./ (1.0f0 .+ exp.(.-gate_f)))
+        hidden = BFloat16.(Float32.(activated) .* Float32.(up))
+        gate = nothing
+        up = nothing
+
+        down_weight = _expect_tensor(
+            tensors,
+            "$expert_prefix.down_proj.weight",
+            (model.d_model, model.mlp_hidden_dim),
+        )
+        expert_output = reshape(
+            _bf16_linear(down_weight, hidden),
+            model.d_model,
+            :,
+        )
+        down_weight = nothing
+        hidden = nothing
+        weights = reshape(BFloat16.(routing[expert, token_indices]), 1, :)
+        contribution = BFloat16.(
+            Float32.(expert_output) .* Float32.(weights),
+        )
+        target = view(output, :, token_indices)
+        target .= BFloat16.(Float32.(target) .+ Float32.(contribution))
+    end
+    return reshape(output, size(x)), active_experts
+end
+
+function _streamed_qwen3_moe_bf16_block(
+    model::GPTModel,
+    x::AbstractArray{BFloat16,3},
+    tensors::_StreamedTensors,
+    cache,
+    cos_table,
+    sin_table,
+    layer::Int;
+    start_pos::Int,
+)
+    ps = _streamed_qwen3_moe_block_parameters(model, tensors, layer)
+    head_dim = model.head_dim
+    num_tokens, batch_size = size(x, 2), size(x, 3)
+    normed = _bf16_rmsnorm(x, ps.norm1.scale, model.norm_epsilon)
+    queries = reshape(
+        _bf16_linear(ps.attn.q_proj.weight, normed),
+        head_dim,
+        model.num_heads,
+        num_tokens,
+        batch_size,
+    )
+    keys = reshape(
+        _bf16_linear(ps.attn.k_proj.weight, normed),
+        head_dim,
+        model.num_kv_heads,
+        num_tokens,
+        batch_size,
+    )
+    values = reshape(
+        _bf16_linear(ps.attn.v_proj.weight, normed),
+        head_dim,
+        model.num_kv_heads,
+        num_tokens,
+        batch_size,
+    )
+    queries = _bf16_rmsnorm(
+        queries,
+        ps.attn.q_norm.scale,
+        model.qk_norm_epsilon,
+    )
+    keys = _bf16_rmsnorm(keys, ps.attn.k_norm.scale, model.qk_norm_epsilon)
+    queries = _bf16_apply_rope(queries, cos_table, sin_table; start_pos)
+    keys = _bf16_apply_rope(keys, cos_table, sin_table; start_pos)
+    cached_keys, cached_values = cache
+    all_keys = cached_keys === nothing ? keys : cat(cached_keys, keys; dims=3)
+    all_values = cached_values === nothing ? values : cat(cached_values, values; dims=3)
+    context = _bf16_attention(
+        queries,
+        all_keys,
+        all_values;
+        scaling=1.0f0 / sqrt(Float32(head_dim)),
+        causal=cached_keys === nothing,
+    )
+    attention_output = _bf16_linear(
+        ps.attn.o_proj.weight,
+        reshape(
+            context,
+            head_dim * model.num_heads,
+            num_tokens,
+            batch_size,
+        ),
+    )
+    residual = _bf16_residual(x, attention_output)
+    normed2 = _bf16_rmsnorm(residual, ps.norm2.scale, model.norm_epsilon)
+    router_logits = reshape(
+        _bf16_linear(ps.gate.weight, normed2),
+        model.num_experts,
+        :,
+    )
+    routing = qwen3_topk_routing(
+        router_logits,
+        model.experts_per_token;
+        normalize=model.normalize_routing,
+    )
+    mlp_output, active_experts = _streamed_qwen3_moe_bf16_experts(
+        model,
+        tensors,
+        normed2,
+        routing,
+        layer,
+    )
+    output = _bf16_residual(residual, mlp_output)
+    return output, (all_keys, all_values), router_logits, active_experts
+end
+
+function _stream_hf_qwen3_moe_bf16_forward(
+    model_dir,
+    model,
+    config,
+    reader,
+    token_matrix,
+    decode_matrix,
+)
+    tensors = _StreamedTensors(reader, BFloat16)
+    seq_len = size(token_matrix, 1)
+    x = _read_embedding_rows(
+        reader,
+        "model.embed_tokens.weight",
+        token_matrix,
+        model.d_model,
+        model.vocab_size;
+        target_dtype=BFloat16,
+    )
+    embedding = x
+    cos_table, sin_table = _bf16_rope_tables(model)
+    caches = Vector{Any}(undef, model.num_layers)
+    fill!(caches, (nothing, nothing))
+    blocks = Vector{Any}(undef, model.num_layers)
+    routers = Vector{Any}(undef, model.num_layers)
+    active = Vector{Vector{Int}}(undef, model.num_layers)
+    for index in 1:model.num_layers
+        x, caches[index], routers[index], active[index] =
+            _streamed_qwen3_moe_bf16_block(
+                model,
+                x,
+                tensors,
+                caches[index],
+                cos_table,
+                sin_table,
+                index - 1;
+                start_pos=1,
+            )
+        blocks[index] = x
+        GC.gc(false)
+    end
+    final_scale = _expect_tensor(
+        tensors,
+        "model.norm.weight",
+        (model.d_model,),
+    )
+    final_hidden = _bf16_rmsnorm(x, final_scale, model.norm_epsilon)
+    logits_weight = _expect_tensor(
+        tensors,
+        "lm_head.weight",
+        (model.vocab_size, model.d_model),
+    )
+    logits = _bf16_linear(logits_weight, final_hidden)
+    logits_weight = nothing
+    GC.gc(false)
+
+    decode_logits = nothing
+    decode_blocks = nothing
+    decode_final_hidden = nothing
+    decode_routers = nothing
+    decode_active = nothing
+    if decode_matrix !== nothing
+        y = _read_embedding_rows(
+            reader,
+            "model.embed_tokens.weight",
+            decode_matrix,
+            model.d_model,
+            model.vocab_size;
+            target_dtype=BFloat16,
+        )
+        decoded_blocks = Vector{Any}(undef, model.num_layers)
+        decoded_routers = Vector{Any}(undef, model.num_layers)
+        decoded_active = Vector{Vector{Int}}(undef, model.num_layers)
+        for index in 1:model.num_layers
+            y, caches[index], decoded_routers[index], decoded_active[index] =
+                _streamed_qwen3_moe_bf16_block(
+                    model,
+                    y,
+                    tensors,
+                    caches[index],
+                    cos_table,
+                    sin_table,
+                    index - 1;
+                    start_pos=seq_len + 1,
+                )
+            decoded_blocks[index] = y
+            GC.gc(false)
+        end
+        decode_hidden = _bf16_rmsnorm(y, final_scale, model.norm_epsilon)
+        logits_weight = _expect_tensor(
+            tensors,
+            "lm_head.weight",
+            (model.vocab_size, model.d_model),
+        )
+        decode_logits = _bf16_linear(logits_weight, decode_hidden)
+        decode_blocks = Tuple(decoded_blocks)
+        decode_final_hidden = decode_hidden
+        decode_routers = Tuple(decoded_routers)
+        decode_active = Tuple(decoded_active)
+        GC.gc(false)
+    end
+    return (;
+        embedding,
+        blocks=Tuple(blocks),
+        router_logits=Tuple(routers),
+        active_experts=Tuple(active),
+        final_hidden,
+        logits,
+        decode_logits,
+        decode_blocks,
+        decode_final_hidden,
+        decode_router_logits=decode_routers,
+        decode_active_experts=decode_active,
+        model,
+        config,
+        source=abspath(model_dir),
+        compute_dtype=BFloat16,
+    )
+end
+
 """
     stream_hf_qwen3_moe_forward(
         model_dir,
@@ -753,14 +1024,19 @@ for experts selected by the current prompt or decode token batch.
 
 `active_experts` and `decode_active_experts` contain 1-based expert ids for
 each layer, making the physical checkpoint reads observable. The computation
-uses Float32 host kernels and preserves the eager MoE routing/dispatch order.
+uses either the legacy Float32 streamed kernels or the native BF16
+mixed-precision contract selected by `compute_dtype`.
 """
 function stream_hf_qwen3_moe_forward(
     model_dir::AbstractString,
     tokens::AbstractMatrix{<:Integer};
     decode_token=nothing,
     max_seq_len=64,
+    compute_dtype::Type=Float32,
 )
+    compute_dtype in (Float32, BFloat16) || throw(ArgumentError(
+        "Qwen3 MoE streaming only supports Float32 or BFloat16 compute",
+    ))
     isdir(model_dir) || throw(ArgumentError(
         "model directory does not exist: $model_dir",
     ))
@@ -792,6 +1068,21 @@ function stream_hf_qwen3_moe_forward(
         model,
         Set(String.(collect(keys(reader)))),
     )
+    token_matrix = Int.(collect(tokens))
+    _validate_generation_ids(token_matrix, model.vocab_size)
+    if compute_dtype === BFloat16
+        model.tie_embeddings && throw(ArgumentError(
+            "native BF16 MoE streaming currently requires an untied LM head",
+        ))
+        return _stream_hf_qwen3_moe_bf16_forward(
+            model_dir,
+            model,
+            config,
+            reader,
+            token_matrix,
+            decode_matrix,
+        )
+    end
     tensors = _StreamedTensors(reader)
 
     if model.tie_embeddings && haskey(reader, "lm_head.weight")
@@ -815,8 +1106,6 @@ function stream_hf_qwen3_moe_forward(
     end
 
     st = Lux.initialstates(Xoshiro(0), model)
-    token_matrix = Int.(collect(tokens))
-    _validate_generation_ids(token_matrix, model.vocab_size)
     x = _read_embedding_rows(
         reader,
         "model.embed_tokens.weight",
@@ -858,6 +1147,8 @@ function stream_hf_qwen3_moe_forward(
     GC.gc(false)
 
     decode_logits = nothing
+    decode_block_outputs = nothing
+    decode_final_hidden = nothing
     decode_router_outputs = nothing
     decode_active_experts = nothing
     if decode_matrix !== nothing
@@ -869,6 +1160,7 @@ function stream_hf_qwen3_moe_forward(
             model.vocab_size,
         )
         decode_routers = Vector{Any}(undef, model.num_layers)
+        decode_blocks = Vector{Any}(undef, model.num_layers)
         decode_active = Vector{Vector{Int}}(undef, model.num_layers)
         start_pos = seq_len + 1
         for index in 1:model.num_layers
@@ -883,6 +1175,7 @@ function stream_hf_qwen3_moe_forward(
                     index - 1;
                     start_pos,
                 )
+            decode_blocks[index] = y
             GC.gc(false)
         end
         decode_hidden, _ = model.final_norm(y, final_norm_ps, st.final_norm)
@@ -892,6 +1185,8 @@ function stream_hf_qwen3_moe_forward(
             tensors,
             st.lm_head,
         )
+        decode_block_outputs = Tuple(decode_blocks)
+        decode_final_hidden = decode_hidden
         decode_router_outputs = Tuple(decode_routers)
         decode_active_experts = Tuple(decode_active)
         GC.gc(false)
@@ -905,10 +1200,13 @@ function stream_hf_qwen3_moe_forward(
         final_hidden,
         logits,
         decode_logits,
+        decode_blocks=decode_block_outputs,
+        decode_final_hidden,
         decode_router_logits=decode_router_outputs,
         decode_active_experts,
         model,
         config,
         source=abspath(model_dir),
+        compute_dtype=Float32,
     )
 end

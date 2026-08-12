@@ -72,7 +72,7 @@ Python reference 侧 `torch_dtype=bfloat16` 全部四个尺寸均可直载
   冻结 BF16 量级容差（block 沿用 Chapter 13 的尺度感知判据）。
 - 记录 BF16 与 F32 路径的 logits 偏差量级（同模型自对照），以及
   0.6B/8B BF16 常驻内存实测。
-- `test/test_qwen3_bf16_compute.jl`：离线合成模型的 BF16 算子/路径测试 +
+- `test/episodes/episode04_efficient_inference_and_quantization/chapter14_qwen3_bf16_compute/test_qwen3_bf16_compute.jl`：离线合成模型的 BF16 算子/路径测试 +
   `LIFEAI_QWEN3_*_MODEL_DIR` opt-in BF16 integration。
 
 ## 验证分层

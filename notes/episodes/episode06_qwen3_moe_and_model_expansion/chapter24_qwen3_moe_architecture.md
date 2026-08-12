@@ -2,9 +2,9 @@
 
 > 所属 Episode：Episode 06 — Qwen3 MoE 与模型架构扩展
 >
-> 状态：Open
+> 状态：Closed
 
-## Open：核心问题
+## Closed：核心问题
 
 LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU、HuggingFace 权重布局与 cached decode，并把 correctness reference 推进为不计算未选 expert 的可部署实现？
 
@@ -32,7 +32,7 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 | CUDA sparse dispatch | 高效推理 | indexed hidden/down/combine kernels，不复制 route 权重 | 无 host fallback、correctness、workspace 与 prefill/decode 性能证据 | 已完成 |
 | MoE 按需 expert 流式加载 | 模型 / 工程 | header-only index、路由后按 active expert 读取、cache decode | 分片 fixture、tiny Transformers 逐位 parity、加载集合可观测 | 已完成 |
 | 30B-A3B immutable 资产契约 | 模型 / 工程 | revision、config/index、16 分片大小与 SHA256 | 离线 manifest、opt-in 全资产校验 | 已完成 |
-| 官方真实权重 parity | 模型 / 工程 | streamed parity 报告 | 逐层/logits/cache 与峰值内存实测 | 计划中 |
+| 官方真实权重 parity | 模型 / 工程 | streamed parity 报告 | 逐层/logits/cache 与峰值内存实测 | 已完成 |
 
 ## Close 条件
 
@@ -54,7 +54,7 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 ## 风险与取舍
 
 - CPU 默认路径已经按 expert gather 被选 token；全 expert masked 版本保留为 `qwen3_dense_expert_reference` 数值 oracle。非 CPU Array 的标准 Lux 调用会进入 compact device path；Reactant/XLA CPU 使用可移植 route-major fallback，RTX 4090 D CUDA 通过 package extension 自动启用 indexed/bucketed kernels。XLA fallback 仍物化 route 权重；CUDA 另有纯设备 grouped BF16 WMMA 实验入口，但其 activation 舍入契约尚未替换生产路径。
-- `load_hf_qwen3_moe_model` 仍会把 expert 权重 stack 成三维数组，只适合 tiny fixture；`stream_hf_qwen3_moe_forward` 已提供真实 checkpoint 所需的 header-only、逐层、路由后按 active expert 读取生命周期，但尚未用本地 30B-A3B 资产实跑。
+- `load_hf_qwen3_moe_model` 仍会把 expert 权重 stack 成三维数组，只适合 tiny fixture；`stream_hf_qwen3_moe_forward` 已提供真实 checkpoint 所需的 header-only、逐层、路由后按 active expert 读取生命周期，并可显式选择 Float32 或 native BF16。真实 30B-A3B 已完成两种口径的逐层 prompt/cache-decode parity；这仍不是完整 40K context 的部署吞吐证明。
 - host `partialsortperm` 不是 CUDA/XLA 路由实现，不能把现有 Float32 CPU 通过写成 accelerator 已支持。
 - Qwen3 后续系列可能使用融合 expert tensor、shared expert、不同 attention 或 hybrid layer；必须按各自配置重新建立契约。
 
@@ -76,7 +76,7 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 
   ```bash
   .venv/bin/python scripts/export_qwen3_moe_tiny_reference.py \
-    test/fixtures/qwen3_moe_tiny_parity
+    test/episodes/episode06_qwen3_moe_and_model_expansion/chapter24_qwen3_moe_architecture/fixtures/qwen3_moe_tiny_parity
   ```
 
 - `hf_qwen3_moe_forward_trace` 显式观测 post-attention RMSNorm 后、expert dispatch 前的 router logits；没有用 LifeAI 结果生成 reference。
@@ -142,6 +142,22 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - RTX 4090 D 最终冻结的 15 次 steady：BF16 indexed dispatch 的 1-token / 8-token median 为 `0.180 / 0.689 ms`，相同数值的 Float32 权重为 `0.396 / 1.319 ms`，BF16 加速 `2.20× / 1.91×` 且输出逐位一致。原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cuda_4090d_bf16_projection_widths.json`。
 - 实验过“每个 dot-product 一个 thread block”的 shared-memory tiled reduction；在相同官方宽度上比现有“每个输出一个 thread”的 indexed kernel 慢 `2.6—6.0×`，原因是输出维与 route pair 已提供充足并行度，额外拆分产生过多 blocks 和 reduction 同步。该劣化路径未进入生产实现；下一步若继续优化，应做按 expert 分桶后的 GEMM/tensor-core 计算，而不是继续拆分单个 dot-product。
 
+### 2026-08-12：官方 checkpoint 国内链路恢复与完整校验
+
+- 本机 Hugging Face Xet high-performance 直连等待约一分钟仍未开始传输；ModelScope 官方国内站单 worker 稳定约 `9—13 MB/s`。文件/Range 并发会触发连接重置并降低总吞吐，因此最终使用单连接断点续传。
+- 下载前先把 ModelScope `master` 的 config、index 和 16 个权重分片与冻结 Hugging Face revision 比对；18 个关键文件的 byte size 和 SHA256 全部一致，下载源不改变 provenance 身份。
+- 完整 checkpoint 落到 `/home/ubuntu/models/huggingface/Qwen/Qwen3-30B-A3B/ad44e777bcd18fa416d9da3bd8f70d33ebb85d39/`。快速检查确认 16 分片、`18,867` 个 tensor 和 `61,064,245,248` tensor bytes；随后完整顺序哈希 16 个分片，`shard_checksums_verified=true`，耗时 `133.35 s`。
+- 本阶段只关闭“本机缺少/未验证官方资产”这一阻塞；真实 streamed 逐层、logits、cache parity 与峰值 RSS 仍属于 Chapter 24 的 Close 条件。
+
+### 2026-08-12：30B-A3B Float32 与 native BF16 真实 streamed parity
+
+- 新增 `scripts/export_qwen3_moe_real_reference.py`：直接调用 Transformers 4.51.3 的 `Qwen3MoeDecoderLayer`，每次只加载一层官方权重，独立生成 48 层 prompt residual/router 与单步 dynamic-cache decode reference；避免让 61 GB BF16 或 122 GB Float32 全树常驻内存。
+- `stream_hf_qwen3_moe_forward(...; compute_dtype=BFloat16)` 新增原生 BF16 mixed-precision 路径：BF16 权重/activation、Float32 accumulation/softmax/RMSNorm 统计，逐层按当前路由读取 expert。既有 Float32 模式保持兼容；tiny Transformers BF16 的 prompt、decode、两层 residual 均逐位一致。
+- 冻结 case 为 token ids `[1, 9707]` 加 decode id `13`，总计 `48 × 3 × 8 = 1,152` 个路由槽位。Float32 的 `1,152 / 1,152` expert 槽位与 `144 / 144` token-layer top-8 集合一致；共同 routing weight max-abs `7.45e-7`，final/decode hidden max-abs `5.75e-5 / 3.05e-5`，prompt/decode logits max-abs `4.39e-5 / 1.53e-5`，argmax 均一致。
+- native BF16 因 PyTorch oneDNN 与 Julia BLAS 的 BF16 GEMM 累加顺序不同，在 top-8 边界出现可观测路由切换：槽位重合 `1,105 / 1,152 = 95.92%`，共同 expert routing weight max-abs `0.0175`。final/decode hidden max-abs `0.5 / 0.6875`，prompt/decode logits max-abs 均为 `0.3125`，两次 argmax 仍一致；这与既有 dense BF16 的显式容差口径一致，不能写成逐位 parity。
+- LifeAI kernel 内计时：BF16 `64.77 s`、Float32 `71.89 s`；独立 `/usr/bin/time` 峰值 RSS 分别为 `3,757,547,520` 与 `4,963,278,848` bytes。prompt 两 token 跨层实际读取 `732` 个 unique active experts，decode 恰为 `384 = 48 × 8`，均远低于每 pass 全 128 experts 的 `6,144` 次读取。
+- 完整 reference/report 保存在 checkpoint 的 `lifeai-references/chapter24-real-parity/{bfloat16,float32}/`；仓库冻结摘要为 `benchmark_results/qwen3_moe_real_parity/summary.json`，默认离线测试校验摘要、脚本 checksum 与数值门禁。
+
 ### 2026-08-07：设备端 expert route bucketing
 
 - 新增纯 CUDA `qwen3_cuda_bucket_routes`：atomic count、稳定 device `sortperm!`、device `cumsum` 与 1-based half-open offsets 全程不回传 host；`route_permutation` 保留同 expert 内的原 route 顺序。新增 bucketed gate/up/down kernels 按 expert-major 次序读取权重，并把 down projection 写回原 pair index，combine 语义不变。
@@ -168,9 +184,9 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 
 ## Close 回顾
 
-- **完成了什么**：CPU Float32 correctness、独立 Transformers tiny parity、CPU sparse dispatch、真实 checkpoint 可复用的路由驱动 expert streaming，以及无 host routing fallback 的 compact Reactant/XLA CPU 与 RTX 4090 D CUDA 路径；本章仍 Open。
-- **验证证据**：MoE 专项 `246 / 246`、默认全套 `5,909 / 5,909`，XLA `3 / 3`、CUDA `38 / 38`；官方资产契约 `110 / 110`，双分片验证器成功路径新增 3 项。128-expert CPU 基准 `4.69×`；官方投影宽度 synthetic BF16 的 production bucketed 策略在 32/64-token 达到 `1.48× / 3.28×`，实验 grouped WMMA 完整 dispatch 在 32/64/128/256-token 达到 `1.12× / 1.08× / 1.55× / 2.60×`。
-- **没有完成及原因**：本机没有官方 Qwen3-30B-A3B checkpoint，真实资产 checksum、逐层 parity、峰值内存仍未验证；CUDA indexed 单-token decode 仍慢于 CPU，需要 expert 分桶/grouped GEMM，而 XLA 仍使用物化 route 权重的 portable fallback。
-- **最重要的认知变化**：原始 Qwen3 MoE 没有 shared expert；同时，compact route pairs 能保证算术稀疏，却不会自动消除选中权重物化与 gather 带宽成本，生产加速仍需要融合/分桶。
-- **是否满足 Close 条件**：否。
-- **带到下一阶段的问题**：怎样在不改变生产 Float32 activation 契约的情况下提供显式 opt-in/profile gate，并验证 grouped BF16 activation 不会破坏真实模型逐层/logits/生成 parity；待 checkpoint 下载恢复后，再用现有 streamed prompt/cache decode 完成官方 30B-A3B 真实逐层 parity 与峰值内存实测？
+- **完成了什么**：CPU Float32 correctness、独立 Transformers tiny/真实 30B parity、Float32/native BF16 active-expert streaming、CPU sparse dispatch，以及无 host routing fallback 的 compact Reactant/XLA CPU 与 RTX 4090 D CUDA 路径；本章 Closed。
+- **验证证据**：默认全套 `5,948 / 5,948`，XLA `3 / 3`、CUDA `38 / 38`；官方 61 GB 资产 16 分片 SHA256 全通过。30B Float32 top-8 槽位 `1,152 / 1,152`、logits max-abs `4.39e-5`；BF16 槽位重合 `95.92%`、logits max-abs `0.3125`，两种模式 prompt/decode argmax 均一致。BF16/Float32 峰值 RSS 为 `3.50 / 4.62 GiB`。
+- **没有完成及原因**：完整 40K context、长序列生成质量与生产 GPU streamed session 不属于本章最小 Close 条件；CUDA indexed 单-token decode 仍慢于 CPU，XLA portable fallback 仍物化 route 权重，这些进入后续性能/部署章节。
+- **最重要的认知变化**：BF16 “支持”必须区分 expert 内核、全模型 resident tree 与真实 checkpoint streamer；同时，跨框架 BF16 累加顺序足以在第 8/9 expert 边界换路由，因此正确证据应同时给出 Float32 严格路由、BF16 槽位重合率和最终 logits/argmax，不能只报一个 `isapprox`。
+- **是否满足 Close 条件**：是。
+- **带到下一阶段的问题**：怎样把已验证的 BF16 streamer 接到 GPU resident/offload session，并在完整 40K context 上量化 I/O、路由局部性、KV 容量与 grouped tensor-core dispatch 的端到端收益？

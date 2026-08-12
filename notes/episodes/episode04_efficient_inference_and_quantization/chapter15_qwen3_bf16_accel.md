@@ -60,7 +60,7 @@
 - Reactant XLA BF16：固定形状 prefill 全前向编译执行，logits parity
   与 argmax/greedy 首 token 检查、compile/steady 耗时记录；固定形状
   单 token decode 为 stretch 目标。
-- `test/test_qwen3_bf16_acceleration.jl`：离线合成模型上"向量化 vs Chapter 14 循环路径"
+- `test/episodes/episode04_efficient_inference_and_quantization/chapter15_qwen3_bf16_accel/test_qwen3_bf16_acceleration.jl`：离线合成模型上"向量化 vs Chapter 14 循环路径"
   对照进默认套件；CUDA/XLA 真实验证经环境变量 opt-in。
 - 吞吐与 Chapter 14 CPU 数值（0.6B 34.7 s / 4B 182.6 s 每 18 pass）
   同表对照，记录加速倍数。
@@ -133,7 +133,7 @@
 - **Reactant XLA BF16 编译通过**（0.6B prefill 全前向）：编译 44.8 s，
   首执行 1.72 s，**steady 1.36 ms**；logits max-abs 0.578（mean
   0.061），argmax 与 greedy 首 token 与 HF 一致，两次执行逐位相同。
-- 全部结果冻结进 `test/fixtures/qwen3_bf16_acceleration/assets.json`
+- 全部结果冻结进 `test/episodes/episode04_efficient_inference_and_quantization/chapter15_qwen3_bf16_accel/fixtures/qwen3_bf16_acceleration/assets.json`
   （容差沿用 Chapter 14：logits/decode 2.0、blocks scaled 5e-2）。
 
 ### 2026-07-26：验证与 Close

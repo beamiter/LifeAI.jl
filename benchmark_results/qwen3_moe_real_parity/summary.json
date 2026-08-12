@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "frozen_at": "2026-08-12",
+  "model_id": "Qwen/Qwen3-30B-A3B",
+  "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+  "checkpoint": {
+    "config_sha256": "2850ddb3bf7aecad20b611e2d44f3077fc8193f4827c93beddd4c02ad63c2297",
+    "index_sha256": "df0d481ec595c55a0ba58426d517390c6214a566ec4ff1c8fc4bbce9f57b3c24",
+    "shard_count": 16,
+    "shard_bytes": 61066575648
+  },
+  "case": {
+    "prompt_token_ids_0_based": [1, 9707],
+    "decode_token_id_0_based": 13,
+    "layers": 48,
+    "experts": 128,
+    "experts_per_token": 8,
+    "routing_slots": 1152
+  },
+  "reference_environment": {
+    "python": "3.10.12",
+    "torch": "2.7.1+cpu",
+    "transformers": "4.51.3",
+    "implementation": "Transformers Qwen3MoeDecoderLayer, layer-streamed"
+  },
+  "scripts": {
+    "exporter": "scripts/export_qwen3_moe_real_reference.py",
+    "exporter_sha256": "8f9665b96cbaa9d46d46c44b5a1c87e063ffefc67cf20a60a184ed0f7f378c18",
+    "verifier": "scripts/verify_qwen3_moe_real_parity.jl",
+    "verifier_sha256": "5c00525e20ddb0b4204a446eff02d8f49ca505d9da9b8b4b48e0c415760bafbc"
+  },
+  "float32": {
+    "passed": true,
+    "reference_sha256": "f865ea553648500ff56b927b3d537b528b11ba0ec2dce81130366e65cffe5e05",
+    "reference_metadata_sha256": "1caab8d42fe38c37df19979df76078efecf8cc9be7063408e19ace72521c7268",
+    "full_report_sha256": "8cf44bdc1def51077798fc4628c83235a74e9e77e8a9777838525acc6acc82c1",
+    "lifeai_seconds": 71.885068802,
+    "process_wall_seconds": 79.89,
+    "process_maxrss_bytes": 4963278848,
+    "routing_slots_matched": 1152,
+    "routing_slots_total": 1152,
+    "routing_overlap_fraction": 1.0,
+    "token_layer_expert_sets_matched": 144,
+    "token_layer_cases": 144,
+    "common_routing_weight_max_abs": 7.450580596923828e-7,
+    "final_hidden_max_abs": 5.745887756347656e-5,
+    "decode_final_hidden_max_abs": 3.0517578125e-5,
+    "logits_max_abs": 4.38690185546875e-5,
+    "decode_logits_max_abs": 1.52587890625e-5,
+    "prompt_argmax_equal": true,
+    "decode_argmax_equal": true
+  },
+  "bfloat16": {
+    "passed": true,
+    "reference_sha256": "fb329ce099bba8197e62d5b0901d42aaf31fda670b99766b73083f48f8b52f46",
+    "reference_metadata_sha256": "4c865840cdfbb4308370fca09343fdb3ac30531baafb77f629ffae166802b997",
+    "full_report_sha256": "4202c6cb284cf84fa7760f3850aa4c55cefb6582c963f743e719bb4345ff62e4",
+    "lifeai_seconds": 64.76629048,
+    "process_wall_seconds": 72.80,
+    "process_maxrss_bytes": 3757547520,
+    "routing_slots_matched": 1105,
+    "routing_slots_total": 1152,
+    "routing_overlap_fraction": 0.9592013888888888,
+    "token_layer_expert_sets_matched": 102,
+    "token_layer_cases": 144,
+    "common_routing_weight_max_abs": 0.017475977540016174,
+    "final_hidden_max_abs": 0.5,
+    "decode_final_hidden_max_abs": 0.6875,
+    "logits_max_abs": 0.3125,
+    "decode_logits_max_abs": 0.3125,
+    "prompt_argmax_equal": true,
+    "decode_argmax_equal": true
+  },
+  "expert_reads": {
+    "prompt_unique_experts_across_layers": 732,
+    "decode_unique_experts_across_layers": 384,
+    "all_experts_per_pass": 6144
+  },
+  "raw_artifacts": "MODEL_DIR/lifeai-references/chapter24-real-parity/{bfloat16,float32}/"
+}

@@ -1,25 +1,56 @@
 # LifeAI.jl test suite
 
-测试按能力命名，不按研发时间编号。查看文件名即可判断覆盖范围：
+测试目录与 `notes/episodes/` 使用相同的 Episode / Chapter 层级。一个 Chapter
+产生的测试与冻结 fixture 放在同名目录中，因此可以从研发记录直接定位到验收证据：
 
-- `test_manual_attention`、`test_mha`、`test_rope`、`test_transformer`：基础模型组件。
-- `test_tokenizer_*`：tokenizer、数据管线和 XLA 兼容性。
-- `test_gpt2_*`：GPT-2 架构与 HuggingFace parity。
-- `test_qwen3_hf_*`：Qwen3 配置、权重、tokenizer 和文本生成。
-- `test_qwen3_bf16_*`、`test_qwen3_*quantization*`、`test_qwen3_*int4`：BF16、加速和量化。
-- `test_qwen3_*deployment*`、`test_qwen3_resident_http_service`：本地部署与服务。
-- `test_qwen3_embedding_memory`、`test_qwen3_device_sampling`：语义记忆和设备端采样。
-- `qwen3_moe_router_test`、`qwen3_moe_expert_mixture_test`、`qwen3_moe_weight_loading_test`、`qwen3_moe_cached_decode_test`：MoE 路由、专家混合输出、HF 权重映射、双分片流式加载与缓存解码。
-- `qwen3_moe_transformers_parity_test`：冻结 tiny checkpoint 的 router、逐层 hidden、full logits、路由后 active-expert streaming 与 cached decode 跨框架对齐。
-- `qwen3_moe_real_checkpoint_contract_test`：官方 30B-A3B immutable revision、config/index、16 个权重分片及 opt-in 本地资产完整性。
-- `qwen3_moe_sparse_dispatch_test`：只执行被路由 token-expert pair、跳过 inactive expert，并与全 expert oracle 对齐。
-- `qwen3_moe_device_sparse_dispatch_test`：紧凑 top-k route 表、route-major batched expert 计算与未选 expert 隔离。
-- `qwen3_moe_device_sparse_dispatch_xla_test`：同一紧凑 sparse dispatch kernel 的 Reactant/XLA 编译与数值一致性。
-- `qwen3_moe_device_sparse_dispatch_cuda_test`：CUDA indexed/bucketed kernels、稳定 expert route offsets、`m32n8k16` grouped BF16 WMMA/SwiGLU、直接 padded combine、未选 `NaN` expert 隔离及 workspace contract。
+```text
+test/
+├── runtests.jl
+├── support/                       # 跨 Chapter 复用的测试构造器与资产定位工具
+└── episodes/
+    ├── episode01_transformer_and_training_foundations/
+    │   ├── chapter01_transformer/
+    │   └── ...
+    └── episode06_qwen3_moe_and_model_expansion/
+        └── chapter24_qwen3_moe_architecture/
+```
 
-`fixtures/` 同样按被验证的能力命名。冻结 benchmark 和模型 reference 通过文件内容或 metadata 定位，测试不依赖时间编号目录。
+## Chapter 索引
 
-默认测试入口：
+| Episode | Chapter | 主要测试内容 |
+| --- | --- | --- |
+| 01 | 01 | manual attention、MHA、RoPE、TransformerBlock |
+| 01 | 02 | GPT、Tokenizer、DatasetLoader、训练、KV cache、XLA cache |
+| 01 | 03 | 可复现训练、评估、checkpoint 与断点续训 |
+| 01 | 04 | RMSNorm、SwiGLU、tied embedding 与现代 GPT 配置 |
+| 01 | 05 | versioned tokenizer、中文数据管线、随机 UTF-8 与 XLA |
+| 02 | 06 | Qwen3 GQA、QK-Norm 与 XLA |
+| 02 | 07 | Hugging Face config、safetensors、权重映射与 XLA |
+| 02 | 08 | Qwen3 tokenizer、chat/text generation 与 XLA |
+| 02 | 09 | sampling、长位置 RoPE、cache correctness 与推理 fidelity |
+| 03 | 10 | GPT-2 架构、Hugging Face parity 与 XLA |
+| 03 | 11 | Qwen3 dense family contract 与 XLA |
+| 03 | 12 | dense family 真实权重 parity |
+| 03 | 13 | 8B/14B/32B streamed parity |
+| 04 | 14 | native BF16 mixed-precision compute |
+| 04 | 15 | BF16 CUDA/XLA acceleration |
+| 04 | 16 | XLA decode、INT8/INT4 与量化 round-trip |
+| 04 | 17 | calibrated INT4 与预算化混合精度 |
+| 04 | 18 | activation-aware INT4 calibration |
+| 05 | 19 | Qwen3-8B CUDA 日常部署 |
+| 05 | 20 | Qwen3-8B XLA single-residency 部署 |
+| 05 | 21 | XLA resident HTTP service |
+| 05 | 22 | Qwen3 Embedding 与 exact semantic memory |
+| 05 | 23 | XLA device-resident sampling |
+| 06 | 24 | Qwen3 MoE router、Float32/BF16 streaming、CPU/XLA/CUDA sparse dispatch、真实资产与 30B parity |
+
+`fixtures/` 只存在于拥有该证据的 Chapter 目录中。跨 Chapter 复用 fixture 时，
+测试显式引用其原始 Chapter，不复制第二份数据。`support/` 只存放无独立产品能力
+归属的构造器和定位工具。
+
+## 运行
+
+默认离线测试：
 
 ```bash
 julia --project=. test/runtests.jl
@@ -36,3 +67,6 @@ LIFEAI_TEST_XLA=true julia --project=. test/runtests.jl
 ```bash
 LIFEAI_TEST_CUDA=true julia --project=. test/runtests.jl
 ```
+
+`runtests.jl` 的 testset 输出同样按 Episode / Chapter 分组；真实权重 integration
+仍由各 Chapter 原有的显式环境变量控制，默认测试不会联网。

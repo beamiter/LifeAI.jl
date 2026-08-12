@@ -108,29 +108,29 @@ Qwen3-Embedding-0.6B 的 last-token pooling、归一化与 MRL 语义，并驱�
 
 .venv/bin/python scripts/export_qwen3_embedding_reference.py \
   --model-dir /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B \
-  --output test/fixtures/qwen3_embedding_memory/reference.json
+  --output test/episodes/episode05_deployment_memory_and_sampling/chapter22_qwen3_embedding_memory/fixtures/qwen3_embedding_memory/reference.json
 
 julia --threads=8 --project=. --startup-file=no \
   scripts/verify_qwen3_embedding_parity.jl \
   /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B \
-  test/fixtures/qwen3_embedding_memory/reference.json \
+  test/episodes/episode05_deployment_memory_and_sampling/chapter22_qwen3_embedding_memory/fixtures/qwen3_embedding_memory/reference.json \
   benchmark_results/week22/qwen3_embedding_0_6b_cpu.json
 
 LIFEAI_WEEK22_EMBEDDING_DEVICE=cuda \
 julia --threads=8 --project=. --startup-file=no \
   scripts/verify_qwen3_embedding_parity.jl \
   /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B \
-  test/fixtures/qwen3_embedding_memory/reference.json \
+  test/episodes/episode05_deployment_memory_and_sampling/chapter22_qwen3_embedding_memory/fixtures/qwen3_embedding_memory/reference.json \
   benchmark_results/week22/qwen3_embedding_0_6b_cuda.json
 ```
 
 冻结证据：
 
 ```text
-test/fixtures/qwen3_embedding_memory/reference.json
+test/episodes/episode05_deployment_memory_and_sampling/chapter22_qwen3_embedding_memory/fixtures/qwen3_embedding_memory/reference.json
 SHA256 669694c860798fb8496dd1be199fc648a5779fd7860000c81fe8ca3d0153b322
 
-test/fixtures/qwen3_embedding_memory/assets.json
+test/episodes/episode05_deployment_memory_and_sampling/chapter22_qwen3_embedding_memory/fixtures/qwen3_embedding_memory/assets.json
 SHA256 f02a10758da8b561a9d111823e26d0f4cca05ad905408d3737842c2342bf7782
 
 benchmark_results/week22/qwen3_embedding_0_6b_cpu.json

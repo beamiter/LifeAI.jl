@@ -63,7 +63,7 @@
   reference（week14-bf16-parity）的 parity/greedy；吞吐记录。
 - 14B BF16 offload reference 导出（层输出 + 16 步 greedy）；14B INT4
   GPU 驻留：logits 偏差、argmax/greedy 一致率、吞吐、VRAM。
-- `test/test_qwen3_xla_decode_quantization.jl`：量化数值语义与 round-trip 离线测试 + 合成
+- `test/episodes/episode04_efficient_inference_and_quantization/chapter16_qwen3_xla_decode_quant/test_qwen3_xla_decode_quantization.jl`：量化数值语义与 round-trip 离线测试 + 合成
   模型量化推理对照；GPU/XLA 真实验证 opt-in。
 
 ## 验证分层

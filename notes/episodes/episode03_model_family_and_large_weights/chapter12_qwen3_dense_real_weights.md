@@ -68,7 +68,7 @@ Float32 全量加载的内存上限，属于后续低精度 / 流式加载工作
   两个尺寸的 variant 必须被识别为对应官方 spec 且参数量精确一致。
 - 若任何一层出现超出容差的偏差，定位是 loader 映射、shape 语义还是数值
   累积问题并修复；修复必须回归 0.6B 与 GPT-2 既有 parity。
-- 新增 `test/test_qwen3_dense_real_weights.jl`：离线部分冻结两个尺寸的权重文件 checksum 与
+- 新增 `test/episodes/episode03_model_family_and_large_weights/chapter12_qwen3_dense_real_weights/test_qwen3_dense_real_weights.jl`：离线部分冻结两个尺寸的权重文件 checksum 与
   parity 结论 fixture，默认不联网；真实 integration 经
   `LIFEAI_QWEN3_1_7B_MODEL_DIR` / `LIFEAI_QWEN3_4B_MODEL_DIR` opt-in。
 
@@ -139,7 +139,7 @@ Float32 全量加载的内存上限，属于后续低精度 / 流式加载工作
   尺寸会触发的差异；本周把该结论从结构证据升级为真实权重证据。
 - 冻结容差（对实测值约 2 倍以上余量）进入离线 fixture：blocks `1e-2`、
   final hidden / logits `5e-4`、decode `2e-4`、embedding `1e-4`。
-- 新增 `test/test_qwen3_dense_real_weights.jl`：离线 asset contract（revision/checksum 与
+- 新增 `test/episodes/episode03_model_family_and_large_weights/chapter12_qwen3_dense_real_weights/test_qwen3_dense_real_weights.jl`：离线 asset contract（revision/checksum 与
   Chapter 11 specs 交叉核对、分片清单、parity 结果小于容差）默认运行；
   `LIFEAI_QWEN3_1_7B_MODEL_DIR` / `LIFEAI_QWEN3_4B_MODEL_DIR` opt-in
   integration 重算文件尺寸、variant、参数量与全部 parity 断言。

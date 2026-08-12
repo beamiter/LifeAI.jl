@@ -21,7 +21,7 @@
 六个冻结 config 的 `head_dim=128`、`num_key_value_heads=8`、
 `max_position_embeddings=40960`。公开 API `qwen3_dense_specs()` 保存各模型
 immutable revision 与 config SHA256；默认测试使用
-`test/fixtures/qwen3_dense_family/specs.json`，不联网。
+`test/episodes/episode03_model_family_and_large_weights/chapter11_qwen3_dense_family/fixtures/qwen3_dense_family/specs.json`，不联网。
 
 ## 结构字段映射
 

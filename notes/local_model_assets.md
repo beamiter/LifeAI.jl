@@ -87,7 +87,7 @@ Chapter 12 逐层 parity reference 位于各自 revision 目录内的
 | `model-00003-of-00003.safetensors` | `e4bf436957184f4eeb86a80e9db394503f1f56446b2e6b7edeac5b81470f4ca1` |
 
 同一 reference 的离线副本（含 parity 结果）位于
-`test/fixtures/qwen3_dense_real_weights/assets.json`。
+`test/episodes/episode03_model_family_and_large_weights/chapter12_qwen3_dense_real_weights/fixtures/qwen3_dense_real_weights/assets.json`。
 
 ### 恢复下载与 reference
 
@@ -129,7 +129,7 @@ Chapter 13 下载了三个 untied 尺寸的完整权重资产：
 `generation_config.json` 与 0.6B 资产字节相同；`config.json` SHA256 与
 Chapter 11 冻结值一致。Chapter 13 逐层 parity reference 位于各自 revision 目录
 的 `lifeai-references/week13-parity/`。全部权重分片 SHA256 的离线副本在
-`test/fixtures/qwen3_streamed_large_weights/assets.json`；下表只列
+`test/episodes/episode03_model_family_and_large_weights/chapter13_qwen3_streamed_large_weights/fixtures/qwen3_streamed_large_weights/assets.json`；下表只列
 index 与首末分片，完整清单以 fixture 为准。
 
 | 模型 | 文件 | SHA256 |
@@ -191,7 +191,7 @@ BF16 opt-in 进程协议：`LIFEAI_QWEN3_BF16_0_6B/1_7B/4B_MODEL_DIR` 可在
 ```bash
 LIFEAI_QWEN3_BF16_8B_MODEL_DIR=/home/yj/models/huggingface/Qwen/Qwen3-8B/b968826d9c46dd6066d109eabc6255188de91218 \
 julia --project=. --startup-file=no --heap-size-hint=2G -e \
-  'using Test, JSON3, Lux; import LifeAI; include("test/test_qwen3_bf16_compute.jl")'
+  'using Test, JSON3, Lux; import LifeAI; include("test/episodes/episode04_efficient_inference_and_quantization/chapter14_qwen3_bf16_compute/test_qwen3_bf16_compute.jl")'
 ```
 
 `--heap-size-hint=2G` 必需：它强制激进 GC，把峰值 RSS 压到 ≈ 18.5 GiB
@@ -255,7 +255,7 @@ ModelScope 官方仓库下载目录：
 8 个权重分片合计 `29,536,665,640` bytes；配置、tokenizer、index 与全部
 分片 SHA256 均和 HuggingFace 冻结 revision
 `40c069824f4251a91eefaf281ebe4c544efd3e18` 一致。完整期望 checksum 继续
-以 `test/fixtures/qwen3_streamed_large_weights/assets.json` 为准，
+以 `test/episodes/episode03_model_family_and_large_weights/chapter13_qwen3_streamed_large_weights/fixtures/qwen3_streamed_large_weights/assets.json` 为准，
 不为下载源复制第二份清单。
 
 BF16 reference：
@@ -289,16 +289,16 @@ julia --threads=auto --project=. --startup-file=no --heap-size-hint=3G \
 # mixed MSE：4/16；full-logits error 低于同布局 RTN，但序列 fidelity 更差
 julia --threads=auto --project=. --startup-file=no --heap-size-hint=3G \
   scripts/verify_qwen3_quant_cuda.jl "$MODEL_DIR" "$REFERENCE_DIR" int4 \
-  test/fixtures/qwen3_calibrated_int4/plan_mixed_24g.json
+  test/episodes/episode04_efficient_inference_and_quantization/chapter17_qwen3_calibrated_int4/fixtures/qwen3_calibrated_int4/plan_mixed_24g.json
 
 # 同布局 mixed RTN：16/16；tensor tree 12.093 GiB
 julia --threads=auto --project=. --startup-file=no --heap-size-hint=3G \
   scripts/verify_qwen3_quant_cuda.jl "$MODEL_DIR" "$REFERENCE_DIR" int4 \
-  test/fixtures/qwen3_calibrated_int4/plan_mixed_24g_rtn.json
+  test/episodes/episode04_efficient_inference_and_quantization/chapter17_qwen3_calibrated_int4/fixtures/qwen3_calibrated_int4/plan_mixed_24g_rtn.json
 ```
 
 精确 bytes、load/cold/warm、误差与 greedy 指标冻结在
-`test/fixtures/qwen3_calibrated_int4/assets.json`。三组必须用独立
+`test/episodes/episode04_efficient_inference_and_quantization/chapter17_qwen3_calibrated_int4/fixtures/qwen3_calibrated_int4/assets.json`。三组必须用独立
 Julia 进程，避免 CUDA allocator 的跨组状态污染；全 INT8 是极限驻留证据，
 不是有安全余量的部署配置。
 
@@ -313,7 +313,7 @@ evaluation token sequence：
   scripts/export_qwen3_calibration_tokens.py \
   --revision 40c069824f4251a91eefaf281ebe4c544efd3e18 \
   /home/ubuntu/models/modelscope/Qwen/Qwen3-14B \
-  test/fixtures/qwen3_activation_aware_int4/calibration_tokens.json
+  test/episodes/episode04_efficient_inference_and_quantization/chapter18_qwen3_activation_calibration/fixtures/qwen3_activation_aware_int4/calibration_tokens.json
 ```
 
 fixture SHA256 为
@@ -326,14 +326,14 @@ REFERENCE_DIR=$MODEL_DIR/lifeai-references/week17-bf16-parity
 
 julia --project=. scripts/verify_qwen3_quant_cuda.jl \
   "$MODEL_DIR" "$REFERENCE_DIR" int4 \
-  test/fixtures/qwen3_activation_aware_int4/plan_mixed_24g_activation.json \
-  test/fixtures/qwen3_activation_aware_int4/calibration_tokens.json
+  test/episodes/episode04_efficient_inference_and_quantization/chapter18_qwen3_activation_calibration/fixtures/qwen3_activation_aware_int4/plan_mixed_24g_activation.json \
+  test/episodes/episode04_efficient_inference_and_quantization/chapter18_qwen3_activation_calibration/fixtures/qwen3_activation_aware_int4/calibration_tokens.json
 ```
 
 实测 calibration `248.32 s`、load `489.23 s`、tree `12.093 GiB`、VRAM
 `21.474 GiB`；logits max/mean error `3.4238 / 0.42865`，greedy 4/16，
 首次分歧第 5 token。精确 provenance 与指标位于
-`test/fixtures/qwen3_activation_aware_int4/assets.json`。这是
+`test/episodes/episode04_efficient_inference_and_quantization/chapter18_qwen3_activation_calibration/fixtures/qwen3_activation_aware_int4/assets.json`。这是
 diagonal activation second-moment clipping 的负结果，不代表完整
 AWQ/GPTQ 已验证。
 
@@ -353,7 +353,7 @@ config 的不可变 revision 与 SHA256 为：
 | Qwen3-32B | `9216db5781bf21249d130ec9da846c4624c16137` | `97e295b63283935788fac5e4f8860862a56d4089538cafc93f0431f2ebe483bb` |
 
 同一 reference 的小型离线副本位于
-`test/fixtures/qwen3_dense_family/specs.json`。未来若下载其他尺寸权重，
+`test/episodes/episode03_model_family_and_large_weights/chapter11_qwen3_dense_family/fixtures/qwen3_dense_family/specs.json`。未来若下载其他尺寸权重，
 仍应遵守本页顶部的持久目录布局，并为真实逐层 reference 单独记录模型权重和
 分片 index checksum。
 
@@ -466,7 +466,7 @@ julia --project=. --startup-file=no scripts/verify_qwen3_sampling_parity.jl \
   --revision c1899de289a04d12100db370d81485cdf75e47ca
 ```
 
-仓库内 `test/fixtures/qwen3_rope_long_context/` 保留上述 RoPE reference 的同 checksum 小型副本，使 position 0/2048/32767/40959 的独立 Transformers 对照可进入默认离线测试；它不是模型权重或下载缓存。
+仓库内 `test/episodes/episode02_qwen3_end_to_end_parity/chapter09_qwen3_sampling_performance/fixtures/qwen3_rope_long_context/` 保留上述 RoPE reference 的同 checksum 小型副本，使 position 0/2048/32767/40959 的独立 Transformers 对照可进入默认离线测试；它不是模型权重或下载缓存。
 
 ## 当前 GPT-2 124M 资产
 
@@ -755,7 +755,7 @@ Hugging Face revision
 | `model.safetensors` | 1,191,586,416 | `0437e45c94563b09e13cb7a64478fc406947a93cb34a7e05870fc8dcd48e23fd` |
 
 机器可读清单为
-`test/fixtures/qwen3_embedding_memory/assets.json`，SHA256
+`test/episodes/episode05_deployment_memory_and_sampling/chapter22_qwen3_embedding_memory/fixtures/qwen3_embedding_memory/assets.json`，SHA256
 `f02a10758da8b561a9d111823e26d0f4cca05ad905408d3737842c2342bf7782`。
 模型权重不进入 Git。
 
@@ -784,19 +784,19 @@ tokenizers `0.21.4`、PyTorch `2.7.1+cpu` 与 Transformers `4.51.3`。
 ```bash
 .venv/bin/python scripts/export_qwen3_embedding_reference.py \
   --model-dir /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B \
-  --output test/fixtures/qwen3_embedding_memory/reference.json
+  --output test/episodes/episode05_deployment_memory_and_sampling/chapter22_qwen3_embedding_memory/fixtures/qwen3_embedding_memory/reference.json
 
 julia --threads=8 --project=. --startup-file=no \
   scripts/verify_qwen3_embedding_parity.jl \
   /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B \
-  test/fixtures/qwen3_embedding_memory/reference.json \
+  test/episodes/episode05_deployment_memory_and_sampling/chapter22_qwen3_embedding_memory/fixtures/qwen3_embedding_memory/reference.json \
   benchmark_results/week22/qwen3_embedding_0_6b_cpu.json
 
 LIFEAI_WEEK22_EMBEDDING_DEVICE=cuda \
 julia --threads=8 --project=. --startup-file=no \
   scripts/verify_qwen3_embedding_parity.jl \
   /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B \
-  test/fixtures/qwen3_embedding_memory/reference.json \
+  test/episodes/episode05_deployment_memory_and_sampling/chapter22_qwen3_embedding_memory/fixtures/qwen3_embedding_memory/reference.json \
   benchmark_results/week22/qwen3_embedding_0_6b_cuda.json
 ```
 
@@ -819,18 +819,57 @@ token/mask、五档数值、15 组 top-k 与 semantic memory 门禁全部通过�
 
 ## Qwen3-30B-A3B 资产状态
 
-截至 2026-08-07，本机尚未下载 `Qwen/Qwen3-30B-A3B` 完整权重。已从
-官方 Hugging Face 仓库冻结 immutable revision：
+截至 2026-08-12，本机已下载 `Qwen/Qwen3-30B-A3B` 完整权重，并按
+官方 Hugging Face immutable revision 的冻结清单通过逐文件 SHA256：
 
 ```text
 ad44e777bcd18fa416d9da3bd8f70d33ebb85d39
+```
+
+持久目录为：
+
+```text
+/home/ubuntu/models/huggingface/Qwen/Qwen3-30B-A3B/ad44e777bcd18fa416d9da3bd8f70d33ebb85d39/
 ```
 
 该 checkpoint 包含 16 个 BF16 safetensors 分片，文件共
 `61,066,575,648` bytes；index 记录 `18,867` 个 tensor、
 `61,064,245,248` tensor bytes，即 `30,532,122,624` 个参数。config、
 index 以及全部分片的大小和 SHA256 位于
-`test/fixtures/qwen3_moe_real_checkpoint/assets.json`。
+`test/episodes/episode06_qwen3_moe_and_model_expansion/chapter24_qwen3_moe_architecture/fixtures/qwen3_moe_real_checkpoint/assets.json`。
+
+### 中国大陆下载路径
+
+2026-08-12 在本机对同一个官方分片实测：Hugging Face Xet high-performance
+模式等待约一分钟仍未开始传输；ModelScope 国内站单文件顺序下载稳定约
+`9—13 MB/s`。增加文件并发或单文件 Range 并发会让代理链路频繁断流，综合
+吞吐反而更低，因此本机采用单 worker。ModelScope `master` 上的
+`config.json`、index 和 16 个 safetensors 分片已逐项与本仓库冻结的
+Hugging Face revision 对比，18 个关键文件的 byte size 和 SHA256 全部一致。
+
+安装轻量官方客户端下载：
+
+```bash
+python3 -m venv /path/to/modelscope-download-venv
+/path/to/modelscope-download-venv/bin/pip install modelscope-hub==0.2.0
+```
+
+下载到持久模型目录；同一命令可安全断点续传：
+
+```bash
+MODELSCOPE_DOWNLOAD_PARALLEL_WORKERS=1 \
+MODELSCOPE_DOWNLOAD_TIMEOUT=120 \
+MODELSCOPE_DOWNLOAD_MAX_RETRIES=10 \
+/path/to/modelscope-download-venv/bin/ms-hub download \
+  Qwen/Qwen3-30B-A3B \
+  --local-dir MODEL_DIR \
+  --max-workers 1
+```
+
+ModelScope 没有对应 Hugging Face commit hash 的命名契约，所以不能只凭模型名
+信任下载结果。完成后仍必须运行下面的仓库校验器；只有 18 个文件全部通过冻结
+SHA256，才把它视为 revision
+`ad44e777bcd18fa416d9da3bd8f70d33ebb85d39` 的等价本地资产。
 
 下载到持久目录后，先运行快速结构检查，再运行完整 61 GB 顺序哈希：
 
@@ -843,5 +882,21 @@ julia --project=. --startup-file=no \
 ```
 
 设置 `LIFEAI_QWEN3_30B_A3B_MODEL_DIR=MODEL_DIR` 后，默认测试会启用同一
-完整资产校验。当前记录只代表官方元数据契约已冻结，不代表真实权重
-parity 或峰值内存已经实跑。
+完整资产校验。本次快速结构检查耗时 `4.20 s`；完整 16 分片 SHA256 检查
+耗时 `133.35 s`，报告中的 `shard_checksums_verified=true`。完整报告保存在
+该 revision 目录的 `lifeai-asset-report.json`。这证明本地资产与冻结 revision
+等价。真实逐层/logits/cache parity 与峰值内存也已在同日完成，reference
+保存在：
+
+```text
+MODEL_DIR/lifeai-references/chapter24-real-parity/bfloat16/
+MODEL_DIR/lifeai-references/chapter24-real-parity/float32/
+```
+
+每个目录包含 `reference.json`、`reference.safetensors`、`parity.json` 与
+`lifeai-time.txt`。reference 由 Transformers 4.51.3 的官方 decoder layer
+逐层加载生成；LifeAI 也逐层只读取当前路由 active experts。Float32 的
+`1,152 / 1,152` 路由槽位一致，prompt/decode logits max-abs 为
+`4.39e-5 / 1.53e-5`；native BF16 路由槽位重合 `95.92%`，两组 logits
+max-abs 均为 `0.3125`，两种口径 argmax 全一致。完整摘要与 checksum 位于
+`benchmark_results/qwen3_moe_real_parity/summary.json`。
