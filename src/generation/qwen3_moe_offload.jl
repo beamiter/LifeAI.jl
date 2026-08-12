@@ -170,6 +170,15 @@ mutable struct HFQwen3MoEOffloadSession
     expert_workspace_reuses::Int
     expert_pointer_table_bytes::Int
     expert_workspace_bytes::Int
+    expert_miss_pipeline::Symbol
+    expert_read_workers::Int
+    expert_pinned_upload::Bool
+    expert_miss_stage_seconds::Float64
+    expert_host_read_seconds::Float64
+    expert_upload_wait_seconds::Float64
+    expert_read_tasks::Int
+    expert_parallel_read_layers::Int
+    expert_pinned_bytes_uploaded::Int
 end
 
 struct _Qwen3MoEExpertCacheEntry
@@ -214,6 +223,15 @@ function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
         workspace_reuses=session.expert_workspace_reuses,
         pointer_table_bytes=session.expert_pointer_table_bytes,
         workspace_bytes=session.expert_workspace_bytes,
+        miss_pipeline=session.expert_miss_pipeline,
+        read_workers=session.expert_read_workers,
+        pinned_upload=session.expert_pinned_upload,
+        miss_stage_seconds=session.expert_miss_stage_seconds,
+        host_read_seconds=session.expert_host_read_seconds,
+        upload_wait_seconds=session.expert_upload_wait_seconds,
+        read_tasks=session.expert_read_tasks,
+        parallel_read_layers=session.expert_parallel_read_layers,
+        pinned_bytes_uploaded=session.expert_pinned_bytes_uploaded,
     )
 end
 
@@ -230,6 +248,42 @@ function _qwen3_moe_validate_expert_cache_policy(policy::Symbol)
     ))
     return policy
 end
+
+function _qwen3_moe_validate_expert_miss_pipeline(pipeline::Symbol)
+    pipeline in (:sequential, :overlapped) || throw(ArgumentError(
+        "expert_miss_pipeline must be :sequential or :overlapped",
+    ))
+    return pipeline
+end
+
+# Portable devices can overlap independent host reads, but pinned asynchronous
+# uploads are accelerator-specific. LifeAICUDAExt supplies the CUDA methods.
+_qwen3_moe_pinned_upload_supported(prototype) = false
+
+function _qwen3_moe_begin_expert_upload(
+    prototype,
+    pinned::Bool,
+    max_inflight::Int,
+)
+    pinned && throw(ArgumentError(
+        "pinned expert upload is not supported by the selected device",
+    ))
+    return nothing
+end
+
+function _qwen3_moe_upload_host_expert(
+    prototype,
+    host_parameters,
+    to_device,
+    upload_state,
+)
+    return to_device(host_parameters)
+end
+
+_qwen3_moe_finish_expert_upload(prototype, upload_state) = (;
+    wait_seconds=0.0,
+    pinned_bytes=0,
+)
 
 function _qwen3_moe_reset_expert_traffic!(
     session::HFQwen3MoEOffloadSession,
@@ -248,6 +302,12 @@ function _qwen3_moe_reset_expert_traffic!(
     session.expert_pointer_table_reuses = 0
     session.expert_workspace_allocations = 0
     session.expert_workspace_reuses = 0
+    session.expert_miss_stage_seconds = 0.0
+    session.expert_host_read_seconds = 0.0
+    session.expert_upload_wait_seconds = 0.0
+    session.expert_read_tasks = 0
+    session.expert_parallel_read_layers = 0
+    session.expert_pinned_bytes_uploaded = 0
     return session
 end
 
@@ -334,7 +394,8 @@ end
 
 """
     configure_hf_qwen3_moe_expert_cache!(
-        session; budget_bytes, policy, dispatch, gc_interval_layers)
+        session; budget_bytes, policy, dispatch, gc_interval_layers,
+        miss_pipeline, read_workers, pinned_upload)
 
 Clear the existing expert cache and reconfigure its byte budget and eviction
 policy while retaining the resident model, static KV buffers and compiled
@@ -349,6 +410,9 @@ function configure_hf_qwen3_moe_expert_cache!(
     policy::Symbol=session.expert_cache_policy,
     dispatch::Symbol=session.expert_cache_dispatch,
     gc_interval_layers::Integer=session.expert_gc_interval_layers,
+    miss_pipeline::Symbol=session.expert_miss_pipeline,
+    read_workers::Integer=session.expert_read_workers,
+    pinned_upload::Bool=session.expert_pinned_upload,
 )
     budget = Int(budget_bytes)
     budget >= 0 || throw(ArgumentError(
@@ -356,9 +420,16 @@ function configure_hf_qwen3_moe_expert_cache!(
     ))
     validated_policy = _qwen3_moe_validate_expert_cache_policy(policy)
     validated_dispatch = _qwen3_moe_validate_expert_cache_dispatch(dispatch)
+    validated_pipeline = _qwen3_moe_validate_expert_miss_pipeline(
+        miss_pipeline,
+    )
     gc_interval = Int(gc_interval_layers)
+    workers = Int(read_workers)
     gc_interval >= 0 || throw(ArgumentError(
         "expert cache gc_interval_layers must be non-negative",
+    ))
+    workers > 0 || throw(ArgumentError(
+        "expert read_workers must be positive",
     ))
     validated_dispatch === :scattered && session.grouped_experts &&
         throw(ArgumentError(
@@ -367,11 +438,25 @@ function configure_hf_qwen3_moe_expert_cache!(
     validated_dispatch === :scattered && budget == 0 && throw(ArgumentError(
         "scattered expert cache dispatch requires a positive cache budget",
     ))
+    validated_pipeline === :overlapped && budget == 0 && throw(ArgumentError(
+        "overlapped expert misses require a positive cache budget",
+    ))
+    pinned_upload && validated_pipeline !== :overlapped && throw(ArgumentError(
+        "pinned expert upload requires miss_pipeline=:overlapped",
+    ))
+    pinned_upload &&
+        !_qwen3_moe_pinned_upload_supported(session.final_scale) &&
+        throw(ArgumentError(
+            "pinned expert upload is not supported by the selected device",
+        ))
     clear_hf_qwen3_moe_expert_cache!(session)
     session.expert_cache_budget_bytes = budget
     session.expert_cache_policy = validated_policy
     session.expert_cache_dispatch = validated_dispatch
     session.expert_gc_interval_layers = gc_interval
+    session.expert_miss_pipeline = validated_pipeline
+    session.expert_read_workers = workers
+    session.expert_pinned_upload = pinned_upload
     return session
 end
 
@@ -449,11 +534,12 @@ function _qwen3_moe_make_layer_cache_room!(
     return true
 end
 
-function _qwen3_moe_read_expert(
+function _qwen3_moe_read_expert_host(
     session::HFQwen3MoEOffloadSession,
     expert::Int,
     layer::Int,
 )
+    started = time_ns()
     model = session.model
     hidden_dim = model.mlp_hidden_dim
     d_model = model.d_model
@@ -476,16 +562,18 @@ function _qwen3_moe_read_expert(
         ),
     )
     entry_bytes = _qwen3_moe_tree_bytes(host_parameters)
-    session.expert_bytes_read = Base.checked_add(
-        session.expert_bytes_read,
-        entry_bytes,
+    return (;
+        parameters=host_parameters,
+        bytes=entry_bytes,
+        seconds=(time_ns() - started) / 1.0e9,
     )
-    device_parameters = session.to_device(host_parameters)
-    session.expert_bytes_uploaded = Base.checked_add(
-        session.expert_bytes_uploaded,
-        entry_bytes,
-    )
-    host_parameters = nothing
+end
+
+function _qwen3_moe_make_expert_cache_entry!(
+    session::HFQwen3MoEOffloadSession,
+    device_parameters,
+    entry_bytes::Int,
+)
     session.expert_cache_entry_generation = Base.checked_add(
         session.expert_cache_entry_generation,
         1,
@@ -496,6 +584,68 @@ function _qwen3_moe_read_expert(
         device_parameters.down_proj,
         entry_bytes,
         session.expert_cache_entry_generation,
+    )
+end
+
+function _qwen3_moe_store_expert_cache_entry!(
+    session::HFQwen3MoEOffloadSession,
+    key::Tuple{Int,Int},
+    entry::_Qwen3MoEExpertCacheEntry,
+    protected::Set{Tuple{Int,Int}},
+)
+    policy_allows_store = session.expert_cache_policy === :global_lru ||
+        _qwen3_moe_make_layer_cache_room!(
+            session,
+            key[1],
+            entry.bytes,
+            protected,
+        )
+    can_store = entry.bytes <= session.expert_cache_budget_bytes &&
+        policy_allows_store &&
+        _qwen3_moe_make_expert_cache_room!(
+            session,
+            entry.bytes,
+            protected,
+        )
+    if can_store
+        session.expert_cache[key] = entry
+        session.expert_cache_bytes = Base.checked_add(
+            session.expert_cache_bytes,
+            entry.bytes,
+        )
+        session.expert_cache_peak_bytes = max(
+            session.expert_cache_peak_bytes,
+            session.expert_cache_bytes,
+        )
+        _qwen3_moe_touch_expert_cache!(session, key)
+    end
+    return entry
+end
+
+function _qwen3_moe_read_expert(
+    session::HFQwen3MoEOffloadSession,
+    expert::Int,
+    layer::Int,
+)
+    host = _qwen3_moe_read_expert_host(session, expert, layer)
+    session.expert_bytes_read = Base.checked_add(
+        session.expert_bytes_read,
+        host.bytes,
+    )
+    session.expert_host_read_seconds += host.seconds
+    session.expert_read_tasks = Base.checked_add(
+        session.expert_read_tasks,
+        1,
+    )
+    device_parameters = session.to_device(host.parameters)
+    session.expert_bytes_uploaded = Base.checked_add(
+        session.expert_bytes_uploaded,
+        host.bytes,
+    )
+    return _qwen3_moe_make_expert_cache_entry!(
+        session,
+        device_parameters,
+        host.bytes,
     )
 end
 
@@ -520,34 +670,16 @@ function _qwen3_moe_cached_expert(
         session.expert_cache_misses,
         1,
     )
+    started = time_ns()
     entry = _qwen3_moe_read_expert(session, expert, layer)
-    policy_allows_store = session.expert_cache_policy === :global_lru ||
-        _qwen3_moe_make_layer_cache_room!(
-            session,
-            layer + 1,
-            entry.bytes,
-            protected,
-        )
-    can_store = entry.bytes <= session.expert_cache_budget_bytes &&
-        policy_allows_store &&
-        _qwen3_moe_make_expert_cache_room!(
-            session,
-            entry.bytes,
-            protected,
-        )
-    if can_store
-        session.expert_cache[key] = entry
-        session.expert_cache_bytes = Base.checked_add(
-            session.expert_cache_bytes,
-            entry.bytes,
-        )
-        session.expert_cache_peak_bytes = max(
-            session.expert_cache_peak_bytes,
-            session.expert_cache_bytes,
-        )
-        _qwen3_moe_touch_expert_cache!(session, key)
-    end
-    return entry
+    stored = _qwen3_moe_store_expert_cache_entry!(
+        session,
+        key,
+        entry,
+        protected,
+    )
+    session.expert_miss_stage_seconds += (time_ns() - started) / 1.0e9
+    return stored
 end
 
 function _qwen3_moe_load_uncached_active_experts(
@@ -603,6 +735,138 @@ function _qwen3_moe_load_uncached_active_experts(
     return parameters
 end
 
+function _qwen3_moe_load_active_experts_overlapped(
+    session::HFQwen3MoEOffloadSession,
+    active_experts::Vector{Int},
+    layer::Int,
+    protected::Set{Tuple{Int,Int}},
+)
+    started = time_ns()
+    entries = Vector{_Qwen3MoEExpertCacheEntry}(undef, length(active_experts))
+    misses = NamedTuple[]
+    for (entry_index, expert) in enumerate(active_experts)
+        key = (layer + 1, expert)
+        cached = get(session.expert_cache, key, nothing)
+        if cached === nothing
+            session.expert_cache_misses = Base.checked_add(
+                session.expert_cache_misses,
+                1,
+            )
+            push!(misses, (; entry_index, expert, key))
+        else
+            session.expert_cache_hits = Base.checked_add(
+                session.expert_cache_hits,
+                1,
+            )
+            _qwen3_moe_touch_expert_cache!(session, key)
+            entries[entry_index] = cached
+        end
+    end
+
+    isempty(misses) && return _Qwen3MoEScatteredExperts(
+        copy(active_experts),
+        [entry.generation for entry in entries],
+        entries,
+        session.model.mlp_hidden_dim,
+        session.model.d_model,
+    )
+
+    window = min(session.expert_read_workers, length(misses))
+    tasks = Vector{Union{Nothing,Task}}(undef, length(misses))
+    fill!(tasks, nothing)
+    launch!(miss_index) = tasks[miss_index] = Threads.@spawn(
+        _qwen3_moe_read_expert_host(
+            session,
+            misses[miss_index].expert,
+            layer,
+        )
+    )
+    for miss_index in 1:window
+        launch!(miss_index)
+    end
+    session.expert_read_tasks = Base.checked_add(
+        session.expert_read_tasks,
+        length(misses),
+    )
+    if window > 1 && Threads.nthreads() > 1
+        session.expert_parallel_read_layers = Base.checked_add(
+            session.expert_parallel_read_layers,
+            1,
+        )
+    end
+
+    upload_state = _qwen3_moe_begin_expert_upload(
+        session.final_scale,
+        session.expert_pinned_upload,
+        window,
+    )
+    try
+        for miss_index in eachindex(misses)
+            read_task = tasks[miss_index]::Task
+            host = fetch(read_task)
+            tasks[miss_index] = nothing
+            next_index = miss_index + window
+            next_index <= length(misses) && launch!(next_index)
+
+            session.expert_host_read_seconds += host.seconds
+            session.expert_bytes_read = Base.checked_add(
+                session.expert_bytes_read,
+                host.bytes,
+            )
+            device_parameters = _qwen3_moe_upload_host_expert(
+                session.final_scale,
+                host.parameters,
+                session.to_device,
+                upload_state,
+            )
+            session.expert_bytes_uploaded = Base.checked_add(
+                session.expert_bytes_uploaded,
+                host.bytes,
+            )
+            entry = _qwen3_moe_make_expert_cache_entry!(
+                session,
+                device_parameters,
+                host.bytes,
+            )
+            miss = misses[miss_index]
+            entries[miss.entry_index] = _qwen3_moe_store_expert_cache_entry!(
+                session,
+                miss.key,
+                entry,
+                protected,
+            )
+        end
+    finally
+        # Do not leave reader tasks running if a sibling read/upload failed.
+        for task in tasks
+            if task !== nothing && !istaskdone(task)
+                try
+                    wait(task)
+                catch
+                end
+            end
+        end
+        upload = _qwen3_moe_finish_expert_upload(
+            session.final_scale,
+            upload_state,
+        )
+        session.expert_upload_wait_seconds += upload.wait_seconds
+        session.expert_pinned_bytes_uploaded = Base.checked_add(
+            session.expert_pinned_bytes_uploaded,
+            upload.pinned_bytes,
+        )
+        session.expert_miss_stage_seconds +=
+            (time_ns() - started) / 1.0e9
+    end
+    return _Qwen3MoEScatteredExperts(
+        copy(active_experts),
+        [entry.generation for entry in entries],
+        entries,
+        session.model.mlp_hidden_dim,
+        session.model.d_model,
+    )
+end
+
 function _qwen3_moe_load_active_experts(
     session::HFQwen3MoEOffloadSession,
     active_experts::Vector{Int},
@@ -618,6 +882,13 @@ function _qwen3_moe_load_active_experts(
     hidden_dim = model.mlp_hidden_dim
     d_model = model.d_model
     protected = Set((layer + 1, expert) for expert in active_experts)
+    session.expert_miss_pipeline === :overlapped &&
+        return _qwen3_moe_load_active_experts_overlapped(
+            session,
+            active_experts,
+            layer,
+            protected,
+        )
     entries = [
         _qwen3_moe_cached_expert(
             session,
@@ -873,7 +1144,10 @@ and dispatch workspaces across layers/requests; expert-entry generations guard
 against stale pointer reuse, and cache clear/reconfigure drops the state.
 `expert_gc_interval_layers` controls forced GC frequency (`1` preserves the
 original per-layer behavior; `0` disables forced GC). Request reset retains
-cached experts, while
+cached experts. `expert_miss_pipeline=:overlapped` uses a bounded number of
+host reader tasks for independent active-expert misses; `expert_pinned_upload`
+additionally enables accelerator-specific pinned asynchronous transfers.
+Neither mode speculates beyond the current layer's completed router. Meanwhile,
 `clear_hf_qwen3_moe_expert_cache!` releases their logical ownership.
 """
 function load_hf_qwen3_moe_offload_session(
@@ -885,6 +1159,9 @@ function load_hf_qwen3_moe_offload_session(
     expert_cache_policy::Symbol=:global_lru,
     expert_cache_dispatch::Symbol=:materialized,
     expert_gc_interval_layers::Integer=1,
+    expert_miss_pipeline::Symbol=:sequential,
+    expert_read_workers::Integer=4,
+    expert_pinned_upload::Bool=false,
     to_device=identity,
     on_resident_layer=nothing,
 )
@@ -901,6 +1178,10 @@ function load_hf_qwen3_moe_offload_session(
         expert_cache_dispatch,
     )
     gc_interval = Int(expert_gc_interval_layers)
+    miss_pipeline = _qwen3_moe_validate_expert_miss_pipeline(
+        expert_miss_pipeline,
+    )
+    read_workers = Int(expert_read_workers)
     config = load_hf_qwen3_moe_config(
         joinpath(model_dir, "config.json");
         max_seq_len=context,
@@ -916,11 +1197,20 @@ function load_hf_qwen3_moe_offload_session(
     gc_interval >= 0 || throw(ArgumentError(
         "expert_gc_interval_layers must be non-negative",
     ))
+    read_workers > 0 || throw(ArgumentError(
+        "expert_read_workers must be positive",
+    ))
     cache_dispatch === :scattered && grouped_experts && throw(ArgumentError(
         "scattered expert cache dispatch does not support grouped_experts=true",
     ))
     cache_dispatch === :scattered && cache_budget == 0 && throw(ArgumentError(
         "scattered expert cache dispatch requires a positive cache budget",
+    ))
+    miss_pipeline === :overlapped && cache_budget == 0 && throw(ArgumentError(
+        "overlapped expert misses require a positive cache budget",
+    ))
+    expert_pinned_upload && miss_pipeline !== :overlapped && throw(ArgumentError(
+        "pinned expert upload requires expert_miss_pipeline=:overlapped",
     ))
     reader = open_safetensors_reader(model_dir)
     _qwen3_validate_moe_tensor_names(
@@ -975,6 +1265,11 @@ function load_hf_qwen3_moe_offload_session(
     sin_table = to_device(BFloat16.(rope.sin_cache[:, 1:context]))
     caches = _qwen3_session_cache(final_scale, model, context)
     GC.gc()
+    expert_pinned_upload &&
+        !_qwen3_moe_pinned_upload_supported(final_scale) &&
+        throw(ArgumentError(
+            "pinned expert upload is not supported by the selected device",
+        ))
 
     return HFQwen3MoEOffloadSession(
         model,
@@ -1018,6 +1313,15 @@ function load_hf_qwen3_moe_offload_session(
         0,
         0,
         0,
+        0,
+        0,
+        0,
+        miss_pipeline,
+        read_workers,
+        expert_pinned_upload,
+        0.0,
+        0.0,
+        0.0,
         0,
         0,
         0,

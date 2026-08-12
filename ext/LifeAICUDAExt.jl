@@ -5,6 +5,95 @@ import CUDA
 import LifeAI
 import LifeAI: qwen3_device_sparse_expert_dispatch
 
+mutable struct _Qwen3CUDAPinnedExpertUpload
+    stream
+    max_inflight::Int
+    pinned_arrays::Vector{Any}
+    wait_seconds::Float64
+    pinned_bytes::Int
+end
+
+LifeAI._qwen3_moe_pinned_upload_supported(::CUDA.CuArray) = true
+
+function LifeAI._qwen3_moe_begin_expert_upload(
+    prototype::CUDA.CuArray,
+    pinned::Bool,
+    max_inflight::Int,
+)
+    pinned || return nothing
+    return _Qwen3CUDAPinnedExpertUpload(
+        CUDA.CuStream(),
+        max_inflight,
+        Any[],
+        0.0,
+        0,
+    )
+end
+
+function _qwen3_cuda_flush_pinned_expert_upload!(
+    state::_Qwen3CUDAPinnedExpertUpload,
+)
+    isempty(state.pinned_arrays) && return state
+    started = time_ns()
+    CUDA.synchronize(state.stream)
+    state.wait_seconds += (time_ns() - started) / 1.0e9
+    for array in state.pinned_arrays
+        finalize(array)
+    end
+    empty!(state.pinned_arrays)
+    return state
+end
+
+function LifeAI._qwen3_moe_upload_host_expert(
+    prototype::CUDA.CuArray,
+    host_parameters,
+    to_device,
+    state::_Qwen3CUDAPinnedExpertUpload,
+)
+    length(state.pinned_arrays) >= 3 * state.max_inflight &&
+        _qwen3_cuda_flush_pinned_expert_upload!(state)
+    for array in values(host_parameters)
+        CUDA.pin(array)
+        push!(state.pinned_arrays, array)
+        state.pinned_bytes = Base.checked_add(
+            state.pinned_bytes,
+            sizeof(eltype(array)) * length(array),
+        )
+    end
+    return CUDA.stream!(state.stream) do
+        gate_proj = similar(
+            prototype,
+            eltype(host_parameters.gate_proj),
+            size(host_parameters.gate_proj),
+        )
+        up_proj = similar(
+            prototype,
+            eltype(host_parameters.up_proj),
+            size(host_parameters.up_proj),
+        )
+        down_proj = similar(
+            prototype,
+            eltype(host_parameters.down_proj),
+            size(host_parameters.down_proj),
+        )
+        copyto!(gate_proj, host_parameters.gate_proj)
+        copyto!(up_proj, host_parameters.up_proj)
+        copyto!(down_proj, host_parameters.down_proj)
+        return (; gate_proj, up_proj, down_proj)
+    end
+end
+
+function LifeAI._qwen3_moe_finish_expert_upload(
+    prototype::CUDA.CuArray,
+    state::_Qwen3CUDAPinnedExpertUpload,
+)
+    _qwen3_cuda_flush_pinned_expert_upload!(state)
+    return (;
+        wait_seconds=state.wait_seconds,
+        pinned_bytes=state.pinned_bytes,
+    )
+end
+
 # CUDA specialization for Qwen3 MoE compact dispatch. The portable
 # route-major fallback gathers and replicates all three expert matrices for
 # every route. These kernels instead index the original expert tensor in place:

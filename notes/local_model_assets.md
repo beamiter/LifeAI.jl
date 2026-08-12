@@ -997,3 +997,23 @@ julia --project=. \
 96 次调用均零 pointer build/upload 与 workspace allocation；`gc8` 100 次 free
 不下降。`gc0` 500 次运行中 pool 扩张 `885,915,648` bytes，但 reclaim 后完全
 恢复，说明没有 live leak、仍存在尾延迟/高水位，长期建议继续使用 `gc8`。
+
+Chapter 30 继续复用同一模型/reference/session，要求 Julia 多线程，并比较
+sequential、overlapped pageable 与 overlapped pinned 三条 cold device-cache
+路径：
+
+```bash
+julia --threads=4 --project=. \
+  scripts/benchmark_qwen3_moe_cuda_async_miss_pipeline.jl \
+  MODEL_DIR \
+  MODEL_DIR/lifeai-references/chapter24-real-parity/bfloat16 \
+  /tmp/qwen3_moe_cuda_async_miss_pipeline.json
+```
+
+默认每种配置先 warmup，再交错运行 3 次；可用 `LIFEAI_MOE_READ_WORKERS` 和
+`LIFEAI_MOE_MISS_REPETITIONS` 改变 worker/重复数。脚本不会 drop OS page
+cache，因此只测 warm-page-cache miss path。冻结摘要位于
+`benchmark_results/qwen3_moe_cuda_async_miss_pipeline/summary.json`：4-worker
+pageable overlap 的 request median 为 `5.423 s`，相对 sequential 的
+`10.677 s` 加速 `1.969×`；pinned 为 `5.481 s`，略慢于 pageable。三路
+warmup/measured logits 全 exact，pinned 的 8.418 GB 注册/解绑生命周期也已验证。

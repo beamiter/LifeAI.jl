@@ -130,7 +130,7 @@
   },
   "source_sha256": {
     "benchmark_script": "71c6227fc701e51f052a188dbfcd535d051da4c334e29f6f981c41fcc6ef5fe0",
-    "offload_implementation": "42a491bf6b6bd4355bd1a666a5a695f756b8e192c8a95a2d5058eea1b9161ce3",
-    "cuda_extension": "7ebd589c467902170233efb0bbb2197bd3f541c3e695a05f8a93b430e8b363e5"
+    "offload_implementation": "586d6d0a51d557a09843592da8cc7bf09cb9c36073afdab3d00afadbc2757cb0",
+    "cuda_extension": "95ad5a4c2fc6d6446eb026c443952ba86bd2ee64e6bf4bf996ce0f472d8b333c"
   }
 }

@@ -48,3 +48,6 @@ benchmark_results/qwen3_moe_cuda_scattered_cache/*
 !benchmark_results/qwen3_moe_cuda_scattered_reuse/
 benchmark_results/qwen3_moe_cuda_scattered_reuse/*
 !benchmark_results/qwen3_moe_cuda_scattered_reuse/summary.json
+!benchmark_results/qwen3_moe_cuda_async_miss_pipeline/
+benchmark_results/qwen3_moe_cuda_async_miss_pipeline/*
+!benchmark_results/qwen3_moe_cuda_async_miss_pipeline/summary.json
