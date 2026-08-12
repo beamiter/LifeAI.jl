@@ -187,6 +187,14 @@ end
             "qwen3_moe_async_miss_pipeline_test.jl",
         ))
     end
+
+    @testset "Chapter 31 — Qwen3 MoE read-worker sweep" begin
+        include(chapter_test(
+            "episode06_qwen3_moe_and_model_expansion",
+            "chapter31_qwen3_moe_read_worker_sweep",
+            "qwen3_moe_read_worker_sweep_test.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

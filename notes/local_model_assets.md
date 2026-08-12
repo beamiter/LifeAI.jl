@@ -1017,3 +1017,21 @@ cache，因此只测 warm-page-cache miss path。冻结摘要位于
 pageable overlap 的 request median 为 `5.423 s`，相对 sequential 的
 `10.677 s` 加速 `1.969×`；pinned 为 `5.481 s`，略慢于 pageable。三路
 warmup/measured logits 全 exact，pinned 的 8.418 GB 注册/解绑生命周期也已验证。
+
+Chapter 31 固定 Chapter 27 的 English32 自然文本，使用 4 GiB layer-balanced
+cache 与 scattered dispatch，比较 1/2/4/8 workers。脚本要求 8 Julia threads：
+
+```bash
+julia --threads=8 --project=. \
+  scripts/benchmark_qwen3_moe_cuda_read_worker_sweep.jl \
+  MODEL_DIR \
+  /tmp/qwen3_moe_cuda_read_worker_sweep.json
+```
+
+每个 cold 请求前对全部 16 个分片调用 `POSIX_FADV_DONTNEED`，并从
+`/proc/self/io` 记录实际 storage-read bytes；随后的 revisit 只清 device cache。
+冻结报告位于 `benchmark_results/qwen3_moe_cuda_read_worker_sweep/summary.json`：
+cold 的 1/2/4/8-worker 中位为 `48.181 / 30.614 / 20.737 / 16.962 s`，
+revisit 为 `37.349 / 23.316 / 17.015 / 14.553 s`。cold 每轮实际读存储约
+`26.236 GB`，revisit 为 `0`；所有输出 exact。overlapped pipeline 未显式指定
+worker 时现在使用 `min(8, Threads.nthreads())`，仍可通过 API 显式覆盖。

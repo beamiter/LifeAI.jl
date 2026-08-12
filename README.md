@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、直接消费分散 BF16 cache matrices 并有界复用状态的 CUDA dispatch，以及当前层 post-router bounded parallel miss reads。**
+**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、直接消费分散 BF16 cache matrices 并有界复用状态的 CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。**
 
-Chapter 01—30 均已 Closed。[`Chapter 30 — Qwen3 MoE bounded async miss pipeline`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter30_qwen3_moe_async_miss_pipeline.md) 在当前层 router 完成后用 4 个有界 reader 并行 staging expert miss；真实 30B-A3B warm-page-cache 请求从 `10.677 s` 降到 `5.423 s`（`1.969×`），全部 logits exact。pinned async 为 `5.481 s`，没有胜过 pageable overlap，因此保留 opt-in 且不改变默认值。
+Chapter 01—31 均已 Closed。[`Chapter 31 — Qwen3 MoE storage-aware read-worker sweep`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter31_qwen3_moe_read_worker_sweep.md) 用 `POSIX_FADV_DONTNEED + /proc/self/io` 区分真实 storage reads 与 page-cache revisit。32-token 自然文本的 1→8 worker cold request 从 `48.181 s` 降到 `16.962 s`（`2.840×`），revisit 从 `37.349 s` 降到 `14.553 s`（`2.566×`），全部输出 exact；overlap 的默认 worker 因此改为 `min(8, Threads.nthreads())`，但 pipeline 本身仍是 opt-in。
 
 目前已经具备：
 

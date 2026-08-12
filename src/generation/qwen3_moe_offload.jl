@@ -256,6 +256,8 @@ function _qwen3_moe_validate_expert_miss_pipeline(pipeline::Symbol)
     return pipeline
 end
 
+_qwen3_moe_default_expert_read_workers() = min(8, Threads.nthreads())
+
 # Portable devices can overlap independent host reads, but pinned asynchronous
 # uploads are accelerator-specific. LifeAICUDAExt supplies the CUDA methods.
 _qwen3_moe_pinned_upload_supported(prototype) = false
@@ -1145,10 +1147,12 @@ against stale pointer reuse, and cache clear/reconfigure drops the state.
 `expert_gc_interval_layers` controls forced GC frequency (`1` preserves the
 original per-layer behavior; `0` disables forced GC). Request reset retains
 cached experts. `expert_miss_pipeline=:overlapped` uses a bounded number of
-host reader tasks for independent active-expert misses; `expert_pinned_upload`
-additionally enables accelerator-specific pinned asynchronous transfers.
-Neither mode speculates beyond the current layer's completed router. Meanwhile,
-`clear_hf_qwen3_moe_expert_cache!` releases their logical ownership.
+host reader tasks for independent active-expert misses. Its default worker
+count is the smaller of eight and the current Julia thread count;
+`expert_pinned_upload` additionally enables accelerator-specific pinned
+asynchronous transfers. Neither mode speculates beyond the current layer's
+completed router. Meanwhile, `clear_hf_qwen3_moe_expert_cache!` releases their
+logical ownership.
 """
 function load_hf_qwen3_moe_offload_session(
     model_dir::AbstractString;
@@ -1160,7 +1164,7 @@ function load_hf_qwen3_moe_offload_session(
     expert_cache_dispatch::Symbol=:materialized,
     expert_gc_interval_layers::Integer=1,
     expert_miss_pipeline::Symbol=:sequential,
-    expert_read_workers::Integer=4,
+    expert_read_workers::Integer=_qwen3_moe_default_expert_read_workers(),
     expert_pinned_upload::Bool=false,
     to_device=identity,
     on_resident_layer=nothing,
