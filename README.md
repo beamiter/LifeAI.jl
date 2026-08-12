@@ -21,7 +21,7 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 **阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、直接消费分散 BF16 cache matrices 并有界复用状态的 CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。**
 
-Chapter 01—32 均已 Closed。[`Chapter 32 — Qwen3 MoE adjacent safetensors read experiment`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter32_qwen3_moe_coalesced_reads.md) 为同 shard 严格相邻 tensor 增加 batch reader，并在真实 30B-A3B English32 cold/revisit 上比较三种读取模式。coalesced read 将 syscall 减少约 `64.8%`，但 request 分别慢约 `23.9% / 33.6%`；shared-open 与原路径无可归因差异。因此默认保持 `expert_read_mode=:tensor`，把两种新模式保留为显式实验能力，不把 syscall reduction 当作吞吐收益。
+Chapter 01—33 均已 Closed。[`Chapter 33 — Qwen3 MoE safetensors decode copy elision`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter33_qwen3_moe_decode_copy_elision.md) 保持 Chapter 32 选出的逐 tensor 读取和 8-worker overlap，只移除最终 `permutedims` 前的冗余同 dtype 线性副本。真实 30B-A3B English32 cold/revisit 的 Julia allocation 从约 `86.326 GB` 降到 `57.646 GB`（均为 `33.22%`），减少量与 `28.680 GB` logical BF16 payload 对齐，所有输出 exact；相邻实验的微小 latency 变化不泛化为通用 speedup。
 
 目前已经具备：
 
@@ -46,7 +46,7 @@ Chapter 01—32 均已 Closed。[`Chapter 32 — Qwen3 MoE adjacent safetensors 
   安全 streaming、context/options fail-closed 和 single-flight；轻量
   client 只读取 tokenizer，权重与 compiled executable 常驻 server。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
-- 原始 Qwen3 MoE 的 Float32 top-k router、逐 expert SwiGLU、full/dynamic/static cache，以及 Float32/native BF16 的路由后 active-expert 流式读取。官方 30B-A3B 的 48 层 prompt/cache-decode parity 已冻结：Float32 top-8 集合 `1,152 / 1,152` 一致、BF16 路由槽位重合 `95.92%`，两种模式最终 argmax 均一致。`HFQwen3MoEOffloadSession` 让 attention/router/norm/LM head 与 40K KV 常驻 GPU，expert 在路由后按层读取并用局部 id 交给 scalar 或 grouped WMMA；最坏工作集硬下限 `7.166 GiB`。device cache 可选 global/layer-balanced LRU，按实际 expert-layer bytes 预算，支持跨请求保留、显式清空和运行时重配；scalar CUDA 还可用 scattered pointer-table dispatch 消除 active tensor 拼接，有界复用 pointer/workspace state，并配置 forced-GC cadence。cache miss 可显式选择 bounded parallel host reads 与 CUDA pinned upload；32-token trace 的 reader 默认上限为 8。严格相邻 batch read 已实现，但真实 workload 证明 coalescing 更慢，默认仍逐 tensor 读取。
+- 原始 Qwen3 MoE 的 Float32 top-k router、逐 expert SwiGLU、full/dynamic/static cache，以及 Float32/native BF16 的路由后 active-expert 流式读取。官方 30B-A3B 的 48 层 prompt/cache-decode parity 已冻结：Float32 top-8 集合 `1,152 / 1,152` 一致、BF16 路由槽位重合 `95.92%`，两种模式最终 argmax 均一致。`HFQwen3MoEOffloadSession` 让 attention/router/norm/LM head 与 40K KV 常驻 GPU，expert 在路由后按层读取并用局部 id 交给 scalar 或 grouped WMMA；最坏工作集硬下限 `7.166 GiB`。device cache 可选 global/layer-balanced LRU，按实际 expert-layer bytes 预算，支持跨请求保留、显式清空和运行时重配；scalar CUDA 还可用 scattered pointer-table dispatch 消除 active tensor 拼接，有界复用 pointer/workspace state，并配置 forced-GC cadence。cache miss 可显式选择 bounded parallel host reads 与 CUDA pinned upload；32-token trace 的 reader 默认上限为 8。严格相邻 batch read 已实现，但真实 workload 证明 coalescing 更慢，默认仍逐 tensor 读取；同 dtype 多维 decode 已移除一份冗余 payload copy。
 - 六个官方 Qwen3 dense 规格的 immutable revision/config checksum、自动识别、显式 variant 校验、精确参数量；严格的 BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
 - Qwen3-Embedding-0.6B 的独立 immutable revision/8-asset checksum、
   151,669-vocabulary/32K contract、embedding tokenizer 尾 token 与

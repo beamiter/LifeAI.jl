@@ -20,7 +20,8 @@ test/
         ├── chapter29_qwen3_moe_scattered_reuse/
         ├── chapter30_qwen3_moe_async_miss_pipeline/
         ├── chapter31_qwen3_moe_read_worker_sweep/
-        └── chapter32_qwen3_moe_coalesced_reads/
+        ├── chapter32_qwen3_moe_coalesced_reads/
+        └── chapter33_qwen3_moe_decode_copy_elision/
 ```
 
 ## Chapter 索引
@@ -59,6 +60,7 @@ test/
 | 06 | 30 | bounded parallel safetensors reads、CUDA pinned async upload 与真实 30B miss benchmark |
 | 06 | 31 | 1/2/4/8 reader sweep、storage/page-cache I/O 证据与自适应 worker 上限 |
 | 06 | 32 | safetensors 严格相邻批量读取、三种 expert read mode 与负性能结果契约 |
+| 06 | 33 | 多维 safetensors decode ownership、copy-elision 分配机制与真实 30B 结果契约 |
 
 `fixtures/` 只存在于拥有该证据的 Chapter 目录中。跨 Chapter 复用 fixture 时，
 测试显式引用其原始 Chapter，不复制第二份数据。`support/` 只存放无独立产品能力

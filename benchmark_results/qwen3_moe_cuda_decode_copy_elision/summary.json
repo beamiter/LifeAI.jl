@@ -1,0 +1,245 @@
+{
+    "schema_version": 1,
+    "model_id": "Qwen/Qwen3-30B-A3B",
+    "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+    "compute_dtype": "bfloat16",
+    "gpu": {
+        "name": "NVIDIA GeForce RTX 4090 D",
+        "capability": "8.9.0",
+        "free_before_bytes": 23676321792,
+        "free_ready_bytes": 17321230336
+    },
+    "session": {
+        "context_tokens": 40960,
+        "cache_budget_bytes": 4294967296,
+        "cache_policy": "layer_balanced_lru",
+        "dispatch": "scattered",
+        "gc_interval_layers": 8,
+        "read_mode": "tensor",
+        "read_workers": 8,
+        "julia_threads": 8,
+        "load_seconds": 16.907618847
+    },
+    "workload": {
+        "trace": "english_32 plus one greedy decode",
+        "tokens_per_prompt": 32,
+        "decode_tokens": 1,
+        "text_sha256": "6f193bc5b69fd5ad659a031e3f17d83115ed89d39242d4560313031b93815072",
+        "tokens_sha256": "0f06ce74166c11acb516970ec217b6ef52c9592f2ecd88067189d26959f74927",
+        "tokenizer_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    },
+    "methodology": {
+        "repetitions": 3,
+        "cold_control": "POSIX_FADV_DONTNEED on all 16 checkpoint shards",
+        "cold_verification": "per-request /proc/self/io read_bytes",
+        "device_cache": "cleared before every request",
+        "comparison": "adjacent frozen Chapter 32 tensor baseline",
+        "same_process_ab": false,
+        "mechanism_check": "eliminated allocation should equal one BF16 payload copy"
+    },
+    "baseline": {
+        "source_report": "benchmark_results/qwen3_moe_cuda_coalesced_reads/summary.json",
+        "source_report_sha256": "c22cd64ef573d7676e0c766a64a0684a7284672d8fc32186327890749ffcb493",
+        "implementation": "copied_multidimensional_decode",
+        "cold": {
+            "request_seconds_median": 17.122054112,
+            "allocated_bytes_median": 86325851872
+        },
+        "revisit": {
+            "request_seconds_median": 14.589282996000001,
+            "allocated_bytes_median": 86325817760
+        }
+    },
+    "direct": {
+        "cold": {
+            "repetitions": 3,
+            "request_seconds_median": 16.540379531,
+            "request_seconds_mean": 17.169701363666665,
+            "request_seconds_minimum": 16.529932571,
+            "request_seconds_maximum": 18.438791989,
+            "read_syscalls_median": 9359,
+            "allocated_bytes_median": 57646099688,
+            "runs": [
+                {
+                    "implementation": "direct_multidimensional_decode",
+                    "page_cache_phase": "fadvise_cold",
+                    "repetition": 1,
+                    "prefill_seconds": 16.570611504,
+                    "decode_seconds": 1.868180485,
+                    "request_seconds": 18.438791989,
+                    "cache_hits": 71,
+                    "cache_misses": 3039,
+                    "cache_evictions": 313,
+                    "expert_bytes_read": 28679602176,
+                    "expert_bytes_uploaded": 28679602176,
+                    "miss_stage_seconds": 16.285798433999997,
+                    "summed_host_read_seconds": 99.91768779300003,
+                    "read_jobs": 3039,
+                    "process_rchar": 28689948984,
+                    "process_read_syscalls": 10453,
+                    "process_storage_read_bytes": 26235793408,
+                    "julia_allocated_bytes": 57919882992,
+                    "julia_gc_time_ns": 4121104051,
+                    "julia_gc_collections": 0,
+                    "gpu_free_bytes": 11738218496
+                },
+                {
+                    "implementation": "direct_multidimensional_decode",
+                    "page_cache_phase": "fadvise_cold",
+                    "repetition": 2,
+                    "prefill_seconds": 14.720634751,
+                    "decode_seconds": 1.80929782,
+                    "request_seconds": 16.529932571,
+                    "cache_hits": 71,
+                    "cache_misses": 3039,
+                    "cache_evictions": 313,
+                    "expert_bytes_read": 28679602176,
+                    "expert_bytes_uploaded": 28679602176,
+                    "miss_stage_seconds": 16.208726184000003,
+                    "summed_host_read_seconds": 100.67336827399993,
+                    "read_jobs": 3039,
+                    "process_rchar": 28680688431,
+                    "process_read_syscalls": 9359,
+                    "process_storage_read_bytes": 26235793408,
+                    "julia_allocated_bytes": 57646099688,
+                    "julia_gc_time_ns": 3888125190,
+                    "julia_gc_collections": 0,
+                    "gpu_free_bytes": 11955339264
+                },
+                {
+                    "implementation": "direct_multidimensional_decode",
+                    "page_cache_phase": "fadvise_cold",
+                    "repetition": 3,
+                    "prefill_seconds": 14.708193162,
+                    "decode_seconds": 1.832186369,
+                    "request_seconds": 16.540379531,
+                    "cache_hits": 71,
+                    "cache_misses": 3039,
+                    "cache_evictions": 313,
+                    "expert_bytes_read": 28679602176,
+                    "expert_bytes_uploaded": 28679602176,
+                    "miss_stage_seconds": 16.270349696999993,
+                    "summed_host_read_seconds": 101.8617189480001,
+                    "read_jobs": 3039,
+                    "process_rchar": 28680688424,
+                    "process_read_syscalls": 9358,
+                    "process_storage_read_bytes": 26235793408,
+                    "julia_allocated_bytes": 57646078936,
+                    "julia_gc_time_ns": 3928237173,
+                    "julia_gc_collections": 0,
+                    "gpu_free_bytes": 11792941056
+                }
+            ]
+        },
+        "revisit": {
+            "repetitions": 3,
+            "request_seconds_median": 14.882249378000001,
+            "request_seconds_mean": 14.804802586333333,
+            "request_seconds_minimum": 14.635348555,
+            "request_seconds_maximum": 14.896809826,
+            "read_syscalls_median": 9342,
+            "allocated_bytes_median": 57646086296,
+            "runs": [
+                {
+                    "implementation": "direct_multidimensional_decode",
+                    "page_cache_phase": "post_cold_revisit",
+                    "repetition": 1,
+                    "prefill_seconds": 12.85657171,
+                    "decode_seconds": 1.778776845,
+                    "request_seconds": 14.635348555,
+                    "cache_hits": 71,
+                    "cache_misses": 3039,
+                    "cache_evictions": 313,
+                    "expert_bytes_read": 28679602176,
+                    "expert_bytes_uploaded": 28679602176,
+                    "miss_stage_seconds": 14.250397437000005,
+                    "summed_host_read_seconds": 82.15829112399999,
+                    "read_jobs": 3039,
+                    "process_rchar": 28680688295,
+                    "process_read_syscalls": 9342,
+                    "process_storage_read_bytes": 0,
+                    "julia_allocated_bytes": 57646077976,
+                    "julia_gc_time_ns": 3734205556,
+                    "julia_gc_collections": 0,
+                    "gpu_free_bytes": 11792744448
+                },
+                {
+                    "implementation": "direct_multidimensional_decode",
+                    "page_cache_phase": "post_cold_revisit",
+                    "repetition": 2,
+                    "prefill_seconds": 12.964000599,
+                    "decode_seconds": 1.932809227,
+                    "request_seconds": 14.896809826,
+                    "cache_hits": 71,
+                    "cache_misses": 3039,
+                    "cache_evictions": 313,
+                    "expert_bytes_read": 28679602176,
+                    "expert_bytes_uploaded": 28679602176,
+                    "miss_stage_seconds": 14.484347565,
+                    "summed_host_read_seconds": 84.70775026600012,
+                    "read_jobs": 3039,
+                    "process_rchar": 28680686801,
+                    "process_read_syscalls": 9350,
+                    "process_storage_read_bytes": 0,
+                    "julia_allocated_bytes": 57646100344,
+                    "julia_gc_time_ns": 3891012490,
+                    "julia_gc_collections": 0,
+                    "gpu_free_bytes": 12027625472
+                },
+                {
+                    "implementation": "direct_multidimensional_decode",
+                    "page_cache_phase": "post_cold_revisit",
+                    "repetition": 3,
+                    "prefill_seconds": 13.071468351,
+                    "decode_seconds": 1.810781027,
+                    "request_seconds": 14.882249378000001,
+                    "cache_hits": 71,
+                    "cache_misses": 3039,
+                    "cache_evictions": 313,
+                    "expert_bytes_read": 28679602176,
+                    "expert_bytes_uploaded": 28679602176,
+                    "miss_stage_seconds": 14.552311081000001,
+                    "summed_host_read_seconds": 83.51793297000005,
+                    "read_jobs": 3039,
+                    "process_rchar": 28680688288,
+                    "process_read_syscalls": 9341,
+                    "process_storage_read_bytes": 0,
+                    "julia_allocated_bytes": 57646086296,
+                    "julia_gc_time_ns": 3869319042,
+                    "julia_gc_collections": 0,
+                    "gpu_free_bytes": 12117999616
+                }
+            ]
+        }
+    },
+    "comparisons": {
+        "cold_speedup": 1.0351669428086476,
+        "revisit_speedup": 0.9803143748932817,
+        "cold_allocation_reduction": 0.33222669179708786,
+        "revisit_allocation_reduction": 0.33222658305692954,
+        "cold_eliminated_allocation_bytes": 28679752184,
+        "revisit_eliminated_allocation_bytes": 28679731464,
+        "logical_payload_bytes": 28679602176
+    },
+    "correctness": {
+        "all_outputs_exact": true
+    },
+    "decision": {
+        "remove_multidimensional_intermediate_copy": true,
+        "vector_and_scalar_ownership_preserved": true,
+        "final_semantic_matrix_reused": false,
+        "arbitrary_workload_speedup_generalized": false
+    },
+    "source_paths": {
+        "benchmark_script": "scripts/benchmark_qwen3_moe_cuda_decode_copy_elision.jl",
+        "safetensors_implementation": "src/io/huggingface.jl",
+        "streaming_implementation": "src/io/hf_streaming.jl",
+        "offload_implementation": "src/generation/qwen3_moe_offload.jl"
+    },
+    "source_sha256": {
+        "benchmark_script": "3d36709b78b26afc51d18ae93d5d910ede6e11c0ec1c8e87c81163823e798ab6",
+        "safetensors_implementation": "be7b58adce167db198d95564120e45bc6d2f67d7e6c42996e30170d1b6718159",
+        "streaming_implementation": "5e5acb0ec569da47870a53ca8e8fe9aa22d13fb222525f3e6c83ee5e68aae446",
+        "offload_implementation": "eb770d5ea88bd0bd504ffd8f5ee1724d002fd0b6859cf7e13e1094bf070ce804"
+    }
+}

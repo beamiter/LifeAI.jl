@@ -203,6 +203,14 @@ end
             "qwen3_moe_coalesced_reads_test.jl",
         ))
     end
+
+    @testset "Chapter 33 — Qwen3 MoE decode copy elision" begin
+        include(chapter_test(
+            "episode06_qwen3_moe_and_model_expansion",
+            "chapter33_qwen3_moe_decode_copy_elision",
+            "qwen3_moe_decode_copy_elision_test.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

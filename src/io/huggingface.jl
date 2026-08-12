@@ -726,7 +726,8 @@ function _decode_safetensors_values(
 )
     values = if target_dtype === Float32
         if dtype == "F32"
-            copy(reinterpret(Float32, raw))
+            decoded = reinterpret(Float32, raw)
+            length(shape) > 1 ? decoded : copy(decoded)
         elseif dtype == "BF16"
             bits = reinterpret(UInt16, raw)
             [reinterpret(Float32, UInt32(value) << 16) for value in bits]
@@ -735,8 +736,12 @@ function _decode_safetensors_values(
         end
     elseif target_dtype === BFloat16
         if dtype == "BF16"
-            # Bit-exact: BF16 storage is adopted without a Float32 round trip.
-            copy(reinterpret(BFloat16, reinterpret(UInt16, raw)))
+            # Multidimensional tensors are copied by `_semantic_array` while
+            # reversing safetensors' row-major shape. Keep a bit-exact view of
+            # the read buffer until then instead of allocating an intermediate
+            # linear array. Scalars/vectors still own their returned storage.
+            decoded = reinterpret(BFloat16, reinterpret(UInt16, raw))
+            length(shape) > 1 ? decoded : copy(decoded)
         elseif dtype == "F32"
             BFloat16.(reinterpret(Float32, raw))
         else

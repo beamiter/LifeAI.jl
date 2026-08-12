@@ -1055,3 +1055,21 @@ julia --threads=8 --project=. \
 恶化到 `21.221 / 19.488 s`。shared-open 为 `17.147 / 14.586 s`，与 tensor
 无可归因差异。因此 `expert_read_mode` 默认保持 `:tensor`；另外两种模式只作
 显式实验选项，不作为性能建议。
+
+Chapter 33 保持 Chapter 32 的 tensor 粒度与 8-worker overlap，只移除多维
+safetensors decode 中在最终 `permutedims` 前的线性同 dtype copy：
+
+```bash
+julia --threads=8 --project=. \
+  scripts/benchmark_qwen3_moe_cuda_decode_copy_elision.jl \
+  MODEL_DIR \
+  /tmp/qwen3_moe_cuda_decode_copy_elision.json
+```
+
+脚本运行 3 个 cold/revisit pair，并以 Chapter 32 tensor 三轮结果及其报告
+SHA256 为旧路径基线。冻结报告位于
+`benchmark_results/qwen3_moe_cuda_decode_copy_elision/summary.json`：cold/revisit
+allocation 从 `86.326 GB` 降为 `57.646 GB`，均减少 `33.22%`；消失的约
+`28.680 GB` 与请求 logical BF16 payload 逐 byte 对齐。cold latency 为
+`16.540 s`（基线 `17.122 s`），revisit 为 `14.882 s`（基线 `14.589 s`）；
+因不是同进程交错 A/B，不把这组微小且方向不一致的 latency 变化泛化为 speedup。
