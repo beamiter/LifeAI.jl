@@ -172,6 +172,8 @@ mutable struct HFQwen3MoEOffloadSession
     expert_workspace_bytes::Int
     expert_read_buffer_reuse::Bool
     expert_read_buffer_pool
+    expert_host_buffer_reuse::Bool
+    expert_host_buffer_pool
     expert_read_mode::Symbol
     expert_miss_pipeline::Symbol
     expert_read_workers::Int
@@ -192,6 +194,26 @@ struct _Qwen3MoEExpertCacheEntry
     generation::Int
 end
 
+struct _Qwen3MoEHostStagingSlot
+    gate_proj::Matrix{BFloat16}
+    up_proj::Matrix{BFloat16}
+    down_proj::Matrix{BFloat16}
+end
+
+mutable struct _Qwen3MoEHostStagingPool
+    slots::Channel{_Qwen3MoEHostStagingSlot}
+    buffer_count::Int
+    buffer_bytes::Int
+    borrows::Threads.Atomic{Int}
+    returns::Threads.Atomic{Int}
+end
+
+mutable struct _Qwen3MoEHostStagingLease
+    pool::_Qwen3MoEHostStagingPool
+    slot::_Qwen3MoEHostStagingSlot
+    returned::Bool
+end
+
 struct _Qwen3MoEScatteredExperts
     expert_ids::Vector{Int}
     generations::Vector{Int}
@@ -202,6 +224,7 @@ end
 
 function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
     read_buffer_pool = session.expert_read_buffer_pool
+    host_buffer_pool = session.expert_host_buffer_pool
     return (;
         budget_bytes=session.expert_cache_budget_bytes,
         policy=session.expert_cache_policy,
@@ -234,6 +257,15 @@ function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
             0 : read_buffer_pool.buffer_count * read_buffer_pool.buffer_bytes,
         read_buffer_borrows=read_buffer_pool === nothing ?
             0 : read_buffer_pool.borrows[],
+        host_buffer_reuse=session.expert_host_buffer_reuse,
+        host_buffer_count=host_buffer_pool === nothing ?
+            0 : host_buffer_pool.buffer_count,
+        host_buffer_bytes=host_buffer_pool === nothing ?
+            0 : host_buffer_pool.buffer_count * host_buffer_pool.buffer_bytes,
+        host_buffer_borrows=host_buffer_pool === nothing ?
+            0 : host_buffer_pool.borrows[],
+        host_buffer_returns=host_buffer_pool === nothing ?
+            0 : host_buffer_pool.returns[],
         read_mode=session.expert_read_mode,
         miss_pipeline=session.expert_miss_pipeline,
         read_workers=session.expert_read_workers,
@@ -299,6 +331,100 @@ function _qwen3_moe_expert_read_buffer_pool(
     return _SafetensorsReadBufferPool(buffer_count, expert_bytes)
 end
 
+_qwen3_moe_host_buffer_reuse_supported(prototype) = false
+
+function _Qwen3MoEHostStagingPool(
+    buffer_count::Integer,
+    hidden_dim::Integer,
+    d_model::Integer,
+)
+    count = Int(buffer_count)
+    hidden = Int(hidden_dim)
+    model = Int(d_model)
+    count > 0 || throw(ArgumentError(
+        "Qwen3 MoE host buffer_count must be positive",
+    ))
+    hidden > 0 || throw(ArgumentError(
+        "Qwen3 MoE host hidden_dim must be positive",
+    ))
+    model > 0 || throw(ArgumentError(
+        "Qwen3 MoE host d_model must be positive",
+    ))
+    slots = Channel{_Qwen3MoEHostStagingSlot}(count)
+    for _ in 1:count
+        put!(slots, _Qwen3MoEHostStagingSlot(
+            Matrix{BFloat16}(undef, hidden, model),
+            Matrix{BFloat16}(undef, hidden, model),
+            Matrix{BFloat16}(undef, model, hidden),
+        ))
+    end
+    buffer_bytes = Base.checked_mul(
+        3,
+        Base.checked_mul(hidden, Base.checked_mul(model, sizeof(BFloat16))),
+    )
+    return _Qwen3MoEHostStagingPool(
+        slots,
+        count,
+        buffer_bytes,
+        Threads.Atomic{Int}(0),
+        Threads.Atomic{Int}(0),
+    )
+end
+
+function _qwen3_moe_expert_host_buffer_pool(
+    prototype,
+    enabled::Bool,
+    cache_budget_bytes::Int,
+    read_mode::Symbol,
+    miss_pipeline::Symbol,
+    read_workers::Int,
+    pinned_upload::Bool,
+    model::GPTModel,
+)
+    enabled && cache_budget_bytes > 0 && read_mode === :tensor &&
+        !pinned_upload && _qwen3_moe_host_buffer_reuse_supported(prototype) ||
+        return nothing
+    buffer_count = miss_pipeline === :overlapped ? read_workers : 1
+    return _Qwen3MoEHostStagingPool(
+        buffer_count,
+        model.mlp_hidden_dim,
+        model.d_model,
+    )
+end
+
+function _borrow_qwen3_moe_host_staging!(
+    pool::_Qwen3MoEHostStagingPool,
+)
+    slot = take!(pool.slots)
+    Threads.atomic_add!(pool.borrows, 1)
+    return _Qwen3MoEHostStagingLease(pool, slot, false)
+end
+
+function _return_qwen3_moe_host_staging!(
+    lease::_Qwen3MoEHostStagingLease,
+)
+    lease.returned && throw(ArgumentError(
+        "Qwen3 MoE host staging lease was already returned",
+    ))
+    lease.returned = true
+    put!(lease.pool.slots, lease.slot)
+    Threads.atomic_add!(lease.pool.returns, 1)
+    return nothing
+end
+
+_return_qwen3_moe_host_staging!(::Nothing) = nothing
+
+function _reset_qwen3_moe_host_staging_pool!(
+    pool::_Qwen3MoEHostStagingPool,
+)
+    pool.borrows[] == pool.returns[] || throw(ArgumentError(
+        "cannot reset Qwen3 MoE host staging with outstanding leases",
+    ))
+    pool.borrows[] = 0
+    pool.returns[] = 0
+    return pool
+end
+
 # Portable devices can overlap independent host reads, but pinned asynchronous
 # uploads are accelerator-specific. LifeAICUDAExt supplies the CUDA methods.
 _qwen3_moe_pinned_upload_supported(prototype) = false
@@ -354,6 +480,10 @@ function _qwen3_moe_reset_expert_traffic!(
     session.expert_read_buffer_pool === nothing ||
         _reset_safetensors_read_buffer_pool!(
             session.expert_read_buffer_pool,
+        )
+    session.expert_host_buffer_pool === nothing ||
+        _reset_qwen3_moe_host_staging_pool!(
+            session.expert_host_buffer_pool,
         )
     return session
 end
@@ -442,8 +572,8 @@ end
 """
     configure_hf_qwen3_moe_expert_cache!(
         session; budget_bytes, policy, dispatch, gc_interval_layers,
-        read_buffer_reuse, read_mode, miss_pipeline, read_workers,
-        pinned_upload)
+        read_buffer_reuse, host_buffer_reuse, read_mode, miss_pipeline,
+        read_workers, pinned_upload)
 
 Clear the existing expert cache and reconfigure its byte budget and eviction
 policy while retaining the resident model, static KV buffers and compiled
@@ -459,6 +589,7 @@ function configure_hf_qwen3_moe_expert_cache!(
     dispatch::Symbol=session.expert_cache_dispatch,
     gc_interval_layers::Integer=session.expert_gc_interval_layers,
     read_buffer_reuse::Bool=session.expert_read_buffer_reuse,
+    host_buffer_reuse::Bool=session.expert_host_buffer_reuse,
     read_mode::Symbol=session.expert_read_mode,
     miss_pipeline::Symbol=session.expert_miss_pipeline,
     read_workers::Integer=session.expert_read_workers,
@@ -508,6 +639,16 @@ function configure_hf_qwen3_moe_expert_cache!(
         validated_pipeline,
         workers,
     )
+    host_buffer_pool = _qwen3_moe_expert_host_buffer_pool(
+        session.final_scale,
+        host_buffer_reuse,
+        budget,
+        validated_read_mode,
+        validated_pipeline,
+        workers,
+        pinned_upload,
+        session.model,
+    )
     clear_hf_qwen3_moe_expert_cache!(session)
     session.expert_cache_budget_bytes = budget
     session.expert_cache_policy = validated_policy
@@ -515,6 +656,8 @@ function configure_hf_qwen3_moe_expert_cache!(
     session.expert_gc_interval_layers = gc_interval
     session.expert_read_buffer_reuse = read_buffer_reuse
     session.expert_read_buffer_pool = read_buffer_pool
+    session.expert_host_buffer_reuse = host_buffer_reuse
+    session.expert_host_buffer_pool = host_buffer_pool
     session.expert_read_mode = validated_read_mode
     session.expert_miss_pipeline = validated_pipeline
     session.expert_read_workers = workers
@@ -609,7 +752,7 @@ function _qwen3_moe_read_expert_host(
     gate_name = "$prefix.gate_proj.weight"
     up_name = "$prefix.up_proj.weight"
     down_name = "$prefix.down_proj.weight"
-    host_parameters = if session.expert_read_mode !== :tensor
+    staged = if session.expert_read_mode !== :tensor
         names = session.expert_read_mode === :coalesced ?
             (down_name, gate_name, up_name) :
             (gate_name, up_name, down_name)
@@ -619,7 +762,7 @@ function _qwen3_moe_read_expert_host(
             target_dtype=session.tensors.target_dtype,
             coalesce_adjacent=session.expert_read_mode === :coalesced,
         )
-        (;
+        parameters = (;
             gate_proj=_expect_tensor(
                 values,
                 gate_name,
@@ -636,49 +779,90 @@ function _qwen3_moe_read_expert_host(
                 (d_model, hidden_dim),
             ),
         )
+        (; parameters, lease=nothing)
     else
-        read_parameters(raw_buffer) = (;
-            gate_proj=_expect_tensor(
-                read_safetensors_tensor(
+        function read_parameters(raw_buffer)
+            host_pool = session.expert_host_buffer_pool
+            if host_pool === nothing
+                parameters = (;
+                    gate_proj=_expect_tensor(
+                        read_safetensors_tensor(
+                            session.reader,
+                            gate_name;
+                            target_dtype=session.tensors.target_dtype,
+                            raw_buffer,
+                        ),
+                        gate_name,
+                        (hidden_dim, d_model),
+                    ),
+                    up_proj=_expect_tensor(
+                        read_safetensors_tensor(
+                            session.reader,
+                            up_name;
+                            target_dtype=session.tensors.target_dtype,
+                            raw_buffer,
+                        ),
+                        up_name,
+                        (hidden_dim, d_model),
+                    ),
+                    down_proj=_expect_tensor(
+                        read_safetensors_tensor(
+                            session.reader,
+                            down_name;
+                            target_dtype=session.tensors.target_dtype,
+                            raw_buffer,
+                        ),
+                        down_name,
+                        (d_model, hidden_dim),
+                    ),
+                )
+                return (; parameters, lease=nothing)
+            end
+
+            lease = _borrow_qwen3_moe_host_staging!(host_pool)
+            slot = lease.slot
+            try
+                _read_safetensors_tensor!(
+                    slot.gate_proj,
                     session.reader,
                     gate_name;
-                    target_dtype=session.tensors.target_dtype,
                     raw_buffer,
-                ),
-                gate_name,
-                (hidden_dim, d_model),
-            ),
-            up_proj=_expect_tensor(
-                read_safetensors_tensor(
+                )
+                _read_safetensors_tensor!(
+                    slot.up_proj,
                     session.reader,
                     up_name;
-                    target_dtype=session.tensors.target_dtype,
                     raw_buffer,
-                ),
-                up_name,
-                (hidden_dim, d_model),
-            ),
-            down_proj=_expect_tensor(
-                read_safetensors_tensor(
+                )
+                _read_safetensors_tensor!(
+                    slot.down_proj,
                     session.reader,
                     down_name;
-                    target_dtype=session.tensors.target_dtype,
                     raw_buffer,
-                ),
-                down_name,
-                (d_model, hidden_dim),
-            ),
-        )
-        pool = session.expert_read_buffer_pool
-        pool === nothing ?
+                )
+                parameters = (;
+                    gate_proj=slot.gate_proj,
+                    up_proj=slot.up_proj,
+                    down_proj=slot.down_proj,
+                )
+                return (; parameters, lease)
+            catch
+                _return_qwen3_moe_host_staging!(lease)
+                rethrow()
+            end
+        end
+        read_pool = session.expert_read_buffer_pool
+        read_pool === nothing ?
             read_parameters(nothing) :
-            _with_safetensors_read_buffer(read_parameters, pool)
+            _with_safetensors_read_buffer(read_parameters, read_pool)
     end
+    host_parameters = staged.parameters
     entry_bytes = _qwen3_moe_tree_bytes(host_parameters)
     return (;
         parameters=host_parameters,
         bytes=entry_bytes,
         seconds=(time_ns() - started) / 1.0e9,
+        lease=staged.lease,
     )
 end
 
@@ -750,7 +934,11 @@ function _qwen3_moe_read_expert(
         session.expert_read_tasks,
         1,
     )
-    device_parameters = session.to_device(host.parameters)
+    device_parameters = try
+        session.to_device(host.parameters)
+    finally
+        _return_qwen3_moe_host_staging!(host.lease)
+    end
     session.expert_bytes_uploaded = Base.checked_add(
         session.expert_bytes_uploaded,
         host.bytes,
@@ -917,44 +1105,50 @@ function _qwen3_moe_load_active_experts_overlapped(
         for miss_index in eachindex(misses)
             read_task = tasks[miss_index]::Task
             host = fetch(read_task)
-            tasks[miss_index] = nothing
-            next_index = miss_index + window
-            next_index <= length(misses) && launch!(next_index)
+            try
+                tasks[miss_index] = nothing
+                next_index = miss_index + window
+                next_index <= length(misses) && launch!(next_index)
 
-            session.expert_host_read_seconds += host.seconds
-            session.expert_bytes_read = Base.checked_add(
-                session.expert_bytes_read,
-                host.bytes,
-            )
-            device_parameters = _qwen3_moe_upload_host_expert(
-                session.final_scale,
-                host.parameters,
-                session.to_device,
-                upload_state,
-            )
-            session.expert_bytes_uploaded = Base.checked_add(
-                session.expert_bytes_uploaded,
-                host.bytes,
-            )
-            entry = _qwen3_moe_make_expert_cache_entry!(
-                session,
-                device_parameters,
-                host.bytes,
-            )
-            miss = misses[miss_index]
-            entries[miss.entry_index] = _qwen3_moe_store_expert_cache_entry!(
-                session,
-                miss.key,
-                entry,
-                protected,
-            )
+                session.expert_host_read_seconds += host.seconds
+                session.expert_bytes_read = Base.checked_add(
+                    session.expert_bytes_read,
+                    host.bytes,
+                )
+                device_parameters = _qwen3_moe_upload_host_expert(
+                    session.final_scale,
+                    host.parameters,
+                    session.to_device,
+                    upload_state,
+                )
+                session.expert_bytes_uploaded = Base.checked_add(
+                    session.expert_bytes_uploaded,
+                    host.bytes,
+                )
+                entry = _qwen3_moe_make_expert_cache_entry!(
+                    session,
+                    device_parameters,
+                    host.bytes,
+                )
+                miss = misses[miss_index]
+                entries[miss.entry_index] =
+                    _qwen3_moe_store_expert_cache_entry!(
+                        session,
+                        miss.key,
+                        entry,
+                        protected,
+                    )
+            finally
+                _return_qwen3_moe_host_staging!(host.lease)
+            end
         end
     finally
         # Do not leave reader tasks running if a sibling read/upload failed.
         for task in tasks
-            if task !== nothing && !istaskdone(task)
+            if task !== nothing
                 try
-                    wait(task)
+                    abandoned = fetch(task)
+                    _return_qwen3_moe_host_staging!(abandoned.lease)
                 catch
                 end
             end
@@ -1263,6 +1457,10 @@ count is the smaller of eight and the current Julia thread count;
 `expert_read_buffer_reuse=true` gives each bounded reader task one reusable
 raw projection buffer in `:tensor` mode; the buffer is returned immediately
 after the three final owning matrices are decoded;
+`expert_host_buffer_reuse=true` additionally reuses final host projection
+matrices only when the accelerator guarantees independent pageable upload
+storage; CPU identity transfers and pinned asynchronous uploads remain
+unpooled;
 `expert_read_mode=:coalesced` reads exactly adjacent down/gate/up projection
 ranges with one shard read per expert; `:shared_open` retains three interleaved
 read/decode steps under one shard open, while `:tensor` preserves separate opens;
@@ -1281,6 +1479,7 @@ function load_hf_qwen3_moe_offload_session(
     expert_cache_dispatch::Symbol=:materialized,
     expert_gc_interval_layers::Integer=1,
     expert_read_buffer_reuse::Bool=true,
+    expert_host_buffer_reuse::Bool=true,
     expert_read_mode::Symbol=:tensor,
     expert_miss_pipeline::Symbol=:sequential,
     expert_read_workers::Integer=_qwen3_moe_default_expert_read_workers(),
@@ -1402,6 +1601,16 @@ function load_hf_qwen3_moe_offload_session(
         throw(ArgumentError(
             "pinned expert upload is not supported by the selected device",
         ))
+    host_buffer_pool = _qwen3_moe_expert_host_buffer_pool(
+        final_scale,
+        expert_host_buffer_reuse,
+        cache_budget,
+        read_mode,
+        miss_pipeline,
+        read_workers,
+        expert_pinned_upload,
+        model,
+    )
 
     return HFQwen3MoEOffloadSession(
         model,
@@ -1450,6 +1659,8 @@ function load_hf_qwen3_moe_offload_session(
         0,
         expert_read_buffer_reuse,
         read_buffer_pool,
+        expert_host_buffer_reuse,
+        host_buffer_pool,
         read_mode,
         miss_pipeline,
         read_workers,

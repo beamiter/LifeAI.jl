@@ -223,6 +223,38 @@ function read_safetensors_tensor(
     end
 end
 
+function _read_safetensors_tensor!(
+    destination::AbstractArray,
+    reader::HFSafetensorsReader,
+    name::AbstractString;
+    raw_buffer::Union{Nothing,Vector{UInt8}}=nothing,
+)
+    location = _reader_location(reader, name)
+    return open(location.path, "r") do io
+        seek(io, location.data_base + location.data_start)
+        byte_count = location.data_stop - location.data_start
+        raw = if raw_buffer === nothing
+            read(io, byte_count)
+        else
+            resize!(raw_buffer, byte_count)
+            bytes_read = readbytes!(io, raw_buffer, byte_count; all=true)
+            bytes_read == byte_count || throw(ArgumentError(
+                "truncated data for safetensors tensor `$name`",
+            ))
+            raw_buffer
+        end
+        length(raw) == byte_count || throw(ArgumentError(
+            "truncated data for safetensors tensor `$name`",
+        ))
+        _decode_safetensors_values!(
+            destination,
+            raw,
+            location.dtype,
+            location.shape,
+        )
+    end
+end
+
 """
     read_safetensors_tensors(
         reader, names; target_dtype=Float32, coalesce_adjacent=true)

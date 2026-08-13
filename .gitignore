@@ -63,3 +63,6 @@ benchmark_results/qwen3_moe_cuda_decode_copy_elision/*
 !benchmark_results/qwen3_moe_cuda_read_buffer_reuse/
 benchmark_results/qwen3_moe_cuda_read_buffer_reuse/*
 !benchmark_results/qwen3_moe_cuda_read_buffer_reuse/summary.json
+!benchmark_results/qwen3_moe_cuda_host_buffer_reuse/
+benchmark_results/qwen3_moe_cuda_host_buffer_reuse/*
+!benchmark_results/qwen3_moe_cuda_host_buffer_reuse/summary.json

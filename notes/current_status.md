@@ -6,6 +6,8 @@
 
 ## 当前活动阶段
 
+[`Chapter 35 — Qwen3 MoE bounded host projection-buffer reuse`](episodes/episode06_qwen3_moe_and_model_expansion/chapter35_qwen3_moe_host_buffer_reuse.md) 已于 2026-08-12 Closed。in-place safetensors decode 与 8-slot/72 MiB final host matrix pool 只在 CUDA pageable ownership 明确安全时启用；CPU identity 和 pinned async 自动无池，上传失败也会完整归还 reader task leases。真实 30B-A3B English32 同进程 A/B 中 cold/revisit allocation 从 `28.967 GB` 降到约 `0.288 GB`（`99.01%`），latency 从 `13.770 / 11.358 s` 降到 `10.471 / 8.763 s`（`1.315× / 1.296×`），3,039 borrow/return 完整配对且所有输出 exact。
+
 [`Chapter 34 — Qwen3 MoE bounded safetensors read-buffer reuse`](episodes/episode06_qwen3_moe_and_model_expansion/chapter34_qwen3_moe_read_buffer_reuse.md) 已于 2026-08-12 Closed。cache-backed tensor reads 现在默认按 reader worker 预分配有界 raw pool：真实 8-worker 只常驻 `25,165,824` bytes，3,039 misses 恰好借用 3,039 次。30B-A3B English32 同进程交错 A/B 中 cold/revisit allocation 从 `57.647 GB` 降到 `28.967 GB`（`49.75%`），消失的约 `28.680 GB` 与 logical raw payload 对齐；latency 从 `17.079 / 15.576 s` 降到 `14.052 / 11.653 s`（`1.215× / 1.337×`）。所有输出 exact；最终 host matrices 未复用，pinned H2D ownership 不变。
 
 [`Chapter 33 — Qwen3 MoE safetensors decode copy elision`](episodes/episode06_qwen3_moe_and_model_expansion/chapter33_qwen3_moe_decode_copy_elision.md) 已于 2026-08-12 Closed。多维 BF16/F32 同 dtype safetensors decode 不再先复制线性数组再 `permutedims`；最终矩阵仍拥有独立存储，零维/一维仍显式 copy。真实 30B-A3B English32 cold/revisit allocation 从 `86.326 GB` 降到 `57.646 GB`（`33.22%`），消失的约 `28.680 GB` 与 logical BF16 payload 对齐；所有输出 exact。相邻实验 cold 为 `16.540 vs 17.122 s`、revisit 为 `14.882 vs 14.589 s`，因非同进程交错 A/B 而不声称通用 latency speedup。
@@ -62,7 +64,7 @@
 - GPTModel：包括 token/可选 position embedding、多层 TransformerBlock、final norm 和 LM head；支持 embedding / LM head 单 kernel 权重共享，并可分离 projection bias 与 LM-head bias。
 - legacy 默认仍为 LayerNorm + GELU + untied；modern 配置可通过独立开关组合，不改变旧调用。
 - HuggingFace Qwen3 dense 导入：冻结 0.6B / 1.7B / 4B / 8B / 14B / 32B 六个官方规格与 config checksum，可自动识别或显式要求 variant；严格解析 config，读取 BF16/F32 safetensors 单文件或 index 分片，完整映射 embedding、attention、QK-Norm、MLP、final norm 与 tied/untied LM head；missing、unexpected、duplicate、shape/dtype/config 错误均 fail closed。六个真实 checkpoint 全部实跑逐层 parity：0.6B—4B 全量加载，8B—32B 流式加载。
-- Qwen3 MoE 导入（Chapter 24–34，Closed）：Float32 top-k routing、逐 expert SwiGLU、all-sparse decoder topology、原始 `mlp.experts.N.*` 权重名映射和 full/dynamic/static cache 已完成 Transformers tiny/官方 30B parity。`stream_hf_qwen3_moe_forward` 以 header-only index 在路由后只读取 active experts，可选择 Float32/native BF16；官方 immutable revision、30.53B 参数、config/index 与 16 分片 checksum 已形成代码级资产契约。Reactant/XLA CPU 使用 compact route-major fallback；RTX 4090 D 具备 indexed/bucketed/grouped WMMA，并由 `HFQwen3MoEOffloadSession` 将真实 streamer、全容量 static KV 和 global/layer-balanced device LRU 接成可运行的 30B session。scalar CUDA cache 还可用 device pointer tables 直接读取分散 BF16 expert matrices，有界复用 generation-safe pointer/workspace state，并独立配置 forced-GC cadence；当前层 post-router misses 可用 storage-verified bounded parallel reads/pinned upload pipeline。batch reader 可严格合并相邻 safetensors ranges，但实测默认仍应逐 tensor 读取；多维同 dtype decode 已移除冗余线性 copy，tensor mode 进一步按 reader worker 有界复用 raw payload buffers。
+- Qwen3 MoE 导入（Chapter 24–35，Closed）：Float32 top-k routing、逐 expert SwiGLU、all-sparse decoder topology、原始 `mlp.experts.N.*` 权重名映射和 full/dynamic/static cache 已完成 Transformers tiny/官方 30B parity。`stream_hf_qwen3_moe_forward` 以 header-only index 在路由后只读取 active experts，可选择 Float32/native BF16；官方 immutable revision、30.53B 参数、config/index 与 16 分片 checksum 已形成代码级资产契约。Reactant/XLA CPU 使用 compact route-major fallback；RTX 4090 D 具备 indexed/bucketed/grouped WMMA，并由 `HFQwen3MoEOffloadSession` 将真实 streamer、全容量 static KV 和 global/layer-balanced device LRU 接成可运行的 30B session。scalar CUDA cache 还可用 device pointer tables 直接读取分散 BF16 expert matrices，有界复用 generation-safe pointer/workspace state，并独立配置 forced-GC cadence；当前层 post-router misses 可用 storage-verified bounded parallel reads/pinned upload pipeline。batch reader 可严格合并相邻 safetensors ranges，但实测默认仍应逐 tensor 读取；同 dtype decode copy、raw payload allocation 与 CUDA pageable final host-matrix allocation 已依次消除。
 - Qwen3-Embedding-0.6B 导入（Chapter 22）：独立冻结 HF revision 和 8 个
   asset SHA256，严格区分 151,669 vocabulary、32K model context、
   SentenceTransformers base-model namespace 与 causal-LM contract；
@@ -165,19 +167,19 @@
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-2026-08-12 最新复核默认套件，共 `6,972 / 6,972` 项测试通过；Episode 06
-为 `1,309 / 1,309`，其中 Chapter 24/25/26/27/28/29/30/31/32/33/34 分别为
-`285 / 41 / 54 / 65 / 73 / 70 / 86 / 112 / 190 / 108 / 225`。该计数包含官方 30B-A3B immutable 资产契约、
+2026-08-12 最新复核默认套件，共 `7,265 / 7,265` 项测试通过；Episode 06
+为 `1,602 / 1,602`，其中 Chapter 24/25/26/27/28/29/30/31/32/33/34/35 分别为
+`285 / 41 / 54 / 65 / 73 / 70 / 86 / 112 / 190 / 108 / 225 / 293`。该计数包含官方 30B-A3B immutable 资产契约、
 Float32/BF16 tiny streaming、真实 parity/offload/cache 冻结报告契约和
 device LRU 生命周期/淘汰、scan-thrashing、自然文本预算曲线、scattered
 dispatch/GC、pointer/workspace reuse、bounded miss pipeline 与 storage-aware
-worker sweep、严格相邻 batch read、负性能结果、decode-copy allocation 与 bounded raw-buffer reuse 机制契约测试，不包含需
+worker sweep、严格相邻 batch read、负性能结果、decode-copy allocation、bounded raw-buffer reuse 与 pageable host-matrix ownership 机制契约测试，不包含需
 显式启用的 XLA/CUDA accelerator 专项。
 Chapter 24 compact dispatch 的 Reactant/XLA CPU 专项另计 `3 / 3`：
 128 experts/top-8/64 tokens 的 route pairs 为 `512 / 8,192`，编译
 `32.126 s`、steady median `38.616 ms`，对 dense oracle max-abs `9.09e-7`。
-RTX 4090 D CUDA 专项另计 `152 / 152`，其中 Chapter 28/29/30 分别为
-`13 / 13`、`90 / 90` 与 `11 / 11`；indexed kernels 的单-token/64-token
+RTX 4090 D CUDA 专项另计 `181 / 181`，其中 Chapter 28/29/30/35 分别为
+`13 / 13`、`90 / 90`、`11 / 11` 与 `29 / 29`；indexed kernels 的单-token/64-token
 steady median 为 `0.365 / 0.377 ms`，相对 route-major baseline 加速
 `1.32× / 1.57×`，64-token 相对单线程 CPU sparse 加速 `4.06×`；
 workspace 缩减 `118.15×`，两组 max-abs 均低于 `6.56e-7`。官方

@@ -219,6 +219,14 @@ end
             "qwen3_moe_read_buffer_reuse_test.jl",
         ))
     end
+
+    @testset "Chapter 35 — Qwen3 MoE host-buffer reuse" begin
+        include(chapter_test(
+            "episode06_qwen3_moe_and_model_expansion",
+            "chapter35_qwen3_moe_host_buffer_reuse",
+            "qwen3_moe_host_buffer_reuse_test.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
@@ -242,5 +250,6 @@ if lowercase(get(ENV, "LIFEAI_TEST_CUDA", "false")) in ("1", "true", "yes")
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter28_qwen3_moe_scattered_cache", "qwen3_moe_scattered_cache_cuda_test.jl"))
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter29_qwen3_moe_scattered_reuse", "qwen3_moe_scattered_reuse_cuda_test.jl"))
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter30_qwen3_moe_async_miss_pipeline", "qwen3_moe_async_miss_pipeline_cuda_test.jl"))
+        include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter35_qwen3_moe_host_buffer_reuse", "qwen3_moe_host_buffer_reuse_cuda_test.jl"))
     end
 end

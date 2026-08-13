@@ -423,8 +423,8 @@
     },
     "source_sha256": {
         "benchmark_script": "2b9322f513966a6f0c6e172087fab71afa703b8d656ae368aebd60ab44ccb3b7",
-        "safetensors_implementation": "ee63f6b4299a06ef942ddf2dbef2ea093bd2a0602469875d5f52428ab390fd73",
-        "streaming_implementation": "6fca3aeb4f32a3998d415353eaad84132e69214a8a636bc0ccfff07b6f3d47f6",
-        "offload_implementation": "9525b439ef9c88714edcb5636bfeaa7878f00bdbb1405427938f5e2aaa1dbc25"
+        "safetensors_implementation": "84a4798ebb03232b05af37294921b651676e063a0384850ef5b5acfb02564a23",
+        "streaming_implementation": "21e5467ec21ddab8e5a578536544014b8bc6b36e54368f41a5a03e7acd75375d",
+        "offload_implementation": "945726df1dad90bd0aae64b2fa70353682e89d4b3faa765dd6195b2bd54ead83"
     }
 }

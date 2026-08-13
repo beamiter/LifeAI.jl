@@ -14,6 +14,7 @@ mutable struct _Qwen3CUDAPinnedExpertUpload
 end
 
 LifeAI._qwen3_moe_pinned_upload_supported(::CUDA.CuArray) = true
+LifeAI._qwen3_moe_host_buffer_reuse_supported(::CUDA.CuArray) = true
 
 function LifeAI._qwen3_moe_begin_expert_upload(
     prototype::CUDA.CuArray,

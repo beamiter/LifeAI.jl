@@ -755,6 +755,41 @@ function _decode_safetensors_values(
     return _semantic_array(values, shape)
 end
 
+function _decode_safetensors_values!(
+    destination::AbstractArray,
+    raw::AbstractVector{UInt8},
+    dtype::String,
+    shape::Vector{Int},
+)
+    eltype(destination) in (Float32, BFloat16) || throw(ArgumentError(
+        "safetensors destination must contain Float32 or BFloat16 values",
+    ))
+    size(destination) == Tuple(shape) || throw(DimensionMismatch(
+        "safetensors destination has shape $(size(destination)); " *
+        "expected $(Tuple(shape))",
+    ))
+    source_values = if dtype == "F32"
+        reinterpret(Float32, raw)
+    elseif dtype == "BF16"
+        reinterpret(BFloat16, reinterpret(UInt16, raw))
+    else
+        throw(ArgumentError("unsupported safetensors dtype `$dtype`"))
+    end
+    length(source_values) == length(destination) || throw(ArgumentError(
+        "safetensors payload length does not match destination",
+    ))
+    source = if isempty(shape)
+        reshape(source_values, ())
+    elseif length(shape) == 1
+        reshape(source_values, shape[1])
+    else
+        stored = reshape(source_values, Tuple(reverse(shape)))
+        PermutedDimsArray(stored, Tuple(reverse(1:length(shape))))
+    end
+    copyto!(destination, source)
+    return destination
+end
+
 function _safetensors_entries(path::AbstractString)
     file_bytes = filesize(path)
     file_bytes >= 8 || throw(ArgumentError("safetensors file is shorter than 8 bytes: $path"))
