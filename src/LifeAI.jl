@@ -52,6 +52,9 @@ include("generation/xla_cache_modes_benchmark.jl")
 include("agent/tools.jl")
 include("agent/tool_loop.jl")
 
+# Task-level quality evaluation.
+include("eval/task_quality.jl")
+
 include("api.jl")
 
 end # module LifeAI

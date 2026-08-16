@@ -1,0 +1,49 @@
+# Chapter 37 task-quality reference environment
+# (scripts/export_qwen3_mmlu_loglikelihood_reference.py).
+#
+# This is the HuggingFace side of the Chapter 37 baseline: it runs Qwen3-0.6B
+# on the MMLU half of fixtures/eval_tasks.json and writes per-item
+# loglikelihood scores that the Julia pipeline is compared against item by
+# item. So it needs real torch + real transformers, not just Jinja2 like the
+# Chapter 36 template oracle.
+#
+# Versions are deliberately IDENTICAL to requirements/week22-reference.txt.
+# Every torch/transformers reference in this repo should come out of the same
+# pinned stack, otherwise a numeric drift between two fixtures cannot be
+# attributed: a shared pin makes "Julia disagrees with HF" the only remaining
+# explanation. Do not bump one file without bumping the other and
+# regenerating both fixtures.
+#
+# CPU-only on purpose. The oracle runs in float32 (see --help / the script's
+# docstring): bfloat16 is what the checkpoint ships, but a float32 forward is
+# the reproducible reference, and CPU bf16 kernels are both slow and
+# numerically noisier than the fp32 path.
+#
+# Verified working on this machine (Ubuntu, CPython 3.12.3, uv, network up).
+# The venv lives outside the repo on purpose -- only `.venv/` is gitignored:
+#     EVAL_VENV="$HOME/.venvs/lifeai-chapter37-eval"
+#     uv venv --python 3.12 "$EVAL_VENV"
+#     uv pip install --python "$EVAL_VENV/bin/python" \
+#         -r /home/yj/projects/LifeAI.jl/requirements/chapter37-eval-reference.txt
+#     "$EVAL_VENV/bin/python" \
+#         /home/yj/projects/LifeAI.jl/scripts/export_qwen3_mmlu_loglikelihood_reference.py --help
+# Plain pip works the same way once the venv exists:
+#     python3 -m venv "$EVAL_VENV"
+#     "$EVAL_VENV/bin/pip" install -r requirements/chapter37-eval-reference.txt
+# (a bare `pip install` outside a venv is refused on this box by PEP 668 /
+# externally-managed-environment, so always create the venv first).
+#
+# The torch CPU wheel is a few hundred MB; give the install a generous
+# timeout. --extra-index-url below is what selects the +cpu build instead of
+# pulling the default CUDA wheel and its multi-GB nvidia-* dependencies.
+#
+# The generated fixture records "torch_version" and "transformers_version";
+# regenerate it if you change anything here.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+numpy==1.26.4
+safetensors==0.5.3
+tokenizers==0.21.4
+torch==2.7.1+cpu
+transformers==4.51.3

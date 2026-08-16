@@ -247,6 +247,14 @@ end
             "test_qwen3_tool_loop_replay.jl",
         ))
     end
+
+    @testset "Chapter 37 — Task quality evaluation" begin
+        include(chapter_test(
+            "episode07_agent_closed_loop",
+            "chapter37_qwen3_task_quality",
+            "test_qwen3_task_quality.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

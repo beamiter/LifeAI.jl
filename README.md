@@ -21,7 +21,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 **阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、直接消费分散 BF16 cache matrices 并有界复用状态的 CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。**
 
-Chapter 01—36 均已 Closed。[`Chapter 36 — Qwen3 tools chat template HF parity 与 4B 工具调用闭环`](notes/episodes/episode07_agent_closed_loop/chapter36_qwen3_tools_chat_template.md) 用官方 Jinja 模板经 CPython 渲染的外部 reference，把 chat template 的全部分支做到逐字节 parity（30 / 30 case，真实 4B tokenizer 下 token id 亦逐位相同），并修复了 Chapter 08 遗留的两条真实分歧：历史 assistant 的 `<think>` 块未剥离、以及无 user 消息时 `last_query_index` 方向相反。开启 `--thinking` 的多轮聊天从第 2 轮起会命中前者。
+Chapter 01—37 均已 Closed。[`Chapter 37 — Qwen3 dense 任务质量基线`](notes/episodes/episode07_agent_closed_loop/chapter37_qwen3_task_quality.md) 第一次回答「复现出来的模型答对率是多少」：冻结 MMLU 200 题 + GSM8K 150 题，0.6B/1.7B/4B 的 MMLU loglikelihood 为 `.365 / .395 / .555`，4B 的 GSM8K 为 `141/150 = .940`。同时给出一条本章最重要的负结果——**MMLU loglikelihood 的逐题决策在 BF16 下不可复现**，既不跨 dtype，也不跨设备，甚至不跨同一实现里两条数学等价的写法：协议对齐后与 HuggingFace fp32 参照的一致率为 `193/200 = 96.5%`；同一份权重同一协议，CUDA 给 `73`、CPU 给 `74`、fp32 给 `70`；我们自己 fast 与 general 两条路径之间也有 `6/200` 翻转。accuracy 的极差 2 个点仍远小于 Wilson 区间宽度，标题数字可用，但逐题一致的主张不成立。
+
+[`Chapter 36 — Qwen3 tools chat template HF parity 与 4B 工具调用闭环`](notes/episodes/episode07_agent_closed_loop/chapter36_qwen3_tools_chat_template.md) 用官方 Jinja 模板经 CPython 渲染的外部 reference，把 chat template 的全部分支做到逐字节 parity（30 / 30 case，真实 4B tokenizer 下 token id 亦逐位相同），并修复了 Chapter 08 遗留的两条真实分歧：历史 assistant 的 `<think>` 块未剥离、以及无 user 消息时 `last_query_index` 方向相反。开启 `--thinking` 的多轮聊天从第 2 轮起会命中前者。
 
 [`Chapter 35 — Qwen3 MoE bounded host projection-buffer reuse`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter35_qwen3_moe_host_buffer_reuse.md) 在明确 CUDA pageable、pinned 与 CPU identity 的不同 ownership 后，以 72 MiB final-matrix pool 配合 Chapter 34 的 24 MiB raw pool。30B-A3B English32 同进程 A/B 的 cold/revisit Julia allocation 从约 `28.967 GB` 降到 `0.288 GB`（`99.01%`），时延分别加速 `1.315× / 1.296×`，所有输出 exact；CPU 与 pinned async 自动保持无 final pool。
 
@@ -72,6 +74,9 @@ Chapter 01—36 均已 Closed。[`Chapter 36 — Qwen3 tools chat template HF pa
   `json.dumps(ensure_ascii=False)` 语义复刻，含 CPython `repr(float)` 与任意精度整数，
   无序 `Dict` 与会窄化数字的 `JSON3.Object` fail closed。tools / tool 角色 /
   `tool_calls` 以官方模板 sha256 为准入条件。
+- 任务质量评测基线：冻结的 MMLU/GSM8K 子集（含许可、上游 row_idx 与 sha256 provenance）、
+  loglikelihood 与 generative 两种协议、机械且写死的答案抽取规则，以及强制同时报出
+  Wilson 区间、未解析数、截断数与格式合规数的报告口径。
 - 最小工具闭环：工具声明与注册、`<tool_call>` 解析与合法性判定、沙箱化内置工具，以及
   「观察 → 决策 → 调用 → 回填 → 再决策」的多 step 循环；每一步记录 prompt sha256 与
   generated ids，可在不加载模型的情况下离线 replay。
@@ -91,7 +96,9 @@ Chapter 01—36 均已 Closed。[`Chapter 36 — Qwen3 tools chat template HF pa
   activation-aware clipping 已完成，不能再沿用早期“只验证 0.6B”的边界。
 - 通用 Jinja 渲染器：Chapter 36 的实现是按官方模板逐分支手写的 Julia 渲染，并以模板 sha256 作为准入条件，不是通用模板引擎。
 - 跨请求持久状态：Chapter 36 只完成单请求内的多 step 工具闭环，没有记忆写回、检索接入或长期状态。
-- 可用于真实任务的模型质量仍未评估；Chapter 36 的 20 题只判定「协议是否合法」，不判定「任务是否答对」。
+- 更完整的质量评估：Chapter 37 只覆盖 0.6B/1.7B/4B 与 8 个 MMLU subject，且全部是 0-shot、
+  greedy 单次；8B 及以上、5-shot、多 seed 方差与更大 token 预算下的 generative 上界都未做。
+  本章数字是本仓库自己的基线，不能与官方榜单并列。
 - 持久/增量长短期记忆、ANN/reranker、规划与反思；记忆侧只有 Chapter 22 的
   内存内 dense exact semantic retrieval baseline，且尚未接入 Chapter 36 的
   工具闭环。

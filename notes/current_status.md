@@ -6,6 +6,10 @@
 
 ## 当前活动阶段
 
+[`Chapter 37 — Qwen3 dense 任务质量基线`](episodes/episode07_agent_closed_loop/chapter37_qwen3_task_quality.md) 已于 2026-08-16 Closed。这是项目第一次回答「复现出来的模型答对率是多少」，而不是「和 HuggingFace 一不一样」。冻结 MMLU 200 题（8 subject × 25，含许可与上游 row_idx provenance）与 GSM8K 150 题，跑 loglikelihood 与 generative 两种口径：0.6B/1.7B/4B 的 MMLU loglikelihood 为 `.365 / .395 / .555`，generative 全集为 `.295 / .305 / .530`，4B 的 GSM8K 为 `141/150 = .940`。
+
+本章最重要的是两条负结果。其一，**MMLU loglikelihood 的逐题决策在 BF16 下不可复现**——既不跨 dtype，也不跨设备，甚至不跨同一实现里两条数学等价的写法：与 HuggingFace fp32 参照在协议对齐后一致率为 `193/200 = 96.5%`（协议不对齐的 fast 捷径是 `189/200`，其中约一半分歧其实来自捷径而非 dtype）；同一份权重同一协议，CUDA 给 `73`、CPU 给 `74`、fp32 给 `70`；我们自己 fast 与 general 两条路径在同一块 GPU 上也有 `6/200` 翻转，翻转题的 margin 全是 `0.125` 的整数倍，与 BF16 表示间距一致。其二，**generative 口径的数字被我们自己的 token 预算压低**：三个模型中每一个未解析的题都是被截断的题（`14/14`、`52/52`、`23/23`），因此全集数是下界、未截断子集是有偏上界，两个数必须一起报。另需记住位置偏置存在且各模型方向不同（0.6B 偏 A `128/24/24/24`、1.7B 偏 B `45/79/48/28`、4B 轻微偏 C），「永远选 A」在本题集上就有 `.270`，0.6B 的 `.365` 只高出 9.5 个点。
+
 [`Chapter 36 — Qwen3 tools chat template HF parity 与 4B 工具调用闭环`](episodes/episode07_agent_closed_loop/chapter36_qwen3_tools_chat_template.md) 已于 2026-08-16 Closed，同时开启 [`Episode 07 — 智能体闭环`](episodes/episode07_agent_closed_loop/README.md)。本章第一次把参照物从「LifeAI 与 HF 的数值一致」换成**外部独立实现**：官方 Jinja 模板经 CPython + jinja2（不需要 torch/transformers）渲染的结果。30 / 30 case 逐字节相同，真实 Qwen3-4B tokenizer 下 token id 亦逐位相同。过程中修复了 Chapter 08 遗留的两条真实分歧——历史 assistant 的 `<think>` 块未按官方语义剥离、以及无 user 消息时 `last_query_index` 方向相反；前者会在 `--thinking` 多轮聊天的第 2 轮起真实发生。`tools` / `tool` 角色 / `tool_calls` 以官方模板 sha256 fail closed，`tojson` 按 CPython `json.dumps(ensure_ascii=False)` 复刻，含 CPython `repr(float)` 与任意精度整数。fixture 与 Close 前的对抗式复核共抓到四个真实 bug，其中最重要的一条是 `JSON3.read` 会把 `1.0` 窄化成 `Int64`，使原本的浮点 fail-closed 保护完全触发不到、静默渲染出与 HF 不同的 prompt；已改为用保留数字词法的 `parse_qwen3_json`，并拒绝 `JSON3.Object`。
 
 Episode 06 保持 Open 但在当前工作机上被资产阻塞：grouped scattered dispatch、full-window 40K prefill 与剩余 allocation profiling 都需要 61 GB 的 Qwen3-30B-A3B 与 RTX 4090 D 24 GiB，而当前机器是 RTX 5080 16 GiB 且本地没有该 checkpoint。
@@ -302,7 +306,9 @@ Chapter 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定�
   authentication、多租户或动态 batching；server 退出后仍需重新加载编译。
   Reactant kernel/autotune cache 不是完整 executable cache。
 - Qwen3 128K YaRN / RoPE scaling；六个冻结 checkpoint 的原生 `max_position_embeddings` 均为 40,960，非空 `rope_scaling` 仍 fail closed。
-- 面向真实任务和长期运行的模型质量；较大规模真实语料训练。
+- 长期运行的模型质量与较大规模真实语料训练；Chapter 37 已建立 MMLU/GSM8K 基线，
+  但只覆盖 0.6B/1.7B/4B、8 个 subject、0-shot、greedy 单次，没有 5-shot、多 seed
+  方差，也没有 8B 及以上。
 - 适合 tied embedding 的统一初始化基线、低精度专项与真实规模组件对照。
 - 实验注册、超参数搜索、分布式训练和面向生产的性能评估。
 - 跨请求持久状态、工作记忆写回、持久长期记忆、ANN/reranker 与 agent
@@ -501,8 +507,8 @@ cache 已实现。
 | --- | --- | --- |
 | 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + native BF16 推理 + CUDA/XLA 加速 + 8B XLA single-residency 4K greedy 部署/常驻服务 + 可预算 INT4/INT8/BF16 计划与 diagonal activation-aware 校准（14B RTN 16/16，weight/activation MSE 均 4/16）；GPT-2 真实 parity；流式加载；五类版本化 Tokenizer 与中文数据管线 | 完整 AWQ/GPTQ 或量化 GEMM、XLA device-side sampling，或下一经典/SOTA 架构 |
 | 高效训练与推理 | modern / GQA / rotate_half 已兼容 Zygote / XLA 与两类 KV Cache；Qwen3-0.6B compiled decode、Qwen3-8B 4K XLA single-residency/service 与 30B-A3B BF16 offload/cache/scattered hit + bounded reuse/storage-verified parallel miss 已在 GPU 实证；adjacent coalescing 负结果与 decode copy-elision 正结果已冻结 | MoE raw read buffer 有界复用、route/attention 临时数组复用、fused/FlashAttention、动态 batch、低精度 kernel 与更长上下文优化 |
-| 智能体核心 | 官方 chat template 全分支 HF 逐字节 parity（含 tools / tool_calls / tool 角色）+ 沙箱化工具注册与 `<tool_call>` 解析 + 单请求内多 step 工具闭环（可离线 replay）+ Qwen3-Embedding-0.6B dense exact semantic memory baseline | 跨请求 conversation state、持久/增量 memory、检索接入、planning、反思，以及任务成功率级别的质量测量 |
+| 智能体核心 | 官方 chat template 全分支 HF 逐字节 parity（含 tools / tool_calls / tool 角色）+ 沙箱化工具注册与 `<tool_call>` 解析 + 单请求内多 step 工具闭环（可离线 replay）+ Qwen3-Embedding-0.6B dense exact semantic memory baseline | 跨请求 conversation state、持久/增量 memory、检索接入、planning、反思；任务成功率的测量已由 Chapter 37 建立基线，但只到单轮问答，未覆盖工具闭环本身的任务成功率 |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Chapter 01—36 已 Closed；Episode 06 与 07 均为 Open | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏；Episode 07 起额外要求外部独立实现作为参照物 |
+| 学习记录 | Chapter 01—37 已 Closed；Episode 06 与 07 均为 Open | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏；Episode 07 起额外要求外部独立实现作为参照物 |
