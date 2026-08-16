@@ -1024,84 +1024,551 @@ function _strip_newlines(input::AbstractString; left::Bool=true, right::Bool=tru
         String(SubString(text, first_position, last_position))
 end
 
-function _hf_assistant_content(message, raw_content::String)
-    reasoning_value = _hf_message_value(message, :reasoning_content; default=nothing)
-    reasoning_value === nothing || reasoning_value isa AbstractString || throw(ArgumentError(
-        "assistant reasoning_content must be a string when present",
-    ))
-    reasoning = reasoning_value === nothing ? "" : String(reasoning_value)
-    content = raw_content
-    if reasoning_value === nothing && occursin("</think>", content)
-        before = first(split(content, "</think>"))
-        reasoning = last(split(before, "<think>"))
-        content = last(split(content, "</think>"))
-        reasoning = _strip_newlines(reasoning)
-        content = _strip_newlines(content; right=false)
+"""
+    OrderedJSONObject(entries)
+
+JSON object that keeps its keys in insertion order. `Dict` cannot be rendered byte
+stably and `JSON3.Object` loses the JSON number form, so tool payloads travel in this
+type instead.
+"""
+struct _OrderedJSONMissing end
+const _ORDERED_JSON_MISSING = _OrderedJSONMissing()
+
+struct OrderedJSONObject <: AbstractDict{String,Any}
+    entries::Vector{Pair{String,Any}}
+end
+
+OrderedJSONObject() = OrderedJSONObject(Pair{String,Any}[])
+
+Base.length(object::OrderedJSONObject) = length(object.entries)
+Base.iterate(object::OrderedJSONObject, state...) = iterate(object.entries, state...)
+Base.pairs(object::OrderedJSONObject) = object.entries
+Base.keys(object::OrderedJSONObject) = String[first(entry) for entry in object.entries]
+Base.values(object::OrderedJSONObject) = Any[last(entry) for entry in object.entries]
+
+_ordered_json_key(key) = key isa Symbol ? String(key) : String(key)
+
+function Base.get(object::OrderedJSONObject, key, default)
+    name = _ordered_json_key(key)
+    for entry in object.entries
+        first(entry) == name && return last(entry)
     end
-    return reasoning, content
+    return default
+end
+
+Base.haskey(object::OrderedJSONObject, key) =
+    get(object, key, _ORDERED_JSON_MISSING) !== _ORDERED_JSON_MISSING
+
+function Base.getindex(object::OrderedJSONObject, key)
+    value = get(object, key, _ORDERED_JSON_MISSING)
+    value === _ORDERED_JSON_MISSING && throw(KeyError(key))
+    return value
 end
 
 """
-    apply_qwen3_chat_template(tokenizer, messages; kwargs...)
+    _python_float_repr(value)
 
-Render the no-tools Qwen3 system/user/assistant chat-template subset. Inputs
-outside that explicitly supported subset are rejected.
+CPython `repr(float)`: the shortest round-tripping decimal, written in fixed notation
+when the decimal point lands in `-3:16` and otherwise as `e±NN` with at least two
+exponent digits. Julia and CPython both emit shortest round-trip digits; only the
+placement rules differ, so this reformats rather than recomputes.
+"""
+function _python_float_repr(value::AbstractFloat)
+    number = Float64(value)
+    isfinite(number) || throw(ArgumentError(
+        "non-finite floats are unsupported in Qwen3 tool payloads",
+    ))
+    sign = signbit(number) ? "-" : ""
+    number == 0 && return sign * "0.0"
+
+    text = string(abs(number))
+    exponent_position = findfirst('e', text)
+    mantissa, exponent = exponent_position === nothing ? (text, 0) :
+        (text[1:exponent_position - 1], parse(Int, text[exponent_position + 1:end]))
+    point_position = findfirst('.', mantissa)
+    integer_part, fraction_part = point_position === nothing ? (mantissa, "") :
+        (mantissa[1:point_position - 1], mantissa[point_position + 1:end])
+
+    digits = integer_part * fraction_part
+    decimal_point = length(integer_part) + exponent
+    while length(digits) > 1 && first(digits) == '0'
+        digits = digits[2:end]
+        decimal_point -= 1
+    end
+    while length(digits) > 1 && last(digits) == '0'
+        digits = digits[1:end - 1]
+    end
+
+    if decimal_point <= -4 || decimal_point > 16
+        power = decimal_point - 1
+        head = digits[1:1] * (length(digits) > 1 ? "." * digits[2:end] : "")
+        return sign * head * "e" * (power < 0 ? "-" : "+") * lpad(abs(power), 2, '0')
+    elseif decimal_point <= 0
+        return sign * "0." * "0"^(-decimal_point) * digits
+    elseif decimal_point >= length(digits)
+        return sign * digits * "0"^(decimal_point - length(digits)) * ".0"
+    end
+    return sign * digits[1:decimal_point] * "." * digits[decimal_point + 1:end]
+end
+
+"""
+    _python_json(io, value)
+
+Serialize `value` byte for byte like CPython `json.dumps(value, ensure_ascii=false)`,
+which is the `tojson` filter Transformers installs when it compiles a chat template:
+`", "` and `": "` separators, insertion order, no key sorting and no ASCII escaping.
+
+Only order-preserving containers are accepted, and a `JSON3.Object` is rejected because
+`JSON3.read` narrows whole-valued floats (`1.0`, `1e2`) to `Int64`; rendering those as
+`1` and `100` would silently diverge from the reference prompt. Parse tool payloads
+with [`parse_qwen3_json`](@ref) instead.
+"""
+function _python_json(io::IO, value)
+    if value === nothing
+        print(io, "null")
+    elseif value isa Bool
+        print(io, value ? "true" : "false")
+    elseif value isa Integer
+        print(io, string(value))
+    elseif value isa AbstractFloat
+        print(io, _python_float_repr(value))
+    elseif value isa AbstractString || value isa Symbol
+        _python_json_string(io, String(value))
+    elseif value isa NamedTuple
+        _python_json_object(io, zip(keys(value), values(value)))
+    elseif value isa OrderedJSONObject
+        _python_json_object(io, ((first(entry), last(entry)) for entry in value.entries))
+    elseif value isa JSON3.Object
+        throw(ArgumentError(
+            "JSON3.read narrows whole-valued floats (1.0 becomes 1) and would silently " *
+            "change the rendered prompt; parse tool payloads with parse_qwen3_json",
+        ))
+    elseif (value isa AbstractVector || value isa Tuple) &&
+           !isempty(value) && all(entry -> entry isa Pair, value)
+        # An empty container stays an array: `[]` is a valid schema value and an
+        # empty object is expressible as `NamedTuple()` or `OrderedJSONObject()`.
+        _python_json_object(io, ((first(entry), last(entry)) for entry in value))
+    elseif value isa AbstractVector || value isa Tuple
+        print(io, "[")
+        for (position, entry) in enumerate(value)
+            position == 1 || print(io, ", ")
+            _python_json(io, entry)
+        end
+        print(io, "]")
+    elseif value isa AbstractDict
+        throw(ArgumentError(
+            "unordered Dict cannot be rendered byte-stably; use a NamedTuple, a Vector of Pairs or an OrderedJSONObject",
+        ))
+    else
+        throw(ArgumentError("unsupported JSON value of type $(typeof(value))"))
+    end
+    return io
+end
+
+function _python_json_object(io::IO, entries)
+    print(io, "{")
+    first_entry = true
+    for (key, value) in entries
+        key isa AbstractString || key isa Symbol || throw(ArgumentError(
+            "JSON object keys must be strings or symbols, got $(typeof(key))",
+        ))
+        first_entry || print(io, ", ")
+        first_entry = false
+        _python_json_string(io, String(key))
+        print(io, ": ")
+        _python_json(io, value)
+    end
+    print(io, "}")
+    return io
+end
+
+function _python_json_string(io::IO, text::AbstractString)
+    print(io, '"')
+    for character in text
+        if character == '"'
+            print(io, "\\\"")
+        elseif character == '\\'
+            print(io, "\\\\")
+        elseif character == '\n'
+            print(io, "\\n")
+        elseif character == '\r'
+            print(io, "\\r")
+        elseif character == '\t'
+            print(io, "\\t")
+        elseif character == '\b'
+            print(io, "\\b")
+        elseif character == '\f'
+            print(io, "\\f")
+        elseif character < '\x20'
+            print(io, "\\u", string(UInt16(character); base=16, pad=4))
+        else
+            print(io, character)
+        end
+    end
+    print(io, '"')
+    return io
+end
+
+_python_json_text(value) = String(take!(_python_json(IOBuffer(), value)))
+
+mutable struct _JSONReader
+    text::String
+    index::Int
+end
+
+"""
+    parse_qwen3_json(text)
+
+Parse JSON while preserving the distinction CPython preserves and `JSON3.read` does
+not: a number written with a fraction or an exponent is a float, everything else is an
+integer of arbitrary precision. Objects become [`OrderedJSONObject`](@ref) so key order
+survives, arrays become `Vector{Any}`.
+
+This is the parser tool declarations and model-emitted `<tool_call>` arguments go
+through, because both are re-serialized into a prompt that must match the reference
+byte for byte.
+"""
+function parse_qwen3_json(text::AbstractString)
+    reader = _JSONReader(String(text), 1)
+    value = _json_value!(reader)
+    _json_skip_space!(reader)
+    reader.index > ncodeunits(reader.text) || throw(ArgumentError(
+        "trailing content after JSON value at byte $(reader.index)",
+    ))
+    return value
+end
+
+_json_at_end(reader::_JSONReader) = reader.index > ncodeunits(reader.text)
+
+function _json_skip_space!(reader::_JSONReader)
+    while !_json_at_end(reader)
+        character = reader.text[reader.index]
+        character in (' ', '\t', '\n', '\r') || break
+        reader.index = nextind(reader.text, reader.index)
+    end
+    return reader
+end
+
+function _json_expect!(reader::_JSONReader, character::Char)
+    _json_skip_space!(reader)
+    (!_json_at_end(reader) && reader.text[reader.index] == character) || throw(ArgumentError(
+        "expected $(repr(character)) at byte $(reader.index)",
+    ))
+    reader.index = nextind(reader.text, reader.index)
+    return reader
+end
+
+function _json_value!(reader::_JSONReader)
+    _json_skip_space!(reader)
+    _json_at_end(reader) && throw(ArgumentError("unexpected end of JSON input"))
+    character = reader.text[reader.index]
+    character == '{' && return _json_object!(reader)
+    character == '[' && return _json_array!(reader)
+    character == '"' && return _json_string!(reader)
+    for (literal, value) in (("true", true), ("false", false), ("null", nothing))
+        stop = reader.index + ncodeunits(literal) - 1
+        if stop <= ncodeunits(reader.text) &&
+           SubString(reader.text, reader.index, stop) == literal
+            reader.index = stop + 1
+            return value
+        end
+    end
+    (character == '-' || isdigit(character)) && return _json_number!(reader)
+    throw(ArgumentError("unexpected character $(repr(character)) at byte $(reader.index)"))
+end
+
+function _json_object!(reader::_JSONReader)
+    _json_expect!(reader, '{')
+    entries = Pair{String,Any}[]
+    _json_skip_space!(reader)
+    if !_json_at_end(reader) && reader.text[reader.index] == '}'
+        reader.index = nextind(reader.text, reader.index)
+        return OrderedJSONObject(entries)
+    end
+    while true
+        _json_skip_space!(reader)
+        key = _json_string!(reader)
+        _json_expect!(reader, ':')
+        push!(entries, key => _json_value!(reader))
+        _json_skip_space!(reader)
+        _json_at_end(reader) && throw(ArgumentError("unterminated JSON object"))
+        separator = reader.text[reader.index]
+        reader.index = nextind(reader.text, reader.index)
+        separator == ',' && continue
+        separator == '}' && break
+        throw(ArgumentError("expected ',' or '}' at byte $(reader.index - 1)"))
+    end
+    return OrderedJSONObject(entries)
+end
+
+function _json_array!(reader::_JSONReader)
+    _json_expect!(reader, '[')
+    values = Any[]
+    _json_skip_space!(reader)
+    if !_json_at_end(reader) && reader.text[reader.index] == ']'
+        reader.index = nextind(reader.text, reader.index)
+        return values
+    end
+    while true
+        push!(values, _json_value!(reader))
+        _json_skip_space!(reader)
+        _json_at_end(reader) && throw(ArgumentError("unterminated JSON array"))
+        separator = reader.text[reader.index]
+        reader.index = nextind(reader.text, reader.index)
+        separator == ',' && continue
+        separator == ']' && break
+        throw(ArgumentError("expected ',' or ']' at byte $(reader.index - 1)"))
+    end
+    return values
+end
+
+function _json_string!(reader::_JSONReader)
+    _json_expect!(reader, '"')
+    output = IOBuffer()
+    while true
+        _json_at_end(reader) && throw(ArgumentError("unterminated JSON string"))
+        character = reader.text[reader.index]
+        reader.index = nextind(reader.text, reader.index)
+        character == '"' && break
+        if character != '\\'
+            character < '\x20' && throw(ArgumentError(
+                "unescaped control character in JSON string at byte $(reader.index - 1)",
+            ))
+            print(output, character)
+            continue
+        end
+        _json_at_end(reader) && throw(ArgumentError("unterminated JSON escape"))
+        escape = reader.text[reader.index]
+        reader.index = nextind(reader.text, reader.index)
+        if escape == 'u'
+            code = _json_hex4!(reader)
+            if 0xD800 <= code <= 0xDBFF
+                (reader.index + 1 <= ncodeunits(reader.text) &&
+                 reader.text[reader.index] == '\\' &&
+                 reader.text[nextind(reader.text, reader.index)] == 'u') || throw(ArgumentError(
+                    "lone high surrogate in JSON string",
+                ))
+                reader.index = nextind(reader.text, nextind(reader.text, reader.index))
+                low = _json_hex4!(reader)
+                0xDC00 <= low <= 0xDFFF || throw(ArgumentError("invalid low surrogate"))
+                code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+            end
+            print(output, Char(code))
+        else
+            replacement = escape == '"' ? '"' : escape == '\\' ? '\\' :
+                escape == '/' ? '/' : escape == 'b' ? '\b' : escape == 'f' ? '\f' :
+                escape == 'n' ? '\n' : escape == 'r' ? '\r' : escape == 't' ? '\t' :
+                throw(ArgumentError("invalid JSON escape $(repr(escape))"))
+            print(output, replacement)
+        end
+    end
+    return String(take!(output))
+end
+
+function _json_hex4!(reader::_JSONReader)
+    stop = reader.index + 3
+    stop <= ncodeunits(reader.text) || throw(ArgumentError("truncated \\u escape"))
+    digits = SubString(reader.text, reader.index, stop)
+    reader.index = stop + 1
+    value = tryparse(UInt32, digits; base=16)
+    value === nothing && throw(ArgumentError("invalid \\u escape $(repr(String(digits)))"))
+    return value
+end
+
+function _json_number!(reader::_JSONReader)
+    start = reader.index
+    is_float = false
+    while !_json_at_end(reader)
+        character = reader.text[reader.index]
+        if isdigit(character) || character == '-' || character == '+'
+            reader.index = nextind(reader.text, reader.index)
+        elseif character == '.' || character == 'e' || character == 'E'
+            is_float = true
+            reader.index = nextind(reader.text, reader.index)
+        else
+            break
+        end
+    end
+    lexeme = String(SubString(reader.text, start, prevind(reader.text, reader.index)))
+    if is_float
+        parsed = tryparse(Float64, lexeme)
+        parsed === nothing && throw(ArgumentError("invalid JSON number $(repr(lexeme))"))
+        return parsed
+    end
+    small = tryparse(Int, lexeme)
+    small === nothing || return small
+    large = tryparse(BigInt, lexeme)
+    large === nothing && throw(ArgumentError("invalid JSON number $(repr(lexeme))"))
+    return large
+end
+
+"""Normalized view of one chat message, mirroring the official template's guards."""
+struct _Qwen3ChatEntry
+    role::String
+    content::String
+    content_is_string::Bool
+    reasoning::Union{Nothing,String}
+    tool_calls::Vector{Any}
+end
+
+function _qwen3_chat_entry(message)
+    role = _hf_message_value(message, :role; required=true)
+    role isa AbstractString || throw(ArgumentError("chat role must be a string"))
+    role_string = String(role)
+    role_string in ("system", "user", "assistant", "tool") || throw(ArgumentError(
+        "unsupported Qwen3 chat role $(repr(role_string))",
+    ))
+    raw_content = _hf_message_value(message, :content; default=nothing)
+    content_is_string = raw_content isa AbstractString
+    content_is_string || raw_content === nothing || throw(ArgumentError(
+        "chat content must be a string when present",
+    ))
+    content = content_is_string ? String(raw_content) : ""
+    raw_reasoning = _hf_message_value(message, :reasoning_content; default=nothing)
+    raw_reasoning === nothing || raw_reasoning isa AbstractString || throw(ArgumentError(
+        "assistant reasoning_content must be a string when present",
+    ))
+    reasoning = raw_reasoning === nothing ? nothing : String(raw_reasoning)
+    raw_calls = _hf_message_value(message, :tool_calls; default=nothing)
+    tool_calls = raw_calls === nothing ? Any[] : collect(Any, raw_calls)
+    isempty(tool_calls) || role_string == "assistant" || throw(ArgumentError(
+        "tool_calls are only supported on assistant messages",
+    ))
+    return _Qwen3ChatEntry(role_string, content, content_is_string, reasoning, tool_calls)
+end
+
+"""Split an assistant turn into `(reasoning, visible content)` like the official template."""
+function _qwen3_assistant_split(entry::_Qwen3ChatEntry)
+    entry.reasoning === nothing || return entry.reasoning, entry.content
+    content = entry.content
+    occursin("</think>", content) || return "", content
+    before = first(split(content, "</think>"))
+    reasoning = _strip_newlines(last(split(before, "<think>")))
+    visible = _strip_newlines(last(split(content, "</think>")); right=false)
+    return reasoning, visible
+end
+
+"""
+Index of the newest real user turn, mirroring `ns.last_query_index`. A user message
+that is itself a `<tool_response>` block is a tool result rather than a query, and
+when no real query exists the index stays past the end so no think block is synthesised.
+"""
+function _qwen3_last_query_index(entries::Vector{_Qwen3ChatEntry})
+    for index in length(entries):-1:1
+        entry = entries[index]
+        entry.role == "user" && entry.content_is_string || continue
+        startswith(entry.content, "<tool_response>") &&
+            endswith(entry.content, "</tool_response>") && continue
+        return index
+    end
+    return length(entries)
+end
+
+function _qwen3_tool_call_fields(call)
+    inner = _hf_message_value(call, :function; default=nothing)
+    target = inner === nothing ? call : inner
+    name = _hf_message_value(target, :name; required=true)
+    name isa AbstractString || throw(ArgumentError("tool call name must be a string"))
+    arguments = _hf_message_value(target, :arguments; default=nothing)
+    arguments === nothing && throw(ArgumentError("tool call is missing `arguments`"))
+    return String(name), arguments
+end
+
+const _QWEN3_TOOL_HEADER = "# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>"
+const _QWEN3_TOOL_FOOTER = "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n"
+
+"""
+    apply_qwen3_chat_template(tokenizer, messages; tools=nothing,
+                              add_generation_prompt=true, enable_thinking=true)
+
+Render the official Qwen3 chat template: system/user/assistant turns, the `# Tools`
+header, assistant `<tool_call>` blocks and `tool`-role `<tool_response>` turns. The
+output is byte-for-byte identical to the frozen HuggingFace Jinja template.
+
+`tools` accepts order-preserving JSON values only (`NamedTuple`, `Vector` of `Pair`s or
+a parsed `JSON3.Object`) because the official `tojson` filter emits keys in insertion
+order. Passing tools, `tool` messages or assistant `tool_calls` requires the official
+Qwen3 `chat_template` revision and fails closed against any other template.
 """
 function apply_qwen3_chat_template(
     tokenizer::HFQwen3Tokenizer,
     messages;
+    tools=nothing,
     add_generation_prompt::Bool=true,
     enable_thinking::Bool=true,
 )
     message_list = collect(messages)
     isempty(message_list) && throw(ArgumentError("chat messages must not be empty"))
-    roles = String[]
-    contents = String[]
-    for message in message_list
-        role = _hf_message_value(message, :role; required=true)
-        content = _hf_message_value(message, :content; required=true)
-        role isa AbstractString || throw(ArgumentError("chat role must be a string"))
-        content isa AbstractString || throw(ArgumentError("chat content must be a string"))
-        role_string = String(role)
-        role_string in ("system", "user", "assistant") || throw(ArgumentError(
-            "unsupported Qwen3 chat role $(repr(role_string)); tools are outside Week 08 scope",
+    entries = _Qwen3ChatEntry[_qwen3_chat_entry(message) for message in message_list]
+    # A bare NamedTuple or object would iterate over its *values* and render one bogus
+    # declaration per field, so a single tool has to be wrapped explicitly.
+    (tools isa NamedTuple || tools isa AbstractDict) && throw(ArgumentError(
+        "tools must be a list of tool declarations; wrap a single tool in a vector",
+    ))
+    tool_list = tools === nothing ? Any[] : collect(Any, tools)
+    uses_tool_protocol = !isempty(tool_list) ||
+        any(entry -> entry.role == "tool" || !isempty(entry.tool_calls), entries)
+    uses_tool_protocol && _sha256_hex(tokenizer.chat_template) != _QWEN3_CHAT_TEMPLATE_SHA256 &&
+        throw(ArgumentError(
+            "Qwen3 tools, tool messages and tool_calls require the official Qwen3 chat_template revision",
         ))
-        tool_calls = _hf_message_value(message, :tool_calls; default=nothing)
-        (tool_calls === nothing || isempty(tool_calls)) || throw(ArgumentError(
-            "Qwen3 tool calls are outside Week 08 scope",
-        ))
-        push!(roles, role_string)
-        push!(contents, String(content))
+
+    total = length(entries)
+    last_query = _qwen3_last_query_index(entries)
+    output = IOBuffer()
+    leading_system = entries[1].role == "system"
+    if !isempty(tool_list)
+        print(output, "<|im_start|>system\n")
+        leading_system && print(output, entries[1].content, "\n\n")
+        print(output, _QWEN3_TOOL_HEADER)
+        for tool in tool_list
+            print(output, "\n")
+            _python_json(output, tool)
+        end
+        print(output, _QWEN3_TOOL_FOOTER)
+    elseif leading_system
+        print(output, "<|im_start|>system\n", entries[1].content, "<|im_end|>\n")
     end
 
-    last_user = findlast(==("user"), roles)
-    last_user === nothing && (last_user = 0)
-    output = IOBuffer()
-    if roles[1] == "system"
-        print(output, "<|im_start|>system\n", contents[1], "<|im_end|>\n")
-    end
-    for index in eachindex(message_list)
-        role = roles[index]
-        content = contents[index]
-        index == 1 && role == "system" && continue
-        if role == "user" || role == "system"
-            print(output, "<|im_start|>", role, "\n", content, "<|im_end|>\n")
-        else
-            reasoning, visible_content = _hf_assistant_content(message_list[index], content)
-            if index > last_user && (index == length(message_list) || !isempty(reasoning))
+    for index in 1:total
+        entry = entries[index]
+        role = entry.role
+        if role == "user" || (role == "system" && index != 1)
+            print(output, "<|im_start|>", role, "\n", entry.content, "<|im_end|>\n")
+        elseif role == "assistant"
+            reasoning, content = _qwen3_assistant_split(entry)
+            if index > last_query && (index == total || !isempty(reasoning))
                 print(
                     output,
                     "<|im_start|>assistant\n<think>\n",
                     _strip_newlines(reasoning),
                     "\n</think>\n\n",
-                    _strip_newlines(visible_content; right=false),
-                    "<|im_end|>\n",
+                    _strip_newlines(content; right=false),
                 )
             else
-                print(output, "<|im_start|>assistant\n", content, "<|im_end|>\n")
+                print(output, "<|im_start|>assistant\n", content)
             end
+            for (position, call) in enumerate(entry.tool_calls)
+                (position > 1 || !isempty(content)) && print(output, "\n")
+                name, arguments = _qwen3_tool_call_fields(call)
+                print(output, "<tool_call>\n{\"name\": \"", name, "\", \"arguments\": ")
+                if arguments isa AbstractString
+                    print(output, arguments)
+                else
+                    _python_json(output, arguments)
+                end
+                print(output, "}\n</tool_call>")
+            end
+            print(output, "<|im_end|>\n")
+        elseif role == "tool"
+            (index == 1 || entries[index - 1].role != "tool") &&
+                print(output, "<|im_start|>user")
+            print(output, "\n<tool_response>\n", entry.content, "\n</tool_response>")
+            (index == total || entries[index + 1].role != "tool") &&
+                print(output, "<|im_end|>\n")
         end
     end
+
     if add_generation_prompt
         print(output, "<|im_start|>assistant\n")
         enable_thinking || print(output, "<think>\n\n</think>\n\n")

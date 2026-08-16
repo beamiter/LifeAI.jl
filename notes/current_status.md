@@ -6,6 +6,10 @@
 
 ## 当前活动阶段
 
+[`Chapter 36 — Qwen3 tools chat template HF parity 与 4B 工具调用闭环`](episodes/episode07_agent_closed_loop/chapter36_qwen3_tools_chat_template.md) 已于 2026-08-16 Closed，同时开启 [`Episode 07 — 智能体闭环`](episodes/episode07_agent_closed_loop/README.md)。本章第一次把参照物从「LifeAI 与 HF 的数值一致」换成**外部独立实现**：官方 Jinja 模板经 CPython + jinja2（不需要 torch/transformers）渲染的结果。30 / 30 case 逐字节相同，真实 Qwen3-4B tokenizer 下 token id 亦逐位相同。过程中修复了 Chapter 08 遗留的两条真实分歧——历史 assistant 的 `<think>` 块未按官方语义剥离、以及无 user 消息时 `last_query_index` 方向相反；前者会在 `--thinking` 多轮聊天的第 2 轮起真实发生。`tools` / `tool` 角色 / `tool_calls` 以官方模板 sha256 fail closed，`tojson` 按 CPython `json.dumps(ensure_ascii=False)` 复刻，含 CPython `repr(float)` 与任意精度整数。fixture 与 Close 前的对抗式复核共抓到四个真实 bug，其中最重要的一条是 `JSON3.read` 会把 `1.0` 窄化成 `Int64`，使原本的浮点 fail-closed 保护完全触发不到、静默渲染出与 HF 不同的 prompt；已改为用保留数字词法的 `parse_qwen3_json`，并拒绝 `JSON3.Object`。
+
+Episode 06 保持 Open 但在当前工作机上被资产阻塞：grouped scattered dispatch、full-window 40K prefill 与剩余 allocation profiling 都需要 61 GB 的 Qwen3-30B-A3B 与 RTX 4090 D 24 GiB，而当前机器是 RTX 5080 16 GiB 且本地没有该 checkpoint。
+
 [`Chapter 35 — Qwen3 MoE bounded host projection-buffer reuse`](episodes/episode06_qwen3_moe_and_model_expansion/chapter35_qwen3_moe_host_buffer_reuse.md) 已于 2026-08-12 Closed。in-place safetensors decode 与 8-slot/72 MiB final host matrix pool 只在 CUDA pageable ownership 明确安全时启用；CPU identity 和 pinned async 自动无池，上传失败也会完整归还 reader task leases。真实 30B-A3B English32 同进程 A/B 中 cold/revisit allocation 从 `28.967 GB` 降到约 `0.288 GB`（`99.01%`），latency 从 `13.770 / 11.358 s` 降到 `10.471 / 8.763 s`（`1.315× / 1.296×`），3,039 borrow/return 完整配对且所有输出 exact。
 
 [`Chapter 34 — Qwen3 MoE bounded safetensors read-buffer reuse`](episodes/episode06_qwen3_moe_and_model_expansion/chapter34_qwen3_moe_read_buffer_reuse.md) 已于 2026-08-12 Closed。cache-backed tensor reads 现在默认按 reader worker 预分配有界 raw pool：真实 8-worker 只常驻 `25,165,824` bytes，3,039 misses 恰好借用 3,039 次。30B-A3B English32 同进程交错 A/B 中 cold/revisit allocation 从 `57.647 GB` 降到 `28.967 GB`（`49.75%`），消失的约 `28.680 GB` 与 logical raw payload 对齐；latency 从 `17.079 / 15.576 s` 降到 `14.052 / 11.653 s`（`1.215× / 1.337×`）。所有输出 exact；最终 host matrices 未复用，pinned H2D ownership 不变。
@@ -301,9 +305,12 @@ Chapter 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定�
 - 面向真实任务和长期运行的模型质量；较大规模真实语料训练。
 - 适合 tied embedding 的统一初始化基线、低精度专项与真实规模组件对照。
 - 实验注册、超参数搜索、分布式训练和面向生产的性能评估。
-- 对话状态、跨 step 工作记忆、持久长期记忆、ANN/reranker 与 agent
-  memory policy；Chapter 22 仅完成内存内 dense exact semantic retrieval。
-- 任务规划、工具调用、反思和自主执行循环。
+- 跨请求持久状态、工作记忆写回、持久长期记忆、ANN/reranker 与 agent
+  memory policy；Chapter 22 仅完成内存内 dense exact semantic retrieval，
+  Chapter 36 的多 step 闭环只存在于单个请求内部。
+- 任务规划与反思；工具调用协议已在 Chapter 36 完成 HF 逐字节 parity 与
+  单请求内闭环，但通用 Jinja 渲染器、tools 版 `/api/generate`、以及
+  「任务是否答对」这一层的质量测量都还没有。
 - 图像、音频、空间状态或机器人传感器输入。
 - 动作空间、控制器、仿真环境与真实设备适配器。
 - 机器人运行所需的实时性、容错和物理安全机制。
@@ -479,6 +486,9 @@ cache 已实现。
 
 - Qwen3-Embedding-0.6B 与内存内 exact semantic memory baseline 已完成，
   但尚未接入跨 step 状态或 policy。（Chapter 22 已完成）
+- 工具协议与单请求内多 step 闭环已完成：官方 chat template 全分支逐字节
+  parity、沙箱化工具注册、`<tool_call>` 解析与合法性判定，以及不加载模型
+  即可复算每轮 prompt sha256 的 replay 测试。（Chapter 36 已完成）
 - 定义与具体机器人无关的 `Observation`、`Action`、`Memory` 和 policy / model 接口。
 - 先在一个简单、可重复的模拟环境中跑通"感知 → 记忆 → 决策 → 行动 → 反馈"。
 - 保持模型后端可替换，使当前小 GPT、Qwen3 复现权重或后续多模态模型都能接入。
@@ -491,8 +501,8 @@ cache 已实现。
 | --- | --- | --- |
 | 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + native BF16 推理 + CUDA/XLA 加速 + 8B XLA single-residency 4K greedy 部署/常驻服务 + 可预算 INT4/INT8/BF16 计划与 diagonal activation-aware 校准（14B RTN 16/16，weight/activation MSE 均 4/16）；GPT-2 真实 parity；流式加载；五类版本化 Tokenizer 与中文数据管线 | 完整 AWQ/GPTQ 或量化 GEMM、XLA device-side sampling，或下一经典/SOTA 架构 |
 | 高效训练与推理 | modern / GQA / rotate_half 已兼容 Zygote / XLA 与两类 KV Cache；Qwen3-0.6B compiled decode、Qwen3-8B 4K XLA single-residency/service 与 30B-A3B BF16 offload/cache/scattered hit + bounded reuse/storage-verified parallel miss 已在 GPU 实证；adjacent coalescing 负结果与 decode copy-elision 正结果已冻结 | MoE raw read buffer 有界复用、route/attention 临时数组复用、fused/FlashAttention、动态 batch、低精度 kernel 与更长上下文优化 |
-| 智能体核心 | Qwen3 基础 chat 输入 + Qwen3-Embedding-0.6B dense exact semantic memory baseline | conversation state、持久/增量 memory、planning、tools、agent loop |
+| 智能体核心 | 官方 chat template 全分支 HF 逐字节 parity（含 tools / tool_calls / tool 角色）+ 沙箱化工具注册与 `<tool_call>` 解析 + 单请求内多 step 工具闭环（可离线 replay）+ Qwen3-Embedding-0.6B dense exact semantic memory baseline | 跨请求 conversation state、持久/增量 memory、检索接入、planning、反思，以及任务成功率级别的质量测量 |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Chapter 01—33 已 Closed | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏 |
+| 学习记录 | Chapter 01—36 已 Closed；Episode 06 与 07 均为 Open | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏；Episode 07 起额外要求外部独立实现作为参照物 |

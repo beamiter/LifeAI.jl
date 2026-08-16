@@ -48,6 +48,10 @@ include("generation/qwen3_xla_service.jl")
 include("generation/kv_benchmark.jl")
 include("generation/xla_cache_modes_benchmark.jl")
 
+# Tool declarations and the minimal stateful agent loop.
+include("agent/tools.jl")
+include("agent/tool_loop.jl")
+
 include("api.jl")
 
 end # module LifeAI

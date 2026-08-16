@@ -26,6 +26,7 @@ export HFGPT2Tokenizer, HFGPT2GenerationConfig
 export hf_byte_unicode_alphabet, load_hf_qwen3_tokenizer, hf_generation_config
 export load_hf_qwen3_embedding_tokenizer
 export hf_qwen3_pretokenize, apply_qwen3_chat_template
+export OrderedJSONObject, parse_qwen3_json
 export load_hf_gpt2_tokenizer, hf_gpt2_pretokenize
 export fit_tokenizer, fit_byte_bpe, encode, decode, decode_bytes, vocab_size
 export normalize_text, special_token_id, token_byte_length, encoded_byte_length
@@ -93,6 +94,13 @@ export qwen3_xla_service_status, qwen3_xla_http_handler
 export qwen3_xla_http_stream_handler, serve_qwen3_xla_http!
 export load_hf_gpt2_config, load_hf_gpt2_parameters, load_hf_gpt2_model
 export load_hf_gpt2_bundle, hf_gpt2_forward_trace
+
+# Tool declarations and the minimal agent loop
+export AgentTool, ToolRegistry, qwen3_tool_specs, default_agent_tools
+export Qwen3ToolCall, Qwen3ToolCallParse, parse_qwen3_tool_calls
+export AgentToolResult, invoke_agent_tool, agent_tool_call_validity
+export AgentLoopStep, AgentLoopTrace, run_qwen3_tool_loop
+export agent_loop_summary, wilson_interval
 
 # Training and persistence
 export TrainerGPT, init_train_state, next_token_loss, next_token_nll_sum

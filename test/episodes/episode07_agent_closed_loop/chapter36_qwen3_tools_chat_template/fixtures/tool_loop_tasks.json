@@ -1,0 +1,27 @@
+{
+  "description": "Chapter 36 frozen tool-loop task set. Frozen before the first measured run; the reported valid-tool-call rate is only meaningful for exactly this list and this system prompt.",
+  "system": "You are a careful assistant with access to tools. When a tool can answer the question, call it instead of guessing. Answer in English.",
+  "sandbox": "repository root",
+  "tasks": [
+    {"name": "add_small", "user": "What is 17 plus 25?"},
+    {"name": "add_large", "user": "Compute 48213 + 99787."},
+    {"name": "add_negative", "user": "What is -412 plus 913?"},
+    {"name": "add_zero", "user": "Add 0 and 4096 for me."},
+    {"name": "add_worded", "user": "I have 7 apples and my friend gives me 35 more. Exactly how many do I have?"},
+    {"name": "add_two_steps", "user": "Add 12 and 30, then tell me the result."},
+    {"name": "add_big_pair", "user": "Please compute the sum of 123456 and 654321."},
+    {"name": "add_teens", "user": "What do you get when you add 13 to 19?"},
+    {"name": "list_root", "user": "List the entries at the top level of the sandbox."},
+    {"name": "list_src", "user": "What files are in the src directory?"},
+    {"name": "list_scripts", "user": "Show me what is inside the scripts directory."},
+    {"name": "list_notes", "user": "List the contents of the notes directory."},
+    {"name": "list_test", "user": "What does the test directory contain?"},
+    {"name": "list_examples", "user": "Which files live in the examples directory?"},
+    {"name": "read_project_name", "user": "Read Project.toml and tell me the package name."},
+    {"name": "read_project_version", "user": "What version is declared in Project.toml?"},
+    {"name": "read_gitignore", "user": "Read the first part of .gitignore and tell me one pattern it ignores."},
+    {"name": "read_readme_title", "user": "Read README.md and tell me its first heading."},
+    {"name": "read_api", "user": "Read the first 200 bytes of src/api.jl and describe what the file is."},
+    {"name": "read_missing", "user": "Read the file does_not_exist.txt and tell me what happened."}
+  ]
+}

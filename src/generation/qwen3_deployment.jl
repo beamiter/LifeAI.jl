@@ -832,6 +832,16 @@ function fit_qwen3_chat_context(
             ))
             next_role == "assistant" && (remove_count = 2)
         end
+        # A dropped assistant turn takes its tool results with it: leaving them behind
+        # would render a `<tool_response>` user block with nothing that requested it.
+        while first_droppable + remove_count <= length(retained) - 1 &&
+              String(_hf_message_value(
+                  retained[first_droppable + remove_count],
+                  :role;
+                  required=true,
+              )) == "tool"
+            remove_count += 1
+        end
         deleteat!(retained, first_droppable:(first_droppable + remove_count - 1))
         dropped += remove_count
     end

@@ -229,6 +229,26 @@ end
     end
 end
 
+@testset "Episode 07 — Agent closed loop" begin
+    @testset "Chapter 36 — Tools chat template and tool loop" begin
+        include(chapter_test(
+            "episode07_agent_closed_loop",
+            "chapter36_qwen3_tools_chat_template",
+            "test_qwen3_tools_chat_template.jl",
+        ))
+        include(chapter_test(
+            "episode07_agent_closed_loop",
+            "chapter36_qwen3_tools_chat_template",
+            "test_qwen3_agent_tools.jl",
+        ))
+        include(chapter_test(
+            "episode07_agent_closed_loop",
+            "chapter36_qwen3_tools_chat_template",
+            "test_qwen3_tool_loop_replay.jl",
+        ))
+    end
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA episode extensions" begin
         include(chapter_test("episode01_transformer_and_training_foundations", "chapter02_gpt_xla_kv_cache", "test_xla_kv_cache.jl"))

@@ -21,7 +21,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 **阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、直接消费分散 BF16 cache matrices 并有界复用状态的 CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。**
 
-Chapter 01—35 均已 Closed。[`Chapter 35 — Qwen3 MoE bounded host projection-buffer reuse`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter35_qwen3_moe_host_buffer_reuse.md) 在明确 CUDA pageable、pinned 与 CPU identity 的不同 ownership 后，以 72 MiB final-matrix pool 配合 Chapter 34 的 24 MiB raw pool。30B-A3B English32 同进程 A/B 的 cold/revisit Julia allocation 从约 `28.967 GB` 降到 `0.288 GB`（`99.01%`），时延分别加速 `1.315× / 1.296×`，所有输出 exact；CPU 与 pinned async 自动保持无 final pool。
+Chapter 01—36 均已 Closed。[`Chapter 36 — Qwen3 tools chat template HF parity 与 4B 工具调用闭环`](notes/episodes/episode07_agent_closed_loop/chapter36_qwen3_tools_chat_template.md) 用官方 Jinja 模板经 CPython 渲染的外部 reference，把 chat template 的全部分支做到逐字节 parity（30 / 30 case，真实 4B tokenizer 下 token id 亦逐位相同），并修复了 Chapter 08 遗留的两条真实分歧：历史 assistant 的 `<think>` 块未剥离、以及无 user 消息时 `last_query_index` 方向相反。开启 `--thinking` 的多轮聊天从第 2 轮起会命中前者。
+
+[`Chapter 35 — Qwen3 MoE bounded host projection-buffer reuse`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter35_qwen3_moe_host_buffer_reuse.md) 在明确 CUDA pageable、pinned 与 CPU identity 的不同 ownership 后，以 72 MiB final-matrix pool 配合 Chapter 34 的 24 MiB raw pool。30B-A3B English32 同进程 A/B 的 cold/revisit Julia allocation 从约 `28.967 GB` 降到 `0.288 GB`（`99.01%`），时延分别加速 `1.315× / 1.296×`，所有输出 exact；CPU 与 pinned async 自动保持无 final pool。
 
 目前已经具备：
 
@@ -64,7 +66,16 @@ Chapter 01—35 均已 Closed。[`Chapter 35 — Qwen3 MoE bounded host projecti
 - Qwen3-0.6B 逐层 hidden states、full logits、dynamic/static cache decode 的真实 HF reference parity；真实权重测试显式 opt-in，默认测试保持离线。
 - Qwen3-0.6B 的 16-step 官方 sampled reference parity、position 40,959 独立 Transformers RoPE fixture，以及 CPU/CUDA/Reactant-XLA GPU 真实推理 benchmark。
 - 严格的 Qwen3 HF tokenizer：NFC、目标 regex、ByteLevel、imported BPE、added/special tokens、artifact/checkpoint 与 provenance fingerprint。
-- 无 tools 的 Qwen3 基础 chat template，以及 full/dynamic/static/XLA 的真实 greedy text-generation parity。
+- 官方 Qwen3 chat template 的全部分支：`# Tools` 头、assistant `tool_calls`、`tool`
+  角色的 `<tool_response>` 合并、think 块拆分与 `last_query_index` 反向扫描，30 / 30
+  case 与 CPython + Jinja2 渲染的外部 reference 逐字节相同；`tojson` 按 CPython
+  `json.dumps(ensure_ascii=False)` 语义复刻，含 CPython `repr(float)` 与任意精度整数，
+  无序 `Dict` 与会窄化数字的 `JSON3.Object` fail closed。tools / tool 角色 /
+  `tool_calls` 以官方模板 sha256 为准入条件。
+- 最小工具闭环：工具声明与注册、`<tool_call>` 解析与合法性判定、沙箱化内置工具，以及
+  「观察 → 决策 → 调用 → 回填 → 再决策」的多 step 循环；每一步记录 prompt sha256 与
+  generated ids，可在不加载模型的情况下离线 replay。
+- full/dynamic/static/XLA 的真实 greedy text-generation parity。
 - 严格的 GPT-2 config、Float32 safetensors、Conv1D/fused-QKV 映射与 GPT-2 byte-level BPE adapter；冻结 revision/checksum 不匹配时 fail closed。
 - GPT-2 124M 的 10 组 tokenizer corpus、embedding、12 层 residual、final hidden、full logits 与 full/dynamic/static 8-step greedy text 均通过 Transformers reference parity。
 - GPT-2 124M 的 16/64/256-token CPU/CUDA correctness 与 steady-state benchmark，以及 learned-position/GELU-New XLA 同构 smoke。
@@ -78,10 +89,12 @@ Chapter 01—35 均已 Closed。[`Chapter 35 — Qwen3 MoE bounded host projecti
   activation/KV-cache 量化与量化 GEMM；30B 的 48 层 prompt/cache-decode 真实 parity 与 dense 0.6B—32B 真实权重
   parity、native BF16、weight-only INT8/INT4 与 diagonal
   activation-aware clipping 已完成，不能再沿用早期“只验证 0.6B”的边界。
-- 通用 Jinja、tools/tool-role chat template 与 agent tool loop；可用于真实任务的模型质量仍未评估。
-- 跨 step 状态、持久/增量长短期记忆、ANN/reranker、规划、工具使用、
-  反思等完整 agent loop；当前只有 Chapter 22 的内存内 dense exact
-  semantic retrieval baseline。
+- 通用 Jinja 渲染器：Chapter 36 的实现是按官方模板逐分支手写的 Julia 渲染，并以模板 sha256 作为准入条件，不是通用模板引擎。
+- 跨请求持久状态：Chapter 36 只完成单请求内的多 step 工具闭环，没有记忆写回、检索接入或长期状态。
+- 可用于真实任务的模型质量仍未评估；Chapter 36 的 20 题只判定「协议是否合法」，不判定「任务是否答对」。
+- 持久/增量长短期记忆、ANN/reranker、规划与反思；记忆侧只有 Chapter 22 的
+  内存内 dense exact semantic retrieval baseline，且尚未接入 Chapter 36 的
+  工具闭环。
 - 视觉、听觉和传感器输入等多模态感知。
 - 面向仿真或实体机器人的 observation / action 抽象、控制链路与安全边界。
 - 在线或持续学习机制。
@@ -218,6 +231,37 @@ julia --project=. --startup-file=no \
 
 14B mixed RTN 仍是当前已实证的尺寸上限，但 0.377 tok/s 和不足 1 GiB
 的短输入余量不适合作为日常默认。
+
+运行 Chapter 36 的工具调用闭环（RTX 5080 16 GiB 上用 Qwen3-4B 验收）：
+
+```bash
+julia --project=. --startup-file=no scripts/run_qwen3_tool_loop.jl \
+  /path/to/Qwen3-4B/<revision> \
+  --variant qwen3_4b --revision <revision> \
+  --out benchmark_results/chapter36/tool_loop_trace_run1.jsonl \
+  --summary benchmark_results/chapter36/tool_loop_summary_run1.json
+```
+
+默认任务集是冻结的 20 题（8 题算术、6 题目录列举、6 题文件读取），文件系统工具被限制在
+`--sandbox` 指定的根内。每个 model turn 写一行 JSONL：prompt sha256、prompt token 数、
+generated ids、原始 completion、合法性判定、工具调用与返回、prefill/decode 秒数。
+`greedy` 下两次独立进程运行的全部 turn 逐位相同。
+
+也可以直接组装工具并渲染官方 tools prompt：
+
+```julia
+registry = default_agent_tools(pwd())
+prompt = apply_qwen3_chat_template(
+    tokenizer,
+    [(role="user", content="1+2?")];
+    tools=qwen3_tool_specs(registry),
+)
+calls = parse_qwen3_tool_calls(completion)
+result = invoke_agent_tool(registry, first(calls.calls))
+```
+
+`tools`、`tool` 角色与 `tool_calls` 要求 tokenizer 携带官方 Qwen3 `chat_template`
+（sha256 `a55ee1b1…74d8`，六个 dense 尺寸一致），其他模板一律 fail closed。
 
 查看或严格选择 Qwen3 dense family member：
 

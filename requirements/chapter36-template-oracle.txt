@@ -1,0 +1,49 @@
+# Chapter 36 chat-template oracle (scripts/export_qwen3_chat_template_reference.py).
+#
+# This oracle renders the official Qwen3 Jinja chat template and needs NO torch
+# and NO transformers. transformers' own renderer is just Jinja2 wired up in
+# PreTrainedTokenizerBase._compile_jinja_template:
+#     ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True,
+#                                   extensions=[jinja2.ext.loopcontrols])
+#     env.filters["tojson"] = lambda v, indent=None: json.dumps(
+#         v, ensure_ascii=False, indent=indent)
+# The export script reproduces that verbatim, so jinja2 (plus its markupsafe
+# dependency) is the whole dependency set. Keep both pinned: Jinja2 whitespace
+# handling is the thing under test, and an unpinned bump can silently move bytes.
+#
+# Verified working on this machine (Ubuntu, CPython 3.12.3, uv, network up).
+# The venv lives outside the repo on purpose -- only `.venv/` is gitignored:
+#     ORACLE_VENV="$HOME/.venvs/lifeai-chapter36-oracle"
+#     uv venv --python 3.12 "$ORACLE_VENV"
+#     uv pip install --python "$ORACLE_VENV/bin/python" \
+#         -r /home/yj/projects/LifeAI.jl/requirements/chapter36-template-oracle.txt
+#     "$ORACLE_VENV/bin/python" \
+#         /home/yj/projects/LifeAI.jl/scripts/export_qwen3_chat_template_reference.py --help
+# Plain pip works the same way once the venv exists:
+#     python3 -m venv "$ORACLE_VENV"
+#     "$ORACLE_VENV/bin/pip" install -r requirements/chapter36-template-oracle.txt
+# (a bare `pip install` outside a venv is refused on this box by PEP 668 /
+# externally-managed-environment, so always create the venv first).
+#
+# Offline / no-installer fallback, also verified working here: unpack the two
+# wheels into a directory and point PYTHONPATH at it. A wheel is a zip, so no
+# build step and no installer are involved.
+#     ORACLE_LIB=/tmp/chapter36-oracle-lib
+#     mkdir -p "$ORACLE_LIB"
+#     # fetch once on any networked machine, then copy the two .whl files over:
+#     #   jinja2-3.1.6-py3-none-any.whl                            (pure python)
+#     #   markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+#     # (markupsafe ships C speedups, so pick the wheel matching your CPython
+#     #  ABI/platform; the pure-python markupsafe sdist/fallback works too --
+#     #  the C accelerator does not affect chat-template output.)
+#     python3 -c 'import zipfile,sys; [zipfile.ZipFile(w).extractall(sys.argv[1]) for w in sys.argv[2:]]' \
+#         "$ORACLE_LIB" jinja2-3.1.6-py3-none-any.whl markupsafe-3.0.3-*.whl
+#     PYTHONPATH="$ORACLE_LIB" python3 scripts/export_qwen3_chat_template_reference.py ...
+# Checked here: the PYTHONPATH route and the venv route produce a byte-identical
+# chat_template_reference.json.
+#
+# Pinned versions are recorded in the generated fixture as "jinja2_version";
+# regenerate the fixture if you change anything here.
+
+jinja2==3.1.6
+markupsafe==3.0.3

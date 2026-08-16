@@ -1,0 +1,504 @@
+{
+  "description": "Chapter 36 shared chat-template cases. Rendered by scripts/export_qwen3_chat_template_reference.py through the official Qwen3 Jinja template and by apply_qwen3_chat_template in Julia. Both must agree byte for byte.",
+  "template_sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
+  "cases": [
+    {
+      "name": "plain_user",
+      "branch": "user message, generation prompt, thinking enabled",
+      "tools": null,
+      "messages": [{"role": "user", "content": "Hi"}],
+      "add_generation_prompt": true,
+      "enable_thinking": true
+    },
+    {
+      "name": "plain_user_no_thinking",
+      "branch": "enable_thinking=false appends the empty think block",
+      "tools": null,
+      "messages": [{"role": "user", "content": "Hi"}],
+      "add_generation_prompt": true,
+      "enable_thinking": false
+    },
+    {
+      "name": "system_user_no_generation_prompt",
+      "branch": "leading system goes into the header, no generation prompt",
+      "tools": null,
+      "messages": [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "history_plain",
+      "branch": "assistant before the last user renders without a think block",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "U"},
+        {"role": "assistant", "content": "A"},
+        {"role": "user", "content": "V"}
+      ],
+      "add_generation_prompt": true,
+      "enable_thinking": true
+    },
+    {
+      "name": "history_think",
+      "branch": "historical assistant carrying a think block must be stripped to visible content",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "U"},
+        {"role": "assistant", "content": "<think>\nR\n</think>\n\nA"},
+        {"role": "user", "content": "V"}
+      ],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "no_user",
+      "branch": "no user message at all: last_query_index stays at len-1 so no think block is synthesised",
+      "tools": null,
+      "messages": [{"role": "system", "content": "S"}, {"role": "assistant", "content": "A"}],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "last_assistant_plain",
+      "branch": "final assistant after the last user takes the think branch with empty reasoning",
+      "tools": null,
+      "messages": [{"role": "user", "content": "U"}, {"role": "assistant", "content": "A"}],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "last_assistant_think",
+      "branch": "final assistant with an inline think block",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "U"},
+        {"role": "assistant", "content": "<think>\nR\n</think>\nA"}
+      ],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "reasoning_content_field",
+      "branch": "explicit reasoning_content wins over inline think parsing",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "U"},
+        {"role": "assistant", "content": "A", "reasoning_content": "\nR\n"}
+      ],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "mid_assistant_with_reasoning",
+      "branch": "non-final assistant after the last user keeps its think block only when reasoning is non-empty",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "U"},
+        {"role": "assistant", "content": "<think>\nR1\n</think>\n\nA"},
+        {"role": "assistant", "content": "B"}
+      ],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "system_not_first",
+      "branch": "a system message that is not messages[0] renders inline",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "U"},
+        {"role": "system", "content": "S2"},
+        {"role": "user", "content": "V"}
+      ],
+      "add_generation_prompt": true,
+      "enable_thinking": true
+    },
+    {
+      "name": "multiline_content",
+      "branch": "content with embedded newlines is copied verbatim",
+      "tools": null,
+      "messages": [{"role": "user", "content": "line1\nline2\n"}],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "chinese_content",
+      "branch": "non-ASCII content is copied verbatim",
+      "tools": null,
+      "messages": [
+        {"role": "system", "content": "你是一个助手。"},
+        {"role": "user", "content": "1+2 等于几？"}
+      ],
+      "add_generation_prompt": true,
+      "enable_thinking": false
+    },
+    {
+      "name": "tools_no_system",
+      "branch": "tools header without a leading system message",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "add",
+            "description": "Add two integers.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "a": {"type": "integer", "description": "left addend"},
+                "b": {"type": "integer", "description": "right addend"}
+              },
+              "required": ["a", "b"]
+            }
+          }
+        }
+      ],
+      "messages": [{"role": "user", "content": "1+2?"}],
+      "add_generation_prompt": true,
+      "enable_thinking": true
+    },
+    {
+      "name": "tools_with_system",
+      "branch": "leading system content is merged into the tools header with a blank line",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "add",
+            "description": "Add two integers.",
+            "parameters": {
+              "type": "object",
+              "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+              "required": ["a", "b"]
+            }
+          }
+        }
+      ],
+      "messages": [
+        {"role": "system", "content": "S"},
+        {"role": "user", "content": "1+2?"}
+      ],
+      "add_generation_prompt": true,
+      "enable_thinking": false
+    },
+    {
+      "name": "tools_two_functions_chinese",
+      "branch": "two tools, non-ASCII description, nested schema; pins ensure_ascii=False and insertion order",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "read_note",
+            "description": "读取一个冻结的笔记文件。",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {"type": "string", "description": "相对路径"},
+                "max_bytes": {"type": "integer"}
+              },
+              "required": ["path"]
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "list_models",
+            "description": "List local model directories.",
+            "parameters": {"type": "object", "properties": {}}
+          }
+        }
+      ],
+      "messages": [{"role": "user", "content": "本机有哪些模型？"}],
+      "add_generation_prompt": true,
+      "enable_thinking": false
+    },
+    {
+      "name": "tools_boolean_and_null_schema",
+      "branch": "tool schema containing booleans, null and an empty array",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "probe",
+            "description": "Probe.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "flag": {"type": "boolean", "default": true},
+                "opt": {"type": "string", "default": null},
+                "tags": {"type": "array", "items": {"type": "string"}, "examples": []}
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          }
+        }
+      ],
+      "messages": [{"role": "user", "content": "go"}],
+      "add_generation_prompt": true,
+      "enable_thinking": false
+    },
+    {
+      "name": "tools_float_schema",
+      "branch": "JSON numbers written with a fraction or exponent must render as CPython repr(float), and integers beyond Int64 must survive exactly",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "set_temperature",
+            "description": "Set a temperature.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "t": {
+                  "type": "number",
+                  "default": 1.0,
+                  "minimum": 0.5,
+                  "maximum": 100.0,
+                  "multipleOf": 2.0,
+                  "epsilon": 1e-5,
+                  "tiny": 0.0001,
+                  "huge": 1e16,
+                  "large": 1e15,
+                  "wide": 1.2345678901234567e20,
+                  "negzero": -0.0,
+                  "counter": 99999999999999999999999
+                }
+              },
+              "required": ["t"]
+            }
+          }
+        }
+      ],
+      "messages": [{"role": "user", "content": "set it"}],
+      "add_generation_prompt": true,
+      "enable_thinking": false
+    },
+    {
+      "name": "tool_call_float_arguments",
+      "branch": "float arguments emitted by a model must round-trip into the next prompt",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "set it"},
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "type": "function",
+              "function": {
+                "name": "set_temperature",
+                "arguments": {"t": 1.0, "u": 1.5, "v": 1e-7, "w": 2}
+              }
+            }
+          ]
+        }
+      ],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "tool_call_empty_content",
+      "branch": "assistant with empty content and one tool call: no newline before <tool_call>",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "1+2?"},
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {"type": "function", "function": {"name": "add", "arguments": {"a": 1, "b": 2}}}
+          ]
+        }
+      ],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "tool_call_with_content",
+      "branch": "assistant with visible content plus a tool call: newline before <tool_call>",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "1+2?"},
+        {
+          "role": "assistant",
+          "content": "Let me compute that.",
+          "tool_calls": [
+            {"type": "function", "function": {"name": "add", "arguments": {"a": 1, "b": 2}}}
+          ]
+        }
+      ],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "tool_call_string_arguments",
+      "branch": "arguments given as an already-serialised string are emitted verbatim",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "1+2?"},
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {"type": "function", "function": {"name": "add", "arguments": "{\"a\": 1, \"b\": 2}"}}
+          ]
+        }
+      ],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "tool_call_flat_shape",
+      "branch": "tool call without the function wrapper",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "1+2?"},
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [{"name": "add", "arguments": {"a": 1, "b": 2}}]
+        }
+      ],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "tool_call_multiple",
+      "branch": "two tool calls: newline rule differs between the first and the rest",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "go"},
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {"type": "function", "function": {"name": "add", "arguments": {"a": 1, "b": 2}}},
+            {"type": "function", "function": {"name": "list_models", "arguments": {}}}
+          ]
+        }
+      ],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "tool_call_after_think",
+      "branch": "assistant think block followed by a tool call",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "go"},
+        {
+          "role": "assistant",
+          "content": "<think>\nplan\n</think>\n\nCalling.",
+          "tool_calls": [
+            {"type": "function", "function": {"name": "add", "arguments": {"a": 1, "b": 2}}}
+          ]
+        }
+      ],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "tool_response_single",
+      "branch": "a tool message renders as a user turn wrapped in <tool_response>",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "1+2?"},
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {"type": "function", "function": {"name": "add", "arguments": {"a": 1, "b": 2}}}
+          ]
+        },
+        {"role": "tool", "content": "3"}
+      ],
+      "add_generation_prompt": true,
+      "enable_thinking": true
+    },
+    {
+      "name": "tool_response_consecutive",
+      "branch": "consecutive tool messages merge into a single user turn",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "go"},
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {"type": "function", "function": {"name": "add", "arguments": {"a": 1, "b": 2}}},
+            {"type": "function", "function": {"name": "list_models", "arguments": {}}}
+          ]
+        },
+        {"role": "tool", "content": "3"},
+        {"role": "tool", "content": "Qwen3-0.6B"}
+      ],
+      "add_generation_prompt": true,
+      "enable_thinking": true
+    },
+    {
+      "name": "tool_response_then_user",
+      "branch": "a real user message after a tool response resets last_query_index",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "1+2?"},
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {"type": "function", "function": {"name": "add", "arguments": {"a": 1, "b": 2}}}
+          ]
+        },
+        {"role": "tool", "content": "3"},
+        {"role": "assistant", "content": "It is 3."},
+        {"role": "user", "content": "thanks"}
+      ],
+      "add_generation_prompt": true,
+      "enable_thinking": true
+    },
+    {
+      "name": "user_wrapped_tool_response",
+      "branch": "a user message that is itself a <tool_response> block must not become last_query_index",
+      "tools": null,
+      "messages": [
+        {"role": "user", "content": "1+2?"},
+        {"role": "assistant", "content": "checking"},
+        {"role": "user", "content": "<tool_response>\n3\n</tool_response>"},
+        {"role": "assistant", "content": "It is 3."}
+      ],
+      "add_generation_prompt": false,
+      "enable_thinking": true
+    },
+    {
+      "name": "tools_full_round_trip",
+      "branch": "tools header plus call plus response plus generation prompt, thinking disabled",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "add",
+            "description": "Add two integers.",
+            "parameters": {
+              "type": "object",
+              "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+              "required": ["a", "b"]
+            }
+          }
+        }
+      ],
+      "messages": [
+        {"role": "system", "content": "You may use tools."},
+        {"role": "user", "content": "1+2?"},
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {"type": "function", "function": {"name": "add", "arguments": {"a": 1, "b": 2}}}
+          ]
+        },
+        {"role": "tool", "content": "3"}
+      ],
+      "add_generation_prompt": true,
+      "enable_thinking": false
+    }
+  ]
+}
