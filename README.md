@@ -21,7 +21,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 **阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、直接消费分散 BF16 cache matrices 并有界复用状态的 CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。**
 
-Chapter 01—38 均已 Closed。[`Chapter 38 — 工具到底帮不帮得上忙`](notes/episodes/episode07_agent_closed_loop/chapter38_qwen3_tool_task_success.md) 在同一批 150 道 GSM8K 上做了一次配对对照：无工具基线 `141/150 = .940`，声明计算器后 `137/150 = .913`，再加一句要求使用工具的 system message 仍是 `137/150`。**掉的题几乎全部没有调用工具**（`tool-declared` 掉 6 题、调用过工具的 0 题），所以测到的是「在 prompt 里声明工具」这件事本身对 greedy 解码的扰动，而不是工具的效用；两次下降的精确 McNemar p 为 `0.29` / `0.39`，150 题分辨不了 `2.67` 个点。
+Chapter 01—39 与 Episode 07 均已 Closed。[`Chapter 39 — 跨请求、可回放的语义记忆闭环`](notes/episodes/episode07_agent_closed_loop/chapter39_persistent_semantic_memory.md) 已把版本化 append-only journal、fresh-load 严格恢复、exact semantic index 和 retrieval context 接入真实 Qwen3：冻结 12 个 private-fact tasks 上 retrieval top-1 / recall@1 均为 `12/12`，no-memory / retrieved / 等 token 干扰三臂为 `0/12 / 12/12 / 0/12`，两组精确 McNemar p 均为 `0.00048828125`；第二进程 36 / 36 条完整 prompt/context 轨迹 replay 一致。默认专项为 `100 / 100`，加真实 Qwen3-4B tokenizer 为 `112 / 112`。
+
+[`Chapter 38 — 工具到底帮不帮得上忙`](notes/episodes/episode07_agent_closed_loop/chapter38_qwen3_tool_task_success.md) 在同一批 150 道 GSM8K 上做了一次配对对照：无工具基线 `141/150 = .940`，声明计算器后 `137/150 = .913`，再加一句要求使用工具的 system message 仍是 `137/150`。**掉的题几乎全部没有调用工具**（`tool-declared` 掉 6 题、调用过工具的 0 题），所以测到的是「在 prompt 里声明工具」这件事本身对 greedy 解码的扰动，而不是工具的效用；两次下降的精确 McNemar p 为 `0.29` / `0.39`，150 题分辨不了 `2.67` 个点。
 
 [`Chapter 37 — Qwen3 dense 任务质量基线`](notes/episodes/episode07_agent_closed_loop/chapter37_qwen3_task_quality.md) 第一次回答「复现出来的模型答对率是多少」：冻结 MMLU 200 题 + GSM8K 150 题，0.6B/1.7B/4B 的 MMLU loglikelihood 为 `.365 / .395 / .555`，4B 的 GSM8K 为 `141/150 = .940`。同时给出一条本章最重要的负结果——**MMLU loglikelihood 的逐题决策在 BF16 下不可复现**，既不跨 dtype，也不跨设备，甚至不跨同一实现里两条数学等价的写法：协议对齐后与 HuggingFace fp32 参照的一致率为 `193/200 = 96.5%`；同一份权重同一协议，CUDA 给 `73`、CPU 给 `74`、fp32 给 `70`；我们自己 fast 与 general 两条路径之间也有 `6/200` 翻转。accuracy 的极差 2 个点仍远小于 Wilson 区间宽度，标题数字可用，但逐题一致的主张不成立。
 
@@ -61,6 +63,10 @@ Chapter 01—38 均已 Closed。[`Chapter 38 — 工具到底帮不帮得上忙`
 - instruction-aware query、变长批 attention mask、last-token pooling、
   L2 normalization 与 1024/512/256/128/64 维 MRL；内存内 dense exact
   cosine semantic memory 可关联 metadata，并有真实 notes 检索示例。
+- 版本化 append-only agent memory journal：保存 source text 与 string metadata，
+  fresh load 严格校验 schema/sequence/ID/checksum，启动时重建 exact embedding
+  index；retrieval query、命中 ID/score、注入内容与 prompt 均带 sha256，可离线 replay。
+  冻结私有事实三臂实测为 `0/12 / 12/12 / 0/12`，相关记忆同时胜过无记忆与等 token 干扰。
 - Qwen3 weight-only INT8 per-channel / packed groupwise INT4，以及统一的
   `QuantizationPlan`：可按 one-based layer、projection 与独立 LM head
   选择 INT4/INT8/BF16，streamed/in-memory 路径共用策略；真实树统计与
@@ -99,13 +105,12 @@ Chapter 01—38 均已 Closed。[`Chapter 38 — 工具到底帮不帮得上忙`
   parity、native BF16、weight-only INT8/INT4 与 diagonal
   activation-aware clipping 已完成，不能再沿用早期“只验证 0.6B”的边界。
 - 通用 Jinja 渲染器：Chapter 36 的实现是按官方模板逐分支手写的 Julia 渲染，并以模板 sha256 作为准入条件，不是通用模板引擎。
-- 跨请求持久状态：Chapter 36 只完成单请求内的多 step 工具闭环，没有记忆写回、检索接入或长期状态。
 - 更完整的质量评估：Chapter 37 只覆盖 0.6B/1.7B/4B 与 8 个 MMLU subject，且全部是 0-shot、
   greedy 单次；8B 及以上、5-shot、多 seed 方差与更大 token 预算下的 generative 上界都未做。
   本章数字是本仓库自己的基线，不能与官方榜单并列。
-- 持久/增量长短期记忆、ANN/reranker、规划与反思；记忆侧只有 Chapter 22 的
-  内存内 dense exact semantic retrieval baseline，且尚未接入 Chapter 36 的
-  工具闭环。
+- ANN/reranker、自动摘要/遗忘、并发 writer、规划与反思；Chapter 39 当前只有
+  单 writer append-only source journal、启动时 exact index 重建与 request-time
+  context 注入，不是完整长期记忆系统。
 - 视觉、听觉和传感器输入等多模态感知。
 - 面向仿真或实体机器人的 observation / action 抽象、控制链路与安全边界。
 - 在线或持续学习机制。

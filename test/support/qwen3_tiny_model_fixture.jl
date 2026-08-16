@@ -3,7 +3,12 @@ using JSON3
 import LifeAI
 using LifeAI: GPTModel
 
-function _qwen3_tiny_model_fixture_dir(directory; tie=false)
+function _qwen3_tiny_model_fixture_dir(
+    directory;
+    tie=false,
+    vocab_size::Integer=19,
+    max_seq_len::Integer=16,
+)
     config_json = Dict{String,Any}(
         "architectures" => ["Qwen3ForCausalLM"],
         "attention_bias" => false,
@@ -12,7 +17,7 @@ function _qwen3_tiny_model_fixture_dir(directory; tie=false)
         "hidden_act" => "silu",
         "hidden_size" => 8,
         "intermediate_size" => 12,
-        "max_position_embeddings" => 32,
+        "max_position_embeddings" => max(32, Int(max_seq_len)),
         "model_type" => "qwen3",
         "num_attention_heads" => 4,
         "num_hidden_layers" => 2,
@@ -24,12 +29,12 @@ function _qwen3_tiny_model_fixture_dir(directory; tie=false)
         "tie_word_embeddings" => tie,
         "torch_dtype" => "bfloat16",
         "use_sliding_window" => false,
-        "vocab_size" => 19,
+        "vocab_size" => Int(vocab_size),
     )
     write(joinpath(directory, "config.json"), JSON3.write(config_json))
     config = LifeAI.load_hf_qwen3_config(
         joinpath(directory, "config.json");
-        max_seq_len=16,
+        max_seq_len=Int(max_seq_len),
     )
     model = GPTModel(config)
     tensors = Dict{String,Any}()

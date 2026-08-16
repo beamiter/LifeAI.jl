@@ -6,6 +6,8 @@
 
 ## 当前活动阶段
 
+[`Chapter 39 — 跨请求、可回放的语义记忆闭环`](episodes/episode07_agent_closed_loop/chapter39_persistent_semantic_memory.md) 已于 2026-08-16 Closed，同时关闭 [`Episode 07 — 智能体闭环`](episodes/episode07_agent_closed_loop/README.md)。版本化 append-only JSONL source journal、fresh-load 严格恢复、启动时 exact embedding index 重建、retrieval context 注入与 trace digest 均已接入真实模型。冻结 12 个 synthetic private-fact tasks 上，Qwen3-Embedding-0.6B top-1 / recall@1 均为 `12/12`；Qwen3-4B 的 no-memory / retrieved / token-matched distractor 为 `0/12 / 12/12 / 0/12`，两组精确 McNemar p 均为 `0.00048828125`。第二进程从同一 journal 重建的 context digest、完整 prompt digest 和 token 数为 `36/36` 一致。默认专项 `100 / 100`；真实 tokenizer 合计 `112 / 112`。
+
 [`Chapter 38 — 工具到底帮不帮得上忙`](episodes/episode07_agent_closed_loop/chapter38_qwen3_tool_task_success.md) 已于 2026-08-16 Closed。Chapter 36 测「协议是否合法」、Chapter 37 测「单轮是否答对」，本章补上两章都留着的缺口：**工具闭环本身的任务成功率**。利用 Chapter 37 已冻结的无工具基线（Qwen3-4B 在 150 道 GSM8K 上 `141/150 = .940`），在**逐字节相同的用户消息**上做三臂配对对照：`tool-declared` 与 `tool-nudged` 都是 `137/150 = .913`，精确 McNemar p 分别为 `0.2891` / `0.3877`。
 
 本章最重要的发现不是那 `2.67` 个点，而是**它不是工具造成的**：`tool-declared` 掉的 6 题里调用过工具的是 `0` 题，`tool-nudged` 掉的 8 题里只有 `1` 题；工具在被真正使用时基本中性（用工具的 28 题 `26/28`，同批题基线 `27/28`）。也就是说往 prompt 里加约 200 token 的 `# Tools` 头，在完全不触发工具的题上也会翻掉 4%–8% 的题。另一条：两个工具臂准确率完全相同（`137` vs `137`），却有 `8/150` 题在两个方向上互换——只看准确率会误判为「两臂等价」。工具调用的失败模式也很具体：`31` 次调用中 `3` 次失败全部集中在同一题，模型反复把**代数方程**丢给只会求值的计算器，连续三轮只换变量名重试。
@@ -315,12 +317,12 @@ Chapter 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定�
   方差，也没有 8B 及以上。
 - 适合 tied embedding 的统一初始化基线、低精度专项与真实规模组件对照。
 - 实验注册、超参数搜索、分布式训练和面向生产的性能评估。
-- 跨请求持久状态、工作记忆写回、持久长期记忆、ANN/reranker 与 agent
-  memory policy；Chapter 22 仅完成内存内 dense exact semantic retrieval，
-  Chapter 36 的多 step 闭环只存在于单个请求内部。
-- 任务规划与反思；工具调用协议已在 Chapter 36 完成 HF 逐字节 parity 与
-  单请求内闭环，但通用 Jinja 渲染器、tools 版 `/api/generate`、以及
-  「任务是否答对」这一层的质量测量都还没有。
+- 更大、更自然的跨请求记忆任务、工作记忆自动写回、ANN/reranker、摘要/遗忘、
+  并发 writer 与完整 agent memory policy；Chapter 39 的单 writer source journal、
+  fresh load、exact retrieval 注入和 12 题真实三臂因果验收已完成。
+- 任务规划与反思，以及 tools 版 `/api/generate`；工具调用协议已在 Chapter 36
+  完成 HF 逐字节 parity 与单请求内闭环，任务级质量对照已由 Chapter 38 完成，
+  但当前仍是按冻结官方模板手写的 renderer，不是通用 Jinja 引擎。
 - 图像、音频、空间状态或机器人传感器输入。
 - 动作空间、控制器、仿真环境与真实设备适配器。
 - 机器人运行所需的实时性、容错和物理安全机制。
@@ -492,18 +494,24 @@ checksum、GPU 驻留/误差/greedy 指标均进入 fixture；没有把 diagonal
 最低物理 free 2.251 GiB；常驻摊销冷启动，但不宣称跨进程 executable
 cache 已实现。
 
-### Milestone C：建立最小有状态智能体闭环（已启动）
+### Milestone C：建立最小有状态智能体闭环（智能体子目标已完成）
 
 - Qwen3-Embedding-0.6B 与内存内 exact semantic memory baseline 已完成，
   但尚未接入跨 step 状态或 policy。（Chapter 22 已完成）
 - 工具协议与单请求内多 step 闭环已完成：官方 chat template 全分支逐字节
   parity、沙箱化工具注册、`<tool_call>` 解析与合法性判定，以及不加载模型
   即可复算每轮 prompt sha256 的 replay 测试。（Chapter 36 已完成）
+- 跨请求 source journal、exact retrieval policy、memory-aware trace 与三臂任务集
+  已实现；相关/干扰 prompt 在真实 Qwen3-4B tokenizer 下 12 / 12 等 token。
+  冻结 Qwen3-Embedding/Qwen3-4B 的真实 retrieval 为 `12/12`，三臂为
+  `0/12 / 12/12 / 0/12`，36 / 36 轨迹跨进程 replay。（Chapter 39 已完成）
 - 定义与具体机器人无关的 `Observation`、`Action`、`Memory` 和 policy / model 接口。
 - 先在一个简单、可重复的模拟环境中跑通"感知 → 记忆 → 决策 → 行动 → 反馈"。
 - 保持模型后端可替换，使当前小 GPT、Qwen3 复现权重或后续多模态模型都能接入。
 
-完成标准：智能体可以跨多个 step 保持状态，根据环境反馈改变下一步动作，并用测试或 replay 重现一次完整轨迹。
+智能体子目标的完成标准已满足：系统可以跨多个 step 保持状态，根据工具反馈改变下一步动作；跨请求
+source memory 亦可 fresh-load 并用独立进程 replay 完整轨迹。上面的 observation/action 抽象与模拟
+环境仍属于 Milestone C 的具身子目标，不能随 Episode 07 一起标为完成。
 
 ## 长期能力地图
 
@@ -511,8 +519,8 @@ cache 已实现。
 | --- | --- | --- |
 | 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + native BF16 推理 + CUDA/XLA 加速 + 8B XLA single-residency 4K greedy 部署/常驻服务 + 可预算 INT4/INT8/BF16 计划与 diagonal activation-aware 校准（14B RTN 16/16，weight/activation MSE 均 4/16）；GPT-2 真实 parity；流式加载；五类版本化 Tokenizer 与中文数据管线 | 完整 AWQ/GPTQ 或量化 GEMM、XLA device-side sampling，或下一经典/SOTA 架构 |
 | 高效训练与推理 | modern / GQA / rotate_half 已兼容 Zygote / XLA 与两类 KV Cache；Qwen3-0.6B compiled decode、Qwen3-8B 4K XLA single-residency/service 与 30B-A3B BF16 offload/cache/scattered hit + bounded reuse/storage-verified parallel miss 已在 GPU 实证；adjacent coalescing 负结果与 decode copy-elision 正结果已冻结 | MoE raw read buffer 有界复用、route/attention 临时数组复用、fused/FlashAttention、动态 batch、低精度 kernel 与更长上下文优化 |
-| 智能体核心 | 官方 chat template 全分支 HF 逐字节 parity（含 tools / tool_calls / tool 角色）+ 沙箱化工具注册与 `<tool_call>` 解析 + 单请求内多 step 工具闭环（可离线 replay）+ Qwen3-Embedding-0.6B dense exact semantic memory baseline | 跨请求 conversation state、持久/增量 memory、检索接入、planning、反思；任务成功率的测量已由 Chapter 37 建立基线，但只到单轮问答，未覆盖工具闭环本身的任务成功率 |
+| 智能体核心 | 官方 chat template 全分支 HF 逐字节 parity（含 tools / tool_calls / tool 角色）+ 沙箱化工具注册与单请求多 step 闭环 + 工具任务成功率配对测量 + append-only source journal/fresh load + exact retrieval context + 真实三臂与跨进程 replay | 自动写回、ANN/reranker、planning 与反思，或 observation/action 仿真闭环 |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Chapter 01—38 已 Closed；Episode 06 与 07 均为 Open | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏；Episode 07 起额外要求外部独立实现作为参照物 |
+| 学习记录 | Chapter 01—39 已 Closed；Episode 06 Open，Episode 07 Closed | 下一卷继续要求外部独立实现或等强因果对照作为参照物 |

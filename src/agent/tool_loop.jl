@@ -39,7 +39,13 @@ struct AgentLoopTrace
     messages::Vector{Any}
     answer::String
     stop_reason::Symbol
+    memory_context::Union{Nothing,AgentMemoryContext}
 end
+
+# Preserve the Chapter 36 constructor for callers that materialize a trace without
+# retrieval evidence.
+AgentLoopTrace(steps, messages, answer, stop_reason) =
+    AgentLoopTrace(steps, messages, answer, stop_reason, nothing)
 
 """
 Assistant content to retain in history, given one raw generation.
@@ -61,6 +67,22 @@ end
 _agent_message(role::AbstractString, content::AbstractString) =
     Dict{Symbol,Any}(:role => String(role), :content => String(content))
 
+function _agent_initial_messages(
+    user_content::AbstractString;
+    system::Union{Nothing,AbstractString}=nothing,
+    memory_context::Union{Nothing,AgentMemoryContext}=nothing,
+)
+    messages = Any[]
+    system_content = system === nothing ? nothing : String(system)
+    if memory_context !== nothing
+        system_content = system_content === nothing ? memory_context.rendered :
+            system_content * "\n\n" * memory_context.rendered
+    end
+    system_content === nothing || push!(messages, _agent_message("system", system_content))
+    push!(messages, _agent_message("user", user_content))
+    return messages
+end
+
 function _agent_assistant_message(content::AbstractString, calls::Vector{Qwen3ToolCall})
     message = _agent_message("assistant", content)
     isempty(calls) && return message
@@ -72,7 +94,7 @@ function _agent_assistant_message(content::AbstractString, calls::Vector{Qwen3To
 end
 
 """
-    run_qwen3_tool_loop(session, registry, user_content; kwargs...)
+    _run_qwen3_agent_loop(session, registry, user_content; kwargs...)
 
 Run the loop until the model answers without calling a tool, `max_steps` model
 turns have been spent, or the prompt no longer fits. Returns an [`AgentLoopTrace`](@ref).
@@ -80,11 +102,12 @@ turns have been spent, or the prompt no longer fits. Returns an [`AgentLoopTrace
 The loop is deterministic under `strategy=:greedy`: the same session, registry and
 `user_content` produce the same prompt digests and the same generated ids.
 """
-function run_qwen3_tool_loop(
+function _run_qwen3_agent_loop(
     session::HFQwen3BF16Session,
     registry::ToolRegistry,
     user_content::AbstractString;
     system::Union{Nothing,AbstractString}=nothing,
+    memory_context::Union{Nothing,AgentMemoryContext}=nothing,
     max_steps::Integer=4,
     max_new_tokens::Integer=256,
     enable_thinking::Bool=false,
@@ -94,11 +117,8 @@ function run_qwen3_tool_loop(
 )
     steps = Int(max_steps)
     steps > 0 || throw(ArgumentError("max_steps must be positive"))
-    isempty(registry) && throw(ArgumentError("tool registry must not be empty"))
-    tools = qwen3_tool_specs(registry)
-    messages = Any[]
-    system === nothing || push!(messages, _agent_message("system", system))
-    push!(messages, _agent_message("user", user_content))
+    tools = isempty(registry) ? nothing : qwen3_tool_specs(registry)
+    messages = _agent_initial_messages(user_content; system, memory_context)
 
     trace = AgentLoopStep[]
     answer = ""
@@ -173,7 +193,48 @@ function run_qwen3_tool_loop(
             ))
         end
     end
-    return AgentLoopTrace(trace, messages, answer, stop_reason)
+    return AgentLoopTrace(trace, messages, answer, stop_reason, memory_context)
+end
+
+"""
+    run_qwen3_tool_loop(session, registry, user_content; kwargs...)
+
+Run the Chapter 36 tool loop. The registry must remain non-empty so an accidental
+empty declaration cannot silently turn a tool experiment into a plain chat run.
+"""
+function run_qwen3_tool_loop(
+    session::HFQwen3BF16Session,
+    registry::ToolRegistry,
+    user_content::AbstractString;
+    kwargs...,
+)
+    isempty(registry) && throw(ArgumentError("tool registry must not be empty"))
+    return _run_qwen3_agent_loop(session, registry, user_content; kwargs...)
+end
+
+"""
+    run_qwen3_memory_loop(session, user_content, memory_context;
+                          registry=ToolRegistry(), kwargs...)
+
+Run a request with a frozen retrieval context. Tools are optional; an empty
+registry renders an ordinary Qwen3 chat prompt without a `# Tools` header. The
+context query, hit IDs/scores, rendered bytes, and digests are retained in the
+returned trace.
+"""
+function run_qwen3_memory_loop(
+    session::HFQwen3BF16Session,
+    user_content::AbstractString,
+    memory_context::AgentMemoryContext;
+    registry::ToolRegistry=ToolRegistry(),
+    kwargs...,
+)
+    return _run_qwen3_agent_loop(
+        session,
+        registry,
+        user_content;
+        memory_context,
+        kwargs...,
+    )
 end
 
 """
@@ -188,6 +249,7 @@ function agent_loop_summary(trace::AgentLoopTrace)
     succeeded = sum(
         count(call -> call.ok, step.tool_calls) for step in trace.steps; init=0
     )
+    memory = trace.memory_context
     return (;
         turns=length(trace.steps),
         first_turn_validity=first_validity,
@@ -196,6 +258,11 @@ function agent_loop_summary(trace::AgentLoopTrace)
         tool_calls_succeeded=succeeded,
         prompt_sha256=[step.prompt_sha256 for step in trace.steps],
         generated_token_counts=[length(step.generated_ids) for step in trace.steps],
+        memory_query_sha256=memory === nothing ? nothing : memory.query_sha256,
+        memory_store_sha256=memory === nothing ? nothing : memory.store_sha256,
+        memory_context_sha256=memory === nothing ? nothing : memory.rendered_sha256,
+        memory_ids=memory === nothing ? String[] : [hit.id for hit in memory.hits],
+        memory_scores=memory === nothing ? Float32[] : [hit.score for hit in memory.hits],
     )
 end
 

@@ -737,6 +737,16 @@ executable；server 退出后仍会冷启动。Chapter 21 的承诺是一个长�
 /home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B
 ```
 
+RTX 5080 资产机也已按同一冻结 HF revision 恢复一份完整副本：
+
+```text
+/home/yj/models/huggingface/Qwen/Qwen3-Embedding-0.6B/97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+```
+
+2026-08-16 逐文件验证下表全部 8 个 bytes/SHA256 一致，并用于 Chapter 39 的真实 retrieval
+与三臂验收。该宿主机为 NVIDIA GeForce RTX 5080 16 GiB，driver `595.71.05`；embedding 在 CPU
+运行，Qwen3-4B generation 在 CUDA BF16 运行。沙箱内看不到设备不代表宿主机驱动不可用。
+
 下载使用 ModelScope 镜像 commit
 `6a58e49965123c0a3012d9576414b8c920faef7e`；验收身份仍冻结为官方
 Hugging Face revision

@@ -263,6 +263,14 @@ end
             "test_qwen3_tool_task_success.jl",
         ))
     end
+
+    @testset "Chapter 39 — Persistent semantic memory" begin
+        include(chapter_test(
+            "episode07_agent_closed_loop",
+            "chapter39_persistent_semantic_memory",
+            "test_persistent_semantic_memory.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

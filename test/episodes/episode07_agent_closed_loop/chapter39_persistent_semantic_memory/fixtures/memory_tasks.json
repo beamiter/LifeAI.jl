@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "source": {
+    "kind": "synthetic-private-fact-recall",
+    "license": "CC0-1.0",
+    "purpose": "Measure cross-request recall of facts that cannot be inferred from public knowledge."
+  },
+  "tasks": [
+    {
+      "id": "memory/01",
+      "memory_id": "fact-aster-01",
+      "memory": "Project ASTER-01 uses private access code amber-104.",
+      "distractor_id": "fake-aster-91",
+      "distractor": "Project ASTER-91 uses private access code coral-901.",
+      "question": "What is the private access code for Project ASTER-01? Answer with the code only.",
+      "expected": "amber-104"
+    },
+    {
+      "id": "memory/02",
+      "memory_id": "fact-borel-02",
+      "memory": "Project BOREL-02 uses private access code ivory-215.",
+      "distractor_id": "fake-borel-92",
+      "distractor": "Project BOREL-92 uses private access code maple-812.",
+      "question": "What is the private access code for Project BOREL-02? Answer with the code only.",
+      "expected": "ivory-215"
+    },
+    {
+      "id": "memory/03",
+      "memory_id": "fact-cygni-03",
+      "memory": "Project CYGNI-03 uses private access code ebony-326.",
+      "distractor_id": "fake-cygni-93",
+      "distractor": "Project CYGNI-93 uses private access code peach-723.",
+      "question": "What is the private access code for Project CYGNI-03? Answer with the code only.",
+      "expected": "ebony-326"
+    },
+    {
+      "id": "memory/04",
+      "memory_id": "fact-draco-04",
+      "memory": "Project DRACO-04 uses private access code pearl-437.",
+      "distractor_id": "fake-draco-94",
+      "distractor": "Project DRACO-94 uses private access code slate-634.",
+      "question": "What is the private access code for Project DRACO-04? Answer with the code only.",
+      "expected": "pearl-437"
+    },
+    {
+      "id": "memory/05",
+      "memory_id": "fact-elpis-05",
+      "memory": "Project ELPIS-05 uses private access code lilac-548.",
+      "distractor_id": "fake-elpis-95",
+      "distractor": "Project ELPIS-95 uses private access code lilac-945.",
+      "question": "What is the private access code for Project ELPIS-05? Answer with the code only.",
+      "expected": "lilac-548"
+    },
+    {
+      "id": "memory/06",
+      "memory_id": "fact-fenix-06",
+      "memory": "Project FENIX-06 uses private access code azure-659.",
+      "distractor_id": "fake-fenix-96",
+      "distractor": "Project FENIX-96 uses private access code azure-956.",
+      "question": "What is the private access code for Project FENIX-06? Answer with the code only.",
+      "expected": "azure-659"
+    },
+    {
+      "id": "memory/07",
+      "memory_id": "fact-gemma-07",
+      "memory": "Project GEMMA-07 uses private access code khaki-760.",
+      "distractor_id": "fake-gemma-97",
+      "distractor": "Project GEMMA-97 uses private access code khaki-967.",
+      "question": "What is the private access code for Project GEMMA-07? Answer with the code only.",
+      "expected": "khaki-760"
+    },
+    {
+      "id": "memory/08",
+      "memory_id": "fact-helix-08",
+      "memory": "Project HELIX-08 uses private access code honey-871.",
+      "distractor_id": "fake-helix-98",
+      "distractor": "Project HELIX-98 uses private access code amber-278.",
+      "question": "What is the private access code for Project HELIX-08? Answer with the code only.",
+      "expected": "honey-871"
+    },
+    {
+      "id": "memory/09",
+      "memory_id": "fact-indus-09",
+      "memory": "Project INDUS-09 uses private access code coral-982.",
+      "distractor_id": "fake-indus-89",
+      "distractor": "Project INDUS-89 uses private access code ivory-189.",
+      "question": "What is the private access code for Project INDUS-09? Answer with the code only.",
+      "expected": "coral-982"
+    },
+    {
+      "id": "memory/10",
+      "memory_id": "fact-junos-10",
+      "memory": "Project JUNOS-10 uses private access code maple-193.",
+      "distractor_id": "fake-junos-80",
+      "distractor": "Project JUNOS-80 uses private access code ebony-290.",
+      "question": "What is the private access code for Project JUNOS-10? Answer with the code only.",
+      "expected": "maple-193"
+    },
+    {
+      "id": "memory/11",
+      "memory_id": "fact-keplr-11",
+      "memory": "Project KEPLR-11 uses private access code peach-204.",
+      "distractor_id": "fake-keplr-81",
+      "distractor": "Project KEPLR-81 uses private access code pearl-301.",
+      "question": "What is the private access code for Project KEPLR-11? Answer with the code only.",
+      "expected": "peach-204"
+    },
+    {
+      "id": "memory/12",
+      "memory_id": "fact-lyria-12",
+      "memory": "Project LYRIA-12 uses private access code slate-315.",
+      "distractor_id": "fake-lyria-82",
+      "distractor": "Project LYRIA-82 uses private access code slate-982.",
+      "question": "What is the private access code for Project LYRIA-12? Answer with the code only.",
+      "expected": "slate-315"
+    }
+  ]
+}

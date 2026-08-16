@@ -50,10 +50,12 @@ include("generation/xla_cache_modes_benchmark.jl")
 
 # Tool declarations and the minimal stateful agent loop.
 include("agent/tools.jl")
+include("agent/memory.jl")
 include("agent/tool_loop.jl")
 
 # Task-level quality evaluation.
 include("eval/task_quality.jl")
+include("eval/memory_quality.jl")
 
 include("api.jl")
 

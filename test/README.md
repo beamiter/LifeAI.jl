@@ -11,19 +11,24 @@ test/
     ├── episode01_transformer_and_training_foundations/
     │   ├── chapter01_transformer/
     │   └── ...
-    └── episode06_qwen3_moe_and_model_expansion/
-        ├── chapter24_qwen3_moe_architecture/
-        ├── chapter25_qwen3_moe_gpu_offload/
-        ├── chapter26_qwen3_moe_expert_cache/
-        ├── chapter27_qwen3_moe_layer_balanced_cache/
-        ├── chapter28_qwen3_moe_scattered_cache/
-        ├── chapter29_qwen3_moe_scattered_reuse/
-        ├── chapter30_qwen3_moe_async_miss_pipeline/
-        ├── chapter31_qwen3_moe_read_worker_sweep/
-        ├── chapter32_qwen3_moe_coalesced_reads/
-        ├── chapter33_qwen3_moe_decode_copy_elision/
-        ├── chapter34_qwen3_moe_read_buffer_reuse/
-        └── chapter35_qwen3_moe_host_buffer_reuse/
+    ├── episode06_qwen3_moe_and_model_expansion/
+    │   ├── chapter24_qwen3_moe_architecture/
+    │   ├── chapter25_qwen3_moe_gpu_offload/
+    │   ├── chapter26_qwen3_moe_expert_cache/
+    │   ├── chapter27_qwen3_moe_layer_balanced_cache/
+    │   ├── chapter28_qwen3_moe_scattered_cache/
+    │   ├── chapter29_qwen3_moe_scattered_reuse/
+    │   ├── chapter30_qwen3_moe_async_miss_pipeline/
+    │   ├── chapter31_qwen3_moe_read_worker_sweep/
+    │   ├── chapter32_qwen3_moe_coalesced_reads/
+    │   ├── chapter33_qwen3_moe_decode_copy_elision/
+    │   ├── chapter34_qwen3_moe_read_buffer_reuse/
+    │   └── chapter35_qwen3_moe_host_buffer_reuse/
+    └── episode07_agent_closed_loop/
+        ├── chapter36_qwen3_tools_chat_template/
+        ├── chapter37_qwen3_task_quality/
+        ├── chapter38_qwen3_tool_task_success/
+        └── chapter39_persistent_semantic_memory/
 ```
 
 ## Chapter 索引
@@ -65,6 +70,10 @@ test/
 | 06 | 33 | 多维 safetensors decode ownership、copy-elision 分配机制与真实 30B 结果契约 |
 | 06 | 34 | per-reader raw buffer pool、ownership/失败归还与真实 30B 同进程 A/B 契约 |
 | 06 | 35 | in-place decode、pageable host matrix pool、异常归还与真实 30B A/B 契约 |
+| 07 | 36 | Qwen3 tools chat template parity、沙箱化工具与可 replay tool loop |
+| 07 | 37 | MMLU/GSM8K 冻结任务、机械抽取、accuracy/Wilson 与真实质量基线 |
+| 07 | 38 | 算术工具、三臂 GSM8K 任务成功率与配对 McNemar |
+| 07 | 39 | append-only memory journal、fresh load、exact retrieval context 与三臂任务契约 |
 
 `fixtures/` 只存在于拥有该证据的 Chapter 目录中。跨 Chapter 复用 fixture 时，
 测试显式引用其原始 Chapter，不复制第二份数据。`support/` 只存放无独立产品能力
