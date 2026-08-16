@@ -4,6 +4,9 @@ __pycache__/
 *.py[cod]
 Manifest.toml
 notebook/assets/
+# Locally regenerated training/generation checkpoints; the examples that write them
+# are reproducible, so the binaries do not belong in the repository.
+artifacts/
 benchmark_results/*
 !benchmark_results/qwen3_0.6b_xla_gpu_e2e_cachebusted_packed_prefill_repeat_a.json
 !benchmark_results/qwen3_0.6b_xla_gpu_e2e_cachebusted_packed_prefill_repeat_b.json
