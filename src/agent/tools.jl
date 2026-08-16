@@ -234,6 +234,145 @@ end
 # computes, or reads inside one frozen sandbox root that the caller supplies.
 # ---------------------------------------------------------------------------
 
+"""
+A recursive-descent evaluator for `+ - * / ( )` over decimal literals.
+
+Deliberately not `eval`: the expression comes from model output, and a tool that
+executes model-authored code is a different and much larger decision than a tool that
+does arithmetic. Anything outside the grammar is rejected with the offending position.
+"""
+mutable struct _ArithmeticReader
+    text::String
+    index::Int
+end
+
+function evaluate_arithmetic(expression::AbstractString)
+    reader = _ArithmeticReader(String(expression), 1)
+    value = _arithmetic_expression!(reader)
+    _arithmetic_space!(reader)
+    reader.index > ncodeunits(reader.text) || throw(ArgumentError(
+        "unexpected character at position $(reader.index) in $(repr(String(expression)))",
+    ))
+    isfinite(value) || throw(ArgumentError("expression is not finite"))
+    return value
+end
+
+function _arithmetic_space!(reader::_ArithmeticReader)
+    while reader.index <= ncodeunits(reader.text) &&
+          reader.text[reader.index] in (' ', '\t')
+        reader.index = nextind(reader.text, reader.index)
+    end
+    return reader
+end
+
+function _arithmetic_peek(reader::_ArithmeticReader)
+    _arithmetic_space!(reader)
+    reader.index > ncodeunits(reader.text) && return nothing
+    return reader.text[reader.index]
+end
+
+function _arithmetic_expression!(reader::_ArithmeticReader)
+    value = _arithmetic_term!(reader)
+    while true
+        character = _arithmetic_peek(reader)
+        character in ('+', '-') || return value
+        reader.index = nextind(reader.text, reader.index)
+        right = _arithmetic_term!(reader)
+        value = character == '+' ? value + right : value - right
+    end
+end
+
+function _arithmetic_term!(reader::_ArithmeticReader)
+    value = _arithmetic_factor!(reader)
+    while true
+        character = _arithmetic_peek(reader)
+        character in ('*', '/') || return value
+        reader.index = nextind(reader.text, reader.index)
+        right = _arithmetic_factor!(reader)
+        if character == '/'
+            right == 0 && throw(ArgumentError("division by zero"))
+            value /= right
+        else
+            value *= right
+        end
+    end
+end
+
+function _arithmetic_factor!(reader::_ArithmeticReader)
+    character = _arithmetic_peek(reader)
+    if character == '-'
+        reader.index = nextind(reader.text, reader.index)
+        return -_arithmetic_factor!(reader)
+    elseif character == '+'
+        reader.index = nextind(reader.text, reader.index)
+        return _arithmetic_factor!(reader)
+    end
+    return _arithmetic_primary!(reader)
+end
+
+function _arithmetic_primary!(reader::_ArithmeticReader)
+    character = _arithmetic_peek(reader)
+    character === nothing && throw(ArgumentError("expression ended early"))
+    if character == '('
+        reader.index = nextind(reader.text, reader.index)
+        value = _arithmetic_expression!(reader)
+        _arithmetic_peek(reader) == ')' || throw(ArgumentError("unbalanced parenthesis"))
+        reader.index = nextind(reader.text, reader.index)
+        return value
+    end
+    isdigit(character) || character == '.' || throw(ArgumentError(
+        "unexpected character $(repr(character)) at position $(reader.index)",
+    ))
+    start = reader.index
+    seen_point = false
+    while reader.index <= ncodeunits(reader.text)
+        current = reader.text[reader.index]
+        if isdigit(current)
+            reader.index = nextind(reader.text, reader.index)
+        elseif current == '.' && !seen_point
+            seen_point = true
+            reader.index = nextind(reader.text, reader.index)
+        elseif (current == ',' || current == '_') && !seen_point &&
+               reader.index < ncodeunits(reader.text) &&
+               isdigit(reader.text[nextind(reader.text, reader.index)])
+            # Digit grouping: models write "1,000". Only inside the integer part and
+            # only between digits, so a stray comma elsewhere still fails loudly.
+            reader.index = nextind(reader.text, reader.index)
+        else
+            break
+        end
+    end
+    literal = replace(
+        String(SubString(reader.text, start, prevind(reader.text, reader.index))),
+        "," => "", "_" => "",
+    )
+    value = tryparse(Float64, literal)
+    value === nothing && throw(ArgumentError("invalid number $(repr(literal))"))
+    return value
+end
+
+"""Format a result the way a grade-school answer would be written."""
+function _format_arithmetic(value::Float64)
+    isinteger(value) && abs(value) < 1e15 && return string(Int(value))
+    return string(value)
+end
+
+"""Evaluate an arithmetic expression; the tool a word problem actually needs."""
+calculator_tool() = AgentTool(;
+    name="calculator",
+    description="Evaluate an arithmetic expression over + - * / and parentheses.",
+    properties=(;
+        expression=(;
+            type="string",
+            description="An arithmetic expression, for example \"(16 - 3 - 4) * 2\".",
+        ),
+    ),
+    required=["expression"],
+    handler=(arguments, _coerced) -> _format_arithmetic(
+        evaluate_arithmetic(_tool_string(arguments, "expression")),
+    ),
+)
+
 """Integer addition; the cheapest possible end-to-end check of the protocol."""
 add_integers_tool() = AgentTool(;
     name="add_integers",

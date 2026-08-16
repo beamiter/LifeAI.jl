@@ -255,6 +255,14 @@ end
             "test_qwen3_task_quality.jl",
         ))
     end
+
+    @testset "Chapter 38 — Tool-loop task success" begin
+        include(chapter_test(
+            "episode07_agent_closed_loop",
+            "chapter38_qwen3_tool_task_success",
+            "test_qwen3_tool_task_success.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

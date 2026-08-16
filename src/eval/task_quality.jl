@@ -341,6 +341,64 @@ function accuracy_report(results::AbstractVector{EvalItemResult})
     )
 end
 
+"""
+    paired_comparison(baseline, variant)
+
+Compare two runs over the *same* items, keyed by id.
+
+Two independent Wilson intervals cannot answer "did the change help": they ignore that
+the same questions were asked twice. What carries the signal is the discordant pairs —
+items the baseline got right and the variant got wrong, and the reverse — so those are
+counted explicitly and tested with an exact two-sided McNemar (a binomial sign test on
+the discordant pairs).
+"""
+function paired_comparison(
+    baseline::AbstractVector{EvalItemResult},
+    variant::AbstractVector{EvalItemResult},
+)
+    by_id = Dict(result.id => result for result in baseline)
+    length(by_id) == length(baseline) || throw(ArgumentError("baseline ids are not unique"))
+    paired = [(by_id[result.id], result) for result in variant if haskey(by_id, result.id)]
+    length(paired) == length(variant) || throw(ArgumentError(
+        "variant contains ids missing from the baseline",
+    ))
+    isempty(paired) && throw(ArgumentError("no paired items"))
+
+    both = count(pair -> first(pair).correct && last(pair).correct, paired)
+    neither = count(pair -> !first(pair).correct && !last(pair).correct, paired)
+    lost = count(pair -> first(pair).correct && !last(pair).correct, paired)
+    gained = count(pair -> !first(pair).correct && last(pair).correct, paired)
+    return (;
+        paired=length(paired),
+        both,
+        neither,
+        baseline_only=lost,
+        variant_only=gained,
+        baseline_correct=both + lost,
+        variant_correct=both + gained,
+        difference=(gained - lost) / length(paired),
+        p_value=mcnemar_exact(lost, gained),
+    )
+end
+
+"""
+    mcnemar_exact(lost, gained)
+
+Two-sided exact McNemar p-value: under the null that a change is equally likely to
+break an item as to fix one, the number of gains among `lost + gained` discordant pairs
+is `Binomial(n, 0.5)`. Returns `1.0` when nothing changed.
+"""
+function mcnemar_exact(lost::Integer, gained::Integer)
+    lost >= 0 && gained >= 0 || throw(ArgumentError("counts must be non-negative"))
+    total = lost + gained
+    total == 0 && return 1.0
+    extreme = min(lost, gained)
+    # Sum the binomial tail without a Distributions dependency; `total` is small here.
+    tail = sum(binomial(big(total), big(k)) for k in 0:extreme)
+    probability = 2 * Float64(tail / big(2)^total)
+    return min(1.0, probability)
+end
+
 """Per-subject breakdown, ordered by subject name."""
 function subject_report(results::AbstractVector{EvalItemResult})
     subjects = sort(unique(result.subject for result in results))

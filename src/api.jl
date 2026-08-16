@@ -97,6 +97,7 @@ export load_hf_gpt2_bundle, hf_gpt2_forward_trace
 
 # Tool declarations and the minimal agent loop
 export AgentTool, ToolRegistry, qwen3_tool_specs, default_agent_tools
+export calculator_tool, evaluate_arithmetic
 export Qwen3ToolCall, Qwen3ToolCallParse, parse_qwen3_tool_calls
 export AgentToolResult, invoke_agent_tool, agent_tool_call_validity
 export AgentLoopStep, AgentLoopTrace, run_qwen3_tool_loop
@@ -107,6 +108,7 @@ export MMLUItem, GSM8KItem, EvalTaskSet, EvalItemResult, load_eval_tasks
 export mmlu_loglikelihood_prompt, mmlu_chat_messages, gsm8k_chat_messages
 export mmlu_loglikelihood_scores, extract_mmlu_letter, extract_gsm8k_answer
 export gsm8k_answer_matches, accuracy_report, subject_report
+export paired_comparison, mcnemar_exact
 
 # Training and persistence
 export TrainerGPT, init_train_state, next_token_loss, next_token_nll_sum

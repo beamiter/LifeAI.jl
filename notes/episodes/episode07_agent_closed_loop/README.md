@@ -2,7 +2,7 @@
 
 > 状态：Open
 >
-> 收录章节：Chapter 36–37
+> 收录章节：Chapter 36–38
 
 这一卷开始兑现 Milestone C：把已经完成 parity 的 Qwen3 从“能正确生成 token”推进到“能在多个 step 之间保持状态、按环境反馈改变下一步动作”。第一步不是设计一个大而全的 agent 框架，而是先把与外部世界交换信息的**协议**做到与官方实现逐字节一致——工具声明、工具调用、工具返回都必须落在 HuggingFace 官方 chat template 的语义里，否则后续所有关于“模型好不好用”的测量都建立在一个已经偏离参照系的 prompt 上。
 
@@ -12,6 +12,7 @@
 
 1. [`Chapter 36 — Qwen3 tools chat template HF parity 与 4B 工具调用闭环`](chapter36_qwen3_tools_chat_template.md)（Closed）
 2. [`Chapter 37 — Qwen3 dense 任务质量基线`](chapter37_qwen3_task_quality.md)（Closed）
+3. [`Chapter 38 — 工具到底帮不帮得上忙`](chapter38_qwen3_tool_task_success.md)（Closed）
 
 ## 预期能力变化
 

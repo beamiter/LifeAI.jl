@@ -21,7 +21,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 **阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、直接消费分散 BF16 cache matrices 并有界复用状态的 CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。**
 
-Chapter 01—37 均已 Closed。[`Chapter 37 — Qwen3 dense 任务质量基线`](notes/episodes/episode07_agent_closed_loop/chapter37_qwen3_task_quality.md) 第一次回答「复现出来的模型答对率是多少」：冻结 MMLU 200 题 + GSM8K 150 题，0.6B/1.7B/4B 的 MMLU loglikelihood 为 `.365 / .395 / .555`，4B 的 GSM8K 为 `141/150 = .940`。同时给出一条本章最重要的负结果——**MMLU loglikelihood 的逐题决策在 BF16 下不可复现**，既不跨 dtype，也不跨设备，甚至不跨同一实现里两条数学等价的写法：协议对齐后与 HuggingFace fp32 参照的一致率为 `193/200 = 96.5%`；同一份权重同一协议，CUDA 给 `73`、CPU 给 `74`、fp32 给 `70`；我们自己 fast 与 general 两条路径之间也有 `6/200` 翻转。accuracy 的极差 2 个点仍远小于 Wilson 区间宽度，标题数字可用，但逐题一致的主张不成立。
+Chapter 01—38 均已 Closed。[`Chapter 38 — 工具到底帮不帮得上忙`](notes/episodes/episode07_agent_closed_loop/chapter38_qwen3_tool_task_success.md) 在同一批 150 道 GSM8K 上做了一次配对对照：无工具基线 `141/150 = .940`，声明计算器后 `137/150 = .913`，再加一句要求使用工具的 system message 仍是 `137/150`。**掉的题几乎全部没有调用工具**（`tool-declared` 掉 6 题、调用过工具的 0 题），所以测到的是「在 prompt 里声明工具」这件事本身对 greedy 解码的扰动，而不是工具的效用；两次下降的精确 McNemar p 为 `0.29` / `0.39`，150 题分辨不了 `2.67` 个点。
+
+[`Chapter 37 — Qwen3 dense 任务质量基线`](notes/episodes/episode07_agent_closed_loop/chapter37_qwen3_task_quality.md) 第一次回答「复现出来的模型答对率是多少」：冻结 MMLU 200 题 + GSM8K 150 题，0.6B/1.7B/4B 的 MMLU loglikelihood 为 `.365 / .395 / .555`，4B 的 GSM8K 为 `141/150 = .940`。同时给出一条本章最重要的负结果——**MMLU loglikelihood 的逐题决策在 BF16 下不可复现**，既不跨 dtype，也不跨设备，甚至不跨同一实现里两条数学等价的写法：协议对齐后与 HuggingFace fp32 参照的一致率为 `193/200 = 96.5%`；同一份权重同一协议，CUDA 给 `73`、CPU 给 `74`、fp32 给 `70`；我们自己 fast 与 general 两条路径之间也有 `6/200` 翻转。accuracy 的极差 2 个点仍远小于 Wilson 区间宽度，标题数字可用，但逐题一致的主张不成立。
 
 [`Chapter 36 — Qwen3 tools chat template HF parity 与 4B 工具调用闭环`](notes/episodes/episode07_agent_closed_loop/chapter36_qwen3_tools_chat_template.md) 用官方 Jinja 模板经 CPython 渲染的外部 reference，把 chat template 的全部分支做到逐字节 parity（30 / 30 case，真实 4B tokenizer 下 token id 亦逐位相同），并修复了 Chapter 08 遗留的两条真实分歧：历史 assistant 的 `<think>` 块未剥离、以及无 user 消息时 `last_query_index` 方向相反。开启 `--thinking` 的多轮聊天从第 2 轮起会命中前者。
 
@@ -74,6 +76,8 @@ Chapter 01—37 均已 Closed。[`Chapter 37 — Qwen3 dense 任务质量基线`
   `json.dumps(ensure_ascii=False)` 语义复刻，含 CPython `repr(float)` 与任意精度整数，
   无序 `Dict` 与会窄化数字的 `JSON3.Object` fail closed。tools / tool 角色 /
   `tool_calls` 以官方模板 sha256 为准入条件。
+- 不使用 `eval` 的算术求值器与 calculator 工具，以及同批题 A/B 的配对统计（2×2 不一致对 +
+  精确 McNemar）；准确率相同的两个臂仍可能有 8/150 题在两个方向上互换，只有配对表能看见。
 - 任务质量评测基线：冻结的 MMLU/GSM8K 子集（含许可、上游 row_idx 与 sha256 provenance）、
   loglikelihood 与 generative 两种协议、机械且写死的答案抽取规则，以及强制同时报出
   Wilson 区间、未解析数、截断数与格式合规数的报告口径。

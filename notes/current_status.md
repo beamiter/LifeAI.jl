@@ -6,6 +6,10 @@
 
 ## 当前活动阶段
 
+[`Chapter 38 — 工具到底帮不帮得上忙`](episodes/episode07_agent_closed_loop/chapter38_qwen3_tool_task_success.md) 已于 2026-08-16 Closed。Chapter 36 测「协议是否合法」、Chapter 37 测「单轮是否答对」，本章补上两章都留着的缺口：**工具闭环本身的任务成功率**。利用 Chapter 37 已冻结的无工具基线（Qwen3-4B 在 150 道 GSM8K 上 `141/150 = .940`），在**逐字节相同的用户消息**上做三臂配对对照：`tool-declared` 与 `tool-nudged` 都是 `137/150 = .913`，精确 McNemar p 分别为 `0.2891` / `0.3877`。
+
+本章最重要的发现不是那 `2.67` 个点，而是**它不是工具造成的**：`tool-declared` 掉的 6 题里调用过工具的是 `0` 题，`tool-nudged` 掉的 8 题里只有 `1` 题；工具在被真正使用时基本中性（用工具的 28 题 `26/28`，同批题基线 `27/28`）。也就是说往 prompt 里加约 200 token 的 `# Tools` 头，在完全不触发工具的题上也会翻掉 4%–8% 的题。另一条：两个工具臂准确率完全相同（`137` vs `137`），却有 `8/150` 题在两个方向上互换——只看准确率会误判为「两臂等价」。工具调用的失败模式也很具体：`31` 次调用中 `3` 次失败全部集中在同一题，模型反复把**代数方程**丢给只会求值的计算器，连续三轮只换变量名重试。
+
 [`Chapter 37 — Qwen3 dense 任务质量基线`](episodes/episode07_agent_closed_loop/chapter37_qwen3_task_quality.md) 已于 2026-08-16 Closed。这是项目第一次回答「复现出来的模型答对率是多少」，而不是「和 HuggingFace 一不一样」。冻结 MMLU 200 题（8 subject × 25，含许可与上游 row_idx provenance）与 GSM8K 150 题，跑 loglikelihood 与 generative 两种口径：0.6B/1.7B/4B 的 MMLU loglikelihood 为 `.365 / .395 / .555`，generative 全集为 `.295 / .305 / .530`，4B 的 GSM8K 为 `141/150 = .940`。
 
 本章最重要的是两条负结果。其一，**MMLU loglikelihood 的逐题决策在 BF16 下不可复现**——既不跨 dtype，也不跨设备，甚至不跨同一实现里两条数学等价的写法：与 HuggingFace fp32 参照在协议对齐后一致率为 `193/200 = 96.5%`（协议不对齐的 fast 捷径是 `189/200`，其中约一半分歧其实来自捷径而非 dtype）；同一份权重同一协议，CUDA 给 `73`、CPU 给 `74`、fp32 给 `70`；我们自己 fast 与 general 两条路径在同一块 GPU 上也有 `6/200` 翻转，翻转题的 margin 全是 `0.125` 的整数倍，与 BF16 表示间距一致。其二，**generative 口径的数字被我们自己的 token 预算压低**：三个模型中每一个未解析的题都是被截断的题（`14/14`、`52/52`、`23/23`），因此全集数是下界、未截断子集是有偏上界，两个数必须一起报。另需记住位置偏置存在且各模型方向不同（0.6B 偏 A `128/24/24/24`、1.7B 偏 B `45/79/48/28`、4B 轻微偏 C），「永远选 A」在本题集上就有 `.270`，0.6B 的 `.365` 只高出 9.5 个点。
@@ -511,4 +515,4 @@ cache 已实现。
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
 | 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Chapter 01—37 已 Closed；Episode 06 与 07 均为 Open | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏；Episode 07 起额外要求外部独立实现作为参照物 |
+| 学习记录 | Chapter 01—38 已 Closed；Episode 06 与 07 均为 Open | 继续以论文/官方 reference、数值 parity、性能原始记录为近期节奏；Episode 07 起额外要求外部独立实现作为参照物 |
