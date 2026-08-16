@@ -24,11 +24,13 @@ test/
     │   ├── chapter33_qwen3_moe_decode_copy_elision/
     │   ├── chapter34_qwen3_moe_read_buffer_reuse/
     │   └── chapter35_qwen3_moe_host_buffer_reuse/
-    └── episode07_agent_closed_loop/
-        ├── chapter36_qwen3_tools_chat_template/
-        ├── chapter37_qwen3_task_quality/
-        ├── chapter38_qwen3_tool_task_success/
-        └── chapter39_persistent_semantic_memory/
+    ├── episode07_agent_closed_loop/
+    │   ├── chapter36_qwen3_tools_chat_template/
+    │   ├── chapter37_qwen3_task_quality/
+    │   ├── chapter38_qwen3_tool_task_success/
+    │   └── chapter39_persistent_semantic_memory/
+    └── episode08_environment_action_loop/
+        └── chapter40_deterministic_gridworld/
 ```
 
 ## Chapter 索引
@@ -74,6 +76,7 @@ test/
 | 07 | 37 | MMLU/GSM8K 冻结任务、机械抽取、accuracy/Wilson 与真实质量基线 |
 | 07 | 38 | 算术工具、三臂 GSM8K 任务成功率与配对 McNemar |
 | 07 | 39 | append-only memory journal、fresh load、exact retrieval context 与三臂任务契约 |
+| 08 | 40 | observation/action/transition、GridWorld safety、BFS oracle、反馈对照与完整 replay |
 
 `fixtures/` 只存在于拥有该证据的 Chapter 目录中。跨 Chapter 复用 fixture 时，
 测试显式引用其原始 Chapter，不复制第二份数据。`support/` 只存放无独立产品能力

@@ -19,9 +19,11 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、直接消费分散 BF16 cache matrices 并有界复用状态的 CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。**
+**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、直接消费分散 BF16 cache matrices 并有界复用状态的 CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。智能体侧已具备工具、跨请求持久记忆，以及由环境终态评分并可联合 replay 的确定性 observation/action 闭环。**
 
-Chapter 01—39 与 Episode 07 均已 Closed。[`Chapter 39 — 跨请求、可回放的语义记忆闭环`](notes/episodes/episode07_agent_closed_loop/chapter39_persistent_semantic_memory.md) 已把版本化 append-only journal、fresh-load 严格恢复、exact semantic index 和 retrieval context 接入真实 Qwen3：冻结 12 个 private-fact tasks 上 retrieval top-1 / recall@1 均为 `12/12`，no-memory / retrieved / 等 token 干扰三臂为 `0/12 / 12/12 / 0/12`，两组精确 McNemar p 均为 `0.00048828125`；第二进程 36 / 36 条完整 prompt/context 轨迹 replay 一致。默认专项为 `100 / 100`，加真实 Qwen3-4B tokenizer 为 `112 / 112`。
+Chapter 01—40 均已 Closed，Episode 08 已 Open。[`Chapter 40 — 确定性 GridWorld observation/action 与真实反馈闭环`](notes/episodes/episode08_environment_action_loop/chapter40_deterministic_gridworld.md) 首次用环境终态而非模型自述判定任务成功：冻结 8 题的 BFS oracle 与 Qwen3-4B full-feedback 都是 `8/8`、44 个动作、0 个非法动作，模型逐题走出最短路；首轮 prompt 完全相同的 feedback-withheld 臂为 `0/8`、67 个非法/失败动作，配对 McNemar p=`0.0078125`。第二进程重算 148 / 148 prompts、140 / 140 tool outcomes、132 / 132 transitions 与 16 / 16 final states。
+
+[`Chapter 39 — 跨请求、可回放的语义记忆闭环`](notes/episodes/episode07_agent_closed_loop/chapter39_persistent_semantic_memory.md) 已把版本化 append-only journal、fresh-load 严格恢复、exact semantic index 和 retrieval context 接入真实 Qwen3：冻结 12 个 private-fact tasks 上 retrieval top-1 / recall@1 均为 `12/12`，no-memory / retrieved / 等 token 干扰三臂为 `0/12 / 12/12 / 0/12`，两组精确 McNemar p 均为 `0.00048828125`；第二进程 36 / 36 条完整 prompt/context 轨迹 replay 一致。默认专项为 `100 / 100`，加真实 Qwen3-4B tokenizer 为 `112 / 112`。
 
 [`Chapter 38 — 工具到底帮不帮得上忙`](notes/episodes/episode07_agent_closed_loop/chapter38_qwen3_tool_task_success.md) 在同一批 150 道 GSM8K 上做了一次配对对照：无工具基线 `141/150 = .940`，声明计算器后 `137/150 = .913`，再加一句要求使用工具的 system message 仍是 `137/150`。**掉的题几乎全部没有调用工具**（`tool-declared` 掉 6 题、调用过工具的 0 题），所以测到的是「在 prompt 里声明工具」这件事本身对 greedy 解码的扰动，而不是工具的效用；两次下降的精确 McNemar p 为 `0.29` / `0.39`，150 题分辨不了 `2.67` 个点。
 
@@ -90,6 +92,9 @@ Chapter 01—39 与 Episode 07 均已 Closed。[`Chapter 39 — 跨请求、可�
 - 最小工具闭环：工具声明与注册、`<tool_call>` 解析与合法性判定、沙箱化内置工具，以及
   「观察 → 决策 → 调用 → 回填 → 再决策」的多 step 循环；每一步记录 prompt sha256 与
   generated ids，可在不加载模型的情况下离线 replay。
+- 确定性环境闭环：通用 observation/action/transition 类型、hidden-wall GridWorld、唯一 allowlisted
+  `move(direction)` 副作用面、动作预算和环境终态评分；Qwen3-4B full-feedback 8 / 8 最短路完成，
+  feedback-withheld 0 / 8，模型 prompt、工具结果和环境状态可联合 replay。
 - full/dynamic/static/XLA 的真实 greedy text-generation parity。
 - 严格的 GPT-2 config、Float32 safetensors、Conv1D/fused-QKV 映射与 GPT-2 byte-level BPE adapter；冻结 revision/checksum 不匹配时 fail closed。
 - GPT-2 124M 的 10 组 tokenizer corpus、embedding、12 层 residual、final hidden、full logits 与 full/dynamic/static 8-step greedy text 均通过 Transformers reference parity。
@@ -112,7 +117,8 @@ Chapter 01—39 与 Episode 07 均已 Closed。[`Chapter 39 — 跨请求、可�
   单 writer append-only source journal、启动时 exact index 重建与 request-time
   context 注入，不是完整长期记忆系统。
 - 视觉、听觉和传感器输入等多模态感知。
-- 面向仿真或实体机器人的 observation / action 抽象、控制链路与安全边界。
+- 连续控制、动力学、外部 simulator 与实体机器人 adapter；Chapter 40 只有离散确定性 GridWorld、
+  enum action、预算和 fail-closed 边界，不等于具备真实设备控制或物理安全。
 - 在线或持续学习机制。
 
 更详细的能力盘点、验证范围与建议里程碑见 [`notes/current_status.md`](notes/current_status.md)。
@@ -163,7 +169,9 @@ src/
 ├── io/            # HuggingFace config / safetensors 权重加载
 ├── models/        # GPT 模型
 ├── train/         # Zygote / Reactant-XLA 训练
-└── generation/    # 共享采样/输入边界、文本生成与 KV Cache
+├── generation/    # 共享采样/输入边界、文本生成与 KV Cache
+├── agent/         # 工具、持久记忆、环境/action loop
+└── eval/          # 任务质量、记忆与环境闭环评测
 
 test/
 ├── runtests.jl    # 按 Episode / Chapter 分组的统一入口

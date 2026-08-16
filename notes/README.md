@@ -14,6 +14,7 @@
 - [`Episode 05 — 部署、记忆与设备采样`](episodes/episode05_deployment_memory_and_sampling/README.md)：Chapter 19–23。
 - [`Episode 06 — Qwen3 MoE 与模型架构扩展`](episodes/episode06_qwen3_moe_and_model_expansion/README.md)：Chapter 24–35。
 - [`Episode 07 — 智能体闭环`](episodes/episode07_agent_closed_loop/README.md)：Chapter 36–39。
+- [`Episode 08 — 环境与行动闭环`](episodes/episode08_environment_action_loop/README.md)：Chapter 40–。
 
 ## Episode 与 Chapter
 

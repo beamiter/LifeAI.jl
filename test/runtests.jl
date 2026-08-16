@@ -273,6 +273,16 @@ end
     end
 end
 
+@testset "Episode 08 — Environment and action loop" begin
+    @testset "Chapter 40 — Deterministic GridWorld" begin
+        include(chapter_test(
+            "episode08_environment_action_loop",
+            "chapter40_deterministic_gridworld",
+            "test_deterministic_gridworld.jl",
+        ))
+    end
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA episode extensions" begin
         include(chapter_test("episode01_transformer_and_training_foundations", "chapter02_gpt_xla_kv_cache", "test_xla_kv_cache.jl"))

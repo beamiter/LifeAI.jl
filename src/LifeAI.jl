@@ -52,10 +52,12 @@ include("generation/xla_cache_modes_benchmark.jl")
 include("agent/tools.jl")
 include("agent/memory.jl")
 include("agent/tool_loop.jl")
+include("agent/environment.jl")
 
 # Task-level quality evaluation.
 include("eval/task_quality.jl")
 include("eval/memory_quality.jl")
+include("eval/environment_quality.jl")
 
 include("api.jl")
 

@@ -113,6 +113,19 @@ export render_agent_memory_context, agent_memory_context
 export retrieve_agent_memory_context, select_agent_memory_context
 export search_agent_memory_context
 
+# Deterministic environment/action loop
+export AGENT_ENVIRONMENT_FORMAT_VERSION, AbstractAgentEnvironment
+export GridWorldSpec, GridWorldEnvironment, gridworld_spec_fingerprint
+export AgentEnvironmentObservation, AgentEnvironmentAction
+export AgentEnvironmentTransition, AgentEnvironmentTrace
+export reset_agent_environment!, observe_agent_environment
+export step_agent_environment!, gridworld_legal_actions
+export render_agent_environment_feedback, gridworld_move_tool
+export gridworld_tool_registry, gridworld_system_prompt, gridworld_user_prompt
+export run_qwen3_environment_loop, agent_environment_summary
+export agent_environment_trace_payload, replay_qwen3_environment_trace
+export gridworld_shortest_actions, replay_gridworld_actions
+
 # Task-level quality evaluation
 export MMLUItem, GSM8KItem, EvalTaskSet, EvalItemResult, load_eval_tasks
 export mmlu_loglikelihood_prompt, mmlu_chat_messages, gsm8k_chat_messages
@@ -122,6 +135,8 @@ export paired_comparison, mcnemar_exact
 export AgentMemoryTask, AgentMemoryTaskSet, load_agent_memory_tasks
 export seed_agent_memory_tasks!, extract_agent_memory_answer
 export agent_memory_answer_matches, agent_memory_retrieval_report
+export GridWorldTask, GridWorldTaskSet, load_gridworld_tasks
+export gridworld_task_result, gridworld_task_report
 
 # Training and persistence
 export TrainerGPT, init_train_state, next_token_loss, next_token_nll_sum

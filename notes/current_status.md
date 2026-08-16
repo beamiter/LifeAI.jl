@@ -2,9 +2,11 @@
 
 ## 一句话判断
 
-项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**，原始 Qwen3-30B-A3B MoE 也完成 61 GB 资产校验、Float32/native BF16 真实 parity，以及 RTX 4090 D 的 40K-capacity BF16 GPU resident/offload session。项目具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化。Qwen3-Embedding-0.6B 的独立 checkpoint/tokenizer contract、五档 MRL 与 dense exact semantic memory 也已完成真实 BF16 parity。RTX 4090 D 上，dense 14B mixed RTN 是已实证生成上限；日常 8B BF16 已完成 XLA single-residency 4K greedy 部署与 loopback 常驻 HTTP 服务。30B-A3B 以非 expert 常驻、active experts 按层上传的方式运行；device cache 支持 global/layer-balanced LRU，scalar CUDA 还可直接消费分散 BF16 cache matrices，并有界复用 generation-safe pointer plans/workspaces。冻结全命中短请求相对旧 materialized 路径加速 `82.89×`。
+项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**，原始 Qwen3-30B-A3B MoE 也完成 61 GB 资产校验、Float32/native BF16 真实 parity，以及 RTX 4090 D 的 40K-capacity BF16 GPU resident/offload session。项目具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化。Qwen3-Embedding-0.6B 的独立 checkpoint/tokenizer contract、五档 MRL 与 dense exact semantic memory 也已完成真实 BF16 parity。RTX 4090 D 上，dense 14B mixed RTN 是已实证生成上限；日常 8B BF16 已完成 XLA single-residency 4K greedy 部署与 loopback 常驻 HTTP 服务。30B-A3B 以非 expert 常驻、active experts 按层上传的方式运行；device cache 支持 global/layer-balanced LRU，scalar CUDA 还可直接消费分散 BF16 cache matrices，并有界复用 generation-safe pointer plans/workspaces。冻结全命中短请求相对旧 materialized 路径加速 `82.89×`。智能体侧已有官方 tool protocol、多 step loop、跨请求持久记忆，以及由环境终态评分并可联合 replay 的确定性 observation/action 闭环。
 
 ## 当前活动阶段
+
+[`Chapter 40 — 确定性 GridWorld observation/action 与真实反馈闭环`](episodes/episode08_environment_action_loop/chapter40_deterministic_gridworld.md) 已于 2026-08-16 Closed，同时开启 [`Episode 08 — 环境与行动闭环`](episodes/episode08_environment_action_loop/README.md)。本章加入与模型无关的 observation/action/transition/environment 类型、hidden-wall GridWorld、唯一 allowlisted `move(direction)` 副作用面、动作预算、环境终态评分与联合 model/environment replay。冻结 8 题上 BFS oracle 和 Qwen3-4B full-feedback 均为 `8/8`、44 个动作、0 个非法动作，逐题都是最短路；首轮 prompt `8/8` 完全相同的 feedback-withheld 臂为 `0/8`、67 个非法/失败动作，配对 McNemar p=`0.0078125`。第二进程重算 148 / 148 prompts、140 / 140 tool outcomes、132 / 132 transitions 和 16 / 16 final states。Episode 08 仍需完成环境事件记忆写回与跨 adapter safety semantics，因此保持 Open。
 
 [`Chapter 39 — 跨请求、可回放的语义记忆闭环`](episodes/episode07_agent_closed_loop/chapter39_persistent_semantic_memory.md) 已于 2026-08-16 Closed，同时关闭 [`Episode 07 — 智能体闭环`](episodes/episode07_agent_closed_loop/README.md)。版本化 append-only JSONL source journal、fresh-load 严格恢复、启动时 exact embedding index 重建、retrieval context 注入与 trace digest 均已接入真实模型。冻结 12 个 synthetic private-fact tasks 上，Qwen3-Embedding-0.6B top-1 / recall@1 均为 `12/12`；Qwen3-4B 的 no-memory / retrieved / token-matched distractor 为 `0/12 / 12/12 / 0/12`，两组精确 McNemar p 均为 `0.00048828125`。第二进程从同一 journal 重建的 context digest、完整 prompt digest 和 token 数为 `36/36` 一致。默认专项 `100 / 100`；真实 tokenizer 合计 `112 / 112`。
 
@@ -292,7 +294,8 @@ Chapter 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定�
 以下能力尚未实现，不应从现有 GPT demo 或已完成的结构 parity 推断为已经具备：
 
 - GPT-2 的 WebText 从零训练、论文 zero-shot quality、其他尺寸和非 causal-LM heads；Chapter 10 只完成 124M 官方 checkpoint 的 Float32 推理/架构复现。
-- 通用 Jinja chat template、Qwen3 tools/tool-role 分支、JSON schema 工具注入与 agent tool loop；Chapter 08 只完成已冻结的无 tools 基础 chat 子集。
+- 通用 Jinja chat template engine 仍未实现；Chapter 36 已按冻结官方模板逐分支完成 Qwen3
+  tools/tool-role、JSON schema 工具注入与 agent loop，但该实现只接受已知模板 SHA256。
 - BF16/量化训练、FP8、完整 GPTQ/AWQ/Hessian/block reconstruction、
   KV cache/激活量化与完整生产级 MoE sparse accelerator；32B GPU 驻留
   （INT4 约 16.4 GiB）仍出界。Chapter 24–33 已完成 CPU Float32 correctness、
@@ -323,8 +326,9 @@ Chapter 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定�
 - 任务规划与反思，以及 tools 版 `/api/generate`；工具调用协议已在 Chapter 36
   完成 HF 逐字节 parity 与单请求内闭环，任务级质量对照已由 Chapter 38 完成，
   但当前仍是按冻结官方模板手写的 renderer，不是通用 Jinja 引擎。
-- 图像、音频、空间状态或机器人传感器输入。
-- 动作空间、控制器、仿真环境与真实设备适配器。
+- 图像、音频、非符号空间状态或机器人传感器输入；Chapter 40 observation 只有结构化 GridWorld 坐标。
+- 连续动作、动力学、外部 simulator 和真实设备适配器；Chapter 40 只有确定性离散 GridWorld、
+  enum action、硬预算与 fail-closed 状态机。
 - 机器人运行所需的实时性、容错和物理安全机制。
 - 在线学习、持续学习与个体长期成长。
 
@@ -494,7 +498,7 @@ checksum、GPU 驻留/误差/greedy 指标均进入 fixture；没有把 diagonal
 最低物理 free 2.251 GiB；常驻摊销冷启动，但不宣称跨进程 executable
 cache 已实现。
 
-### Milestone C：建立最小有状态智能体闭环（智能体子目标已完成）
+### Milestone C：建立最小有状态智能体与环境闭环（主体已完成）
 
 - Qwen3-Embedding-0.6B 与内存内 exact semantic memory baseline 已完成，
   但尚未接入跨 step 状态或 policy。（Chapter 22 已完成）
@@ -509,9 +513,11 @@ cache 已实现。
 - 先在一个简单、可重复的模拟环境中跑通"感知 → 记忆 → 决策 → 行动 → 反馈"。
 - 保持模型后端可替换，使当前小 GPT、Qwen3 复现权重或后续多模态模型都能接入。
 
-智能体子目标的完成标准已满足：系统可以跨多个 step 保持状态，根据工具反馈改变下一步动作；跨请求
-source memory 亦可 fresh-load 并用独立进程 replay 完整轨迹。上面的 observation/action 抽象与模拟
-环境仍属于 Milestone C 的具身子目标，不能随 Episode 07 一起标为完成。
+工具、记忆和环境三个主体部件已经具备：Chapter 39 提供独立 `AgentMemory` source journal；
+Chapter 40 提供与模型无关的 observation/action/transition/environment 契约和 BFS policy oracle，
+Qwen3 adapter 在确定性 simulator 中根据新 observation 改变动作。完整模型、工具与环境轨迹均可由
+第二进程 replay。环境事件尚未自动进入 memory journal，因此“感知 → 记忆 → 决策”的同一条运行链
+仍由 Episode 08 后续章节完成；真实传感器、动力学和设备安全也不在当前结论内。
 
 ## 长期能力地图
 
@@ -519,8 +525,8 @@ source memory 亦可 fresh-load 并用独立进程 replay 完整轨迹。上面�
 | --- | --- | --- |
 | 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + native BF16 推理 + CUDA/XLA 加速 + 8B XLA single-residency 4K greedy 部署/常驻服务 + 可预算 INT4/INT8/BF16 计划与 diagonal activation-aware 校准（14B RTN 16/16，weight/activation MSE 均 4/16）；GPT-2 真实 parity；流式加载；五类版本化 Tokenizer 与中文数据管线 | 完整 AWQ/GPTQ 或量化 GEMM、XLA device-side sampling，或下一经典/SOTA 架构 |
 | 高效训练与推理 | modern / GQA / rotate_half 已兼容 Zygote / XLA 与两类 KV Cache；Qwen3-0.6B compiled decode、Qwen3-8B 4K XLA single-residency/service 与 30B-A3B BF16 offload/cache/scattered hit + bounded reuse/storage-verified parallel miss 已在 GPU 实证；adjacent coalescing 负结果与 decode copy-elision 正结果已冻结 | MoE raw read buffer 有界复用、route/attention 临时数组复用、fused/FlashAttention、动态 batch、低精度 kernel 与更长上下文优化 |
-| 智能体核心 | 官方 chat template 全分支 HF 逐字节 parity（含 tools / tool_calls / tool 角色）+ 沙箱化工具注册与单请求多 step 闭环 + 工具任务成功率配对测量 + append-only source journal/fresh load + exact retrieval context + 真实三臂与跨进程 replay | 自动写回、ANN/reranker、planning 与反思，或 observation/action 仿真闭环 |
+| 智能体核心 | 官方 chat template 全分支 HF 逐字节 parity + 沙箱化工具与单请求多 step + 工具任务成功率配对测量 + append-only source journal/exact retrieval + observation/action/transition 环境闭环与联合 replay | 环境事件自动写回、ANN/reranker、planning 与反思 |
 | 多模态感知 | 尚未开始 | vision / audio / sensor representation |
-| 具身闭环 | 尚未开始 | observation/action abstraction、simulation、device adapter |
+| 具身闭环 | 确定性 hidden-wall GridWorld、allowlisted enum action、硬预算、环境终态评分；Qwen3-4B full-feedback 8/8 最短路，withheld 0/8 | 连续状态/动作、故障/急停/幂等语义、外部 simulator 与 device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Chapter 01—39 已 Closed；Episode 06 Open，Episode 07 Closed | 下一卷继续要求外部独立实现或等强因果对照作为参照物 |
+| 学习记录 | Chapter 01—40 已 Closed；Episode 06 与 08 Open，Episode 07 Closed | Episode 08 继续环境事件记忆写回与跨 adapter safety；保持 oracle/因果对照/replay 门禁 |
