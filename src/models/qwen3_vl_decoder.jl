@@ -395,7 +395,8 @@ Run a cache-free Qwen3-VL decoder prefill.  Main vision embeddings replace
 image-token embeddings before layer 0; DeepStack features are added after
 decoder layers 0, 1, and 2.  `capture_layers` uses official zero-based layer
 numbers and stores both the raw block output and the post-DeepStack layer
-output.  Chapter 45 will add KV-cache decode and generation.
+output. Cached dynamic and bounded-static generation use their dedicated
+prefill entry points.
 """
 function hf_qwen3_vl_text_prefill(
     parameters,

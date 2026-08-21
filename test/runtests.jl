@@ -341,6 +341,18 @@ end
     end
 end
 
+@testset "Episode 10 — Qwen3-VL efficient generation" begin
+    @testset "Chapter 46 — Static multimodal cache" begin
+        episode = "episode10_qwen3_vl_efficient_generation"
+        chapter = "chapter46_qwen3_vl_static_cache"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_static_cache.jl",
+        ))
+    end
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA episode extensions" begin
         include(chapter_test("episode01_transformer_and_training_foundations", "chapter02_gpt_xla_kv_cache", "test_xla_kv_cache.jl"))

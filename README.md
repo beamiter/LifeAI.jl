@@ -19,9 +19,9 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、scalar 与 grouped WMMA 直接消费分散 BF16 cache matrices 的 generation-safe CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。grouped-scattered 对相同 grouped 数值契约逐位一致，2/32-token request 相对 active-3D materialization 加速 `10.745× / 6.103×`。Qwen3-VL-2B-Instruct 已从双 registry 资产契约、raw image fast processor、content-list chat、vision tower、main/DeepStack visual injection、三轴 mRoPE 和完整 decoder prefill，继续闭合到请求级 dynamic KV cache、单 token decode 与 greedy image-to-text generation；真实 Float32 RTX 4090 D 四阶段 logits、greedy token 和最终文本均与 Transformers reference 对齐。智能体侧已具备工具、跨请求持久记忆、由环境终态评分并可联合 replay 的 observation/action 闭环，以及 clean successful 环境事件的显式写回、fresh-load exact-spec 检索和无反馈后续执行。**
+**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、scalar 与 grouped WMMA 直接消费分散 BF16 cache matrices 的 generation-safe CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。grouped-scattered 对相同 grouped 数值契约逐位一致，2/32-token request 相对 active-3D materialization 加速 `10.745× / 6.103×`。Qwen3-VL-2B-Instruct 已从双 registry 资产契约、raw image fast processor、content-list chat、vision tower、main/DeepStack visual injection、三轴 mRoPE 和完整 decoder prefill，继续闭合到 dynamic KV baseline、bounded preallocated static KV、单 token decode、可 reset request state 与 greedy image-to-text generation；真实 Float32 RTX 4090 D 上 static/dynamic 的四阶段有效 K/V 与 logits bitwise 一致，并保持 Transformers reference 的 token/text strict gate，32-token static 对照减少 `624,820,224` GPU allocated bytes。智能体侧已具备工具、跨请求持久记忆、由环境终态评分并可联合 replay 的 observation/action 闭环，以及 clean successful 环境事件的显式写回、fresh-load exact-spec 检索和无反馈后续执行。**
 
-Chapter 01—45 均已 Closed，Episode 06/07/09 已 Closed、Episode 08 已 Open。[`Chapter 45 — Qwen3-VL dynamic KV decode 与 image-to-text generation`](notes/episodes/episode09_qwen3_vl_multimodal_perception/chapter45_qwen3_vl_dynamic_decode.md) 在 Chapter 44 的 multimodal prefill 上加入不重复存储 GQA heads 的请求级 cache，并严格区分物理 cache 长度和 `rope_delta` 修正后的 mRoPE 坐标。冻结 tiny oracle 覆盖全 4 层 K/V 与 `8→9→10` 两步 decode；官方 2B Float32 reference SHA256 为 `a98812e…3e81`，RTX 4090 D 上 prefill 与三步 decode 的 logits max-abs 均低于 `4.01e-5`、argmax 全部一致，生成 one-based token ids `[1987, 2169, 375, 265]`，最终文本为 `This image is a`。Episode 09 的单图、batch-1、全一 mask dynamic greedy 闭环由此关闭。
+Chapter 01—46 均已 Closed，Episode 06/07/09 已 Closed，Episode 08/10 已 Open。[`Chapter 46 — Qwen3-VL bounded static KV cache 与可复用 generation state`](notes/episodes/episode10_qwen3_vl_efficient_generation/chapter46_qwen3_vl_static_cache.md) 在 Chapter 45 dynamic correctness baseline 上预分配 `(head_dim, kv_heads, capacity, batch)` storage，prefill/decode/reset 全程保持 cache 与每层 K/V array identity，容量满时 fail closed。低层 `capacity` 必填；高层 `cache=:static` 只推导本次 prompt/generation 所需容量，不会默认分配官方最大 context。tiny oracle 三路全四层有效 K/V、hidden/logits 与 greedy `[8,8,8]` 一致；真实 RTX 4090 D Float32 的 56 个 buffers 保持 object/device-pointer identity，四阶段 static/dynamic K/V 与 logits bitwise 一致。32-token 对照的 GPU allocated bytes 从 `4,270,103,300` 降到 `3,645,283,076`，但后者也证明整条 decode 仍非零分配；Episode 10 因此保持 Open。
 
 [`Chapter 42 — 显式环境事件记忆写回与因果验收`](notes/episodes/episode08_environment_action_loop/chapter42_environment_event_memory.md) 在 ModelScope Qwen3-8B / RTX 4090 D 上让 8 个 full-feedback writer 以 BFS 最短路 `8/8` clean success，显式写出 8 条事件；fresh-load 后 CPU Qwen3-Embedding raw top-1 / exact-spec 都是 `8/8`。三个无中间反馈 reader 臂为 no-memory `0/8`、retrieved `7/8`、等 token 且机械 non-solving 的 mirrored distractor `0/8`，相关记忆相对两组对照的双侧精确 McNemar p 均为 `0.015625`。`grid/08` 是正确检索后的执行失败，不是 retrieval miss；32 条轨迹已在不加载两套模型且不追加 journal 的第二进程完整 replay。环境事件记忆条目已关闭；Episode 08 仍保留跨 adapter timeout / execution failure / e-stop / idempotent action safety 缺口。
 
@@ -70,10 +70,12 @@ Chapter 01—45 均已 Closed，Episode 06/07/09 已 Closed、Episode 08 已 Ope
   expansion 和 T/H/W mRoPE；3D patch embedding、position interpolation、vision
   RoPE、24-layer per-temporal-frame packed attention、三个 DeepStack mergers、
   main merger，以及 main visual replacement/DeepStack injection 后的 28-layer
-  decoder prefill；请求级 dynamic KV cache、cached prefill、单 token decode 和
-  raw single-image greedy generation 已接通。Float32 RTX 4090 D 已完成
-  Transformers 4.57.0 的 prefill/decode/token/text strict gate；BF16 prefill
-  单独记录跨后端边界。
+  decoder prefill；请求级 dynamic KV baseline、bounded preallocated static KV、
+  cached prefill、单 token decode、reset/reuse 和 raw single-image greedy generation
+  已接通。Float32 RTX 4090 D 已完成
+  Transformers 4.57.0 的 prefill/decode/token/text strict gate；BF16 static/dynamic
+  decode 只完成 same-device bitwise smoke，并单独记录相对 Float32 oracle 的跨 dtype
+  边界，不声称 HF BF16 strict parity。
 - 六个官方 Qwen3 dense 规格的 immutable revision/config checksum、自动识别、显式 variant 校验、精确参数量；严格的 BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
 - Qwen3-Embedding-0.6B 的独立 immutable revision/8-asset checksum、
   151,669-vocabulary/32K contract、embedding tokenizer 尾 token 与
@@ -138,10 +140,11 @@ Chapter 01—45 均已 Closed，Episode 06/07/09 已 Closed、Episode 08 已 Ope
   append-only journal，同 run ID 幂等但不同 run 可重复写同一事实，只接纳 clean successful GridWorld
   episode，不是完整长期记忆系统。
 - Qwen3-VL 当前已从 raw PNG/JPEG/RGB image 接到 content-list chat、vision、
-  decoder prefill、dynamic KV、增量 decode 与 greedy image-to-text generation；
+  decoder prefill、dynamic KV 与 bounded static KV、增量 decode、可 reset request
+  state 和 greedy image-to-text generation；
   尚无 sampled generation 或 video。真实权重验收仍只覆盖单图、batch 1、
-  sequence 76 和全一 attention mask；padding/multi-image、static/bounded cache、
-  长上下文、音频与其他传感器输入也未实现。
+  sequence 76 和全一 attention mask；padding/multi-image、长上下文、整条 decode
+  执行图的零分配/静态编译、音频与其他传感器输入也未实现。
 - 连续控制、动力学、外部 simulator 与实体机器人 adapter；Chapter 40/42 只有离散确定性 GridWorld，
   生产记忆强制 exact-spec，cross-spec 只用于 diagnostic control。timeout、execution failure、e-stop 与
   idempotent action safety 尚未定义，不等于具备真实设备控制或物理安全。
@@ -155,7 +158,7 @@ Chapter 01—45 均已 Closed，Episode 06/07/09 已 Closed、Episode 08 已 Ope
 Qwen3-Embedding-0.6B、Qwen3-VL-2B-Instruct 与 GPT-2 124M 的完整资产和恢复命令见
 [`notes/local_model_assets.md`](notes/local_model_assets.md)，六个 Qwen3
 dense config 规格见 [`Chapter 11`](notes/episodes/episode03_model_family_and_large_weights/chapter11_qwen3_dense_family.md)，
-Qwen3-VL vision-only 边界见 [`Chapter 43`](notes/episodes/episode09_qwen3_vl_multimodal_perception/chapter43_qwen3_vl_vision_architecture.md)，raw processor/chat 与 decoder prefill 边界见 [`Chapter 44`](notes/episodes/episode09_qwen3_vl_multimodal_perception/chapter44_qwen3_vl_multimodal_prefill.md)，dynamic cache/decode 与完整单图 greedy 边界见 [`Chapter 45`](notes/episodes/episode09_qwen3_vl_multimodal_perception/chapter45_qwen3_vl_dynamic_decode.md)。
+Qwen3-VL vision-only 边界见 [`Chapter 43`](notes/episodes/episode09_qwen3_vl_multimodal_perception/chapter43_qwen3_vl_vision_architecture.md)，raw processor/chat 与 decoder prefill 边界见 [`Chapter 44`](notes/episodes/episode09_qwen3_vl_multimodal_perception/chapter44_qwen3_vl_multimodal_prefill.md)，dynamic cache/decode 与完整单图 greedy 边界见 [`Chapter 45`](notes/episodes/episode09_qwen3_vl_multimodal_perception/chapter45_qwen3_vl_dynamic_decode.md)，bounded static K/V 与 request-state reuse 边界见 [`Chapter 46`](notes/episodes/episode10_qwen3_vl_efficient_generation/chapter46_qwen3_vl_static_cache.md)。
 
 ## 演进路线
 

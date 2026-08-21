@@ -29,18 +29,100 @@ function _qwen3_vl_generation_limits(
     prompt_length > 0 || throw(ArgumentError(
         "Qwen3-VL prompt must contain at least one token",
     ))
-    processed = prompt_length + max(0, max_new_tokens - 1)
+    decode_appends = max(0, max_new_tokens - 1)
+    processed = try
+        Base.Checked.checked_add(prompt_length, decode_appends)
+    catch error
+        error isa OverflowError || rethrow()
+        throw(ArgumentError("Qwen3-VL generation length exceeds Int capacity"))
+    end
     processed <= spec.max_position_embeddings || throw(ArgumentError(
         "Qwen3-VL prompt plus generated context exceeds max_position_embeddings",
     ))
-    return nothing
+    return processed
 end
+
+function _qwen3_vl_generation_cache(
+    text_parameters,
+    required_capacity::Int,
+    cache_mode::Symbol,
+    static_capacity,
+)
+    if cache_mode === :dynamic
+        static_capacity === nothing || throw(ArgumentError(
+            "static_capacity is only valid when cache=:static",
+        ))
+        return init_qwen3_vl_kv_cache(text_parameters; batch_size=1)
+    elseif cache_mode === :static
+        capacity = if static_capacity === nothing
+            required_capacity
+        else
+            static_capacity isa Integer && !(static_capacity isa Bool) || throw(
+                ArgumentError("static_capacity must be an integer"),
+            )
+            Int(static_capacity)
+        end
+        capacity >= required_capacity || throw(ArgumentError(
+            "static_capacity is smaller than the processed generation context",
+        ))
+        return init_qwen3_vl_static_kv_cache(
+            text_parameters;
+            capacity,
+            batch_size=1,
+        )
+    end
+    throw(ArgumentError("Qwen3-VL cache must be :dynamic or :static"))
+end
+
+function _qwen3_vl_generation_prefill(
+    text_parameters,
+    tokens,
+    rope_layout,
+    vision_features,
+    cache::Qwen3VLKVCache,
+)
+    return hf_qwen3_vl_text_prefill_cached(
+        text_parameters,
+        tokens,
+        rope_layout;
+        vision_features,
+        cache,
+        logits_to_keep=1,
+    )
+end
+
+function _qwen3_vl_generation_prefill(
+    text_parameters,
+    tokens,
+    rope_layout,
+    vision_features,
+    cache::Qwen3VLStaticKVCache,
+)
+    return hf_qwen3_vl_text_prefill_static(
+        text_parameters,
+        tokens,
+        rope_layout;
+        vision_features,
+        cache,
+        logits_to_keep=1,
+    )
+end
+
+_qwen3_vl_generation_decode(text_parameters, token, cache::Qwen3VLKVCache) =
+    hf_qwen3_vl_text_decode_step(text_parameters, token, cache)
+
+_qwen3_vl_generation_decode(
+    text_parameters,
+    token,
+    cache::Qwen3VLStaticKVCache,
+) = hf_qwen3_vl_text_decode_step_static(text_parameters, token, cache)
 
 """
     generate_hf_qwen3_vl_tokens(text_parameters, input_ids, rope_layout;
                                 vision_features=nothing,
                                 max_new_tokens=32, stop_token_ids=nothing,
-                                capture_logits=false)
+                                capture_logits=false, cache=:dynamic,
+                                static_capacity=nothing)
 
 Greedily generate one Qwen3-VL sequence from already-tokenized multimodal
 prefill inputs. The first output token is selected from the final prefill
@@ -49,9 +131,11 @@ to obtain the next token, avoiding an extra prompt-token decode and the usual
 one-token cache offset bug.
 
 Token ids use LifeAI's one-based convention. The returned cache therefore
-contains `prompt_length + generated_count - 1` tokens unless generation stops
-before a decode is needed. This Chapter 45 boundary intentionally supports
-batch size one and greedy selection only.
+contains `prompt_length + generated_count - 1` valid tokens unless generation
+stops before a decode is needed. `cache=:static` selects preallocated storage;
+`static_capacity` defaults to the exact processed context. The returned static
+cache can be reset and reused through the low-level static-cache API.
+Generation intentionally supports batch size one and greedy selection only.
 """
 function generate_hf_qwen3_vl_tokens(
     text_parameters,
@@ -61,13 +145,15 @@ function generate_hf_qwen3_vl_tokens(
     max_new_tokens::Int=32,
     stop_token_ids=nothing,
     capture_logits::Bool=false,
+    cache::Symbol=:dynamic,
+    static_capacity=nothing,
 )
     tokens = _qwen3_vl_token_matrix(input_ids)
     prompt_length, batch_size = size(tokens)
     batch_size == 1 || throw(ArgumentError(
         "Qwen3-VL generation currently supports batch size one",
     ))
-    _qwen3_vl_generation_limits(
+    required_capacity = _qwen3_vl_generation_limits(
         text_parameters.spec,
         prompt_length,
         max_new_tokens,
@@ -79,7 +165,12 @@ function generate_hf_qwen3_vl_tokens(
     prompt_ids = vec(copy(tokens))
     generated_ids = Int[]
     trace = NamedTuple[]
-    cache = init_qwen3_vl_kv_cache(text_parameters; batch_size=1)
+    cache_state = _qwen3_vl_generation_cache(
+        text_parameters,
+        required_capacity,
+        cache,
+        static_capacity,
+    )
     stop_reason = :length
 
     if max_new_tokens == 0
@@ -91,17 +182,17 @@ function generate_hf_qwen3_vl_tokens(
             strategy=:greedy,
             trace=Tuple(trace),
             prefill=nothing,
-            cache,
+            cache=cache_state,
+            cache_mode=cache,
         )
     end
 
-    prefill_result, cache = hf_qwen3_vl_text_prefill_cached(
+    prefill_result, cache_state = _qwen3_vl_generation_prefill(
         text_parameters,
         tokens,
-        rope_layout;
+        rope_layout,
         vision_features,
-        cache,
-        logits_to_keep=1,
+        cache_state,
     )
     logits = prefill_result.logits
     host = cpu_device()
@@ -119,10 +210,10 @@ function generate_hf_qwen3_vl_tokens(
             break
         end
         if step < max_new_tokens
-            logits, cache = hf_qwen3_vl_text_decode_step(
+            logits, cache_state = _qwen3_vl_generation_decode(
                 text_parameters,
                 token_id,
-                cache,
+                cache_state,
             )
         end
     end
@@ -135,7 +226,8 @@ function generate_hf_qwen3_vl_tokens(
         strategy=:greedy,
         trace=Tuple(trace),
         prefill=prefill_result,
-        cache,
+        cache=cache_state,
+        cache_mode=cache,
     )
 end
 
@@ -175,7 +267,7 @@ function _qwen3_vl_generation_image(messages)
         end
     end
     length(images) == 1 || throw(ArgumentError(
-        "Chapter 45 generation requires exactly one image; got $(length(images))",
+        "Qwen3-VL generation requires exactly one image; got $(length(images))",
     ))
     return only(images)
 end
@@ -205,7 +297,7 @@ end
     generate_hf_qwen3_vl(vision_parameters, text_parameters, tokenizer,
                          messages; max_new_tokens=32, ...)
 
-Run the Chapter 45 raw single-image chat path: exact image processing,
+Run the raw single-image Qwen3-VL chat path: exact image processing,
 content-list rendering, per-grid placeholder expansion, tokenizer encoding,
 mRoPE layout, vision tower, cached multimodal prefill, and greedy incremental
 decode. Image content must carry either a local path or an HWC/CHW UInt8 array
@@ -225,6 +317,8 @@ function generate_hf_qwen3_vl(
     decode_errors::Symbol=:replace,
     skip_special_tokens::Bool=true,
     processor_spec::Qwen3VLProcessorSpec=qwen3_vl_processor_spec(),
+    cache::Symbol=:dynamic,
+    static_capacity=nothing,
 )
     tokenizer.profile === :qwen3_vl_generation || throw(ArgumentError(
         "generate_hf_qwen3_vl requires a Qwen3-VL tokenizer",
@@ -285,6 +379,8 @@ function generate_hf_qwen3_vl(
         max_new_tokens,
         stop_token_ids=resolved_stops,
         capture_logits,
+        cache,
+        static_capacity,
     )
     completion = decode(
         tokenizer,

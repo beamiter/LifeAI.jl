@@ -16,6 +16,7 @@
 - [`Episode 07 — 智能体闭环`](episodes/episode07_agent_closed_loop/README.md)：Chapter 36–39。
 - [`Episode 08 — 环境与行动闭环`](episodes/episode08_environment_action_loop/README.md)：Chapter 40、42。
 - [`Episode 09 — Qwen3-VL 多模态感知`](episodes/episode09_qwen3_vl_multimodal_perception/README.md)：Chapter 43–45。
+- [`Episode 10 — Qwen3-VL 高效生成`](episodes/episode10_qwen3_vl_efficient_generation/README.md)：Chapter 46–。
 
 ## Episode 与 Chapter
 

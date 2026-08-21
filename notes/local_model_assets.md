@@ -827,7 +827,7 @@ forward 为 `18.959 / 0.0641 s`，冷/热 embedding max-abs 为 `0`；
 token/mask、五档数值、15 组 top-k 与 semantic memory 门禁全部通过。
 普通沙箱内 `nvidia-smi` 因设备隔离失败，不代表宿主机驱动不可用。
 
-## Chapter 43–45 Qwen3-VL-2B-Instruct 资产
+## Chapter 43–46 Qwen3-VL-2B-Instruct 资产
 
 本章使用 ModelScope 国内源恢复完整官方仓库：
 
@@ -1052,6 +1052,115 @@ Julia/CUDA 编译和重新跑 vision，不能当 steady throughput。当前 dyna
 使用 `cat` 追加，每步都会重新分配并复制历史 K/V；本章关闭的是 correctness，
 不是 static capacity、低分配部署或长上下文性能。尚未覆盖 video、multi-image、
 batch/padding、sampled generation 和真实长上下文。
+
+### Chapter 46 bounded static cache：无新增 checkpoint/reference
+
+Chapter 46 继续使用本节开头冻结的同一 ModelScope/Hugging Face revision、13-file
+checksum、Chapter 44 processor/prefill reference 与 Chapter 45 decode reference，
+没有下载第二份权重，也没有把 LifeAI 自己的 static storage 输出伪装成新的外部
+oracle。static 与 dynamic 的数学状态相同，变化的是 K/V ownership：Chapter 45
+fixture 仍是独立 Transformers `DynamicCache` reference，Chapter 46 同时把 LifeAI
+dynamic 与 static 的有效 prefix 对到它。
+
+committed tiny fixture 仍位于：
+
+```text
+test/episodes/episode09_qwen3_vl_multimodal_perception/
+  chapter45_qwen3_vl_dynamic_decode/fixtures/tiny_text_dynamic_decode.json
+```
+
+SHA256 仍为
+`7b20111e43aa9efd2aae0be3f4a740ab1fdeaff9bd0a6ffd0bfef49adfeeffd8`。
+它冻结 4-layer tiny model 的 prefill 与两次 decode、全部 K/V、hidden/logits 和
+greedy timeline。Chapter 46 默认离线测试在 capacity `8/9/10` 下验证 static
+有效 prefix 与该 fixture、LifeAI dynamic path 一致，同时验证固定 storage
+identity/bytes、overflow 原子性与 reset/reuse。
+
+低层 static cache 的 `capacity` 是必填 keyword：
+
+```julia
+using LifeAI
+
+cache = init_qwen3_vl_static_kv_cache(
+    text_parameters;
+    capacity=79,
+    batch_size=1,
+)
+```
+
+不能省略它并按官方最大 context 隐式分配。高层 generation 已知 prompt length 和
+`max_new_tokens`，因此 `cache=:static` 在未给出 `static_capacity` 时只推导本次请求
+精确需要的：
+
+```text
+prompt_length + max(0, max_new_tokens - 1)
+```
+
+Chapter 45 的真实 sequence 76、4-token generation 对应 capacity 79。官方 2B
+每个 capacity token 的 K/V payload 为 Float32 `229,376` bytes、BFloat16
+`114,688` bytes，所以 capacity 79 分别预分配 `18,120,704` 与 `9,060,352`
+bytes。该数字不含 allocator metadata、模型参数、vision features、attention/MLP/
+RoPE/logits intermediates 或 CUDA workspace。
+
+单独运行离线 static contract：
+
+```bash
+julia --project=. --startup-file=no -e '
+using Test, LifeAI
+include("test/episodes/episode10_qwen3_vl_efficient_generation/" *
+        "chapter46_qwen3_vl_static_cache/test_qwen3_vl_static_cache.jl")
+'
+```
+
+真实 checkpoint 恢复和 Python oracle 仍使用 Chapter 45 上方命令与相同 frozen
+files；Chapter 46 新增的 CUDA verifier 接在 Chapter 45 verifier 后执行：
+
+```bash
+QWEN3_VL_MODEL_DIR=/home/ubuntu/models/modelscope/Qwen/Qwen3-VL-2B-Instruct
+QWEN3_VL_DECODE_REFERENCE_DIR=/tmp/qwen3-vl-decode-f32
+
+julia --project=. --startup-file=no \
+  scripts/verify_qwen3_vl_static_cache_cuda.jl \
+  "$QWEN3_VL_MODEL_DIR" "$QWEN3_VL_DECODE_REFERENCE_DIR" cuda float32
+```
+
+RTX 4090 D Float32 最终结果：capacity 128 的 56 个 K/V `CuArray` 在 prefill、
+三次 decode 和 reset 间保持 object/device-pointer identity，且所有 buffers
+互不 alias；static 与 dynamic 的有效 K/V prefix/logits bitwise 一致。相对同一
+HF reference 的四阶段 max-abs 仍为
+`3.86238e-5 / 4.00543e-5 / 2.95639e-5 / 2.90871e-5`，greedy ids/text 仍为
+`[1987,2169,375,265]` / `This image is a`。capacity-128 Float32 payload 为
+`29,360,128` bytes，四阶段后 valid 79-token prefix 为 `18,120,704` bytes。
+
+32-token dynamic/static 对照最终 position 都是 107、ids exact。三样本中位 GPU
+allocated bytes 为 `4,270,103,300 / 3,645,283,076`，static 少
+`624,820,224` bytes；allocation count 为 `69,431 / 67,751`。理论 dynamic
+`cat` outputs 为 `654,180,352` bytes，static 新 slice writes 为 `7,110,656`
+bytes。latency 中位 `0.616681 / 0.585846 s` 只有三个交替顺序样本，verifier 明确不把它
+设为 acceptance gate。
+
+同一命令末尾使用 `bfloat16` 时，static/dynamic 四阶段 K/V prefix 与 logits
+bitwise，ids 与 Float32 相同；但它只对 HF Float32 reference 报 cross-dtype
+boundary，不声明 BF16 HF tensor strict parity。capacity 128 / valid 79 的 BF16
+payload 为 `14,680,064 / 9,060,352` bytes。32-token dynamic/static GPU allocated
+bytes 为 `1,881,657,676 / 1,569,247,564`，减少 `312,410,112`；理论 `cat`
+outputs/static writes 为 `327,090,176 / 3,555,328` bytes。最终交替顺序样本的
+latency 中位为 `0.849395 / 0.840655 s`，两者接近；固定顺序的先导样本曾给出相反
+观感，说明三样本 latency 对顺序/GC 敏感。因此 latency 不作为本章 gate，也不据此
+宣称 static 普遍更快。
+
+`Qwen3VLStaticKVCache` 只保证 K/V backing arrays 在 prefill、
+decode、reset 间固定，并消除 token-axis `cat` 与历史 prefix copy；它不保证整条
+decode 执行零分配，也不代表 CUDA Graph/XLA static executable、长上下文、batch/
+padding、multi-image/video 或 sampling 已验收。`reset_qwen3_vl_static_kv_cache!`
+默认只清 logical `position/rope_delta`；`clear=true` 才会遍历并归零整个 capacity。
+
+实现时还暴露了 Julia API 层面的可复现失败：keyword 参数及其类型不参与 method
+dispatch。若只用 `cache::Qwen3VLKVCache` 与 `cache::Qwen3VLStaticKVCache` 两个
+keyword 定义同名 prefill，后定义会覆盖前定义并触发 precompile method-overwrite。
+最终保留显式 `hf_qwen3_vl_text_prefill_static` / `_decode_step_static` API，generation
+内部只在 positional cache helper 上分派。资产没有变化，但这一语言契约决定了
+reference verifier 必须同时回归 Chapter 45 dynamic 路径。
 
 ## Qwen3-30B-A3B 资产状态
 
