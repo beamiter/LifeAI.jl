@@ -10,6 +10,7 @@ and transition has a stable digest so a run can be replayed without a model.
 """
 
 const AGENT_ENVIRONMENT_FORMAT_VERSION = 1
+const AGENT_ENVIRONMENT_TRACE_FORMAT_VERSION = 2
 const GRIDWORLD_DIRECTIONS = ("north", "east", "south", "west")
 
 abstract type AbstractAgentEnvironment end
@@ -415,6 +416,7 @@ struct AgentEnvironmentTrace
     task_id::String
     spec_sha256::String
     feedback::Symbol
+    system_prompt::String
     initial_observation::AgentEnvironmentObservation
     transitions::Vector{AgentEnvironmentTransition}
     agent::AgentLoopTrace
@@ -423,26 +425,79 @@ struct AgentEnvironmentTrace
     final_state_sha256::String
 end
 
+# Preserve the Chapter 40 constructor for callers that materialize a trace with
+# the original system prompt and no explicit protocol override.
+AgentEnvironmentTrace(
+    environment,
+    task_id,
+    spec_sha256,
+    feedback,
+    initial_observation,
+    transitions,
+    agent,
+    terminal,
+    success,
+    final_state_sha256,
+) = AgentEnvironmentTrace(
+    environment,
+    task_id,
+    spec_sha256,
+    feedback,
+    GRIDWORLD_SYSTEM_PROMPT,
+    initial_observation,
+    transitions,
+    agent,
+    terminal,
+    success,
+    final_state_sha256,
+)
+
 function run_qwen3_environment_loop(
     session::HFQwen3BF16Session,
     environment::GridWorldEnvironment;
     feedback::Symbol=:full,
+    system::AbstractString=GRIDWORLD_SYSTEM_PROMPT,
+    memory_context::Union{Nothing,AgentMemoryContext}=nothing,
+    allow_cross_spec_memory::Bool=false,
     max_steps=nothing,
     max_new_tokens::Integer=128,
     enable_thinking::Bool=false,
     strategy::Symbol=:greedy,
     stop_token_ids=nothing,
 )
-    reset_agent_environment!(environment)
-    initial = observe_agent_environment(environment)
     turns = max_steps === nothing ? environment.spec.max_actions + 1 : Int(max_steps)
     turns > 0 || throw(ArgumentError("max_steps must be positive"))
+    feedback in (:full, :none) || throw(ArgumentError(
+        "feedback must be :full or :none",
+    ))
+    _validate_environment_memory_spec(environment.spec)
+    if memory_context !== nothing
+        validate_agent_memory_context(memory_context)
+        if allow_cross_spec_memory
+            for hit in memory_context.hits
+                validate_agent_environment_memory_record(
+                    AgentMemoryRecord(
+                        hit.id,
+                        hit.sequence,
+                        hit.text,
+                        copy(hit.metadata),
+                        _sha256_hex(hit.text),
+                    ),
+                )
+            end
+        else
+            _validated_gridworld_memory_context(memory_context, environment.spec)
+        end
+    end
+    reset_agent_environment!(environment)
+    initial = observe_agent_environment(environment)
     registry = gridworld_tool_registry(environment; feedback)
     agent = run_qwen3_tool_loop(
         session,
         registry,
         gridworld_user_prompt(initial);
-        system=GRIDWORLD_SYSTEM_PROMPT,
+        system,
+        memory_context,
         max_steps=turns,
         max_new_tokens,
         enable_thinking,
@@ -455,6 +510,7 @@ function run_qwen3_environment_loop(
         environment.spec.id,
         environment.spec.sha256,
         feedback,
+        String(system),
         initial,
         copy(environment.transitions),
         agent,
@@ -504,12 +560,23 @@ end
 
 """Stable JSON-ready representation written by the Chapter 40 runner."""
 function agent_environment_trace_payload(trace::AgentEnvironmentTrace)
+    memory = trace.agent.memory_context
     return (;
-        schema_version=AGENT_ENVIRONMENT_FORMAT_VERSION,
+        schema_version=AGENT_ENVIRONMENT_TRACE_FORMAT_VERSION,
         environment=trace.environment,
         task=trace.task_id,
         spec_sha256=trace.spec_sha256,
         feedback=String(trace.feedback),
+        system_prompt=trace.system_prompt,
+        system_prompt_sha256=_sha256_hex(trace.system_prompt),
+        memory=memory === nothing ? nothing : (;
+            query=memory.query,
+            query_sha256=memory.query_sha256,
+            store_sha256=memory.store_sha256,
+            context_sha256=memory.rendered_sha256,
+            ids=[hit.id for hit in memory.hits],
+            scores=[hit.score for hit in memory.hits],
+        ),
         initial_observation=_gridworld_observation_json(trace.initial_observation),
         initial_observation_sha256=trace.initial_observation.rendered_sha256,
         transitions=[
@@ -603,7 +670,56 @@ Rebuild a recorded run without loading an embedding or generation model. Recorde
 completions drive a fresh tool registry, so prompts, tool outcomes, state changes,
 and transition digests are independently recomputed rather than trusted.
 """
-function replay_qwen3_environment_trace(tokenizer, spec::GridWorldSpec, row)
+function replay_qwen3_environment_trace(
+    tokenizer,
+    spec::GridWorldSpec,
+    row;
+    memory_context::Union{Nothing,AgentMemoryContext}=nothing,
+    memory_store::Union{Nothing,AgentMemoryStore}=nothing,
+    allow_cross_spec_memory::Bool=false,
+)
+    _validate_environment_memory_spec(spec)
+    version = get(row, :schema_version, nothing)
+    version isa Integer && !isa(version, Bool) || throw(ArgumentError(
+        "environment trace schema_version must be an integer",
+    ))
+    expected_v1 = Set((
+        :schema_version,
+        :environment,
+        :task,
+        :spec_sha256,
+        :feedback,
+        :initial_observation,
+        :initial_observation_sha256,
+        :transitions,
+        :agent_steps,
+        :answer,
+        :agent_stop_reason,
+        :terminal,
+        :success,
+        :final_state_sha256,
+        :summary,
+    ))
+    expected_v2 = union(expected_v1, Set((
+        :system_prompt,
+        :system_prompt_sha256,
+        :memory,
+    )))
+    actual_fields = Set(Symbol(key) for key in keys(row))
+    if Int(version) == 1
+        actual_fields == expected_v1 || throw(ArgumentError(
+            "environment trace fields do not match schema version 1",
+        ))
+    elseif Int(version) == AGENT_ENVIRONMENT_TRACE_FORMAT_VERSION
+        actual_fields == expected_v2 || throw(ArgumentError(
+            "environment trace fields do not match schema version 2",
+        ))
+    else
+        throw(ArgumentError("unsupported environment trace schema version $(repr(version))"))
+    end
+    String(row.environment) == "deterministic_gridworld" || throw(ArgumentError(
+        "environment trace has an unsupported adapter",
+    ))
     String(row.task) == spec.id || throw(ArgumentError("trace task/spec mismatch"))
     String(row.spec_sha256) == spec.sha256 || throw(ArgumentError(
         "trace GridWorld spec digest mismatch for $(spec.id)",
@@ -611,6 +727,120 @@ function replay_qwen3_environment_trace(tokenizer, spec::GridWorldSpec, row)
     feedback = Symbol(String(row.feedback))
     feedback in (:full, :none) || throw(ArgumentError("trace has unknown feedback arm"))
     environment = GridWorldEnvironment(spec)
+    system = Int(version) == AGENT_ENVIRONMENT_TRACE_FORMAT_VERSION ?
+        String(row.system_prompt) : GRIDWORLD_SYSTEM_PROMPT
+    if Int(version) == AGENT_ENVIRONMENT_TRACE_FORMAT_VERSION
+        _sha256_hex(system) == String(row.system_prompt_sha256) || error(
+            "system prompt digest mismatch for $(spec.id)",
+        )
+    end
+    recorded_memory = Int(version) == AGENT_ENVIRONMENT_TRACE_FORMAT_VERSION ?
+        row.memory : nothing
+    if recorded_memory === nothing
+        memory_context === nothing || error(
+            "trace omits memory evidence for $(spec.id)",
+        )
+    else
+        query = String(recorded_memory.query)
+        _sha256_hex(query) == String(recorded_memory.query_sha256) || error(
+            "recorded memory query digest mismatch for $(spec.id)",
+        )
+        ids = String[String(id) for id in recorded_memory.ids]
+        isempty(ids) && error("recorded memory IDs are empty for $(spec.id)")
+        length(unique(ids)) == length(ids) || error(
+            "recorded memory IDs repeat for $(spec.id)",
+        )
+        scores = Float32[]
+        for score in recorded_memory.scores
+            score isa Real || error("recorded memory score is not numeric for $(spec.id)")
+            value = Float32(score)
+            isfinite(value) || error("recorded memory score is not finite for $(spec.id)")
+            push!(scores, value)
+        end
+        length(scores) == length(ids) || error(
+            "recorded memory IDs/scores differ in length for $(spec.id)",
+        )
+        if memory_store !== nothing
+            agent_memory_fingerprint(memory_store) == String(recorded_memory.store_sha256) ||
+                error("loaded memory store digest mismatch for $(spec.id)")
+            selected = allow_cross_spec_memory ?
+                select_agent_memory_context(memory_store, query, ids) :
+                select_gridworld_memory_context(memory_store, spec, query, ids)
+            if allow_cross_spec_memory
+                for hit in selected.hits
+                    validate_agent_environment_memory_record(
+                        AgentMemoryRecord(
+                            hit.id,
+                            hit.sequence,
+                            hit.text,
+                            copy(hit.metadata),
+                            _sha256_hex(hit.text),
+                        ),
+                    )
+                end
+            end
+            scored_hits = AgentMemoryHit[
+                AgentMemoryHit(
+                    hit.rank,
+                    hit.id,
+                    hit.sequence,
+                    hit.text,
+                    scores[hit.rank],
+                    copy(hit.metadata),
+                )
+                for hit in selected.hits
+            ]
+            memory_context = agent_memory_context(
+                query,
+                scored_hits;
+                store_sha256=selected.store_sha256,
+            )
+        else
+            memory_context === nothing && error(
+                "trace requires a memory store or context for $(spec.id)",
+            )
+            memory_context.query_sha256 == _sha256_hex(memory_context.query) || error(
+                "memory context has an invalid query digest for $(spec.id)",
+            )
+            memory_context.rendered == render_agent_memory_context(memory_context.hits) ||
+                error("memory context bytes are not canonical for $(spec.id)")
+            memory_context.rendered_sha256 == _sha256_hex(memory_context.rendered) ||
+                error("memory context rendered digest is invalid for $(spec.id)")
+            if allow_cross_spec_memory
+                for hit in memory_context.hits
+                    validate_agent_environment_memory_record(
+                        AgentMemoryRecord(
+                            hit.id,
+                            hit.sequence,
+                            hit.text,
+                            copy(hit.metadata),
+                            _sha256_hex(hit.text),
+                        ),
+                    )
+                end
+            else
+                _validated_gridworld_memory_context(memory_context, spec)
+            end
+        end
+        memory_context.query == query || error(
+            "memory query mismatch for $(spec.id)",
+        )
+        memory_context.query_sha256 == String(recorded_memory.query_sha256) || error(
+            "memory query digest mismatch for $(spec.id)",
+        )
+        memory_context.store_sha256 == String(recorded_memory.store_sha256) || error(
+            "memory store digest mismatch for $(spec.id)",
+        )
+        memory_context.rendered_sha256 == String(recorded_memory.context_sha256) || error(
+            "memory context digest mismatch for $(spec.id)",
+        )
+        [hit.id for hit in memory_context.hits] == ids || error(
+                "memory IDs mismatch for $(spec.id)",
+            )
+        [hit.score for hit in memory_context.hits] == scores || error(
+                "memory scores mismatch for $(spec.id)",
+            )
+    end
     initial = observe_agent_environment(environment)
     initial.rendered_sha256 == String(row.initial_observation_sha256) || error(
         "initial observation digest mismatch for $(spec.id)",
@@ -618,11 +848,14 @@ function replay_qwen3_environment_trace(tokenizer, spec::GridWorldSpec, row)
     initial.rendered == String(JSON3.write(row.initial_observation)) || error(
         "initial observation bytes mismatch for $(spec.id)",
     )
+    memory_context === nothing || memory_context.query == gridworld_memory_query(initial) ||
+        error("memory query does not match the initial observation for $(spec.id)")
     registry = gridworld_tool_registry(environment; feedback)
     tools = qwen3_tool_specs(registry)
     messages = _agent_initial_messages(
         gridworld_user_prompt(initial);
-        system=GRIDWORLD_SYSTEM_PROMPT,
+        system,
+        memory_context,
     )
 
     prompt_hashes_equal = 0

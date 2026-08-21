@@ -229,6 +229,7 @@ function qwen3_moe_expert_cache_stats(session::HFQwen3MoEOffloadSession)
         budget_bytes=session.expert_cache_budget_bytes,
         policy=session.expert_cache_policy,
         dispatch=session.expert_cache_dispatch,
+        grouped_experts=session.grouped_experts,
         gc_interval_layers=session.expert_gc_interval_layers,
         current_bytes=session.expert_cache_bytes,
         peak_bytes=session.expert_cache_peak_bytes,
@@ -535,8 +536,10 @@ end
 
 # Portable devices retain the materialized dispatch. LifeAICUDAExt specializes
 # this hook to index cached expert matrices through a compact device pointer
-# table. The opaque state owns bounded pointer plans and shape-keyed workspaces
-# across calls; cache clear/reconfigure invalidates it.
+# table. `grouped_experts=true` lets the extension consume the same pointer table
+# with grouped BF16 WMMA instead of first concatenating active experts. The opaque
+# state owns bounded pointer plans and shape-keyed workspaces across calls; cache
+# clear/reconfigure invalidates it.
 function _qwen3_scattered_expert_dispatch(
     tokens,
     expert_indices,
@@ -544,6 +547,7 @@ function _qwen3_scattered_expert_dispatch(
     scattered::_Qwen3MoEScatteredExperts,
     state,
     layer_index::Int,
+    grouped_experts::Bool=false,
 )
     return nothing
 end
@@ -571,7 +575,8 @@ end
 
 """
     configure_hf_qwen3_moe_expert_cache!(
-        session; budget_bytes, policy, dispatch, gc_interval_layers,
+        session; budget_bytes, policy, dispatch, grouped_experts,
+        gc_interval_layers,
         read_buffer_reuse, host_buffer_reuse, read_mode, miss_pipeline,
         read_workers, pinned_upload)
 
@@ -580,13 +585,15 @@ policy while retaining the resident model, static KV buffers and compiled
 kernels. `:global_lru` preserves the original policy;
 `:layer_balanced_lru` reserves an approximately equal number of expert slots
 per decoder layer to resist sequential layer-scan thrashing. Dispatch and
-forced-GC cadence can be changed in the same cold-cache transition.
+grouped-expert mode, plus forced-GC cadence, can be changed in the same
+cold-cache transition.
 """
 function configure_hf_qwen3_moe_expert_cache!(
     session::HFQwen3MoEOffloadSession;
     budget_bytes::Integer=session.expert_cache_budget_bytes,
     policy::Symbol=session.expert_cache_policy,
     dispatch::Symbol=session.expert_cache_dispatch,
+    grouped_experts::Bool=session.grouped_experts,
     gc_interval_layers::Integer=session.expert_gc_interval_layers,
     read_buffer_reuse::Bool=session.expert_read_buffer_reuse,
     host_buffer_reuse::Bool=session.expert_host_buffer_reuse,
@@ -613,10 +620,6 @@ function configure_hf_qwen3_moe_expert_cache!(
     workers > 0 || throw(ArgumentError(
         "expert read_workers must be positive",
     ))
-    validated_dispatch === :scattered && session.grouped_experts &&
-        throw(ArgumentError(
-            "scattered expert cache dispatch does not support grouped experts",
-        ))
     validated_dispatch === :scattered && budget == 0 && throw(ArgumentError(
         "scattered expert cache dispatch requires a positive cache budget",
     ))
@@ -653,6 +656,7 @@ function configure_hf_qwen3_moe_expert_cache!(
     session.expert_cache_budget_bytes = budget
     session.expert_cache_policy = validated_policy
     session.expert_cache_dispatch = validated_dispatch
+    session.grouped_experts = grouped_experts
     session.expert_gc_interval_layers = gc_interval
     session.expert_read_buffer_reuse = read_buffer_reuse
     session.expert_read_buffer_pool = read_buffer_pool
@@ -1318,6 +1322,7 @@ function _qwen3_moe_offload_block(
             loaded_experts,
             session.expert_scattered_state,
             layer_index,
+            session.grouped_experts,
         )
     else
         nothing
@@ -1522,9 +1527,6 @@ function load_hf_qwen3_moe_offload_session(
     ))
     read_workers > 0 || throw(ArgumentError(
         "expert_read_workers must be positive",
-    ))
-    cache_dispatch === :scattered && grouped_experts && throw(ArgumentError(
-        "scattered expert cache dispatch does not support grouped_experts=true",
     ))
     cache_dispatch === :scattered && cache_budget == 0 && throw(ArgumentError(
         "scattered expert cache dispatch requires a positive cache budget",

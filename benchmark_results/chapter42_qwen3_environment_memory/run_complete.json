@@ -1,0 +1,14 @@
+{
+    "schema_version": 1,
+    "status": "completed",
+    "run_start": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory/run_start.json",
+    "run_start_sha256": "9b8d6d03e3b4143a7819685a0bdb9ac3f0901a7ffc55f225f9c52d0bed231fd7",
+    "summary": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory/qwen3-8b_environment_memory_summary.json",
+    "summary_sha256": "c4e5846e0b7e57830f82f6dcceea73641c7395024eac8fa480ba702a5945d875",
+    "trace": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory/qwen3-8b_environment_memory_trace.jsonl",
+    "trace_sha256": "46b26f92e4d431a83b9244013d0c4e8fab98ff51ea0b74f2669cada52ef7029f",
+    "items": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory/qwen3-8b_environment_memory_items.jsonl",
+    "items_sha256": "b99c48462fe4bdc880f62db26ea61fb5f770e1dbeb64a7d4037cbe7b18277969",
+    "journal": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory/environment-memory.jsonl",
+    "journal_sha256": "9a6d550e493bb1a0ef09ec06f929355a1618dd9d4fbae723efde5640c84c70e1"
+}

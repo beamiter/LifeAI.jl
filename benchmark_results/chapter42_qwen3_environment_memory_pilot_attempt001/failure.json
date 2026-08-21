@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "status": "failed",
+  "retrospective": true,
+  "role": "protocol_pilot_not_included_in_final_metrics",
+  "failure_phase": "writer",
+  "failed_task_index": 5,
+  "failed_task_id": "grid/05",
+  "reason": "policy_rejects_blocked_actions",
+  "trace_available": false,
+  "trace_unavailability": "The pilot runner wrote wrapper traces only after all writers passed; the grid/05 completion and individual actions are therefore unavailable and are not reconstructed.",
+  "known_outcome": {
+    "environment_success": true,
+    "policy_admitted": false
+  },
+  "accepted_prefix": {
+    "journal": "environment-memory.jsonl",
+    "records": 4,
+    "record_ids": [
+      "environment-event/chapter42/write/grid-01/verified_successful_episode",
+      "environment-event/chapter42/write/grid-02/verified_successful_episode",
+      "environment-event/chapter42/write/grid-03/verified_successful_episode",
+      "environment-event/chapter42/write/grid-04/verified_successful_episode"
+    ],
+    "file_sha256": "9b215e853c208214ca04f19615f25cfa22c0ecee8961d5dea82cfd504c90f870",
+    "canonical_store_sha256": "9b215e853c208214ca04f19615f25cfa22c0ecee8961d5dea82cfd504c90f870",
+    "strict_validation_passed": true
+  },
+  "generation": {
+    "model": "/home/ubuntu/models/modelscope/Qwen/Qwen3-8B",
+    "variant": "qwen3_8b",
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "device": "NVIDIA GeForce RTX 4090 D",
+    "strategy": "greedy",
+    "enable_thinking": false
+  },
+  "runner_sha256": "097ea159f28263aeb8ac32716e3fafd36004daf98d541a6df3280b90cdfc2e78",
+  "terminal_excerpt": "ERROR: writer grid/05 was not admitted: policy_rejects_blocked_actions",
+  "supersession_policy": "A new task-agnostic writer-only prompt is frozen before a complete eight-task rerun from an empty journal; this prefix is never reused."
+}

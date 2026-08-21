@@ -1,7 +1,9 @@
 using JSON3
 using LifeAI
-using SHA: sha256
 using Test
+
+isdefined(@__MODULE__, :qwen3_moe_historical_benchmark_source_status) ||
+    include(joinpath(@__DIR__, "..", "..", "..", "support", "repository_test_assets.jl"))
 
 const QWEN3_MOE_REUSE_EPISODE_DIR = dirname(@__DIR__)
 const QWEN3_MOE_REUSE_TINY_FIXTURE = joinpath(
@@ -40,12 +42,13 @@ end
 
 @testset "Qwen3 MoE real scattered reuse result contract" begin
     repo_root = normpath(joinpath(@__DIR__, "..", "..", "..", ".."))
-    summary = JSON3.read(read(joinpath(
+    summary_path = joinpath(
         repo_root,
         "benchmark_results",
         "qwen3_moe_cuda_scattered_reuse",
         "summary.json",
-    ), String))
+    )
+    summary = JSON3.read(read(summary_path, String))
     @test Int(summary["schema_version"]) == 1
     @test String(summary["model_id"]) == "Qwen/Qwen3-30B-A3B"
     @test String(summary["compute_dtype"]) == "bfloat16"
@@ -136,8 +139,20 @@ end
         ),
         "cuda_extension" => joinpath("ext", "LifeAICUDAExt.jl"),
     )
-        expected = String(summary["source_sha256"][name])
-        actual = bytes2hex(sha256(read(joinpath(repo_root, relative_path))))
-        @test actual == expected
+        status = qwen3_moe_historical_benchmark_source_status(
+            summary_path,
+            summary,
+            name,
+            relative_path,
+        )
+        @test status.source_path_matches
+        @test status.digest_is_sha256
+        @test status.current_source_exists
+        @test status.report_registered
+        @test status.snapshot_registered
+        @test status.digest_matches_snapshot
+        if status.git_snapshot_matches !== nothing
+            @test status.git_snapshot_matches
+        end
     end
 end

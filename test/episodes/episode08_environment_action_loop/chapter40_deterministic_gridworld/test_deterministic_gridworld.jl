@@ -304,6 +304,21 @@ end
             @test report.final_state_equal
             @test report.success
 
+            legacy_fields = Base.structdiff(payload, (;
+                schema_version=nothing,
+                system_prompt=nothing,
+                system_prompt_sha256=nothing,
+                memory=nothing,
+            ))
+            legacy = (; schema_version=1, legacy_fields...)
+            legacy_report = replay_qwen3_environment_trace(
+                tokenizer,
+                task.spec,
+                JSON3.read(JSON3.write(legacy)),
+            )
+            @test legacy_report.final_state_equal
+            @test legacy_report.success
+
             changed = JSON3.read(JSON3.write(payload), Dict{String,Any})
             changed["agent_steps"][1]["prompt_sha256"] = "0"^64
             @test_throws ErrorException replay_qwen3_environment_trace(

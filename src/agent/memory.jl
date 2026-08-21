@@ -344,6 +344,62 @@ struct AgentMemoryContext
     rendered_sha256::String
 end
 
+"""
+    validate_agent_memory_context(context; store=nothing)
+
+Validate a context before prompt injection. With `store`, also bind every hit and
+the recorded store digest to a freshly loaded journal snapshot.
+"""
+function validate_agent_memory_context(
+    context::AgentMemoryContext;
+    store::Union{Nothing,AgentMemoryStore}=nothing,
+)
+    isempty(strip(context.query)) && throw(ArgumentError(
+        "memory context query must not be empty",
+    ))
+    context.query_sha256 == _sha256_hex(context.query) || throw(ArgumentError(
+        "memory context query digest mismatch",
+    ))
+    isempty(context.hits) && throw(ArgumentError(
+        "memory context must contain at least one hit",
+    ))
+    [hit.rank for hit in context.hits] == collect(1:length(context.hits)) ||
+        throw(ArgumentError("memory context hit ranks are not contiguous"))
+    length(unique(hit.id for hit in context.hits)) == length(context.hits) ||
+        throw(ArgumentError("memory context contains duplicate hit IDs"))
+    all(isfinite(hit.score) for hit in context.hits) || throw(ArgumentError(
+        "memory context contains a non-finite score",
+    ))
+    canonical = render_agent_memory_context(context.hits)
+    context.rendered == canonical || throw(ArgumentError(
+        "memory context rendered bytes do not match its hits",
+    ))
+    context.rendered_sha256 == _sha256_hex(context.rendered) || throw(ArgumentError(
+        "memory context rendered digest mismatch",
+    ))
+    occursin(r"^[0-9a-f]{64}$", context.store_sha256) || throw(ArgumentError(
+        "memory context store digest must be lowercase SHA256",
+    ))
+    if store !== nothing
+        context.store_sha256 == agent_memory_fingerprint(store) || throw(ArgumentError(
+            "memory context does not belong to the supplied store snapshot",
+        ))
+        for hit in context.hits
+            position = get(store.by_id, hit.id, 0)
+            position != 0 || throw(ArgumentError(
+                "memory context hit $(repr(hit.id)) is absent from the supplied store",
+            ))
+            record = store.records[position]
+            hit.sequence == record.sequence &&
+                hit.text == record.text &&
+                hit.metadata == record.metadata || throw(ArgumentError(
+                    "memory context hit $(repr(hit.id)) differs from the supplied store",
+                ))
+        end
+    end
+    return context
+end
+
 function render_agent_memory_context(hits::AbstractVector{AgentMemoryHit})
     isempty(hits) && throw(ArgumentError("memory context must contain at least one hit"))
     records = [(; id=hit.id, text=hit.text) for hit in hits]
@@ -367,7 +423,7 @@ function agent_memory_context(
     length(unique(hit.id for hit in hit_values)) == length(hit_values) ||
         throw(ArgumentError("memory context contains duplicate hit IDs"))
     rendered = render_agent_memory_context(hit_values)
-    return AgentMemoryContext(
+    context = AgentMemoryContext(
         query_value,
         _sha256_hex(query_value),
         String(store_sha256),
@@ -375,6 +431,7 @@ function agent_memory_context(
         rendered,
         _sha256_hex(rendered),
     )
+    return validate_agent_memory_context(context)
 end
 
 function retrieve_agent_memory_context(

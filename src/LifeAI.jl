@@ -53,6 +53,7 @@ include("agent/tools.jl")
 include("agent/memory.jl")
 include("agent/tool_loop.jl")
 include("agent/environment.jl")
+include("agent/environment_memory.jl")
 
 # Task-level quality evaluation.
 include("eval/task_quality.jl")

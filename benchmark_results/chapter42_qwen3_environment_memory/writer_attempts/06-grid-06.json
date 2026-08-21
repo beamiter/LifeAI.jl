@@ -1,0 +1,568 @@
+{
+    "schema_version": 1,
+    "task_index": 6,
+    "task_id": "grid/06",
+    "run_id": "chapter42/write/grid-06",
+    "admitted": true,
+    "reason": "admitted",
+    "transitions": 6,
+    "accepted_transitions": 6,
+    "blocked_transitions": 0,
+    "terminal": true,
+    "success": true,
+    "journal_before_sha256": "e201e7d7d08f66610ceb4d6e8597203cca85197c9a273acba0f3f25c4418798c",
+    "journal_after_sha256": "fc80947b5539cf4509c3b047fa0b57b27d985654f3f5f2cd950e3fa202c111b0",
+    "writeback": {
+        "policy": "verified_successful_episode_v1",
+        "run_id": "chapter42/write/grid-06",
+        "admitted": true,
+        "reason": "admitted",
+        "event_ids": [
+            "environment-event/chapter42/write/grid-06/verified_successful_episode"
+        ],
+        "appended_ids": [
+            "environment-event/chapter42/write/grid-06/verified_successful_episode"
+        ],
+        "existing_ids": [
+        ],
+        "store_before_sha256": "e201e7d7d08f66610ceb4d6e8597203cca85197c9a273acba0f3f25c4418798c",
+        "store_after_sha256": "fc80947b5539cf4509c3b047fa0b57b27d985654f3f5f2cd950e3fa202c111b0",
+        "source_trace_sha256": "f37b34984248eb9909279be40182d0d11fdeead635564a304fe1185f44dc7cdb",
+        "transition_chain_sha256": "a72ea29938c75bab065603e7dc13f4aa4cfd34dd04db8727bf51b638fa4cf4f2"
+    },
+    "trace": {
+        "schema_version": 2,
+        "environment": "deterministic_gridworld",
+        "task": "grid/06",
+        "spec_sha256": "b9f0ad0cfbb248d180eb610a8b0c5da2276834698c2f20aad70dfff6664bde5d",
+        "feedback": "full",
+        "system_prompt": "You control a deterministic hidden-wall GridWorld. Coordinates use a top-left origin: x increases east and y increases south. Reach the goal using only the move tool. Choose a direction listed in the latest observation's legal_actions, issue exactly one move call, then inspect the returned observation before deciding again. Never invent a position or claim success before an observation has terminal=true and success=true. This episode is eligible for verified-memory admission only if every move is accepted. The latest observation's legal_actions list is authoritative and already excludes walls and boundaries. Before every move, reread that list and issue exactly one direction copied from it. Never probe, batch, guess, or retry a direction absent from legal_actions: even if the goal is eventually reached, one blocked move makes the whole episode ineligible.",
+        "system_prompt_sha256": "c8f343bd35de6d3b15122d142929af1942f99f75888a2b48c97adfdfc41d30c7",
+        "memory": null,
+        "initial_observation": {
+            "schema_version": 1,
+            "environment": "deterministic_gridworld",
+            "task_id": "grid/06",
+            "step": 0,
+            "position": {
+                "x": 5,
+                "y": 2
+            },
+            "goal": {
+                "x": 1,
+                "y": 2
+            },
+            "legal_actions": [
+                "north",
+                "south"
+            ],
+            "remaining_actions": 12,
+            "terminal": false,
+            "success": false,
+            "state_sha256": "97c92730fb3b029feebf992cbb18682863b017480f8e07d1d58bd7a237ffc2b1"
+        },
+        "initial_observation_sha256": "09bbf03a506edf48c9225e0046b78407e9a3f53145fa45b0564e4f4e22ceea0a",
+        "transitions": [
+            {
+                "step": 1,
+                "action": {
+                    "name": "move",
+                    "value": "north"
+                },
+                "accepted": true,
+                "reason": "moved",
+                "before_state_sha256": "97c92730fb3b029feebf992cbb18682863b017480f8e07d1d58bd7a237ffc2b1",
+                "after_state_sha256": "61029888a7c9abf19b75d6ceba6141177c4b022492839efafe7b99feeade3499",
+                "observation": {
+                    "schema_version": 1,
+                    "environment": "deterministic_gridworld",
+                    "task_id": "grid/06",
+                    "step": 1,
+                    "position": {
+                        "x": 5,
+                        "y": 1
+                    },
+                    "goal": {
+                        "x": 1,
+                        "y": 2
+                    },
+                    "legal_actions": [
+                        "south",
+                        "west"
+                    ],
+                    "remaining_actions": 11,
+                    "terminal": false,
+                    "success": false,
+                    "state_sha256": "61029888a7c9abf19b75d6ceba6141177c4b022492839efafe7b99feeade3499"
+                },
+                "observation_sha256": "e0068b883dad18ef4270b04e73bf92df098b2b4e189e55f57bcb58dc2914e80e",
+                "transition_sha256": "663f9f4eee689546b41b63ac88d4d059dab277c88828fa6325832a74d8fc286e"
+            },
+            {
+                "step": 2,
+                "action": {
+                    "name": "move",
+                    "value": "west"
+                },
+                "accepted": true,
+                "reason": "moved",
+                "before_state_sha256": "61029888a7c9abf19b75d6ceba6141177c4b022492839efafe7b99feeade3499",
+                "after_state_sha256": "3c111beb6b90d155698b9b0cb59b666b306002fe53d65395172dd3a08893e50b",
+                "observation": {
+                    "schema_version": 1,
+                    "environment": "deterministic_gridworld",
+                    "task_id": "grid/06",
+                    "step": 2,
+                    "position": {
+                        "x": 4,
+                        "y": 1
+                    },
+                    "goal": {
+                        "x": 1,
+                        "y": 2
+                    },
+                    "legal_actions": [
+                        "east",
+                        "west"
+                    ],
+                    "remaining_actions": 10,
+                    "terminal": false,
+                    "success": false,
+                    "state_sha256": "3c111beb6b90d155698b9b0cb59b666b306002fe53d65395172dd3a08893e50b"
+                },
+                "observation_sha256": "032010f815f266c85a7fbbd56fa796dc50764ead2f9cef1409841988efe39d79",
+                "transition_sha256": "da65a7c6c13a7417a50e2de54e727531b7ed011aa7b97aaeaa20bc2569fdd342"
+            },
+            {
+                "step": 3,
+                "action": {
+                    "name": "move",
+                    "value": "west"
+                },
+                "accepted": true,
+                "reason": "moved",
+                "before_state_sha256": "3c111beb6b90d155698b9b0cb59b666b306002fe53d65395172dd3a08893e50b",
+                "after_state_sha256": "61fee47b415acf94571dc6e8e587fd21812adce8d413ab2665ef4baf54c5eb90",
+                "observation": {
+                    "schema_version": 1,
+                    "environment": "deterministic_gridworld",
+                    "task_id": "grid/06",
+                    "step": 3,
+                    "position": {
+                        "x": 3,
+                        "y": 1
+                    },
+                    "goal": {
+                        "x": 1,
+                        "y": 2
+                    },
+                    "legal_actions": [
+                        "east",
+                        "west"
+                    ],
+                    "remaining_actions": 9,
+                    "terminal": false,
+                    "success": false,
+                    "state_sha256": "61fee47b415acf94571dc6e8e587fd21812adce8d413ab2665ef4baf54c5eb90"
+                },
+                "observation_sha256": "e7e7b3701e6bdf0acef9c5088c54bfc32e0ccbf55de608e6fc6c643277dc0844",
+                "transition_sha256": "d4f89558d9ace0d1974800eb313eebe5673b894adc547fc51f4991d1fa5ac842"
+            },
+            {
+                "step": 4,
+                "action": {
+                    "name": "move",
+                    "value": "west"
+                },
+                "accepted": true,
+                "reason": "moved",
+                "before_state_sha256": "61fee47b415acf94571dc6e8e587fd21812adce8d413ab2665ef4baf54c5eb90",
+                "after_state_sha256": "8641d20f678e53be8dcd76954aea0c274639c373f824c27ec82bf0c78e170939",
+                "observation": {
+                    "schema_version": 1,
+                    "environment": "deterministic_gridworld",
+                    "task_id": "grid/06",
+                    "step": 4,
+                    "position": {
+                        "x": 2,
+                        "y": 1
+                    },
+                    "goal": {
+                        "x": 1,
+                        "y": 2
+                    },
+                    "legal_actions": [
+                        "east",
+                        "west"
+                    ],
+                    "remaining_actions": 8,
+                    "terminal": false,
+                    "success": false,
+                    "state_sha256": "8641d20f678e53be8dcd76954aea0c274639c373f824c27ec82bf0c78e170939"
+                },
+                "observation_sha256": "fdce524f16b09448a65e12e9cf5b5e78760120b886b098d0c1c2240d19ed1194",
+                "transition_sha256": "e90bc3577ef92e6654d823c013da5c7a8503ab357d8d78266bab049dec56517b"
+            },
+            {
+                "step": 5,
+                "action": {
+                    "name": "move",
+                    "value": "west"
+                },
+                "accepted": true,
+                "reason": "moved",
+                "before_state_sha256": "8641d20f678e53be8dcd76954aea0c274639c373f824c27ec82bf0c78e170939",
+                "after_state_sha256": "7d17f64187c06817bb00fd3498014b6e2ce6f4317e53e4f6e10c60e2b8b2d42e",
+                "observation": {
+                    "schema_version": 1,
+                    "environment": "deterministic_gridworld",
+                    "task_id": "grid/06",
+                    "step": 5,
+                    "position": {
+                        "x": 1,
+                        "y": 1
+                    },
+                    "goal": {
+                        "x": 1,
+                        "y": 2
+                    },
+                    "legal_actions": [
+                        "east",
+                        "south"
+                    ],
+                    "remaining_actions": 7,
+                    "terminal": false,
+                    "success": false,
+                    "state_sha256": "7d17f64187c06817bb00fd3498014b6e2ce6f4317e53e4f6e10c60e2b8b2d42e"
+                },
+                "observation_sha256": "64065aa84fde61cff79ae9ae7682b591b6b57e00e2dd8d07cd8093c2d3d9a98a",
+                "transition_sha256": "6f7039663446cd0fdfc2e2898b9d42ad2dfa02f61563a526db37b9fe2506a5c1"
+            },
+            {
+                "step": 6,
+                "action": {
+                    "name": "move",
+                    "value": "south"
+                },
+                "accepted": true,
+                "reason": "goal_reached",
+                "before_state_sha256": "7d17f64187c06817bb00fd3498014b6e2ce6f4317e53e4f6e10c60e2b8b2d42e",
+                "after_state_sha256": "fa47352cbe912611de0bbe26f3d1d9428d2d779ef690cbd73b1401adf16e990a",
+                "observation": {
+                    "schema_version": 1,
+                    "environment": "deterministic_gridworld",
+                    "task_id": "grid/06",
+                    "step": 6,
+                    "position": {
+                        "x": 1,
+                        "y": 2
+                    },
+                    "goal": {
+                        "x": 1,
+                        "y": 2
+                    },
+                    "legal_actions": [
+                    ],
+                    "remaining_actions": 6,
+                    "terminal": true,
+                    "success": true,
+                    "state_sha256": "fa47352cbe912611de0bbe26f3d1d9428d2d779ef690cbd73b1401adf16e990a"
+                },
+                "observation_sha256": "c68d9b6e8259f394d14155a027f2c17a04c71a61c59793d41db092ff06fc0bdd",
+                "transition_sha256": "3022e8ee72ff0ac9195b36a7b517c301388d0a425f36d5b3ba0a085e028538d2"
+            }
+        ],
+        "agent_steps": [
+            {
+                "turn": 1,
+                "prompt_sha256": "d3f5ebf0bcc71ee8b369cd9f5fb72cb70bbb43ddefff42f34a567daca30d510f",
+                "prompt_token_count": 517,
+                "completion": "<tool_call>\n{\"name\": \"move\", \"arguments\": {\"direction\": \"north\"}}\n</tool_call>",
+                "generated_ids": [
+                    151658,
+                    199,
+                    4914,
+                    607,
+                    789,
+                    331,
+                    3398,
+                    498,
+                    331,
+                    16371,
+                    789,
+                    5213,
+                    19072,
+                    789,
+                    331,
+                    61896,
+                    95643,
+                    151659,
+                    151646
+                ],
+                "stop_reason": "eos",
+                "validity": "valid",
+                "tool_calls": [
+                    {
+                        "name": "move",
+                        "arguments": "{\"direction\": \"north\"}",
+                        "ok": true,
+                        "output": "{\"schema_version\":1,\"environment\":\"deterministic_gridworld\",\"task_id\":\"grid/06\",\"step\":1,\"position\":{\"x\":5,\"y\":1},\"goal\":{\"x\":1,\"y\":2},\"legal_actions\":[\"south\",\"west\"],\"remaining_actions\":11,\"terminal\":false,\"success\":false,\"state_sha256\":\"61029888a7c9abf19b75d6ceba6141177c4b022492839efafe7b99feeade3499\"}",
+                        "error": null,
+                        "coerced_arguments": [
+                        ]
+                    }
+                ]
+            },
+            {
+                "turn": 2,
+                "prompt_sha256": "914fb1d9a656c0a957b6f0213f77e3808f9b904de524e63c6766db0f6bc1c4e9",
+                "prompt_token_count": 676,
+                "completion": "<tool_call>\n{\"name\": \"move\", \"arguments\": {\"direction\": \"west\"}}\n</tool_call>",
+                "generated_ids": [
+                    151658,
+                    199,
+                    4914,
+                    607,
+                    789,
+                    331,
+                    3398,
+                    498,
+                    331,
+                    16371,
+                    789,
+                    5213,
+                    19072,
+                    789,
+                    331,
+                    11040,
+                    95643,
+                    151659,
+                    151646
+                ],
+                "stop_reason": "eos",
+                "validity": "valid",
+                "tool_calls": [
+                    {
+                        "name": "move",
+                        "arguments": "{\"direction\": \"west\"}",
+                        "ok": true,
+                        "output": "{\"schema_version\":1,\"environment\":\"deterministic_gridworld\",\"task_id\":\"grid/06\",\"step\":2,\"position\":{\"x\":4,\"y\":1},\"goal\":{\"x\":1,\"y\":2},\"legal_actions\":[\"east\",\"west\"],\"remaining_actions\":10,\"terminal\":false,\"success\":false,\"state_sha256\":\"3c111beb6b90d155698b9b0cb59b666b306002fe53d65395172dd3a08893e50b\"}",
+                        "error": null,
+                        "coerced_arguments": [
+                        ]
+                    }
+                ]
+            },
+            {
+                "turn": 3,
+                "prompt_sha256": "7ae539d99b111c8e3a1de389cf1c0113925be35b3fe7fbbdc940530a472c5e7d",
+                "prompt_token_count": 840,
+                "completion": "<tool_call>\n{\"name\": \"move\", \"arguments\": {\"direction\": \"west\"}}\n</tool_call>",
+                "generated_ids": [
+                    151658,
+                    199,
+                    4914,
+                    607,
+                    789,
+                    331,
+                    3398,
+                    498,
+                    331,
+                    16371,
+                    789,
+                    5213,
+                    19072,
+                    789,
+                    331,
+                    11040,
+                    95643,
+                    151659,
+                    151646
+                ],
+                "stop_reason": "eos",
+                "validity": "valid",
+                "tool_calls": [
+                    {
+                        "name": "move",
+                        "arguments": "{\"direction\": \"west\"}",
+                        "ok": true,
+                        "output": "{\"schema_version\":1,\"environment\":\"deterministic_gridworld\",\"task_id\":\"grid/06\",\"step\":3,\"position\":{\"x\":3,\"y\":1},\"goal\":{\"x\":1,\"y\":2},\"legal_actions\":[\"east\",\"west\"],\"remaining_actions\":9,\"terminal\":false,\"success\":false,\"state_sha256\":\"61fee47b415acf94571dc6e8e587fd21812adce8d413ab2665ef4baf54c5eb90\"}",
+                        "error": null,
+                        "coerced_arguments": [
+                        ]
+                    }
+                ]
+            },
+            {
+                "turn": 4,
+                "prompt_sha256": "e76a8967ada655d0caea91e9d852aee118dd8367d5a5eca947735e54c838acec",
+                "prompt_token_count": 996,
+                "completion": "<tool_call>\n{\"name\": \"move\", \"arguments\": {\"direction\": \"west\"}}\n</tool_call>",
+                "generated_ids": [
+                    151658,
+                    199,
+                    4914,
+                    607,
+                    789,
+                    331,
+                    3398,
+                    498,
+                    331,
+                    16371,
+                    789,
+                    5213,
+                    19072,
+                    789,
+                    331,
+                    11040,
+                    95643,
+                    151659,
+                    151646
+                ],
+                "stop_reason": "eos",
+                "validity": "valid",
+                "tool_calls": [
+                    {
+                        "name": "move",
+                        "arguments": "{\"direction\": \"west\"}",
+                        "ok": true,
+                        "output": "{\"schema_version\":1,\"environment\":\"deterministic_gridworld\",\"task_id\":\"grid/06\",\"step\":4,\"position\":{\"x\":2,\"y\":1},\"goal\":{\"x\":1,\"y\":2},\"legal_actions\":[\"east\",\"west\"],\"remaining_actions\":8,\"terminal\":false,\"success\":false,\"state_sha256\":\"8641d20f678e53be8dcd76954aea0c274639c373f824c27ec82bf0c78e170939\"}",
+                        "error": null,
+                        "coerced_arguments": [
+                        ]
+                    }
+                ]
+            },
+            {
+                "turn": 5,
+                "prompt_sha256": "e6c20b22174b55a586615b42a27ce450a67d70ea9659783fcabc2fd632893e43",
+                "prompt_token_count": 1158,
+                "completion": "<tool_call>\n{\"name\": \"move\", \"arguments\": {\"direction\": \"west\"}}\n</tool_call>",
+                "generated_ids": [
+                    151658,
+                    199,
+                    4914,
+                    607,
+                    789,
+                    331,
+                    3398,
+                    498,
+                    331,
+                    16371,
+                    789,
+                    5213,
+                    19072,
+                    789,
+                    331,
+                    11040,
+                    95643,
+                    151659,
+                    151646
+                ],
+                "stop_reason": "eos",
+                "validity": "valid",
+                "tool_calls": [
+                    {
+                        "name": "move",
+                        "arguments": "{\"direction\": \"west\"}",
+                        "ok": true,
+                        "output": "{\"schema_version\":1,\"environment\":\"deterministic_gridworld\",\"task_id\":\"grid/06\",\"step\":5,\"position\":{\"x\":1,\"y\":1},\"goal\":{\"x\":1,\"y\":2},\"legal_actions\":[\"east\",\"south\"],\"remaining_actions\":7,\"terminal\":false,\"success\":false,\"state_sha256\":\"7d17f64187c06817bb00fd3498014b6e2ce6f4317e53e4f6e10c60e2b8b2d42e\"}",
+                        "error": null,
+                        "coerced_arguments": [
+                        ]
+                    }
+                ]
+            },
+            {
+                "turn": 6,
+                "prompt_sha256": "b11ec10ec0868c6c3ad3310d412ecc15cce586b328de29b1d3e8f4bac9d2dfd3",
+                "prompt_token_count": 1323,
+                "completion": "<tool_call>\n{\"name\": \"move\", \"arguments\": {\"direction\": \"south\"}}\n</tool_call>",
+                "generated_ids": [
+                    151658,
+                    199,
+                    4914,
+                    607,
+                    789,
+                    331,
+                    3398,
+                    498,
+                    331,
+                    16371,
+                    789,
+                    5213,
+                    19072,
+                    789,
+                    331,
+                    66485,
+                    95643,
+                    151659,
+                    151646
+                ],
+                "stop_reason": "eos",
+                "validity": "valid",
+                "tool_calls": [
+                    {
+                        "name": "move",
+                        "arguments": "{\"direction\": \"south\"}",
+                        "ok": true,
+                        "output": "{\"schema_version\":1,\"environment\":\"deterministic_gridworld\",\"task_id\":\"grid/06\",\"step\":6,\"position\":{\"x\":1,\"y\":2},\"goal\":{\"x\":1,\"y\":2},\"legal_actions\":[],\"remaining_actions\":6,\"terminal\":true,\"success\":true,\"state_sha256\":\"fa47352cbe912611de0bbe26f3d1d9428d2d779ef690cbd73b1401adf16e990a\"}",
+                        "error": null,
+                        "coerced_arguments": [
+                        ]
+                    }
+                ]
+            },
+            {
+                "turn": 7,
+                "prompt_sha256": "d902541d47331432ba55ce1515d8e65b40ac8ee27faca1e29d06129527a64aa7",
+                "prompt_token_count": 1478,
+                "completion": "The goal has been reached successfully. The episode is complete with all moves accepted.",
+                "generated_ids": [
+                    786,
+                    5796,
+                    703,
+                    1013,
+                    8644,
+                    7791,
+                    14,
+                    577,
+                    9235,
+                    375,
+                    4584,
+                    449,
+                    679,
+                    10798,
+                    11667,
+                    14,
+                    151646
+                ],
+                "stop_reason": "eos",
+                "validity": "none",
+                "tool_calls": [
+                ]
+            }
+        ],
+        "answer": "The goal has been reached successfully. The episode is complete with all moves accepted.",
+        "agent_stop_reason": "answered",
+        "terminal": true,
+        "success": true,
+        "final_state_sha256": "fa47352cbe912611de0bbe26f3d1d9428d2d779ef690cbd73b1401adf16e990a",
+        "summary": {
+            "task_id": "grid/06",
+            "feedback": "full",
+            "terminal": true,
+            "success": true,
+            "model_turns": 7,
+            "actions": 6,
+            "accepted_actions": 6,
+            "rejected_actions": 0,
+            "tool_calls": 6,
+            "tool_failures": 0,
+            "invalid_actions": 0,
+            "stop_reason": "answered",
+            "final_state_sha256": "fa47352cbe912611de0bbe26f3d1d9428d2d779ef690cbd73b1401adf16e990a"
+        }
+    },
+    "run_start_sha256": "9b8d6d03e3b4143a7819685a0bdb9ac3f0901a7ffc55f225f9c52d0bed231fd7"
+}

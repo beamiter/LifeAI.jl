@@ -227,6 +227,14 @@ end
             "qwen3_moe_host_buffer_reuse_test.jl",
         ))
     end
+
+    @testset "Chapter 41 — Qwen3 MoE grouped scattered dispatch" begin
+        include(chapter_test(
+            "episode06_qwen3_moe_and_model_expansion",
+            "chapter41_qwen3_moe_grouped_scattered",
+            "qwen3_moe_grouped_scattered_test.jl",
+        ))
+    end
 end
 
 @testset "Episode 07 — Agent closed loop" begin
@@ -281,6 +289,14 @@ end
             "test_deterministic_gridworld.jl",
         ))
     end
+
+    @testset "Chapter 42 — Environment-event memory" begin
+        include(chapter_test(
+            "episode08_environment_action_loop",
+            "chapter42_environment_event_memory",
+            "test_environment_event_memory.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
@@ -305,5 +321,6 @@ if lowercase(get(ENV, "LIFEAI_TEST_CUDA", "false")) in ("1", "true", "yes")
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter29_qwen3_moe_scattered_reuse", "qwen3_moe_scattered_reuse_cuda_test.jl"))
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter30_qwen3_moe_async_miss_pipeline", "qwen3_moe_async_miss_pipeline_cuda_test.jl"))
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter35_qwen3_moe_host_buffer_reuse", "qwen3_moe_host_buffer_reuse_cuda_test.jl"))
+        include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter41_qwen3_moe_grouped_scattered", "qwen3_moe_grouped_scattered_cuda_test.jl"))
     end
 end

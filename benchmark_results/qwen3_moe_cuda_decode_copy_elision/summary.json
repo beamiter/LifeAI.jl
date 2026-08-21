@@ -39,7 +39,7 @@
     },
     "baseline": {
         "source_report": "benchmark_results/qwen3_moe_cuda_coalesced_reads/summary.json",
-        "source_report_sha256": "a18b528d2a08adbc8770a3c316e88add337f6da1d42d490921daeb0686b3a64c",
+        "source_report_sha256": "c22cd64ef573d7676e0c766a64a0684a7284672d8fc32186327890749ffcb493",
         "implementation": "copied_multidimensional_decode",
         "cold": {
             "request_seconds_median": 17.122054112,
@@ -238,8 +238,8 @@
     },
     "source_sha256": {
         "benchmark_script": "3d36709b78b26afc51d18ae93d5d910ede6e11c0ec1c8e87c81163823e798ab6",
-        "safetensors_implementation": "84a4798ebb03232b05af37294921b651676e063a0384850ef5b5acfb02564a23",
-        "streaming_implementation": "21e5467ec21ddab8e5a578536544014b8bc6b36e54368f41a5a03e7acd75375d",
-        "offload_implementation": "945726df1dad90bd0aae64b2fa70353682e89d4b3faa765dd6195b2bd54ead83"
+        "safetensors_implementation": "be7b58adce167db198d95564120e45bc6d2f67d7e6c42996e30170d1b6718159",
+        "streaming_implementation": "5e5acb0ec569da47870a53ca8e8fe9aa22d13fb222525f3e6c83ee5e68aae446",
+        "offload_implementation": "eb770d5ea88bd0bd504ffd8f5ee1724d002fd0b6859cf7e13e1094bf070ce804"
     }
 }

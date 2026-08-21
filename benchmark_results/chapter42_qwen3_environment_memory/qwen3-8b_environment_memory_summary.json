@@ -1,0 +1,617 @@
+{
+    "schema_version": 1,
+    "label": "qwen3-8b",
+    "tasks": "/home/ubuntu/projects/LifeAI.jl/test/episodes/episode08_environment_action_loop/chapter40_deterministic_gridworld/fixtures/gridworld_tasks.json",
+    "tasks_sha256": "037ec76c95aa24d1429de11bf6d9cd988c0b056cd177f9c5354bc37d37a5377f",
+    "evaluated_tasks": 8,
+    "coordinate_system": "origin_top_left_x_east_y_south",
+    "generation": {
+        "model": "/home/ubuntu/models/modelscope/Qwen/Qwen3-8B",
+        "model_id": "Qwen/Qwen3-8B",
+        "variant": "qwen3_8b",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "device": "NVIDIA GeForce RTX 4090 D",
+        "context_tokens": 4096,
+        "max_new_tokens": 96,
+        "strategy": "greedy",
+        "enable_thinking": false,
+        "load_seconds": 105.580356745,
+        "config_sha256": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30",
+        "tokenizer_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+        "tokenizer_config_sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
+        "generation_config_sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2",
+        "assets": {
+            "directory": "/home/ubuntu/models/modelscope/Qwen/Qwen3-8B",
+            "files": [
+                {
+                    "path": "config.json",
+                    "bytes": 728,
+                    "sha256": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30"
+                },
+                {
+                    "path": "generation_config.json",
+                    "bytes": 239,
+                    "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+                },
+                {
+                    "path": "model-00001-of-00005.safetensors",
+                    "bytes": 3996250744,
+                    "sha256": "31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f"
+                },
+                {
+                    "path": "model-00002-of-00005.safetensors",
+                    "bytes": 3993160032,
+                    "sha256": "5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282"
+                },
+                {
+                    "path": "model-00003-of-00005.safetensors",
+                    "bytes": 3959604768,
+                    "sha256": "c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836"
+                },
+                {
+                    "path": "model-00004-of-00005.safetensors",
+                    "bytes": 3187841392,
+                    "sha256": "b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a"
+                },
+                {
+                    "path": "model-00005-of-00005.safetensors",
+                    "bytes": 1244659840,
+                    "sha256": "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff"
+                },
+                {
+                    "path": "model.safetensors.index.json",
+                    "bytes": 32878,
+                    "sha256": "f9fdbcb91c23971c13ec5d5f2573d2349e8f61f2f049371ec699281748fdb1bc"
+                },
+                {
+                    "path": "tokenizer.json",
+                    "bytes": 11422654,
+                    "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+                },
+                {
+                    "path": "tokenizer_config.json",
+                    "bytes": 9732,
+                    "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+                }
+            ],
+            "total_bytes": 16392983007,
+            "manifest_sha256": "34defbccd40ecd11a4259d2f82d2c4ff838825e1bbbc0254dbe67d926551a7f0"
+        }
+    },
+    "embedding": {
+        "model": "/home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B",
+        "model_id": "Qwen/Qwen3-Embedding-0.6B",
+        "variant": "qwen3_embedding_0_6b",
+        "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+        "device": "cpu",
+        "dimension": 1024,
+        "max_length": 256,
+        "seconds": 23.590421871,
+        "config_sha256": "b5bf1f51fc45be473a54718cef92448d90a1be001bf9b9a44b8c7f10a19feaa9",
+        "model_sha256": "0437e45c94563b09e13cb7a64478fc406947a93cb34a7e05870fc8dcd48e23fd",
+        "assets": {
+            "directory": "/home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B",
+            "files": [
+                {
+                    "path": "config.json",
+                    "bytes": 727,
+                    "sha256": "b5bf1f51fc45be473a54718cef92448d90a1be001bf9b9a44b8c7f10a19feaa9"
+                },
+                {
+                    "path": "tokenizer.json",
+                    "bytes": 11423705,
+                    "sha256": "def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a"
+                },
+                {
+                    "path": "tokenizer_config.json",
+                    "bytes": 9706,
+                    "sha256": "253153d0738ceb4c668d2eff957714dd2bea0b56de772a9fdccd96cbf517e6a0"
+                },
+                {
+                    "path": "generation_config.json",
+                    "bytes": 117,
+                    "sha256": "28396d421a2108acce96383f6a7de78008f7f1b17f807958f3c14c51dbfb65fb"
+                },
+                {
+                    "path": "modules.json",
+                    "bytes": 349,
+                    "sha256": "84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf"
+                },
+                {
+                    "path": "config_sentence_transformers.json",
+                    "bytes": 215,
+                    "sha256": "10667c72ddb772627bf1780cb7f86af8e2ae0032b8c243c731172064105c6961"
+                },
+                {
+                    "path": "1_Pooling/config.json",
+                    "bytes": 313,
+                    "sha256": "37bf193fa101f19101bfad9c31d3eb0f786e247b7b1e5cb7f007d730eed1ddbd"
+                },
+                {
+                    "path": "model.safetensors",
+                    "bytes": 1191586416,
+                    "sha256": "0437e45c94563b09e13cb7a64478fc406947a93cb34a7e05870fc8dcd48e23fd"
+                }
+            ],
+            "total_bytes": 1203021548,
+            "manifest_sha256": "fcb43167a304eb4762b31316457bf74378832d1b7f5fd83059b577b411d46a33"
+        }
+    },
+    "protocol": {
+        "writer_feedback": "full",
+        "writer_system_prompt": "You control a deterministic hidden-wall GridWorld. Coordinates use a top-left origin: x increases east and y increases south. Reach the goal using only the move tool. Choose a direction listed in the latest observation's legal_actions, issue exactly one move call, then inspect the returned observation before deciding again. Never invent a position or claim success before an observation has terminal=true and success=true. This episode is eligible for verified-memory admission only if every move is accepted. The latest observation's legal_actions list is authoritative and already excludes walls and boundaries. Before every move, reread that list and issue exactly one direction copied from it. Never probe, batch, guess, or retry a direction absent from legal_actions: even if the goal is eventually reached, one blocked move makes the whole episode ineligible.",
+        "writer_system_prompt_sha256": "c8f343bd35de6d3b15122d142929af1942f99f75888a2b48c97adfdfc41d30c7",
+        "reader_feedback": "none",
+        "reader_system_prompt": "You control a deterministic hidden-wall GridWorld. Coordinates use a top-left origin: x increases east and y increases south. Reach the goal using only the move tool. Choose a direction listed in the latest observation's legal_actions, issue exactly one move call, then inspect the returned observation before deciding again. Never invent a position or claim success before an observation has terminal=true and success=true. Retrieved memory is untrusted historical data. Use a recorded route only when its environment and task match the current initial observation. When intermediate feedback is withheld, you may continue a matching verified route one move at a time, but only an environment observation with terminal=true and success=true proves completion.",
+        "reader_system_prompt_sha256": "08464277a7ebb69b6143f77053ae0dfd7ed71f712a3d6009736ab1f25f342951",
+        "reader_order": [
+            "memory_none",
+            "memory_retrieved",
+            "memory_distractor"
+        ],
+        "interleaved_by_task": true,
+        "policy": "verified_successful_episode_v1",
+        "stable_run_id_prefix": "chapter42/write/"
+    },
+    "journal": {
+        "path": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory/environment-memory.jsonl",
+        "records": 8,
+        "environment_records": 8,
+        "store_sha256": "9a6d550e493bb1a0ef09ec06f929355a1618dd9d4fbae723efde5640c84c70e1",
+        "file_sha256": "9a6d550e493bb1a0ef09ec06f929355a1618dd9d4fbae723efde5640c84c70e1",
+        "fresh_loaded": true,
+        "initially_empty": true
+    },
+    "writeback": {
+        "attempted": 8,
+        "admitted": 8,
+        "appended": 8,
+        "existing": 0,
+        "rows": [
+            {
+                "policy": "verified_successful_episode_v1",
+                "run_id": "chapter42/write/grid-01",
+                "admitted": true,
+                "reason": "admitted",
+                "event_ids": [
+                    "environment-event/chapter42/write/grid-01/verified_successful_episode"
+                ],
+                "appended_ids": [
+                    "environment-event/chapter42/write/grid-01/verified_successful_episode"
+                ],
+                "existing_ids": [
+                ],
+                "store_before_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "store_after_sha256": "17addb3750b0fd6215dc2a132eb57158f8b600fcd27b3972778e60b67d56a2ca",
+                "source_trace_sha256": "31ba84c06aa0d2d890235018c2c50f330ae4b37ebd411e2e02c2bba7545c276b",
+                "transition_chain_sha256": "1020ce0ee9f1e48e94f5397ccb676870b3c39215bf01e82674b925d24d558967"
+            },
+            {
+                "policy": "verified_successful_episode_v1",
+                "run_id": "chapter42/write/grid-02",
+                "admitted": true,
+                "reason": "admitted",
+                "event_ids": [
+                    "environment-event/chapter42/write/grid-02/verified_successful_episode"
+                ],
+                "appended_ids": [
+                    "environment-event/chapter42/write/grid-02/verified_successful_episode"
+                ],
+                "existing_ids": [
+                ],
+                "store_before_sha256": "17addb3750b0fd6215dc2a132eb57158f8b600fcd27b3972778e60b67d56a2ca",
+                "store_after_sha256": "0af6ee296c5ce3e278ecb57c24438da2bdb7a11d1f927d6abea3d840371e4bf0",
+                "source_trace_sha256": "876d59552fba4b4fa6b97756543e419da9a43fe0017d7926704fb28d838843be",
+                "transition_chain_sha256": "70e42dfb04312f753eca1d2f55be2fca6802d002ba66f6925bbc54bce1bb08ba"
+            },
+            {
+                "policy": "verified_successful_episode_v1",
+                "run_id": "chapter42/write/grid-03",
+                "admitted": true,
+                "reason": "admitted",
+                "event_ids": [
+                    "environment-event/chapter42/write/grid-03/verified_successful_episode"
+                ],
+                "appended_ids": [
+                    "environment-event/chapter42/write/grid-03/verified_successful_episode"
+                ],
+                "existing_ids": [
+                ],
+                "store_before_sha256": "0af6ee296c5ce3e278ecb57c24438da2bdb7a11d1f927d6abea3d840371e4bf0",
+                "store_after_sha256": "f3e80e0b4e80edc20b2c0c1e46c10717429e9287cf9bf77eb5eeb8366a34ee80",
+                "source_trace_sha256": "30dff490ce2fbb3499410285b6c6d24f224d2a3b3db1e3abc8be7d30dac1d3bc",
+                "transition_chain_sha256": "429099ad198d8e1ae47ead9f5fffd18667997aada9a393745fc81a77e70ae421"
+            },
+            {
+                "policy": "verified_successful_episode_v1",
+                "run_id": "chapter42/write/grid-04",
+                "admitted": true,
+                "reason": "admitted",
+                "event_ids": [
+                    "environment-event/chapter42/write/grid-04/verified_successful_episode"
+                ],
+                "appended_ids": [
+                    "environment-event/chapter42/write/grid-04/verified_successful_episode"
+                ],
+                "existing_ids": [
+                ],
+                "store_before_sha256": "f3e80e0b4e80edc20b2c0c1e46c10717429e9287cf9bf77eb5eeb8366a34ee80",
+                "store_after_sha256": "9b215e853c208214ca04f19615f25cfa22c0ecee8961d5dea82cfd504c90f870",
+                "source_trace_sha256": "3a6ae6ae074af5f8a1d5cbd1b2cc13a5b66d52bff3de90e8757a40440d584f48",
+                "transition_chain_sha256": "84afbcf6b7463b4e8dd6f95d7ebff86b1f6fdb9b895b5763b704b81e67446f18"
+            },
+            {
+                "policy": "verified_successful_episode_v1",
+                "run_id": "chapter42/write/grid-05",
+                "admitted": true,
+                "reason": "admitted",
+                "event_ids": [
+                    "environment-event/chapter42/write/grid-05/verified_successful_episode"
+                ],
+                "appended_ids": [
+                    "environment-event/chapter42/write/grid-05/verified_successful_episode"
+                ],
+                "existing_ids": [
+                ],
+                "store_before_sha256": "9b215e853c208214ca04f19615f25cfa22c0ecee8961d5dea82cfd504c90f870",
+                "store_after_sha256": "e201e7d7d08f66610ceb4d6e8597203cca85197c9a273acba0f3f25c4418798c",
+                "source_trace_sha256": "91dcd0c20b869008c70e1a47871cb850fa2d02df1c233c9fb149cda8ba4d8944",
+                "transition_chain_sha256": "b6d82c43f111e88a73ad545196928e7696e8f19025ae696d3cf9e209f7cdf72b"
+            },
+            {
+                "policy": "verified_successful_episode_v1",
+                "run_id": "chapter42/write/grid-06",
+                "admitted": true,
+                "reason": "admitted",
+                "event_ids": [
+                    "environment-event/chapter42/write/grid-06/verified_successful_episode"
+                ],
+                "appended_ids": [
+                    "environment-event/chapter42/write/grid-06/verified_successful_episode"
+                ],
+                "existing_ids": [
+                ],
+                "store_before_sha256": "e201e7d7d08f66610ceb4d6e8597203cca85197c9a273acba0f3f25c4418798c",
+                "store_after_sha256": "fc80947b5539cf4509c3b047fa0b57b27d985654f3f5f2cd950e3fa202c111b0",
+                "source_trace_sha256": "f37b34984248eb9909279be40182d0d11fdeead635564a304fe1185f44dc7cdb",
+                "transition_chain_sha256": "a72ea29938c75bab065603e7dc13f4aa4cfd34dd04db8727bf51b638fa4cf4f2"
+            },
+            {
+                "policy": "verified_successful_episode_v1",
+                "run_id": "chapter42/write/grid-07",
+                "admitted": true,
+                "reason": "admitted",
+                "event_ids": [
+                    "environment-event/chapter42/write/grid-07/verified_successful_episode"
+                ],
+                "appended_ids": [
+                    "environment-event/chapter42/write/grid-07/verified_successful_episode"
+                ],
+                "existing_ids": [
+                ],
+                "store_before_sha256": "fc80947b5539cf4509c3b047fa0b57b27d985654f3f5f2cd950e3fa202c111b0",
+                "store_after_sha256": "d65a92bdccb58d80680e89ab78258824f673238e653363ae990aa01df3166420",
+                "source_trace_sha256": "02e3cbc81eb8f82df070daf7b34d31fd8bea68f20f9ae778e3604cea9e467d06",
+                "transition_chain_sha256": "11ada991cddec900149e9f90668549be8832986d5b9cea097b6774337572ad1c"
+            },
+            {
+                "policy": "verified_successful_episode_v1",
+                "run_id": "chapter42/write/grid-08",
+                "admitted": true,
+                "reason": "admitted",
+                "event_ids": [
+                    "environment-event/chapter42/write/grid-08/verified_successful_episode"
+                ],
+                "appended_ids": [
+                    "environment-event/chapter42/write/grid-08/verified_successful_episode"
+                ],
+                "existing_ids": [
+                ],
+                "store_before_sha256": "d65a92bdccb58d80680e89ab78258824f673238e653363ae990aa01df3166420",
+                "store_after_sha256": "9a6d550e493bb1a0ef09ec06f929355a1618dd9d4fbae723efde5640c84c70e1",
+                "source_trace_sha256": "dd4f2b9b661211f0e56f04296de2e36f899f74fc9cc7cb5b2d71f45cc001111c",
+                "transition_chain_sha256": "4def2887956b388e446bd42d9e543df41b2570c64f8a56584df4ca15dd39f293"
+            }
+        ]
+    },
+    "retrieval": {
+        "total": 8,
+        "top1_correct": 8,
+        "recall_at_1": 1,
+        "exact_spec_matches": 8,
+        "rows": [
+            {
+                "id": "grid/01",
+                "query": "Recall a verified successful route for deterministic GridWorld task grid/01, from start [1,1] to goal [3,1].",
+                "query_sha256": "5e06938f4968b3d24444f40ca104a6c88bb25b49da7cdcee8c81b8b7a0e15587",
+                "expected_id": "environment-event/chapter42/write/grid-01/verified_successful_episode",
+                "raw_top1_id": "environment-event/chapter42/write/grid-01/verified_successful_episode",
+                "safe_context_id": "environment-event/chapter42/write/grid-01/verified_successful_episode",
+                "score": 0.8586527,
+                "correct": true
+            },
+            {
+                "id": "grid/02",
+                "query": "Recall a verified successful route for deterministic GridWorld task grid/02, from start [4,1] to goal [2,1].",
+                "query_sha256": "4670da9927c676bd57ceef69e9176736ff70aaa23c9bff3fadd04704b39457fb",
+                "expected_id": "environment-event/chapter42/write/grid-02/verified_successful_episode",
+                "raw_top1_id": "environment-event/chapter42/write/grid-02/verified_successful_episode",
+                "safe_context_id": "environment-event/chapter42/write/grid-02/verified_successful_episode",
+                "score": 0.8459571,
+                "correct": true
+            },
+            {
+                "id": "grid/03",
+                "query": "Recall a verified successful route for deterministic GridWorld task grid/03, from start [1,4] to goal [1,2].",
+                "query_sha256": "438032caa5beed9e0937fe028eaa31e313ffebd7eb04cc7cb8f0ada980a7c81e",
+                "expected_id": "environment-event/chapter42/write/grid-03/verified_successful_episode",
+                "raw_top1_id": "environment-event/chapter42/write/grid-03/verified_successful_episode",
+                "safe_context_id": "environment-event/chapter42/write/grid-03/verified_successful_episode",
+                "score": 0.85990125,
+                "correct": true
+            },
+            {
+                "id": "grid/04",
+                "query": "Recall a verified successful route for deterministic GridWorld task grid/04, from start [3,4] to goal [3,2].",
+                "query_sha256": "2428ba336a1d3e0e7b50a8c45e4c5a0a589bcdc28a8e2fdbc4f4618922783b98",
+                "expected_id": "environment-event/chapter42/write/grid-04/verified_successful_episode",
+                "raw_top1_id": "environment-event/chapter42/write/grid-04/verified_successful_episode",
+                "safe_context_id": "environment-event/chapter42/write/grid-04/verified_successful_episode",
+                "score": 0.85571134,
+                "correct": true
+            },
+            {
+                "id": "grid/05",
+                "query": "Recall a verified successful route for deterministic GridWorld task grid/05, from start [1,2] to goal [5,2].",
+                "query_sha256": "49347ecf95dc04b4d9bb9c752d88f70fb2193daa9cc02c0e52adb2749e465fc7",
+                "expected_id": "environment-event/chapter42/write/grid-05/verified_successful_episode",
+                "raw_top1_id": "environment-event/chapter42/write/grid-05/verified_successful_episode",
+                "safe_context_id": "environment-event/chapter42/write/grid-05/verified_successful_episode",
+                "score": 0.84931004,
+                "correct": true
+            },
+            {
+                "id": "grid/06",
+                "query": "Recall a verified successful route for deterministic GridWorld task grid/06, from start [5,2] to goal [1,2].",
+                "query_sha256": "ebcc070b7644ebdfb7eadedf6d7a27b9ee22358dbf25319672a5d13c13c999b8",
+                "expected_id": "environment-event/chapter42/write/grid-06/verified_successful_episode",
+                "raw_top1_id": "environment-event/chapter42/write/grid-06/verified_successful_episode",
+                "safe_context_id": "environment-event/chapter42/write/grid-06/verified_successful_episode",
+                "score": 0.84957397,
+                "correct": true
+            },
+            {
+                "id": "grid/07",
+                "query": "Recall a verified successful route for deterministic GridWorld task grid/07, from start [1,1] to goal [5,5].",
+                "query_sha256": "2062a756e24058bdcfbe6771e4d0ffb1affff29c0661184608fe72b923389f8b",
+                "expected_id": "environment-event/chapter42/write/grid-07/verified_successful_episode",
+                "raw_top1_id": "environment-event/chapter42/write/grid-07/verified_successful_episode",
+                "safe_context_id": "environment-event/chapter42/write/grid-07/verified_successful_episode",
+                "score": 0.8492242,
+                "correct": true
+            },
+            {
+                "id": "grid/08",
+                "query": "Recall a verified successful route for deterministic GridWorld task grid/08, from start [5,5] to goal [1,1].",
+                "query_sha256": "f45e801dc91d727fb864e3694c88708c601b9cda3344d48152df9f38e0cab6d2",
+                "expected_id": "environment-event/chapter42/write/grid-08/verified_successful_episode",
+                "raw_top1_id": "environment-event/chapter42/write/grid-08/verified_successful_episode",
+                "safe_context_id": "environment-event/chapter42/write/grid-08/verified_successful_episode",
+                "score": 0.8471849,
+                "correct": true
+            }
+        ]
+    },
+    "token_match": {
+        "total": 8,
+        "equal": 8,
+        "mirrored_routes_non_solving": 8,
+        "rows": [
+            {
+                "id": "grid/01",
+                "mirrored_task": "grid/02",
+                "relevant_id": "environment-event/chapter42/write/grid-01/verified_successful_episode",
+                "distractor_id": "environment-event/chapter42/write/grid-02/verified_successful_episode",
+                "relevant_prompt_sha256": "eec2fa2d11f98a6b4bb6e0445144af6cccb348508e2e2e5c4fac7ffc24ce4dc3",
+                "distractor_prompt_sha256": "28371a3f702020e66c84a6b207187d51041afbf26962610a05e4f2fbb0b7b694",
+                "relevant_prompt_tokens": 666,
+                "distractor_prompt_tokens": 666,
+                "token_delta": 0,
+                "distractor_route_succeeds": false
+            },
+            {
+                "id": "grid/02",
+                "mirrored_task": "grid/01",
+                "relevant_id": "environment-event/chapter42/write/grid-02/verified_successful_episode",
+                "distractor_id": "environment-event/chapter42/write/grid-01/verified_successful_episode",
+                "relevant_prompt_sha256": "76f679c7b75c9df7e921a2596ac85ce721a8d2a11da8151769b003be083ffb3a",
+                "distractor_prompt_sha256": "cb44df492b67e826b1916a3597d39c397e9cf345915d3e4459f3fa0aab41ca04",
+                "relevant_prompt_tokens": 673,
+                "distractor_prompt_tokens": 673,
+                "token_delta": 0,
+                "distractor_route_succeeds": false
+            },
+            {
+                "id": "grid/03",
+                "mirrored_task": "grid/04",
+                "relevant_id": "environment-event/chapter42/write/grid-03/verified_successful_episode",
+                "distractor_id": "environment-event/chapter42/write/grid-04/verified_successful_episode",
+                "relevant_prompt_sha256": "149750c7a426d74f572ce42dd9b3aae1132a793cd8537d36b677617006fe7753",
+                "distractor_prompt_sha256": "9a3e8e75bb8c490f3897ce0dda88e6bfe0e3324305c553cc07d268e4f9def084",
+                "relevant_prompt_tokens": 674,
+                "distractor_prompt_tokens": 674,
+                "token_delta": 0,
+                "distractor_route_succeeds": false
+            },
+            {
+                "id": "grid/04",
+                "mirrored_task": "grid/03",
+                "relevant_id": "environment-event/chapter42/write/grid-04/verified_successful_episode",
+                "distractor_id": "environment-event/chapter42/write/grid-03/verified_successful_episode",
+                "relevant_prompt_sha256": "c1090af89332208b6c54673670bc70b14fe347e04008147e4eaa06a6e22d51d9",
+                "distractor_prompt_sha256": "17c65e58947601ace644f435b4ee6631e6409c309257df25f7ef5414ebf76324",
+                "relevant_prompt_tokens": 674,
+                "distractor_prompt_tokens": 674,
+                "token_delta": 0,
+                "distractor_route_succeeds": false
+            },
+            {
+                "id": "grid/05",
+                "mirrored_task": "grid/06",
+                "relevant_id": "environment-event/chapter42/write/grid-05/verified_successful_episode",
+                "distractor_id": "environment-event/chapter42/write/grid-06/verified_successful_episode",
+                "relevant_prompt_sha256": "587bcfb928c9e44bb760a85b647f3bde92dcd69f04df3c7df57ff74801b42f91",
+                "distractor_prompt_sha256": "ebeb16242e8302f8c2160973f6a450e11461ca0a9da66c1546eb1b551ab38b68",
+                "relevant_prompt_tokens": 682,
+                "distractor_prompt_tokens": 682,
+                "token_delta": 0,
+                "distractor_route_succeeds": false
+            },
+            {
+                "id": "grid/06",
+                "mirrored_task": "grid/05",
+                "relevant_id": "environment-event/chapter42/write/grid-06/verified_successful_episode",
+                "distractor_id": "environment-event/chapter42/write/grid-05/verified_successful_episode",
+                "relevant_prompt_sha256": "7ddf16dae17350eab2a5e369f837d1a04c09102de46711b8feb5398206b24b64",
+                "distractor_prompt_sha256": "f66e57124809eb5753f4c9676fed9e9184d81f60a96d0d274a64f20341e3cab2",
+                "relevant_prompt_tokens": 681,
+                "distractor_prompt_tokens": 681,
+                "token_delta": 0,
+                "distractor_route_succeeds": false
+            },
+            {
+                "id": "grid/07",
+                "mirrored_task": "grid/08",
+                "relevant_id": "environment-event/chapter42/write/grid-07/verified_successful_episode",
+                "distractor_id": "environment-event/chapter42/write/grid-08/verified_successful_episode",
+                "relevant_prompt_sha256": "01fc3391e8b6a2d6278987f70e8acc8aadb01bb2d8e86af15ab95dae2de37857",
+                "distractor_prompt_sha256": "1e76abac7b7d891880651b76304aaee8809f94733f508ac10b4606b1480da08d",
+                "relevant_prompt_tokens": 682,
+                "distractor_prompt_tokens": 682,
+                "token_delta": 0,
+                "distractor_route_succeeds": false
+            },
+            {
+                "id": "grid/08",
+                "mirrored_task": "grid/07",
+                "relevant_id": "environment-event/chapter42/write/grid-08/verified_successful_episode",
+                "distractor_id": "environment-event/chapter42/write/grid-07/verified_successful_episode",
+                "relevant_prompt_sha256": "db6072c8c87dbafec0a9f253da9f0485ee1bdd03bbdd774734d6dce6e56b0761",
+                "distractor_prompt_sha256": "51be84fb1eb9a01aafe8eef012bfa16908b16658c141f7ff3876361db45eba69",
+                "relevant_prompt_tokens": 683,
+                "distractor_prompt_tokens": 683,
+                "token_delta": 0,
+                "distractor_route_succeeds": false
+            }
+        ]
+    },
+    "environment": {
+        "writer": {
+            "total": 8,
+            "successes": 8,
+            "success_rate": 1,
+            "wilson_lower": 0.6755843804891231,
+            "wilson_upper": 1,
+            "terminal": 8,
+            "actions": 44,
+            "invalid_actions": 0,
+            "mean_actions": 5.5,
+            "mean_excess_actions": 0
+        },
+        "no_memory": {
+            "total": 8,
+            "successes": 0,
+            "success_rate": 0,
+            "wilson_lower": 0,
+            "wilson_upper": 0.3244156195108769,
+            "terminal": 8,
+            "actions": 88,
+            "invalid_actions": 70,
+            "mean_actions": 11,
+            "mean_excess_actions": null
+        },
+        "retrieved_memory": {
+            "total": 8,
+            "successes": 7,
+            "success_rate": 0.875,
+            "wilson_lower": 0.5291051942301386,
+            "wilson_upper": 0.9775830911367038,
+            "terminal": 8,
+            "actions": 52,
+            "invalid_actions": 13,
+            "mean_actions": 6.5,
+            "mean_excess_actions": 0
+        },
+        "matched_distractor": {
+            "total": 8,
+            "successes": 0,
+            "success_rate": 0,
+            "wilson_lower": 0,
+            "wilson_upper": 0.3244156195108769,
+            "terminal": 8,
+            "actions": 88,
+            "invalid_actions": 59,
+            "mean_actions": 11,
+            "mean_excess_actions": null
+        }
+    },
+    "paired": {
+        "no_memory_vs_retrieved": {
+            "paired": 8,
+            "both": 0,
+            "neither": 1,
+            "baseline_only": 0,
+            "variant_only": 7,
+            "baseline_correct": 0,
+            "variant_correct": 7,
+            "difference": 0.875,
+            "p_value": 0.015625
+        },
+        "distractor_vs_retrieved": {
+            "paired": 8,
+            "both": 0,
+            "neither": 1,
+            "baseline_only": 0,
+            "variant_only": 7,
+            "baseline_correct": 0,
+            "variant_correct": 7,
+            "difference": 0.875,
+            "p_value": 0.015625
+        },
+        "no_memory_vs_distractor": {
+            "paired": 8,
+            "both": 0,
+            "neither": 8,
+            "baseline_only": 0,
+            "variant_only": 0,
+            "baseline_correct": 0,
+            "variant_correct": 0,
+            "difference": 0,
+            "p_value": 1
+        }
+    },
+    "timing": {
+        "writer_seconds": 95.971934334,
+        "reader_seconds": 347.518905072
+    },
+    "provenance": {
+        "run_start": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory/run_start.json",
+        "run_start_sha256": "9b8d6d03e3b4143a7819685a0bdb9ac3f0901a7ffc55f225f9c52d0bed231fd7",
+        "writer_attempts": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory/writer_attempts",
+        "supersedes": {
+            "path": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory_pilot_attempt001/failure.json",
+            "sha256": "68f4f6716e9e5a4f212d4c82154cfe272b8842d1906116e14f6f1672c34b203f"
+        }
+    },
+    "outputs": {
+        "trace": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory/qwen3-8b_environment_memory_trace.jsonl",
+        "items": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory/qwen3-8b_environment_memory_items.jsonl",
+        "summary": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory/qwen3-8b_environment_memory_summary.json"
+    },
+    "source_sha256": {
+        "runner": "24328b716211c4beb943529bf77c3305a8b6ca56435b0557b6144d16e8c84973",
+        "environment": "8fb829368a23e591502a92557b83ff17d4e1269cd51d16401334a72dc526741e",
+        "environment_memory": "f3a9e36584c8f075073fca53f7b7fe1a67720776475ff534b3c2b1257fcbd57b",
+        "memory": "0084f24de149fb36e591749bb66a4fed7b645df0843f736333c0ca8b1af2542c"
+    }
+}

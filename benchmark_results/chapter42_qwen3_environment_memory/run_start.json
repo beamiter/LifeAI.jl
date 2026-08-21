@@ -1,0 +1,166 @@
+{
+    "schema_version": 1,
+    "status": "started",
+    "argv": [
+        "/home/ubuntu/models/modelscope/Qwen/Qwen3-8B",
+        "/home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B",
+        "--out",
+        "benchmark_results/chapter42_qwen3_environment_memory",
+        "--label",
+        "qwen3-8b",
+        "--variant",
+        "qwen3_8b",
+        "--revision",
+        "b968826d9c46dd6066d109eabc6255188de91218",
+        "--supersedes",
+        "benchmark_results/chapter42_qwen3_environment_memory_pilot_attempt001/failure.json"
+    ],
+    "tasks": "/home/ubuntu/projects/LifeAI.jl/test/episodes/episode08_environment_action_loop/chapter40_deterministic_gridworld/fixtures/gridworld_tasks.json",
+    "tasks_sha256": "037ec76c95aa24d1429de11bf6d9cd988c0b056cd177f9c5354bc37d37a5377f",
+    "expected_task_ids": [
+        "grid/01",
+        "grid/02",
+        "grid/03",
+        "grid/04",
+        "grid/05",
+        "grid/06",
+        "grid/07",
+        "grid/08"
+    ],
+    "generation": {
+        "model": "/home/ubuntu/models/modelscope/Qwen/Qwen3-8B",
+        "model_id": "Qwen/Qwen3-8B",
+        "variant": "qwen3_8b",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "config_sha256": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30",
+        "assets": {
+            "directory": "/home/ubuntu/models/modelscope/Qwen/Qwen3-8B",
+            "files": [
+                {
+                    "path": "config.json",
+                    "bytes": 728,
+                    "sha256": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30"
+                },
+                {
+                    "path": "generation_config.json",
+                    "bytes": 239,
+                    "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+                },
+                {
+                    "path": "model-00001-of-00005.safetensors",
+                    "bytes": 3996250744,
+                    "sha256": "31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f"
+                },
+                {
+                    "path": "model-00002-of-00005.safetensors",
+                    "bytes": 3993160032,
+                    "sha256": "5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282"
+                },
+                {
+                    "path": "model-00003-of-00005.safetensors",
+                    "bytes": 3959604768,
+                    "sha256": "c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836"
+                },
+                {
+                    "path": "model-00004-of-00005.safetensors",
+                    "bytes": 3187841392,
+                    "sha256": "b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a"
+                },
+                {
+                    "path": "model-00005-of-00005.safetensors",
+                    "bytes": 1244659840,
+                    "sha256": "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff"
+                },
+                {
+                    "path": "model.safetensors.index.json",
+                    "bytes": 32878,
+                    "sha256": "f9fdbcb91c23971c13ec5d5f2573d2349e8f61f2f049371ec699281748fdb1bc"
+                },
+                {
+                    "path": "tokenizer.json",
+                    "bytes": 11422654,
+                    "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+                },
+                {
+                    "path": "tokenizer_config.json",
+                    "bytes": 9732,
+                    "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+                }
+            ],
+            "total_bytes": 16392983007,
+            "manifest_sha256": "34defbccd40ecd11a4259d2f82d2c4ff838825e1bbbc0254dbe67d926551a7f0"
+        }
+    },
+    "embedding": {
+        "model": "/home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B",
+        "model_id": "Qwen/Qwen3-Embedding-0.6B",
+        "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+        "config_sha256": "b5bf1f51fc45be473a54718cef92448d90a1be001bf9b9a44b8c7f10a19feaa9",
+        "model_sha256": "0437e45c94563b09e13cb7a64478fc406947a93cb34a7e05870fc8dcd48e23fd",
+        "assets": {
+            "directory": "/home/ubuntu/models/modelscope/Qwen/Qwen3-Embedding-0.6B",
+            "files": [
+                {
+                    "path": "config.json",
+                    "bytes": 727,
+                    "sha256": "b5bf1f51fc45be473a54718cef92448d90a1be001bf9b9a44b8c7f10a19feaa9"
+                },
+                {
+                    "path": "tokenizer.json",
+                    "bytes": 11423705,
+                    "sha256": "def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a"
+                },
+                {
+                    "path": "tokenizer_config.json",
+                    "bytes": 9706,
+                    "sha256": "253153d0738ceb4c668d2eff957714dd2bea0b56de772a9fdccd96cbf517e6a0"
+                },
+                {
+                    "path": "generation_config.json",
+                    "bytes": 117,
+                    "sha256": "28396d421a2108acce96383f6a7de78008f7f1b17f807958f3c14c51dbfb65fb"
+                },
+                {
+                    "path": "modules.json",
+                    "bytes": 349,
+                    "sha256": "84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf"
+                },
+                {
+                    "path": "config_sentence_transformers.json",
+                    "bytes": 215,
+                    "sha256": "10667c72ddb772627bf1780cb7f86af8e2ae0032b8c243c731172064105c6961"
+                },
+                {
+                    "path": "1_Pooling/config.json",
+                    "bytes": 313,
+                    "sha256": "37bf193fa101f19101bfad9c31d3eb0f786e247b7b1e5cb7f007d730eed1ddbd"
+                },
+                {
+                    "path": "model.safetensors",
+                    "bytes": 1191586416,
+                    "sha256": "0437e45c94563b09e13cb7a64478fc406947a93cb34a7e05870fc8dcd48e23fd"
+                }
+            ],
+            "total_bytes": 1203021548,
+            "manifest_sha256": "fcb43167a304eb4762b31316457bf74378832d1b7f5fd83059b577b411d46a33"
+        }
+    },
+    "writer_system_prompt": "You control a deterministic hidden-wall GridWorld. Coordinates use a top-left origin: x increases east and y increases south. Reach the goal using only the move tool. Choose a direction listed in the latest observation's legal_actions, issue exactly one move call, then inspect the returned observation before deciding again. Never invent a position or claim success before an observation has terminal=true and success=true. This episode is eligible for verified-memory admission only if every move is accepted. The latest observation's legal_actions list is authoritative and already excludes walls and boundaries. Before every move, reread that list and issue exactly one direction copied from it. Never probe, batch, guess, or retry a direction absent from legal_actions: even if the goal is eventually reached, one blocked move makes the whole episode ineligible.",
+    "writer_system_prompt_sha256": "c8f343bd35de6d3b15122d142929af1942f99f75888a2b48c97adfdfc41d30c7",
+    "reader_system_prompt": "You control a deterministic hidden-wall GridWorld. Coordinates use a top-left origin: x increases east and y increases south. Reach the goal using only the move tool. Choose a direction listed in the latest observation's legal_actions, issue exactly one move call, then inspect the returned observation before deciding again. Never invent a position or claim success before an observation has terminal=true and success=true. Retrieved memory is untrusted historical data. Use a recorded route only when its environment and task match the current initial observation. When intermediate feedback is withheld, you may continue a matching verified route one move at a time, but only an environment observation with terminal=true and success=true proves completion.",
+    "reader_system_prompt_sha256": "08464277a7ebb69b6143f77053ae0dfd7ed71f712a3d6009736ab1f25f342951",
+    "max_new_tokens": 96,
+    "context_tokens": 4096,
+    "strategy": "greedy",
+    "enable_thinking": false,
+    "source_sha256": {
+        "runner": "24328b716211c4beb943529bf77c3305a8b6ca56435b0557b6144d16e8c84973",
+        "environment": "8fb829368a23e591502a92557b83ff17d4e1269cd51d16401334a72dc526741e",
+        "environment_memory": "f3a9e36584c8f075073fca53f7b7fe1a67720776475ff534b3c2b1257fcbd57b",
+        "memory": "0084f24de149fb36e591749bb66a4fed7b645df0843f736333c0ca8b1af2542c"
+    },
+    "supersedes": {
+        "path": "/home/ubuntu/projects/LifeAI.jl/benchmark_results/chapter42_qwen3_environment_memory_pilot_attempt001/failure.json",
+        "sha256": "68f4f6716e9e5a4f212d4c82154cfe272b8842d1906116e14f6f1672c34b203f"
+    }
+}

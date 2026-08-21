@@ -110,11 +110,13 @@ export load_agent_memory_store, append_agent_memory!, agent_memory_fingerprint
 export AgentMemoryIndex, AgentMemoryHit, AgentMemoryContext
 export build_agent_memory_index, retrieve_agent_memory, search_agent_memory
 export render_agent_memory_context, agent_memory_context
+export validate_agent_memory_context
 export retrieve_agent_memory_context, select_agent_memory_context
 export search_agent_memory_context
 
 # Deterministic environment/action loop
-export AGENT_ENVIRONMENT_FORMAT_VERSION, AbstractAgentEnvironment
+export AGENT_ENVIRONMENT_FORMAT_VERSION, AGENT_ENVIRONMENT_TRACE_FORMAT_VERSION
+export AbstractAgentEnvironment
 export GridWorldSpec, GridWorldEnvironment, gridworld_spec_fingerprint
 export AgentEnvironmentObservation, AgentEnvironmentAction
 export AgentEnvironmentTransition, AgentEnvironmentTrace
@@ -125,6 +127,18 @@ export gridworld_tool_registry, gridworld_system_prompt, gridworld_user_prompt
 export run_qwen3_environment_loop, agent_environment_summary
 export agent_environment_trace_payload, replay_qwen3_environment_trace
 export gridworld_shortest_actions, replay_gridworld_actions
+
+# Explicit environment-event memory writeback
+export AGENT_ENVIRONMENT_MEMORY_EVENT_VERSION
+export AgentEnvironmentMemoryPolicy, AgentEnvironmentMemoryEvent
+export AgentEnvironmentMemoryWriteback
+export gridworld_successful_episode_memory_policy
+export gridworld_memory_query, gridworld_memory_system_prompt
+export gridworld_memory_writer_system_prompt
+export agent_environment_memory_events, append_agent_environment_events!
+export validate_agent_environment_memory_record
+export agent_environment_memory_records
+export retrieve_gridworld_memory_context, select_gridworld_memory_context
 
 # Task-level quality evaluation
 export MMLUItem, GSM8KItem, EvalTaskSet, EvalItemResult, load_eval_tasks

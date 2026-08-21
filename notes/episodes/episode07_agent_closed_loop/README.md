@@ -47,4 +47,8 @@ planning/反思，或 observation/action 仿真接口；Chapter 39 的 12 题结
 
 ## 与 Episode 06 的关系
 
-Episode 06 仍为 Open，但它的剩余工作项（grouped scattered dispatch、full-window 40K prefill、剩余 allocation profiling）都需要 Qwen3-30B-A3B 的 61 GB checkpoint 与 RTX 4090 D 24 GiB；当前工作机是 RTX 5080 16 GiB 且本地没有该 checkpoint。Episode 07 不接管这些工作项，回到那台机器时 Episode 06 原样继续。
+Episode 07 关闭时，Episode 06 的 grouped scattered 仍等待 61 GB checkpoint 与
+RTX 4090 D；该历史依赖后来已在 Chapter 41 满足。pointer-backed grouped WMMA
+完成真实 30B exact/traffic/performance gate 后，Episode 06 已 Closed；full-window
+40K 与剩余 allocator attribution 被明确保留为独立专项，不再阻塞 agent/environment
+主线。当前工作回到 Episode 08 的环境事件记忆写回。

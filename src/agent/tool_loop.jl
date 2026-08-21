@@ -75,6 +75,7 @@ function _agent_initial_messages(
     messages = Any[]
     system_content = system === nothing ? nothing : String(system)
     if memory_context !== nothing
+        validate_agent_memory_context(memory_context)
         system_content = system_content === nothing ? memory_context.rendered :
             system_content * "\n\n" * memory_context.rendered
     end

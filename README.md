@@ -19,9 +19,13 @@ LifeAI.jl 沿四条相互连接的主线持续积累：
 
 ## 当前状态
 
-**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、直接消费分散 BF16 cache matrices 并有界复用状态的 CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。智能体侧已具备工具、跨请求持久记忆，以及由环境终态评分并可联合 replay 的确定性 observation/action 闭环。**
+**阶段判断：Qwen3 dense family 真实权重 parity 与 BF16 GPU 推理全闭环，Qwen3-Embedding-0.6B 与最小 dense exact semantic memory 也已完成真实 BF16 parity；RTX 4090 D 上的 dense 容量上限仍是已实证生成的 14B mixed RTN，日常部署选择 Qwen3-8B BF16。原始 Qwen3-30B-A3B 现已具备 40K-capacity BF16 GPU resident/offload session、global/layer-balanced device expert cache、scalar 与 grouped WMMA 直接消费分散 BF16 cache matrices 的 generation-safe CUDA dispatch，以及经过 storage I/O 验证的当前层 bounded parallel miss reads。grouped-scattered 对相同 grouped 数值契约逐位一致，2/32-token request 相对 active-3D materialization 加速 `10.745× / 6.103×`。智能体侧已具备工具、跨请求持久记忆、由环境终态评分并可联合 replay 的 observation/action 闭环，以及 clean successful 环境事件的显式写回、fresh-load exact-spec 检索和无反馈后续执行。**
 
-Chapter 01—40 均已 Closed，Episode 08 已 Open。[`Chapter 40 — 确定性 GridWorld observation/action 与真实反馈闭环`](notes/episodes/episode08_environment_action_loop/chapter40_deterministic_gridworld.md) 首次用环境终态而非模型自述判定任务成功：冻结 8 题的 BFS oracle 与 Qwen3-4B full-feedback 都是 `8/8`、44 个动作、0 个非法动作，模型逐题走出最短路；首轮 prompt 完全相同的 feedback-withheld 臂为 `0/8`、67 个非法/失败动作，配对 McNemar p=`0.0078125`。第二进程重算 148 / 148 prompts、140 / 140 tool outcomes、132 / 132 transitions 与 16 / 16 final states。
+Chapter 01—42 均已 Closed，Episode 06/07 已 Closed、Episode 08 已 Open。[`Chapter 42 — 显式环境事件记忆写回与因果验收`](notes/episodes/episode08_environment_action_loop/chapter42_environment_event_memory.md) 在 ModelScope Qwen3-8B / RTX 4090 D 上让 8 个 full-feedback writer 以 BFS 最短路 `8/8` clean success，显式写出 8 条事件；fresh-load 后 CPU Qwen3-Embedding raw top-1 / exact-spec 都是 `8/8`。三个无中间反馈 reader 臂为 no-memory `0/8`、retrieved `7/8`、等 token 且机械 non-solving 的 mirrored distractor `0/8`，相关记忆相对两组对照的双侧精确 McNemar p 均为 `0.015625`。`grid/08` 是正确检索后的执行失败，不是 retrieval miss；32 条轨迹已在不加载两套模型且不追加 journal 的第二进程完整 replay。环境事件记忆条目已关闭，下一步是跨 adapter timeout / execution failure / e-stop / idempotent action safety。
+
+[`Chapter 41 — Qwen3 MoE grouped scattered expert-cache dispatch`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter41_qwen3_moe_grouped_scattered.md) 在官方 30B 同进程 2-token 与 32-token 三路对照中，让 grouped WMMA 直接读取 generation-safe expert pointer tables；两条 grouped 路径的 prefill/decode logits、逐层 routes 与每次 I/O/cache traffic 全部 exact，并消除 `10.560 / 16.930 GB` logical active concat。模型线恢复时下一架构已确定为 Qwen3-VL。
+
+[`Chapter 40 — 确定性 GridWorld observation/action 与真实反馈闭环`](notes/episodes/episode08_environment_action_loop/chapter40_deterministic_gridworld.md) 首次用环境终态而非模型自述判定任务成功：冻结 8 题的 BFS oracle 与 Qwen3-4B full-feedback 都是 `8/8`、44 个动作、0 个非法动作，模型逐题走出最短路；首轮 prompt 完全相同的 feedback-withheld 臂为 `0/8`、67 个非法/失败动作，配对 McNemar p=`0.0078125`。第二进程重算 148 / 148 prompts、140 / 140 tool outcomes、132 / 132 transitions 与 16 / 16 final states。
 
 [`Chapter 39 — 跨请求、可回放的语义记忆闭环`](notes/episodes/episode07_agent_closed_loop/chapter39_persistent_semantic_memory.md) 已把版本化 append-only journal、fresh-load 严格恢复、exact semantic index 和 retrieval context 接入真实 Qwen3：冻结 12 个 private-fact tasks 上 retrieval top-1 / recall@1 均为 `12/12`，no-memory / retrieved / 等 token 干扰三臂为 `0/12 / 12/12 / 0/12`，两组精确 McNemar p 均为 `0.00048828125`；第二进程 36 / 36 条完整 prompt/context 轨迹 replay 一致。默认专项为 `100 / 100`，加真实 Qwen3-4B tokenizer 为 `112 / 112`。
 
@@ -56,7 +60,7 @@ Chapter 01—40 均已 Closed，Episode 08 已 Open。[`Chapter 40 — 确定性
   安全 streaming、context/options fail-closed 和 single-flight；轻量
   client 只读取 tokenizer，权重与 compiled executable 常驻 server。
 - full / dynamic / static KV Cache correctness matrix，以及 CPU、CUDA GPU、XLA CPU、XLA GPU 四后端 benchmark。
-- 原始 Qwen3 MoE 的 Float32 top-k router、逐 expert SwiGLU、full/dynamic/static cache，以及 Float32/native BF16 的路由后 active-expert 流式读取。官方 30B-A3B 的 48 层 prompt/cache-decode parity 已冻结：Float32 top-8 集合 `1,152 / 1,152` 一致、BF16 路由槽位重合 `95.92%`，两种模式最终 argmax 均一致。`HFQwen3MoEOffloadSession` 让 attention/router/norm/LM head 与 40K KV 常驻 GPU，expert 在路由后按层读取并用局部 id 交给 scalar 或 grouped WMMA；最坏工作集硬下限 `7.166 GiB`。device cache 可选 global/layer-balanced LRU，按实际 expert-layer bytes 预算，支持跨请求保留、显式清空和运行时重配；scalar CUDA 还可用 scattered pointer-table dispatch 消除 active tensor 拼接，有界复用 pointer/workspace state，并配置 forced-GC cadence。cache miss 可显式选择 bounded parallel host reads 与 CUDA pinned upload；32-token trace 的 reader 默认上限为 8。严格相邻 batch read 已实现，但真实 workload 证明 coalescing 更慢，默认仍逐 tensor 读取；同 dtype 多维 decode 已移除一份冗余 payload copy。
+- 原始 Qwen3 MoE 的 Float32 top-k router、逐 expert SwiGLU、full/dynamic/static cache，以及 Float32/native BF16 的路由后 active-expert 流式读取。官方 30B-A3B 的 48 层 prompt/cache-decode parity 已冻结：Float32 top-8 集合 `1,152 / 1,152` 一致、BF16 路由槽位重合 `95.92%`，两种模式最终 argmax 均一致。`HFQwen3MoEOffloadSession` 让 attention/router/norm/LM head 与 40K KV 常驻 GPU，expert 在路由后按层读取并用局部 id 交给 scalar 或 grouped WMMA；最坏工作集硬下限 `7.166 GiB`。device cache 可选 global/layer-balanced LRU，按实际 expert-layer bytes 预算，支持跨请求保留、显式清空和运行时重配；scalar 与 grouped CUDA 都可用 scattered pointer-table dispatch 消除 active tensor 拼接，有界复用 pointer/workspace state，并配置 forced-GC cadence。cache miss 可显式选择 bounded parallel host reads 与 CUDA pinned upload；32-token trace 的 reader 默认上限为 8。严格相邻 batch read 已实现，但真实 workload 证明 coalescing 更慢，默认仍逐 tensor 读取；同 dtype多维 decode、raw payload 与 pageable final host-matrix allocation 已依次消除。
 - 六个官方 Qwen3 dense 规格的 immutable revision/config checksum、自动识别、显式 variant 校验、精确参数量；严格的 BF16/F32 safetensors 单文件/分片读取、HF 参数映射与显式 0-based token-id 边界转换。
 - Qwen3-Embedding-0.6B 的独立 immutable revision/8-asset checksum、
   151,669-vocabulary/32K contract、embedding tokenizer 尾 token 与
@@ -68,7 +72,9 @@ Chapter 01—40 均已 Closed，Episode 08 已 Open。[`Chapter 40 — 确定性
 - 版本化 append-only agent memory journal：保存 source text 与 string metadata，
   fresh load 严格校验 schema/sequence/ID/checksum，启动时重建 exact embedding
   index；retrieval query、命中 ID/score、注入内容与 prompt 均带 sha256，可离线 replay。
-  冻结私有事实三臂实测为 `0/12 / 12/12 / 0/12`，相关记忆同时胜过无记忆与等 token 干扰。
+  冻结私有事实三臂实测为 `0/12 / 12/12 / 0/12`，相关记忆同时胜过无记忆与等 token 干扰；
+  clean successful GridWorld episode 还可经显式 policy 写为 canonical event，同 run ID 幂等，
+  authoritative spec/source binding 和生产 exact-spec context 均 fail closed。
 - Qwen3 weight-only INT8 per-channel / packed groupwise INT4，以及统一的
   `QuantizationPlan`：可按 one-based layer、projection 与独立 LM head
   选择 INT4/INT8/BF16，streamed/in-memory 路径共用策略；真实树统计与
@@ -94,7 +100,9 @@ Chapter 01—40 均已 Closed，Episode 08 已 Open。[`Chapter 40 — 确定性
   generated ids，可在不加载模型的情况下离线 replay。
 - 确定性环境闭环：通用 observation/action/transition 类型、hidden-wall GridWorld、唯一 allowlisted
   `move(direction)` 副作用面、动作预算和环境终态评分；Qwen3-4B full-feedback 8 / 8 最短路完成，
-  feedback-withheld 0 / 8，模型 prompt、工具结果和环境状态可联合 replay。
+  feedback-withheld 0 / 8，模型 prompt、工具结果和环境状态可联合 replay。Qwen3-8B 的 8 条 clean
+  writer 事件在 fresh-load 后 raw/exact-spec `8/8` 命中；无反馈 reader 的 no/retrieved/等 token 干扰
+  为 `0/8 / 7/8 / 0/8`，32 条 writer/reader 轨迹可 tokenizer-only replay。
 - full/dynamic/static/XLA 的真实 greedy text-generation parity。
 - 严格的 GPT-2 config、Float32 safetensors、Conv1D/fused-QKV 映射与 GPT-2 byte-level BPE adapter；冻结 revision/checksum 不匹配时 fail closed。
 - GPT-2 124M 的 10 组 tokenizer corpus、embedding、12 层 residual、final hidden、full logits 与 full/dynamic/static 8-step greedy text 均通过 Transformers reference parity。
@@ -105,7 +113,7 @@ Chapter 01—40 均已 Closed，Episode 08 已 Open。[`Chapter 40 — 确定性
 尚未具备：
 
 - GPT-2 的 WebText 从零训练、论文 zero-shot quality、Medium/Large/XL、cross-attention 与分类 head 未复现；当前完成的是 124M 官方 checkpoint 的 Float32 推理/架构复现。
-- Qwen3 MoE 官方 30B-A3B checkpoint 的 40K cache 容量、短/32-token GPU offload、跨请求 device LRU、中英文自然文本 cache-budget sweep、scalar CUDA scattered cache hit 与 500-request reuse 生命周期已实跑，但 full-window 40K prefill、长序列生成质量、grouped scattered dispatch、异步预取/pinned-memory 双缓冲、完整 AWQ/GPTQ、
+- Qwen3 MoE 官方 30B-A3B checkpoint 的 40K cache 容量、短/32-token GPU offload、跨请求 device LRU、中英文自然文本 cache-budget sweep、scalar/grouped CUDA scattered cache 与 500-request reuse 生命周期已实跑，但 full-window 40K prefill、长序列生成质量、layer-ahead 异步预取、grouped workspace byte cap、完整 AWQ/GPTQ、
   activation/KV-cache 量化与量化 GEMM；30B 的 48 层 prompt/cache-decode 真实 parity 与 dense 0.6B—32B 真实权重
   parity、native BF16、weight-only INT8/INT4 与 diagonal
   activation-aware clipping 已完成，不能再沿用早期“只验证 0.6B”的边界。
@@ -113,12 +121,13 @@ Chapter 01—40 均已 Closed，Episode 08 已 Open。[`Chapter 40 — 确定性
 - 更完整的质量评估：Chapter 37 只覆盖 0.6B/1.7B/4B 与 8 个 MMLU subject，且全部是 0-shot、
   greedy 单次；8B 及以上、5-shot、多 seed 方差与更大 token 预算下的 generative 上界都未做。
   本章数字是本仓库自己的基线，不能与官方榜单并列。
-- ANN/reranker、自动摘要/遗忘、并发 writer、规划与反思；Chapter 39 当前只有
-  单 writer append-only source journal、启动时 exact index 重建与 request-time
-  context 注入，不是完整长期记忆系统。
+- ANN/reranker、通用 redaction/摘要/遗忘、并发 writer、规划与反思；Chapter 42 仍是 single-writer
+  append-only journal，同 run ID 幂等但不同 run 可重复写同一事实，只接纳 clean successful GridWorld
+  episode，不是完整长期记忆系统。
 - 视觉、听觉和传感器输入等多模态感知。
-- 连续控制、动力学、外部 simulator 与实体机器人 adapter；Chapter 40 只有离散确定性 GridWorld、
-  enum action、预算和 fail-closed 边界，不等于具备真实设备控制或物理安全。
+- 连续控制、动力学、外部 simulator 与实体机器人 adapter；Chapter 40/42 只有离散确定性 GridWorld，
+  生产记忆强制 exact-spec，cross-spec 只用于 diagnostic control。timeout、execution failure、e-stop 与
+  idempotent action safety 尚未定义，不等于具备真实设备控制或物理安全。
 - 在线或持续学习机制。
 
 更详细的能力盘点、验证范围与建议里程碑见 [`notes/current_status.md`](notes/current_status.md)。

@@ -298,6 +298,145 @@ function _qwen3_cuda_grouped_bf16_wmma_m32n8k16_kernel!(
     return
 end
 
+@inline function _qwen3_cuda_scattered_projection_pointer(
+    pointers,
+    expert_index,
+    linear_index,
+)
+    raw_pointer = @inbounds pointers[expert_index]
+    base_pointer = reinterpret(
+        Core.LLVMPtr{BFloat16,CUDA.AS.Global},
+        raw_pointer,
+    )
+    return base_pointer + (linear_index - 1) * sizeof(BFloat16)
+end
+
+function _qwen3_cuda_grouped_scattered_bf16_wmma_m16n16k16_kernel!(
+    padded_output,
+    weight_pointers,
+    padded_inputs,
+    padded_offsets,
+    output_dim,
+    input_dim,
+    num_experts,
+    output_tiles,
+)
+    block_index = CUDA.blockIdx().x
+    output_tile = (block_index - 1) % output_tiles + 1
+    route_tile = (block_index - 1) ÷ output_tiles + 1
+    output_start = (output_tile - 1) * 16 + 1
+    route_start = (route_tile - 1) * 16 + 1
+    padded_stop = Int(padded_offsets[num_experts + 1])
+    if route_start < padded_stop
+        expert_index = 1
+        while expert_index <= num_experts &&
+                route_start >= Int(padded_offsets[expert_index + 1])
+            expert_index += 1
+        end
+        config = CUDA.WMMA.Config{16,16,16,Float32}
+        accumulator = CUDA.WMMA.fill_c(0.0f0, config)
+        input_start = 1
+        while input_start <= input_dim
+            weight_linear = output_start + (input_start - 1) * output_dim
+            input_linear = input_start + (route_start - 1) * input_dim
+            weight_fragment = CUDA.WMMA.load_a(
+                _qwen3_cuda_scattered_projection_pointer(
+                    weight_pointers,
+                    expert_index,
+                    weight_linear,
+                ),
+                output_dim,
+                CUDA.WMMA.ColMajor,
+                config,
+            )
+            input_fragment = CUDA.WMMA.load_b(
+                pointer(padded_inputs, input_linear),
+                input_dim,
+                CUDA.WMMA.ColMajor,
+                config,
+            )
+            accumulator = CUDA.WMMA.mma(
+                weight_fragment,
+                input_fragment,
+                accumulator,
+                config,
+            )
+            input_start += 16
+        end
+        output_linear = output_start + (route_start - 1) * output_dim
+        CUDA.WMMA.store_d(
+            pointer(padded_output, output_linear),
+            accumulator,
+            output_dim,
+            CUDA.WMMA.ColMajor,
+            config,
+        )
+    end
+    return
+end
+
+function _qwen3_cuda_grouped_scattered_bf16_wmma_m32n8k16_kernel!(
+    padded_output,
+    weight_pointers,
+    padded_inputs,
+    padded_offsets,
+    output_dim,
+    input_dim,
+    num_experts,
+    output_tiles,
+)
+    block_index = CUDA.blockIdx().x
+    output_tile = (block_index - 1) % output_tiles + 1
+    route_tile = (block_index - 1) ÷ output_tiles + 1
+    output_start = (output_tile - 1) * 32 + 1
+    route_start = (route_tile - 1) * 8 + 1
+    padded_stop = Int(padded_offsets[num_experts + 1])
+    if route_start < padded_stop
+        expert_index = 1
+        while expert_index <= num_experts &&
+                route_start >= Int(padded_offsets[expert_index + 1])
+            expert_index += 1
+        end
+        accumulator = (
+            0.0f0, 0.0f0, 0.0f0, 0.0f0,
+            0.0f0, 0.0f0, 0.0f0, 0.0f0,
+        )
+        input_start = 1
+        while input_start <= input_dim
+            weight_linear = output_start + (input_start - 1) * output_dim
+            input_linear = input_start + (route_start - 1) * input_dim
+            weight_fragment =
+                CUDA.WMMA.llvm_wmma_load_a_col_m32n8k16_global_stride_bf16(
+                    _qwen3_cuda_scattered_projection_pointer(
+                        weight_pointers,
+                        expert_index,
+                        weight_linear,
+                    ),
+                    output_dim,
+                )
+            input_fragment =
+                CUDA.WMMA.llvm_wmma_load_b_col_m32n8k16_global_stride_bf16(
+                    pointer(padded_inputs, input_linear),
+                    input_dim,
+                )
+            accumulator =
+                CUDA.WMMA.llvm_wmma_mma_col_col_m32n8k16_bf16(
+                    weight_fragment,
+                    input_fragment,
+                    accumulator,
+                )
+            input_start += 16
+        end
+        output_linear = output_start + (route_start - 1) * output_dim
+        CUDA.WMMA.llvm_wmma_store_d_col_m32n8k16_global_stride_f32(
+            pointer(padded_output, output_linear),
+            accumulator,
+            output_dim,
+        )
+    end
+    return
+end
+
 function _qwen3_cuda_unpack_grouped_f32_output_kernel!(
     output,
     padded_output,
@@ -428,6 +567,63 @@ function _qwen3_cuda_grouped_bf16_padded_matmul(
         CUDA.@cuda threads=32 blocks=(output_tiles * route_tiles) _qwen3_cuda_grouped_bf16_wmma_m16n16k16_kernel!(
             padded_output,
             weights,
+            padded_inputs,
+            padded_offsets,
+            output_dim,
+            input_dim,
+            num_experts,
+            output_tiles,
+        )
+    end
+    return padded_output
+end
+
+function _qwen3_cuda_grouped_scattered_bf16_padded_matmul!(
+    padded_output,
+    weight_pointers,
+    padded_inputs,
+    padded_offsets,
+    output_dim::Int,
+    input_dim::Int,
+    num_experts::Int,
+    padded_capacity::Int,
+    route_tile::Int,
+)
+    size(padded_output, 1) == output_dim &&
+        size(padded_output, 2) >= padded_capacity ||
+        throw(DimensionMismatch(
+            "grouped scattered output workspace has the wrong shape",
+        ))
+    size(padded_inputs, 1) == input_dim &&
+        size(padded_inputs, 2) >= padded_capacity ||
+        throw(DimensionMismatch(
+            "grouped scattered input workspace has the wrong shape",
+        ))
+    length(weight_pointers) == num_experts || throw(DimensionMismatch(
+        "grouped scattered pointer count does not match active experts",
+    ))
+    if route_tile == 8
+        output_tiles = output_dim ÷ 32
+        route_tiles = cld(padded_capacity, 8)
+        CUDA.@cuda threads=32 blocks=(output_tiles * route_tiles) _qwen3_cuda_grouped_scattered_bf16_wmma_m32n8k16_kernel!(
+            padded_output,
+            weight_pointers,
+            padded_inputs,
+            padded_offsets,
+            output_dim,
+            input_dim,
+            num_experts,
+            output_tiles,
+        )
+    else
+        route_tile == 16 || throw(ArgumentError(
+            "grouped scattered route tile must be 8 or 16",
+        ))
+        output_tiles = output_dim ÷ 16
+        route_tiles = cld(padded_capacity, 16)
+        CUDA.@cuda threads=32 blocks=(output_tiles * route_tiles) _qwen3_cuda_grouped_scattered_bf16_wmma_m16n16k16_kernel!(
+            padded_output,
+            weight_pointers,
             padded_inputs,
             padded_offsets,
             output_dim,
@@ -1313,10 +1509,27 @@ struct _Qwen3CUDAScatteredWorkspace
     bytes::Int
 end
 
+struct _Qwen3CUDAGroupedScatteredWorkspace
+    padded_tokens
+    padded_gate
+    padded_up
+    padded_hidden
+    padded_output
+    inverse_route_permutation
+    output
+    padded_capacity::Int
+    bytes::Int
+end
+
 mutable struct _Qwen3CUDAScatteredDispatchState
     pointer_plans::Dict{Int,Vector{_Qwen3CUDAScatteredPointerPlan}}
     workspaces::Dict{Tuple{Int,Int},_Qwen3CUDAScatteredWorkspace}
     workspace_last_used::Dict{Tuple{Int,Int},Int}
+    grouped_workspaces::Dict{
+        NTuple{3,Int},
+        _Qwen3CUDAGroupedScatteredWorkspace,
+    }
+    grouped_workspace_last_used::Dict{NTuple{3,Int},Int}
     clock::Int
     pointer_table_bytes::Int
     workspace_bytes::Int
@@ -1326,6 +1539,8 @@ _qwen3_cuda_scattered_state() = _Qwen3CUDAScatteredDispatchState(
     Dict{Int,Vector{_Qwen3CUDAScatteredPointerPlan}}(),
     Dict{Tuple{Int,Int},_Qwen3CUDAScatteredWorkspace}(),
     Dict{Tuple{Int,Int},Int}(),
+    Dict{NTuple{3,Int},_Qwen3CUDAGroupedScatteredWorkspace}(),
+    Dict{NTuple{3,Int},Int}(),
     0,
     0,
     0,
@@ -1426,6 +1641,205 @@ function _qwen3_cuda_scattered_workspace!(
     return workspace, true, false
 end
 
+function _qwen3_cuda_grouped_scattered_workspace!(
+    state::_Qwen3CUDAScatteredDispatchState,
+    tokens,
+    hidden_dim::Int,
+    pair_count::Int,
+    padded_capacity::Int,
+    route_tile::Int,
+)
+    d_model, num_tokens = size(tokens)
+    key = (num_tokens, pair_count, route_tile)
+    state.clock = Base.checked_add(state.clock, 1)
+    existing = get(state.grouped_workspaces, key, nothing)
+    if existing !== nothing &&
+            existing.padded_capacity >= padded_capacity
+        state.grouped_workspace_last_used[key] = state.clock
+        return existing, false, true
+    end
+
+    if existing !== nothing
+        delete!(state.grouped_workspaces, key)
+        delete!(state.grouped_workspace_last_used, key)
+        state.workspace_bytes -= existing.bytes
+    end
+
+    if length(state.grouped_workspaces) >= 4
+        victim = argmin(state.grouped_workspace_last_used)
+        evicted = pop!(state.grouped_workspaces, victim)
+        delete!(state.grouped_workspace_last_used, victim)
+        state.workspace_bytes -= evicted.bytes
+    end
+    padded_tokens = similar(
+        tokens,
+        BFloat16,
+        d_model,
+        padded_capacity,
+    )
+    padded_gate = similar(
+        tokens,
+        Float32,
+        hidden_dim,
+        padded_capacity,
+    )
+    padded_up = similar(
+        tokens,
+        Float32,
+        hidden_dim,
+        padded_capacity,
+    )
+    padded_hidden = similar(
+        tokens,
+        BFloat16,
+        hidden_dim,
+        padded_capacity,
+    )
+    padded_output = similar(
+        tokens,
+        Float32,
+        d_model,
+        padded_capacity,
+    )
+    inverse_route_permutation = similar(tokens, Int32, pair_count)
+    output = similar(tokens, Float32, d_model, num_tokens)
+    bytes =
+        sizeof(BFloat16) * d_model * padded_capacity +
+        2 * sizeof(Float32) * hidden_dim * padded_capacity +
+        sizeof(BFloat16) * hidden_dim * padded_capacity +
+        sizeof(Float32) * d_model * padded_capacity +
+        sizeof(Int32) * pair_count +
+        sizeof(Float32) * d_model * num_tokens
+    workspace = _Qwen3CUDAGroupedScatteredWorkspace(
+        padded_tokens,
+        padded_gate,
+        padded_up,
+        padded_hidden,
+        padded_output,
+        inverse_route_permutation,
+        output,
+        padded_capacity,
+        bytes,
+    )
+    state.grouped_workspaces[key] = workspace
+    state.grouped_workspace_last_used[key] = state.clock
+    state.workspace_bytes = Base.checked_add(state.workspace_bytes, bytes)
+    return workspace, true, false
+end
+
+function _qwen3_cuda_grouped_scattered_dispatch!(
+    state::_Qwen3CUDAScatteredDispatchState,
+    tokens,
+    expert_indices,
+    routing_weights,
+    pointer_plan::_Qwen3CUDAScatteredPointerPlan,
+    hidden_dim::Int,
+)
+    CUDA.capability(CUDA.device()) >= v"8.0" || throw(ArgumentError(
+        "grouped scattered BF16 dispatch requires an Ampere-or-newer CUDA device",
+    ))
+    d_model, num_tokens = size(tokens)
+    num_experts = length(pointer_plan.expert_ids)
+    experts_per_token = size(expert_indices, 1)
+    pair_count = experts_per_token * num_tokens
+    d_model % 16 == 0 || throw(ArgumentError(
+        "grouped scattered dispatch model dimension must be divisible by 16",
+    ))
+    hidden_dim % 16 == 0 || throw(ArgumentError(
+        "grouped scattered dispatch hidden dimension must be divisible by 16",
+    ))
+
+    buckets = qwen3_cuda_bucket_routes(expert_indices, num_experts)
+    route_tile = d_model % 32 == 0 && hidden_dim % 32 == 0 ? 8 : 16
+    layout = _qwen3_cuda_grouped_bf16_layout(
+        buckets.expert_counts,
+        num_experts,
+        pair_count,
+        route_tile,
+    )
+    workspace, workspace_allocated, workspace_reused =
+        _qwen3_cuda_grouped_scattered_workspace!(
+            state,
+            tokens,
+            hidden_dim,
+            pair_count,
+            layout.padded_capacity,
+            layout.route_tile,
+        )
+
+    threads = 256
+    token_blocks = cld(d_model * pair_count, threads)
+    CUDA.@cuda threads=threads blocks=token_blocks _qwen3_cuda_pack_padded_tokens_kernel!(
+        workspace.padded_tokens,
+        tokens,
+        buckets.route_permutation,
+        buckets.sorted_experts,
+        buckets.expert_offsets,
+        layout.padded_offsets,
+        d_model,
+        experts_per_token,
+        pair_count,
+    )
+    _qwen3_cuda_grouped_scattered_bf16_padded_matmul!(
+        workspace.padded_gate,
+        pointer_plan.gate_device,
+        workspace.padded_tokens,
+        layout.padded_offsets,
+        hidden_dim,
+        d_model,
+        num_experts,
+        layout.padded_capacity,
+        layout.route_tile,
+    )
+    _qwen3_cuda_grouped_scattered_bf16_padded_matmul!(
+        workspace.padded_up,
+        pointer_plan.up_device,
+        workspace.padded_tokens,
+        layout.padded_offsets,
+        hidden_dim,
+        d_model,
+        num_experts,
+        layout.padded_capacity,
+        layout.route_tile,
+    )
+    workspace.padded_hidden .= BFloat16.((
+        workspace.padded_gate ./
+        (1.0f0 .+ exp.(-workspace.padded_gate))
+    ) .* workspace.padded_up)
+    _qwen3_cuda_grouped_scattered_bf16_padded_matmul!(
+        workspace.padded_output,
+        pointer_plan.down_device,
+        workspace.padded_hidden,
+        layout.padded_offsets,
+        d_model,
+        hidden_dim,
+        num_experts,
+        layout.padded_capacity,
+        layout.route_tile,
+    )
+
+    inverse_blocks = cld(pair_count, threads)
+    CUDA.@cuda threads=threads blocks=inverse_blocks _qwen3_cuda_invert_route_permutation_kernel!(
+        workspace.inverse_route_permutation,
+        buckets.route_permutation,
+        pair_count,
+    )
+    combine_blocks = cld(length(workspace.output), threads)
+    CUDA.@cuda threads=threads blocks=combine_blocks _qwen3_cuda_combine_padded_grouped_routes_kernel!(
+        workspace.output,
+        workspace.padded_output,
+        workspace.inverse_route_permutation,
+        buckets.sorted_experts,
+        buckets.expert_offsets,
+        layout.padded_offsets,
+        routing_weights,
+        d_model,
+        num_tokens,
+        experts_per_token,
+    )
+    return workspace.output, workspace_allocated, workspace_reused
+end
+
 function LifeAI._qwen3_scattered_expert_dispatch(
     tokens::CUDA.CuArray{Float32,2},
     expert_indices::CUDA.CuArray{I,2},
@@ -1433,6 +1847,7 @@ function LifeAI._qwen3_scattered_expert_dispatch(
     scattered::LifeAI._Qwen3MoEScatteredExperts,
     existing_state,
     layer_index::Int,
+    grouped_experts::Bool=false,
 ) where {I<:Integer,R<:AbstractFloat}
     entries = scattered.entries
     num_experts = length(entries)
@@ -1480,6 +1895,30 @@ function LifeAI._qwen3_scattered_expert_dispatch(
     down_pointers = pointer_plan.down_device
     pointer_bytes_uploaded = pointer_table_built ? pointer_plan.bytes : 0
     pair_count = experts_per_token * num_tokens
+
+    if grouped_experts
+        output, workspace_allocated, workspace_reused =
+            _qwen3_cuda_grouped_scattered_dispatch!(
+                state,
+                tokens,
+                expert_indices,
+                routing_weights,
+                pointer_plan,
+                hidden_dim,
+            )
+        return (;
+            output,
+            state,
+            pointer_bytes_uploaded,
+            pointer_table_built,
+            pointer_table_reused,
+            workspace_allocated,
+            workspace_reused,
+            pointer_table_bytes=state.pointer_table_bytes,
+            workspace_bytes=state.workspace_bytes,
+        )
+    end
+
     workspace, workspace_allocated, workspace_reused =
         _qwen3_cuda_scattered_workspace!(
             state,

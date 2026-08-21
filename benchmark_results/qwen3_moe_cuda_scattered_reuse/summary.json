@@ -127,7 +127,7 @@
   },
   "source_sha256": {
     "benchmark_script": "d1ea17ac90a65eca67233fd3e2794d6f5053c37c05585d363d3d4c9f25d0fda3",
-    "offload_implementation": "945726df1dad90bd0aae64b2fa70353682e89d4b3faa765dd6195b2bd54ead83",
-    "cuda_extension": "49482b9648956df51b3c098b23795eb1187190f78dd0998e50c216f070c85661"
+    "offload_implementation": "42a491bf6b6bd4355bd1a666a5a695f756b8e192c8a95a2d5058eea1b9161ce3",
+    "cuda_extension": "7ebd589c467902170233efb0bbb2197bd3f541c3e695a05f8a93b430e8b363e5"
   }
 }
