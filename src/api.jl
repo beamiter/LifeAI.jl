@@ -24,6 +24,7 @@ export AbstractTokenizer, Tokenizer, ByteTokenizer, ByteBPETokenizer
 export HFQwen3Tokenizer, HFQwen3GenerationConfig
 export HFGPT2Tokenizer, HFGPT2GenerationConfig
 export hf_byte_unicode_alphabet, load_hf_qwen3_tokenizer, hf_generation_config
+export load_hf_qwen3_vl_tokenizer, apply_qwen3_vl_chat_template
 export load_hf_qwen3_embedding_tokenizer
 export hf_qwen3_pretokenize, apply_qwen3_chat_template
 export OrderedJSONObject, parse_qwen3_json
@@ -61,8 +62,13 @@ export load_hf_qwen3_vl_config, verify_qwen3_vl_checkpoint
 export Qwen3VLProcessorSpec, qwen3_vl_processor_spec
 export load_hf_qwen3_vl_processor_config, qwen3_vl_smart_resize
 export qwen3_vl_image_grid, qwen3_vl_image_token_count, qwen3_vl_patchify
+export Qwen3VLProcessedImage, qwen3_vl_process_image
+export qwen3_vl_expand_image_placeholders, Qwen3VLRopeLayout
+export qwen3_vl_rope_layout
 export Qwen3VLVisionInput, Qwen3VLVisionFeatures
 export load_hf_qwen3_vl_vision_parameters, hf_qwen3_vl_vision_forward
+export Qwen3VLTextPrefill, load_hf_qwen3_vl_text_parameters
+export hf_qwen3_vl_text_prefill, hf_qwen3_vl_prefill
 export stream_hf_qwen3_forward, stream_hf_qwen3_moe_forward
 export load_hf_qwen3_compact_model, load_hf_qwen3_compact_bundle
 export hf_qwen3_bf16_forward

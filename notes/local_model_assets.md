@@ -827,7 +827,7 @@ forward 为 `18.959 / 0.0641 s`，冷/热 embedding max-abs 为 `0`；
 token/mask、五档数值、15 组 top-k 与 semantic memory 门禁全部通过。
 普通沙箱内 `nvidia-smi` 因设备隔离失败，不代表宿主机驱动不可用。
 
-## Chapter 43 Qwen3-VL-2B-Instruct vision 资产
+## Chapter 43–44 Qwen3-VL-2B-Instruct 资产
 
 本章使用 ModelScope 国内源恢复完整官方仓库：
 
@@ -928,9 +928,74 @@ RTX 4090 D Float32 strict `visual_embeddings` max/mean/relative L2/cosine 为
 `3.188056864 / 11.916055118 / 0.056884242 s`，logical parameter bytes
 为 `813,914,112`。cold 含 Julia/CUDA 首次编译，不是 steady benchmark；warm
 是相同输入的显式同步复跑。BF16 结果不会被写成 strict parity。
-当前资产虽含 chat/video processor 文件，Chapter 43 只消费预处理后 image
-patch/grid 与 vision weights，不代表 raw decode、chat、decoder、generation 或
-video 已实现。
+
+### Chapter 44 processor/chat 与 multimodal prefill reference
+
+Chapter 44 不引入第二份 checkpoint：raw processor、VL tokenizer/chat 和 text
+decoder 继续消费上表同一 13-file immutable asset contract。独立 Transformers
+4.57.0 exporter 从 deterministic `256×256` raw RGB image 与 content-list
+`Describe.` message 出发，显式传入全一 attention mask，并在 DeepStack 原地修改
+hidden 前 clone 每个 capture。生成的仓库外 reference 为：
+
+| compute | reference directory | `reference.safetensors` SHA256 |
+| --- | --- | --- |
+| Float32 | `/tmp/qwen3-vl-prefill-f32` | `d7d3b58cea35cf90806bdd14ade7e453e1b486355b190d094ec95f852f6b60f5` |
+| BF16 | `/tmp/qwen3-vl-prefill-bf16` | `711749d9cb0d2c33b34c6fc87a4f9dd06bbf7cc52b589daf01f0210bd58cb5ae` |
+
+对应 `reference.json` SHA256 分别为 Float32
+`1141ef4c503800607d60d8fa23eb795b00d94a7ff879f97ac230abf05681362c`
+与 BF16 `7a941b837e7c6df13490386dc42160b9ac6f7d5befcc6bba148cc10e1e81afb5`；
+verifier 将 tensor 与 metadata 两类 SHA 都硬编码为准入条件。
+
+exporter 会 fail closed 地检查 CPython `3.10.12`、NumPy `1.26.4`、Pillow
+`11.3.0`、safetensors `0.5.3`、tokenizers `0.22.1`、Jinja2 `3.1.6`、PyTorch
+`2.7.1+cpu` 的 build revision/config、Transformers `4.57.0`、torchvision
+`0.22.1+cu126`、AVX2/MKL/OpenMP/MKLDNN 与固定的 `24/24` intra/inter-op
+threads。本机使用以下 frozen overlay：
+
+```bash
+QWEN3_VL_MODEL_DIR=/home/ubuntu/models/modelscope/Qwen/Qwen3-VL-2B-Instruct
+QWEN3_VL_ORACLE_PYTHONPATH=/tmp/lifeai-qwen3vl-oracle/lib/python3.10/site-packages:/tmp/lifeai-qwen3vl-uv-cache/archive-v0/SNUjiORDNkYR55Or
+
+PYTHONPATH="$QWEN3_VL_ORACLE_PYTHONPATH" \
+  .venv/bin/python scripts/export_qwen3_vl_prefill_reference.py \
+  "$QWEN3_VL_MODEL_DIR" /tmp/qwen3-vl-prefill-f32 float32
+
+PYTHONPATH="$QWEN3_VL_ORACLE_PYTHONPATH" \
+  .venv/bin/python scripts/export_qwen3_vl_prefill_reference.py \
+  "$QWEN3_VL_MODEL_DIR" /tmp/qwen3-vl-prefill-bf16 bfloat16
+
+julia --project=. --startup-file=no \
+  scripts/verify_qwen3_vl_prefill_cuda.jl \
+  "$QWEN3_VL_MODEL_DIR" /tmp/qwen3-vl-prefill-f32 cuda
+
+julia --project=. --startup-file=no \
+  scripts/verify_qwen3_vl_prefill_cuda.jl \
+  "$QWEN3_VL_MODEL_DIR" /tmp/qwen3-vl-prefill-bf16 cuda
+```
+
+当前 cache 中的 torchvision `0.22.1+cu126` wheel 缺少可加载的 C++ NMS op，
+但 Qwen3-VL image transform 不消费 NMS。exporter 只在 torchvision import
+期间忽略这个唯一缺失 op 的 fake-registration；其他 import 错误仍是 fatal，且
+resize/normalize 实现没有被替换。F32/BF16 reference 与 metadata 均已从头各重建
+一次并逐字节复现下列冻结 SHA，不能用该 workaround 绕过 processor 数值契约。
+
+RTX 4090 D verifier 在 `CUDA.allowscalar(false)` 下对 Float32/BF16 各跑通 80 个
+stage/semantic gates。两次输入均为 sequence `76`、image tokens `64`，raw
+processor max-abs `0`：
+
+| compute | logical parameter bytes | final hidden max-abs | logits max-abs | combined warm prefill |
+| --- | ---: | ---: | ---: | ---: |
+| Float32 | `8,510,128,128` | `0.00094986` | `0.00083363` | `0.703 s` |
+| BF16 | `4,255,064,064` | `6.9375` | `7.4375` | `0.751 s` |
+
+Float32 是 Chapter 44 strict correctness gate；BF16 仍是 CPU oracle 与 CUDA
+LifeAI 之间的跨后端舍入边界。`/tmp` 目录只代表本次机器上的工作副本，长期保留
+时应把 reference 移到仓库外的持久资产目录并记录同一 SHA256。
+
+Chapter 44 已消费 raw image、chat/tokenizer 和 decoder text weights，但仍没有
+multimodal KV cache、增量 decode、greedy image-to-text generation 或 video；
+真实验收也只覆盖单图、batch 1、全一 attention mask 和 sequence 76。
 
 ## Qwen3-30B-A3B 资产状态
 

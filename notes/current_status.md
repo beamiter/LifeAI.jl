@@ -2,11 +2,13 @@
 
 ## 一句话判断
 
-项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**，原始 Qwen3-30B-A3B MoE 也完成 61 GB 资产校验、Float32/native BF16 真实 parity，以及 RTX 4090 D 的 40K-capacity BF16 GPU resident/offload session。项目具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化。Qwen3-Embedding-0.6B 的独立 checkpoint/tokenizer contract、五档 MRL 与 dense exact semantic memory 也已完成真实 BF16 parity。Qwen3-VL-2B-Instruct 现已完成双 registry immutable provenance、625-tensor checkpoint contract、预处理后 patch/grid 边界，以及 vision tower、DeepStack 和 merger 的真实 Float32 GPU strict parity；当前仍不是 image-to-text 模型。RTX 4090 D 上，dense 14B mixed RTN 是已实证生成上限；日常 8B BF16 已完成 XLA single-residency 4K greedy 部署与 loopback 常驻 HTTP 服务。30B-A3B 的 global/layer-balanced device cache 现在同时支持 scalar 与 grouped BF16 WMMA 直接消费分散 cache matrices，并有界复用 generation-safe pointer/workspace state；grouped-scattered 对相同 grouped 数值契约逐位一致，在 2/32-token request 相对 active-3D materialization 加速 `10.745× / 6.103×`。智能体侧已有官方 tool protocol、多 step loop、跨请求持久记忆、由环境终态评分并可联合 replay 的确定性 observation/action 闭环，以及 clean successful 环境事件的显式写回、fresh-load exact-spec 检索与无反馈后续执行。
+项目已经形成一个可训练、可生成、可保存恢复、可评估比较，支持现代组件、KV Cache / XLA 路径，并具备版本化 Tokenizer 与文档级无泄漏中文数据管线的 decoder-only GPT；Qwen3 0.6B—32B **六个官方 dense 尺寸全部完成真实权重逐层 parity**，原始 Qwen3-30B-A3B MoE 也完成 61 GB 资产校验、Float32/native BF16 真实 parity，以及 RTX 4090 D 的 40K-capacity BF16 GPU resident/offload session。项目具备镜像 HF 语义的 **native BF16 混合精度推理路径**与可预算的 INT4/INT8/BF16 混合权重量化。Qwen3-Embedding-0.6B 的独立 checkpoint/tokenizer contract、五档 MRL 与 dense exact semantic memory 也已完成真实 BF16 parity。Qwen3-VL-2B-Instruct 现已完成双 registry immutable provenance、625-tensor checkpoint contract、raw image fast processor、content-list chat、vision tower、main/DeepStack visual injection、三轴 mRoPE 和完整 28-layer decoder prefill 的真实 Float32 GPU strict parity；当前仍没有 multimodal KV cache 或 image-to-text generation。RTX 4090 D 上，dense 14B mixed RTN 是已实证生成上限；日常 8B BF16 已完成 XLA single-residency 4K greedy 部署与 loopback 常驻 HTTP 服务。30B-A3B 的 global/layer-balanced device cache 现在同时支持 scalar 与 grouped BF16 WMMA 直接消费分散 cache matrices，并有界复用 generation-safe pointer/workspace state；grouped-scattered 对相同 grouped 数值契约逐位一致，在 2/32-token request 相对 active-3D materialization 加速 `10.745× / 6.103×`。智能体侧已有官方 tool protocol、多 step loop、跨请求持久记忆、由环境终态评分并可联合 replay 的确定性 observation/action 闭环，以及 clean successful 环境事件的显式写回、fresh-load exact-spec 检索与无反馈后续执行。
 
 ## 当前活动阶段
 
-[`Chapter 43 — Qwen3-VL 2B vision architecture 与真实权重 parity`](episodes/episode09_qwen3_vl_multimodal_perception/chapter43_qwen3_vl_vision_architecture.md) 已于 2026-08-21 Closed，同时开启 [`Episode 09 — Qwen3-VL 多模态感知`](episodes/episode09_qwen3_vl_multimodal_perception/README.md)。ModelScope revision `ae9985b…9c53` 与 Hugging Face revision `78448d…becd` 被分别冻结；4.255 GB 单文件包含 625 个 BF16 tensor、`2,127,532,032` 参数和 `4,255,064,064` payload bytes。预处理后 patch/grid、per-temporal-frame 24-layer vision tower、未 merge 的 `patch_hidden_state`、三份 merge 后 DeepStack 与供 decoder 消费的 `visual_embeddings` 已实现。RTX 4090 D Float32 strict `visual_embeddings` max/mean/relative L2/cosine 为 `6.771088e-5 / 2.2492045e-6 / 5.461097e-6 / 1.0`，warm forward `0.024733474 s`；BF16 的 `0.890625 / 0.02120505 / 0.05465893 / 0.9985048` 与 warm `0.056884242 s` 只记作跨后端边界。下一步 Chapter 44 是 raw processor/content-list chat 与 mRoPE decoder prefill，Chapter 45 再做 cache 和完整 image-to-text generation。
+[`Chapter 44 — Qwen3-VL processor/chat 与 mRoPE decoder prefill`](episodes/episode09_qwen3_vl_multimodal_perception/chapter44_qwen3_vl_multimodal_prefill.md) 已于 2026-08-21 Closed。它在 Chapter 43 的 vision 基础上补齐 raw PNG/JPEG/RGB decode、torchvision-compatible CPU UInt8 bicubic、content-list chat、placeholder expansion、T/H/W mRoPE、main visual replacement、三层 DeepStack injection 与完整 28-layer decoder prefill。ModelScope revision `ae9985b…9c53` / Hugging Face revision `78448d…becd` 继续绑定同一官方资产；Float32/BF16 reference SHA256 为 `d7d3b58c…b60f5` / `711749d9…cb5ae`。RTX 4090 D 两次 80-stage gate 全部通过：sequence `76`、image tokens `64`、raw max-abs `0`；Float32 final/logits max-abs `0.00094986 / 0.00083363`、combined warm `0.703 s`，BF16 为 `6.9375 / 7.4375`、`0.751 s`，后者只作为跨后端边界。下一步 Chapter 45 是请求级 `rope_delta`、dynamic KV、单 token decode 与真实 greedy image-to-text generation。
+
+[`Chapter 43 — Qwen3-VL 2B vision architecture 与真实权重 parity`](episodes/episode09_qwen3_vl_multimodal_perception/chapter43_qwen3_vl_vision_architecture.md) 已于 2026-08-21 Closed，同时开启 [`Episode 09 — Qwen3-VL 多模态感知`](episodes/episode09_qwen3_vl_multimodal_perception/README.md)。ModelScope revision `ae9985b…9c53` 与 Hugging Face revision `78448d…becd` 被分别冻结；4.255 GB 单文件包含 625 个 BF16 tensor、`2,127,532,032` 参数和 `4,255,064,064` payload bytes。预处理后 patch/grid、per-temporal-frame 24-layer vision tower、未 merge 的 `patch_hidden_state`、三份 merge 后 DeepStack 与供 decoder 消费的 `visual_embeddings` 已实现。RTX 4090 D Float32 strict `visual_embeddings` max/mean/relative L2/cosine 为 `6.771088e-5 / 2.2492045e-6 / 5.461097e-6 / 1.0`，warm forward `0.024733474 s`；BF16 的 `0.890625 / 0.02120505 / 0.05465893 / 0.9985048` 与 warm `0.056884242 s` 只记作跨后端边界。
 
 [`Chapter 42 — 显式环境事件记忆写回与因果验收`](episodes/episode08_environment_action_loop/chapter42_environment_event_memory.md) 已于 2026-08-21 Closed。ModelScope Qwen3-8B 在 RTX 4090 D 上完成 8 个 full-feedback writer，全部 clean success 且与 BFS 合计同为 44 步；8 次显式 policy append 后 fresh-load journal 恰有 8 条。CPU Qwen3-Embedding raw top-1 / 生产 exact-spec context 均为 `8/8`，相关/干扰 prompt `8/8` 等 token，mirrored route `8/8` non-solving。三个 `feedback=:none` reader 臂为 no-memory `0/8`、retrieved `7/8`、matched-distractor `0/8`，相关记忆相对两组对照的双侧精确 McNemar p 均为 `0.015625`；`grid/08` 是正确检索后的 reader 执行失败。独立 replay 不加载 generation/embedding、不 append，重放 32 rows、304 prompts、273 tool outcomes、272 transitions，并重算 8 组 event/source/prefix evidence。环境事件记忆条目已关闭；Episode 08 保持 Open，跨 adapter timeout、execution failure、e-stop 和 idempotent action safety 仍是具身线的下一缺口。
 
@@ -85,7 +87,8 @@
 - legacy 默认仍为 LayerNorm + GELU + untied；modern 配置可通过独立开关组合，不改变旧调用。
 - HuggingFace Qwen3 dense 导入：冻结 0.6B / 1.7B / 4B / 8B / 14B / 32B 六个官方规格与 config checksum，可自动识别或显式要求 variant；严格解析 config，读取 BF16/F32 safetensors 单文件或 index 分片，完整映射 embedding、attention、QK-Norm、MLP、final norm 与 tied/untied LM head；missing、unexpected、duplicate、shape/dtype/config 错误均 fail closed。六个真实 checkpoint 全部实跑逐层 parity：0.6B—4B 全量加载，8B—32B 流式加载。
 - Qwen3 MoE 导入（Chapter 24–35、41，Closed）：Float32 top-k routing、逐 expert SwiGLU、all-sparse decoder topology、原始 `mlp.experts.N.*` 权重名映射和 full/dynamic/static cache 已完成 Transformers tiny/官方 30B parity。`stream_hf_qwen3_moe_forward` 以 header-only index 在路由后只读取 active experts，可选择 Float32/native BF16；官方 immutable revision、30.53B 参数、config/index 与 16 分片 checksum 已形成代码级资产契约。Reactant/XLA CPU 使用 compact route-major fallback；RTX 4090 D 具备 indexed/bucketed/grouped WMMA，并由 `HFQwen3MoEOffloadSession` 将真实 streamer、全容量 static KV 和 global/layer-balanced device LRU 接成可运行的 30B session。scalar 与 grouped CUDA cache 都可用 device pointer tables 直接读取分散 BF16 expert matrices，有界复用 generation-safe pointer/workspace state，并独立配置 forced-GC cadence；当前层 post-router misses 可用 storage-verified bounded parallel reads/pinned upload pipeline。batch reader 可严格合并相邻 safetensors ranges，但实测默认仍应逐 tensor 读取；同 dtype decode copy、raw payload allocation 与 CUDA pageable final host-matrix allocation 已依次消除。
-- Qwen3-VL-2B-Instruct vision 导入（Chapter 43）：分别冻结 ModelScope/Hugging Face immutable revision 与 13-file checksum；strict nested config 和 tensor oracle 精确覆盖 625 个 BF16 tensor、`2,127,532,032` 参数。预处理后 image grid/token count/patchify、3D patch projection、learned position interpolation、H/W vision RoPE、24-layer per-temporal-frame packed attention、block `5/11/17` DeepStack mergers 与 main merger 已实现。公开输出区分未 merge 的 `patch_hidden_state`、main merger 后供 decoder 消费的 `visual_embeddings` 和三份 merge 后 DeepStack features。vision-only loader 只读取 `406,957,056` 个 `model.visual.*` 参数，可选择 Float32/BFloat16 和 CPU/CUDA target；RTX 4090 D Float32 已完成 Transformers 4.57.0 逐 stage strict parity。当前没有 raw image decode/resize、multimodal chat、decoder mRoPE/injection 或 generation。
+- Qwen3-VL-2B-Instruct vision 导入（Chapter 43）：分别冻结 ModelScope/Hugging Face immutable revision 与 13-file checksum；strict nested config 和 tensor oracle 精确覆盖 625 个 BF16 tensor、`2,127,532,032` 参数。预处理后 image grid/token count/patchify、3D patch projection、learned position interpolation、H/W vision RoPE、24-layer per-temporal-frame packed attention、block `5/11/17` DeepStack mergers 与 main merger 已实现。公开输出区分未 merge 的 `patch_hidden_state`、main merger 后供 decoder 消费的 `visual_embeddings` 和三份 merge 后 DeepStack features。vision-only loader 只读取 `406,957,056` 个 `model.visual.*` 参数，可选择 Float32/BFloat16 和 CPU/CUDA target；RTX 4090 D Float32 已完成 Transformers 4.57.0 逐 stage strict parity。
+- Qwen3-VL raw processor/chat 与 decoder prefill（Chapter 44）：raw PNG/JPEG/RGB decode、官方 CPU UInt8 bicubic、normalize/patchify、独立 VL tokenizer profile、content-list chat、placeholder expansion、T/H/W mRoPE 与 `rope_deltas` 已实现。main visual embeddings 在 layer 0 前替换 image-token embedding，三份 DeepStack features 在 decoder layers `0/1/2` 后只加到 visual rows；28-layer GQA/QK-Norm/SwiGLU/tied-head prefill 支持 Float32/BFloat16 CPU/CUDA。确定性 `256×256` image 形成 sequence `76` / image tokens `64`，raw max-abs `0`；RTX 4090 D Float32/BF16 的 80-stage gates 全部通过。当前没有 multimodal KV cache、增量 decode 或 generation。
 - Qwen3-Embedding-0.6B 导入（Chapter 22）：独立冻结 HF revision 和 8 个
   asset SHA256，严格区分 151,669 vocabulary、32K model context、
   SentenceTransformers base-model namespace 与 causal-LM contract；
@@ -204,7 +207,19 @@ cross-backend boundary 的四项指标为
 `3.188056864 / 11.916055118 / 0.056884242 s`。cold 含首次 Julia/CUDA/kernel
 编译，不是 steady benchmark；warm 是同输入且显式同步的第二次前向。
 
-2026-08-21 最新复核默认套件 exit 0，共 `8,524 passed`、
+Chapter 44 默认专项为 `139 / 139`，覆盖 VL tokenizer profile、raw decode与
+torchvision-compatible UInt8 resize、content-list chat、placeholder/mRoPE和完整
+tiny Float32 decoder tensor parity。真实 prefill reference SHA256 为 Float32
+`d7d3b58cea35cf90806bdd14ade7e453e1b486355b190d094ec95f852f6b60f5`、BF16
+`711749d9cb0d2c33b34c6fc87a4f9dd06bbf7cc52b589daf01f0210bd58cb5ae`。RTX
+4090 D 两种 dtype 的 80-stage gates 全部通过；sequence `76`、image tokens
+`64`、raw max-abs `0`，Float32 final/logits max-abs 为
+`0.00094986 / 0.00083363`、combined warm `0.703 s`，BF16 为
+`6.9375 / 7.4375`、`0.751 s`。全模型 logical parameter bytes 为 Float32
+`8,510,128,128`、BF16 `4,255,064,064`；BF16仍是跨后端边界，不是 strict
+parity。
+
+2026-08-21 Chapter 44 close 时复核默认套件 exit 0，共 `8,663 passed`、
 `1 intentional broken`、`0 failure / 0 error`；唯一 broken 是未设置真实 Qwen3-VL 模型目录
 时的 Chapter 43 checkpoint 门禁。Episode 06
 为 `1,866 / 1,866`，其中 Chapter 41 真实结果 contract 为 `60 / 60`，Chapter
@@ -214,9 +229,11 @@ streaming、真实 parity/offload/cache 冻结报告契约、device LRU 生命�
 scan-thrashing、scattered dispatch/GC、generation-safe pointer/workspace reuse、
 bounded miss pipeline、storage-aware worker sweep、decode-copy/buffer ownership，
 以及 grouped-scattered 真实时延/traffic/materialization 合约；Episode 08 为 `244 / 244`，其中
-Chapter 40 / 42 分别为 `126 / 126` 与 `118 / 118`；Episode 09 为
-`178 passed + 1 intentional broken`。默认计数不包含需显式启用的 XLA/CUDA
-accelerator 专项。
+Chapter 40 / 42 分别为 `126 / 126` 与 `118 / 118`。该全套快照早于 Chapter 44；
+相对 Chapter 43 的 `8,524 passed` 快照，Chapter 44 新增专项为
+`139 / 139`；Chapter 43 仍有未设置真实模型目录时的
+`1 intentional broken`。默认计数不包含需显式启用的 XLA/CUDA accelerator
+专项，也不把真实 80-stage verifier 混入默认测试数。
 Chapter 24 compact dispatch 的 Reactant/XLA CPU 专项另计 `3 / 3`：
 128 experts/top-8/64 tokens 的 route pairs 为 `512 / 8,192`，编译
 `32.126 s`、steady median `38.616 ms`，对 dense oracle max-abs `9.09e-7`。
@@ -354,11 +371,12 @@ Chapter 06 GQA benchmark（CPU）记录于 `benchmark_results/week06/`：固定�
 - 任务规划与反思，以及 tools 版 `/api/generate`；工具调用协议已在 Chapter 36
   完成 HF 逐字节 parity 与单请求内闭环，任务级质量对照已由 Chapter 38 完成，
   但当前仍是按冻结官方模板手写的 renderer，不是通用 Jinja 引擎。
-- Qwen3-VL 当前只接受已经 decode/resize/rescale/normalize 的 CHW image，经
-  patchify/grid 进入独立 vision tower；没有 raw PNG/JPEG decode/resize、
-  content-list chat、decoder mRoPE/DeepStack injection、multimodal KV cache、
-  image-to-text generation 或 video。音频、非符号环境状态和机器人传感器输入也未实现；
-  Chapter 40/42 observation 仍只有结构化 GridWorld 坐标。
+- Qwen3-VL 已从 raw PNG/JPEG/RGB image、content-list chat 接到 vision 与
+  cache-free decoder prefill，但没有 multimodal KV cache、增量 decode、greedy/
+  sampled image-to-text generation 或 video。真实权重验收限定单图、batch 1、
+  sequence 76 和全一 attention mask；padding/multi-image generation、长上下文、
+  音频、非符号环境状态和机器人传感器输入也未实现；Chapter 40/42 observation
+  仍只有结构化 GridWorld 坐标。
 - 连续动作、动力学、外部 simulator 和真实设备适配器；Chapter 40/42 只有确定性离散 GridWorld、
   enum action、硬预算与 clean-success memory policy。生产 retrieval 强制 exact-spec，cross-spec 只用于
   diagnostic distractor。
@@ -550,8 +568,29 @@ cache 已实现。
 `2,127,532,032` 参数和 `4,255,064,064` payload bytes 全部校验；Float32
 `visual_embeddings` max/mean/relative L2/cosine 为
 `6.771088e-5 / 2.2492045e-6 / 5.461097e-6 / 1.0`。这一里程碑只关闭 vision-only
-架构；Chapter 44/45 继续 raw processor/chat、decoder mRoPE/injection、cache
-与完整 image-to-text generation。
+架构；raw processor/chat 与 decoder prefill 已由下一里程碑单独关闭。
+
+### Milestone B6：Qwen3-VL raw processor/chat 与 decoder prefill（已完成）
+
+- 实现 raw PNG/JPEG/RGB decode、官方 fast processor 的 CPU UInt8 bicubic、
+  normalize、patchify和 exact raw-pixel reference。（Chapter 44 已完成）
+- 冻结 Qwen3-VL tokenizer profile与 content-list chat template，实现 image
+  placeholder expansion、T/H/W mRoPE、visual mask和 prompt-specific
+  `rope_deltas`。（Chapter 44 已完成）
+- 实现完整 28-layer Float32/BFloat16 decoder prefill：main visual embeddings
+  替换 image-token embedding，三份 DeepStack features 在 decoder layers
+  `0/1/2` 后注入 visual rows，并完成 final norm与 tied logits projection。
+  （Chapter 44 已完成）
+- deterministic tiny 完整 tensor oracle 与官方 2B RTX 4090 D 统一 verifier 均已
+  通过；Float32 作为 strict gate，BF16 只记录 CPU/CUDA 跨后端边界。
+  （Chapter 44 已完成）
+
+完成标准已满足：默认专项 `139 / 139`；Float32/BF16 reference SHA256 分别为
+`d7d3b58c…b60f5` / `711749d9…cb5ae`；两种 dtype 的 80-stage gates 均通过，
+raw max-abs `0`。Float32 final/logits max-abs 为
+`0.00094986 / 0.00083363`，BF16 为 `6.9375 / 7.4375`。Chapter 45 继续
+request-local `rope_delta`、dynamic KV、单 token decode 和真实 greedy
+image-to-text generation；video、batch/padding generation 与长上下文仍未覆盖。
 
 ### Milestone C：建立最小有状态智能体与环境闭环（主体已完成）
 
@@ -583,10 +622,10 @@ action 等跨 adapter 安全仍不在当前结论内。
 
 | 主线 | 当前状态 | 下一关键缺口 |
 | --- | --- | --- |
-| 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + native BF16 推理 + CUDA/XLA 加速 + 8B XLA single-residency 4K greedy 部署/常驻服务 + 可预算 INT4/INT8/BF16 计划与 diagonal activation-aware 校准（14B RTN 16/16，weight/activation MSE 均 4/16）；30B-A3B MoE grouped/scalar scattered cache；Qwen3-VL-2B vision tower/DeepStack/merger Float32 strict parity；GPT-2 真实 parity；流式加载；五类版本化 Tokenizer 与中文数据管线 | Qwen3-VL raw processor/chat + decoder mRoPE/injection/cache/generation；另有完整 AWQ/GPTQ 或量化 GEMM |
+| 模型基本组件 | Qwen3 六尺寸真实权重 parity 全闭环 + native BF16 推理 + CUDA/XLA 加速 + 8B XLA single-residency 4K greedy 部署/常驻服务 + 可预算 INT4/INT8/BF16 计划与 diagonal activation-aware 校准（14B RTN 16/16，weight/activation MSE 均 4/16）；30B-A3B MoE grouped/scalar scattered cache；Qwen3-VL-2B raw processor/content-list chat、vision tower、DeepStack/mRoPE injection 与 decoder prefill Float32 strict parity；GPT-2 真实 parity；流式加载；五类版本化 Tokenizer 与中文数据管线 | Qwen3-VL dynamic KV/decode/greedy generation；另有完整 AWQ/GPTQ 或量化 GEMM |
 | 高效训练与推理 | modern / GQA / rotate_half 已兼容 Zygote / XLA 与两类 KV Cache；Qwen3-0.6B compiled decode、Qwen3-8B 4K XLA single-residency/service 与 30B-A3B BF16 offload/cache/grouped-scattered + bounded reuse/storage-verified parallel miss 已在 GPU 实证；adjacent coalescing 负结果与 decode copy-elision 正结果已冻结 | route/attention 临时数组复用、grouped workspace byte cap、fused/FlashAttention、动态 batch、低精度 kernel 与长上下文专项 |
 | 智能体核心 | 官方 chat template 全分支 HF 逐字节 parity + 沙箱化工具与单请求多 step + 工具任务成功率配对测量 + append-only source journal/exact retrieval + clean environment-event 显式写回/exact-spec context + observation/action/transition 联合 replay | ANN/reranker、通用 redaction/forgetting、并发 writer、planning 与反思 |
-| 多模态感知 | Qwen3-VL-2B 的预处理后 patch/grid、per-temporal-frame vision tower、未 merge 的 `patch_hidden_state`、三份 merge 后 DeepStack feature 与供 decoder 消费的 `visual_embeddings` 已完成真实权重 Float32 GPU parity；BF16 只冻结跨后端误差边界 | Chapter 44 raw processor/content-list chat + mRoPE decoder prefill；Chapter 45 cache/full image-to-text；随后才是 video/audio/sensor |
+| 多模态感知 | Qwen3-VL-2B 已从 raw image、content-list chat、exact pixels/grid/tokens/T/H/W mRoPE 接到 per-temporal-frame vision tower、main/DeepStack visual injection 与完整 cache-free decoder prefill；真实权重 Float32 GPU strict gate通过，BF16只冻结跨后端误差边界 | Chapter 45 request-local `rope_delta`、dynamic KV、单 token decode与真实 greedy image-to-text；随后才是 video、batch/padding generation、长上下文、audio/sensor |
 | 具身闭环 | 确定性 hidden-wall GridWorld、allowlisted enum action、硬预算、环境终态评分；Qwen3-4B full-feedback 8/8 最短路；Qwen3-8B clean writer 8/8、无反馈 no/retrieved/distractor 0/8 / 7/8 / 0/8 | 跨 adapter timeout/execution failure/e-stop/idempotent action safety；随后才是连续状态/动作、外部 simulator 与 device adapter |
 | 持续学习与生命感 | 处于愿景阶段 | 长期状态、适应、主动性与安全边界 |
-| 学习记录 | Chapter 01—43 已 Closed；Episode 06/07 Closed，Episode 08/09 Open | Episode 09 继续 Qwen3-VL decoder/generation；Episode 08 保留跨 adapter action safety 缺口；保持 oracle/因果对照/replay 门禁 |
+| 学习记录 | Chapter 01—44 已 Closed；Episode 06/07 Closed，Episode 08/09 Open | Episode 09 继续 Qwen3-VL cache/generation；Episode 08 保留跨 adapter action safety 缺口；保持 oracle/因果对照/replay 门禁 |

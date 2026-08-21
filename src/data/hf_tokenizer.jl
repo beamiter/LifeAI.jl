@@ -5,6 +5,8 @@ const _QWEN3_CHAT_TEMPLATE_SHA256 =
     "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
 const _QWEN3_EMBEDDING_CHAT_TEMPLATE_SHA256 =
     "87a2728cb8dc9fe424d624542f6060ec05a1d285ebbec578bb078900e33396b5"
+const _QWEN3_VL_CHAT_TEMPLATE_SHA256 =
+    "3636d0f0bd6bef02654cdffdc447b79cb2cef8ab02cc75267345946291a489e4"
 const _QWEN3_TEST_CHAT_TEMPLATE_SHA256 =
     "07bdce04691aa17c70cd6bebfaeae06e324440e5d24fbeeb4f2628c4c997a3ea"
 
@@ -255,7 +257,7 @@ function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
 
     post_processor = _hf_required(tokenizer_json, "post_processor", "tokenizer.json")
     post_processor isa JSON3.Object || throw(ArgumentError("post_processor must be an object"))
-    boundary_id = if profile === :generation
+    boundary_id = if profile !== :embedding
         _hf_byte_flags(post_processor, "tokenizer.json post_processor")
         nothing
     else
@@ -268,7 +270,7 @@ function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
     return (; pattern=String(pattern), boundary_id)
 end
 
-function _hf_parse_model(tokenizer_json, char_to_byte)
+function _hf_parse_model(tokenizer_json, char_to_byte, profile::Symbol)
     model = _hf_required(tokenizer_json, "model", "tokenizer.json")
     model isa JSON3.Object || throw(ArgumentError("tokenizer model must be an object"))
     _hf_exact_value(model, "type", "BPE", "tokenizer.json model")
@@ -278,7 +280,13 @@ function _hf_parse_model(tokenizer_json, char_to_byte)
     _hf_exact_value(model, "end_of_word_suffix", "", "tokenizer.json model")
     _hf_exact_bool(model, "fuse_unk", false, "tokenizer.json model")
     _hf_exact_bool(model, "byte_fallback", false, "tokenizer.json model")
-    _hf_exact_bool(model, "ignore_merges", false, "tokenizer.json model")
+    if profile === :qwen3_vl_generation
+        haskey(model, "ignore_merges") && throw(ArgumentError(
+            "Qwen3-VL tokenizer model must omit `ignore_merges`",
+        ))
+    else
+        _hf_exact_bool(model, "ignore_merges", false, "tokenizer.json model")
+    end
 
     raw_vocabulary = _hf_required(model, "vocab", "tokenizer.json model")
     raw_vocabulary isa JSON3.Object || throw(ArgumentError("BPE vocab must be an object"))
@@ -307,13 +315,24 @@ function _hf_parse_model(tokenizer_json, char_to_byte)
     raw_merges isa JSON3.Array || throw(ArgumentError("BPE merges must be an array"))
     merge_ranks = Dict{Tuple{String,String},Int}()
     for (rank, raw_pair) in enumerate(raw_merges)
-        raw_pair isa JSON3.Array && length(raw_pair) == 2 || throw(ArgumentError(
-            "BPE merge $rank must be a two-element array",
-        ))
-        raw_pair[1] isa AbstractString && raw_pair[2] isa AbstractString || throw(ArgumentError(
-            "BPE merge $rank must contain strings",
-        ))
-        pair = (String(raw_pair[1]), String(raw_pair[2]))
+        pair = if profile === :qwen3_vl_generation
+            raw_pair isa AbstractString || throw(ArgumentError(
+                "Qwen3-VL BPE merge $rank must be a string pair",
+            ))
+            pieces = split(String(raw_pair), ' '; keepempty=true)
+            length(pieces) == 2 && all(!isempty, pieces) || throw(ArgumentError(
+                "Qwen3-VL BPE merge $rank must contain two tokens separated by one space",
+            ))
+            (pieces[1], pieces[2])
+        else
+            raw_pair isa JSON3.Array && length(raw_pair) == 2 || throw(ArgumentError(
+                "BPE merge $rank must be a two-element array",
+            ))
+            raw_pair[1] isa AbstractString && raw_pair[2] isa AbstractString || throw(ArgumentError(
+                "BPE merge $rank must contain strings",
+            ))
+            (String(raw_pair[1]), String(raw_pair[2]))
+        end
         haskey(merge_ranks, pair) && throw(ArgumentError("duplicate BPE merge pair $pair"))
         haskey(vocabulary, pair[1]) || throw(ArgumentError("unknown left token in BPE merge $rank"))
         haskey(vocabulary, pair[2]) || throw(ArgumentError("unknown right token in BPE merge $rank"))
@@ -415,9 +434,13 @@ function _hf_validate_tokenizer_config(
         "chat_template must be a non-empty string",
     ))
     template_hash = _sha256_hex(chat_template)
-    is_official_template = profile === :generation ?
-        template_hash == _QWEN3_CHAT_TEMPLATE_SHA256 :
+    is_official_template = if profile === :generation
+        template_hash == _QWEN3_CHAT_TEMPLATE_SHA256
+    elseif profile === :qwen3_vl_generation
+        template_hash == _QWEN3_VL_CHAT_TEMPLATE_SHA256
+    else
         template_hash == _QWEN3_EMBEDDING_CHAT_TEMPLATE_SHA256
+    end
     is_tiny_test_fixture = model_vocabulary_size == 258 &&
         template_hash == _QWEN3_TEST_CHAT_TEMPLATE_SHA256
     is_official_template || is_tiny_test_fixture || throw(ArgumentError(
@@ -449,7 +472,11 @@ function _hf_generation_id(value, total_vocabulary::Int, name::AbstractString)
     return id + 1
 end
 
-function _hf_validate_generation_config(config, total_vocabulary::Int)
+function _hf_validate_generation_config(
+    config,
+    total_vocabulary::Int;
+    qwen3_vl::Bool=false,
+)
     allowed_fields = Set([
         "bos_token_id",
         "do_sample",
@@ -460,10 +487,22 @@ function _hf_validate_generation_config(config, total_vocabulary::Int)
         "top_p",
         "transformers_version",
     ])
+    qwen3_vl && push!(allowed_fields, "repetition_penalty")
     unknown_fields = setdiff(Set(String.(collect(keys(config)))), allowed_fields)
     isempty(unknown_fields) || throw(ArgumentError(
         "unsupported generation_config.json fields: $(join(sort!(collect(unknown_fields)), ", "))",
     ))
+    if qwen3_vl
+        repetition_penalty = _hf_required(
+            config,
+            "repetition_penalty",
+            "generation_config.json",
+        )
+        repetition_penalty isa Real && !(repetition_penalty isa Bool) &&
+            Float64(repetition_penalty) == 1.0 || throw(ArgumentError(
+                "Qwen3-VL repetition_penalty must be exactly 1.0",
+            ))
+    end
     bos_id = _hf_generation_id(_hf_required(config, "bos_token_id", "generation_config.json"), total_vocabulary, "bos_token_id")
     pad_id = _hf_generation_id(_hf_required(config, "pad_token_id", "generation_config.json"), total_vocabulary, "pad_token_id")
     raw_eos = _hf_required(config, "eos_token_id", "generation_config.json")
@@ -566,8 +605,9 @@ function _hf_qwen3_tokenizer_from_json(
     revision::AbstractString="",
     profile::Symbol=:generation,
 )
-    profile in (:generation, :embedding) || throw(ArgumentError(
-        "Qwen3 tokenizer profile must be :generation or :embedding",
+    profile in (:generation, :embedding, :qwen3_vl_generation) || throw(ArgumentError(
+        "Qwen3 tokenizer profile must be :generation, :embedding, or " *
+        ":qwen3_vl_generation",
     ))
     tokenizer_json = _hf_json(raw_tokenizer_json, "tokenizer.json")
     tokenizer_config_json = _hf_json(raw_tokenizer_config_json, "tokenizer_config.json")
@@ -578,6 +618,7 @@ function _hf_qwen3_tokenizer_from_json(
     vocabulary, model_vocabulary_size, merge_ranks = _hf_parse_model(
         tokenizer_json,
         alphabet.char_to_byte,
+        profile,
     )
     added_tokens = _hf_parse_added_tokens(tokenizer_json, model_vocabulary_size, vocabulary)
     total_vocabulary = model_vocabulary_size + length(added_tokens)
@@ -610,10 +651,11 @@ function _hf_qwen3_tokenizer_from_json(
         pipeline.boundary_id == tokenizer_pad || throw(ArgumentError(
             "embedding post-processor token id must match tokenizer pad token",
         ))
-    generation = if profile === :generation
+    generation = if profile !== :embedding
         value = _hf_validate_generation_config(
             generation_config_json,
             total_vocabulary,
+            qwen3_vl=profile === :qwen3_vl_generation,
         )
         tokenizer_bos === nothing || tokenizer_bos == value.bos_id || throw(ArgumentError(
             "tokenizer and generation BOS ids conflict",
@@ -663,6 +705,40 @@ function _hf_qwen3_tokenizer_from_json(
         _sha256_hex(raw_tokenizer_json),
         _sha256_hex(raw_tokenizer_config_json),
         _sha256_hex(raw_generation_config_json),
+    )
+end
+
+"""
+    load_hf_qwen3_vl_tokenizer(model_dir; revision="")
+
+Strictly load the tokenizer profile shipped with Qwen3-VL.  This profile is
+separate from ordinary Qwen3 generation because its added vision tokens,
+chat template, tokenizer model fields, and generation config are different.
+No files are downloaded.
+"""
+function load_hf_qwen3_vl_tokenizer(
+    model_dir::AbstractString;
+    revision::AbstractString="",
+)
+    isdir(model_dir) || throw(ArgumentError(
+        "model directory does not exist: $model_dir",
+    ))
+    paths = (
+        tokenizer=joinpath(model_dir, "tokenizer.json"),
+        tokenizer_config=joinpath(model_dir, "tokenizer_config.json"),
+        generation_config=joinpath(model_dir, "generation_config.json"),
+    )
+    for path in values(paths)
+        isfile(path) || throw(ArgumentError(
+            "required Qwen3-VL tokenizer file does not exist: $path",
+        ))
+    end
+    return _hf_qwen3_tokenizer_from_json(
+        read(paths.tokenizer, String),
+        read(paths.tokenizer_config, String),
+        read(paths.generation_config, String);
+        revision,
+        profile=:qwen3_vl_generation,
     )
 end
 
@@ -737,7 +813,7 @@ Return the validated Qwen3 generation settings with LifeAI's public 1-based
 token ids. Mutable vectors are copied so callers cannot alter the tokenizer.
 """
 function hf_generation_config(tokenizer::HFQwen3Tokenizer)
-    tokenizer.profile === :generation || throw(ArgumentError(
+    tokenizer.profile !== :embedding || throw(ArgumentError(
         "embedding tokenizer does not define text-generation sampling settings",
     ))
     config = tokenizer.generation
@@ -970,7 +1046,8 @@ function tokenizer_fingerprint(tokenizer::HFQwen3Tokenizer)
     println(output, "schema=", TOKENIZER_ARTIFACT_VERSION)
     println(output, "type=hf_qwen3_bpe")
     println(output, "id_base=1")
-    tokenizer.profile === :embedding && println(output, "profile=embedding")
+    tokenizer.profile !== :generation &&
+        println(output, "profile=", tokenizer.profile)
     println(output, "revision=", tokenizer.revision)
     println(output, "tokenizer=", tokenizer.tokenizer_sha256)
     println(output, "tokenizer_config=", tokenizer.tokenizer_config_sha256)

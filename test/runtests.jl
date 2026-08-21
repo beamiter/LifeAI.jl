@@ -316,6 +316,19 @@ end
             "test_qwen3_vl_real_checkpoint.jl",
         ))
     end
+
+    @testset "Chapter 44 — Raw processor and multimodal decoder prefill" begin
+        episode = "episode09_qwen3_vl_multimodal_perception"
+        chapter = "chapter44_qwen3_vl_multimodal_prefill"
+        include(chapter_test(episode, chapter, "test_qwen3_vl_tokenizer.jl"))
+        include(chapter_test(episode, chapter, "test_qwen3_vl_raw_processor.jl"))
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_placeholders_and_mrope.jl",
+        ))
+        include(chapter_test(episode, chapter, "test_qwen3_vl_tiny_decoder.jl"))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
