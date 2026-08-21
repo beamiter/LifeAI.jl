@@ -329,6 +329,16 @@ end
         ))
         include(chapter_test(episode, chapter, "test_qwen3_vl_tiny_decoder.jl"))
     end
+
+    @testset "Chapter 45 — Dynamic multimodal cache and greedy decode" begin
+        episode = "episode09_qwen3_vl_multimodal_perception"
+        chapter = "chapter45_qwen3_vl_dynamic_decode"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_dynamic_decode.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

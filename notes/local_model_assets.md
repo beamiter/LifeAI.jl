@@ -827,7 +827,7 @@ forward 为 `18.959 / 0.0641 s`，冷/热 embedding max-abs 为 `0`；
 token/mask、五档数值、15 组 top-k 与 semantic memory 门禁全部通过。
 普通沙箱内 `nvidia-smi` 因设备隔离失败，不代表宿主机驱动不可用。
 
-## Chapter 43–44 Qwen3-VL-2B-Instruct 资产
+## Chapter 43–45 Qwen3-VL-2B-Instruct 资产
 
 本章使用 ModelScope 国内源恢复完整官方仓库：
 
@@ -993,9 +993,65 @@ Float32 是 Chapter 44 strict correctness gate；BF16 仍是 CPU oracle 与 CUDA
 LifeAI 之间的跨后端舍入边界。`/tmp` 目录只代表本次机器上的工作副本，长期保留
 时应把 reference 移到仓库外的持久资产目录并记录同一 SHA256。
 
-Chapter 44 已消费 raw image、chat/tokenizer 和 decoder text weights，但仍没有
-multimodal KV cache、增量 decode、greedy image-to-text generation 或 video；
-真实验收也只覆盖单图、batch 1、全一 attention mask 和 sequence 76。
+Chapter 44 的边界停在 cache-free prefill；Chapter 45 使用同一份 checkpoint 和
+processor/tokenizer 资产继续关闭 dynamic cache/decode，reference 契约如下。
+
+### Chapter 45 dynamic decode 与 image-to-text reference
+
+Chapter 45 没有下载第二份权重。`export_qwen3_vl_decode_reference.py real` 从同一
+deterministic `256×256` image 与 `Describe.` content-list message 出发，以 HF
+`DynamicCache` 做 cached prefill 和三次单 token decode。真实 K/V 很大，因此只在
+metadata 中冻结每层 shape 和 raw SHA256；仓库外 safetensors 只保存每个决策阶段的
+last hidden 与 logits：
+
+| artifact | path | SHA256 |
+| --- | --- | --- |
+| Float32 tensors | `/tmp/qwen3-vl-decode-f32/reference.safetensors` | `a98812e25efb44c02ab9c06e974ab718724f35f2f1c686e4bdc395d856c03e81` |
+| Float32 metadata | `/tmp/qwen3-vl-decode-f32/reference.json` | `569fe3666b65ee2f497327e9ce9931f81652d5bdc32d44dfb9fb774435caccfc` |
+
+exporter 复用 Chapter 44 的完整 Python/NumPy/Pillow/safetensors/tokenizers/Jinja2/
+PyTorch/torchvision build、CPU capability、MKL/OpenMP/MKLDNN 和 `24/24` thread
+门禁，同时重新校验 ModelScope revision、clean tree 与必要资产 SHA。可复现命令：
+
+```bash
+QWEN3_VL_MODEL_DIR=/home/ubuntu/models/modelscope/Qwen/Qwen3-VL-2B-Instruct
+QWEN3_VL_ORACLE_PYTHONPATH=/tmp/lifeai-qwen3vl-oracle/lib/python3.10/site-packages:/tmp/lifeai-qwen3vl-uv-cache/archive-v0/SNUjiORDNkYR55Or
+QWEN3_VL_DECODE_REFERENCE_DIR=/tmp/qwen3-vl-decode-f32
+
+PYTHONPATH="$QWEN3_VL_ORACLE_PYTHONPATH" \
+  .venv/bin/python scripts/export_qwen3_vl_decode_reference.py real \
+  "$QWEN3_VL_MODEL_DIR" "$QWEN3_VL_DECODE_REFERENCE_DIR" \
+  --dtype float32 --device cpu --greedy-tokens 4
+
+julia --project=. --startup-file=no \
+  scripts/verify_qwen3_vl_decode_cuda.jl \
+  "$QWEN3_VL_MODEL_DIR" "$QWEN3_VL_DECODE_REFERENCE_DIR" cuda
+```
+
+RTX 4090 D / CUDA runtime `12.9.0` 的最终 Float32 strict 结果为：
+
+| stage | max-abs | mean-abs | relative L2 | cosine | argmax (LifeAI 1-based) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| prefill | `3.862380981445e-5` | `7.502852388181e-6` | `2.491764492934e-6` | `0.9999999999970042` | `1987` |
+| decode 0 | `4.005432128906e-5` | `5.626603576536e-6` | `1.276814328535e-6` | `0.9999999999992562` | `2169` |
+| decode 1 | `2.956390380859e-5` | `5.176316295721e-6` | `1.219367434425e-6` | `0.9999999999993456` | `375` |
+| decode 2 | `2.908706665039e-5` | `5.168276760988e-6` | `1.653558204443e-6` | `0.9999999999986956` | `265` |
+
+HF 0-based greedy ids 为 `[1986,2168,374,264]`，LifeAI 1-based ids 为
+`[1987,2169,375,265]`，两边最终文本均为 `This image is a`。prompt/cache 轨迹为
+`76→77→78→79`，image tokens `64`，request-local `rope_delta=-56`，三次 decode
+使用 mRoPE 坐标 `20/21/22`。最终 F32 cache 为 `18,120,704` bytes；按 28 layers、
+8 KV heads、128 head dim 计算，每个 token 为 `229,376` bytes（`224 KiB`），BF16
+则为 `114,688` bytes（`112 KiB`）。默认 BF16 CUDA 高层 API 也实跑得到相同
+token ids/text，但它不替代 Float32 的跨实现 strict 数值门禁。
+
+本次记录的 vision/text load、vision cold、cached-prefill cold 分别约为
+`5.938 / 27.140 / 11.719 / 6.681 s`；三次 decode 为
+`0.759 / 0.0415 / 0.0159 s`，高层 generation 为 `3.174 s`。这些时间含首次
+Julia/CUDA 编译和重新跑 vision，不能当 steady throughput。当前 dynamic cache
+使用 `cat` 追加，每步都会重新分配并复制历史 K/V；本章关闭的是 correctness，
+不是 static capacity、低分配部署或长上下文性能。尚未覆盖 video、multi-image、
+batch/padding、sampled generation 和真实长上下文。
 
 ## Qwen3-30B-A3B 资产状态
 

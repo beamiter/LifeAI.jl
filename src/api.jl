@@ -69,6 +69,9 @@ export Qwen3VLVisionInput, Qwen3VLVisionFeatures
 export load_hf_qwen3_vl_vision_parameters, hf_qwen3_vl_vision_forward
 export Qwen3VLTextPrefill, load_hf_qwen3_vl_text_parameters
 export hf_qwen3_vl_text_prefill, hf_qwen3_vl_prefill
+export Qwen3VLKVCache, init_qwen3_vl_kv_cache
+export hf_qwen3_vl_text_prefill_cached, hf_qwen3_vl_text_decode_step
+export generate_hf_qwen3_vl_tokens, generate_hf_qwen3_vl
 export stream_hf_qwen3_forward, stream_hf_qwen3_moe_forward
 export load_hf_qwen3_compact_model, load_hf_qwen3_compact_bundle
 export hf_qwen3_bf16_forward
