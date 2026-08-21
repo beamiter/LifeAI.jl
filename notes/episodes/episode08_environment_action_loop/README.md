@@ -2,7 +2,7 @@
 
 > 状态：Open
 >
-> 收录章节：Chapter 40、42–
+> 收录章节：Chapter 40、42
 
 ## 本卷主题
 
@@ -25,7 +25,7 @@ episode 经显式 policy 写入持久 journal，并用后续无反馈 episode �
 - **智能体核心**：policy 从调用无状态工具推进到读取环境 observation、提交 action、根据新状态再决策。
 - **持久记忆**：clean successful episode 可经显式 policy 写为 canonical environment event；fresh-load
   后 exact-spec 检索并注入后续决策，完整 source binding 可 replay。
-- **多模态与具身**：先建立与具体机器人无关的离散环境边界；本卷不宣称已有视觉、动力学或实体设备控制。
+- **多模态与具身**：先建立与具体机器人无关的离散环境边界；本卷自身不提供图像输入、动力学或实体设备控制，后续 Qwen3-VL vision 能力由 Episode 09 独立记录。
 - **工程与测试**：每个 state/transition/tool output/prompt 都可独立重算；环境成功而非回答文本是主指标。
 
 ## Episode Close 条件
@@ -39,3 +39,4 @@ episode 经显式 policy 写入持久 journal，并用后续无反馈 episode �
 Chapter 40 已建立最小离散环境闭环；Chapter 42 已关闭环境事件写回、fresh-load exact-spec retrieval、
 token-matched 三臂因果验收与 tokenizer-only replay。跨 adapter 的 timeout、execution failure、e-stop
 和 idempotent action safety 尚未完成，因此 Episode 08 保持 Open。
+当前实现顺序按用户优先级转入 Episode 09；上述 safety 条目保留为具身线恢复时的下一缺口。

@@ -299,6 +299,25 @@ end
     end
 end
 
+@testset "Episode 09 — Qwen3-VL multimodal perception" begin
+    @testset "Chapter 43 — Vision architecture parity" begin
+        episode = "episode09_qwen3_vl_multimodal_perception"
+        chapter = "chapter43_qwen3_vl_vision_architecture"
+        include(chapter_test(episode, chapter, "test_qwen3_vl_contract.jl"))
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_processor_and_input.jl",
+        ))
+        include(chapter_test(episode, chapter, "test_qwen3_vl_tiny_forward.jl"))
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_real_checkpoint.jl",
+        ))
+    end
+end
+
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
     @testset "Reactant/XLA episode extensions" begin
         include(chapter_test("episode01_transformer_and_training_foundations", "chapter02_gpt_xla_kv_cache", "test_xla_kv_cache.jl"))

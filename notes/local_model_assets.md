@@ -827,6 +827,111 @@ forward 为 `18.959 / 0.0641 s`，冷/热 embedding max-abs 为 `0`；
 token/mask、五档数值、15 组 top-k 与 semantic memory 门禁全部通过。
 普通沙箱内 `nvidia-smi` 因设备隔离失败，不代表宿主机驱动不可用。
 
+## Chapter 43 Qwen3-VL-2B-Instruct vision 资产
+
+本章使用 ModelScope 国内源恢复完整官方仓库：
+
+```text
+model_id: Qwen/Qwen3-VL-2B-Instruct
+local path: /home/ubuntu/models/modelscope/Qwen/Qwen3-VL-2B-Instruct
+ModelScope revision: ae9985b208c074c10cfbe3a61b5cb7268cdc9c53
+Hugging Face revision: 78448d793a7eb2f7a987a1da76d464384aa1becd
+```
+
+两个 revision 分别描述下载仓库和上游模型身份，不能互相替代，也不能用移动的
+`master`/`main` 代替。当前本机 `git rev-parse HEAD` 已验证为上述 ModelScope
+commit；仓库内 13 个必要文件同时按以下内容 hash 冻结：
+
+| file | bytes | SHA256 |
+| --- | ---: | --- |
+| `.gitattributes` | `2,227` | `74f188c115dbc9614c048d24500099ee572b14830cacdfded13c86aa4fb9c7c7` |
+| `README.md` | `7,136` | `5fc5be1ca9a3910399bd6239ee5086ab5d82a2a59c5d2b00e887a8835cc110e4` |
+| `chat_template.json` | `5,502` | `6f8a6a55027e3da5160105556cda5dd69f6423f1c32645f6730d32de7773d0c4` |
+| `config.json` | `1,505` | `bec4b3d446efa05807365c9e1cec03ac590836879d02f3a6da879971154bdd3b` |
+| `configuration.json` | `51` | `2d4464e2ead06bc9bc718c781309ad1e7baded626d66e8dcdc8b469ba185faf0` |
+| `generation_config.json` | `269` | `1e241830b48b397cb0900101421df5450baddc7adf01e5fc86b5615865f3bae4` |
+| `merges.txt` | `1,671,839` | `599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3` |
+| `preprocessor_config.json` | `390` | `27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516` |
+| `tokenizer_config.json` | `10,868` | `c2da771801886ad9ae98181793ffd3dfb7f1af30f6f7c6a4e15d7dbba52e2399` |
+| `tokenizer.json` | `7,032,403` | `a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7` |
+| `video_preprocessor_config.json` | `385` | `7768af27c1fafa9cc9011c1dc20067e03f8915e03b63504550e11d5066986d13` |
+| `vocab.json` | `2,776,833` | `ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910` |
+| `model.safetensors` | `4,255,140,312` | `7de1838c87a5349b016c26a1c3f7d2bc400a3d485f95ef39a7059ffd734977a0` |
+
+权重文件是单个 BF16 safetensors：625 个 tensor、`2,127,532,032` 个参数，
+tensor payload 为 `4,255,064,064` bytes；其中 `model.visual.*` 为
+`406,957,056` 参数。文件大小大于 payload 的部分是 safetensors header，不能
+把两者混成同一个指标。
+
+### 国内源恢复与全量验证
+
+新目录可直接从 ModelScope Git/LFS 恢复；clone 后显式 checkout 冻结 commit：
+
+```bash
+QWEN3_VL_MODEL_DIR=/home/ubuntu/models/modelscope/Qwen/Qwen3-VL-2B-Instruct
+
+git clone --branch master \
+  https://www.modelscope.cn/Qwen/Qwen3-VL-2B-Instruct.git \
+  "$QWEN3_VL_MODEL_DIR"
+git -C "$QWEN3_VL_MODEL_DIR" checkout --detach \
+  ae9985b208c074c10cfbe3a61b5cb7268cdc9c53
+git -C "$QWEN3_VL_MODEL_DIR" lfs pull
+git -C "$QWEN3_VL_MODEL_DIR" rev-parse HEAD
+```
+
+`verify_qwen3_vl_checkpoint` 会重新读取全部 4.255 GB，逐个校验 13 个文件，
+再独立推导并检查 625 个 tensor 的 name/shape/BF16 dtype/byte range、参数量和
+payload：
+
+```bash
+julia --project=. --startup-file=no -e '
+using LifeAI
+model_dir = "/home/ubuntu/models/modelscope/Qwen/Qwen3-VL-2B-Instruct"
+report = verify_qwen3_vl_checkpoint(model_dir)
+@show report.modelscope_revision report.hf_revision
+@show report.tensor_count report.parameter_count report.tensor_bytes
+'
+```
+
+真实 checkpoint 测试使用同一验证器，不会自动联网：
+
+```bash
+LIFEAI_QWEN3_VL_2B_MODEL_DIR=/home/ubuntu/models/modelscope/Qwen/Qwen3-VL-2B-Instruct \
+  julia --project=. --startup-file=no -e 'using Pkg; Pkg.test()'
+```
+
+Chapter 43 的 Transformers 4.57.0 oracle 与 CUDA verifier 分开运行。Python
+reference 目录由调用方指定并保持在仓库外；Float32 是 strict parity gate，
+BF16 只记录 CPU oracle 与 CUDA LifeAI 的跨后端边界：
+
+```bash
+QWEN3_VL_MODEL_DIR=/home/ubuntu/models/modelscope/Qwen/Qwen3-VL-2B-Instruct
+QWEN3_VL_REFERENCE_DIR=/tmp/qwen3-vl-vision-float32
+
+PYTHONPATH=/tmp/lifeai-qwen3vl-oracle/lib/python3.10/site-packages \
+  .venv/bin/python scripts/export_qwen3_vl_vision_reference.py \
+  "$QWEN3_VL_MODEL_DIR" "$QWEN3_VL_REFERENCE_DIR" float32
+
+julia --project=. --startup-file=no \
+  scripts/verify_qwen3_vl_vision_cuda.jl \
+  "$QWEN3_VL_MODEL_DIR" "$QWEN3_VL_REFERENCE_DIR" cuda
+```
+
+最终 Float32/BF16 reference SHA256 分别为
+`480d988d9f679c8090f8c80c8e5cd007e5a41c47e6bb5cc7ad2f16541cbe5f88` 和
+`ecd904b8a110169c73c9814d23d43eabcc5a2593d0a746bbbda8bb9c308b36b8`。
+RTX 4090 D Float32 strict `visual_embeddings` max/mean/relative L2/cosine 为
+`6.771088e-5 / 2.2492045e-6 / 5.461097e-6 / 1.0`；load/cold/warm
+为 `5.934235821 / 11.319966811 / 0.024733474 s`，logical parameter bytes
+为 `1,627,828,224`。BF16 boundary 的四项指标为
+`0.890625 / 0.02120505 / 0.05465893 / 0.9985048`；load/cold/warm 为
+`3.188056864 / 11.916055118 / 0.056884242 s`，logical parameter bytes
+为 `813,914,112`。cold 含 Julia/CUDA 首次编译，不是 steady benchmark；warm
+是相同输入的显式同步复跑。BF16 结果不会被写成 strict parity。
+当前资产虽含 chat/video processor 文件，Chapter 43 只消费预处理后 image
+patch/grid 与 vision weights，不代表 raw decode、chat、decoder、generation 或
+video 已实现。
+
 ## Qwen3-30B-A3B 资产状态
 
 截至 2026-08-12，本机已下载 `Qwen/Qwen3-30B-A3B` 完整权重，并按

@@ -34,8 +34,11 @@ include("generation/kv_cache.jl")
 
 # Large-weight and accelerator-specific inference implementations.
 include("io/hf_streaming.jl")
+include("io/hf_qwen3_vl.jl")
+include("data/hf_qwen3_vl_processor.jl")
 include("models/bf16_inference.jl")
 include("models/bf16_accel.jl")
+include("models/qwen3_vl_vision.jl")
 include("generation/qwen3_embedding.jl")
 include("models/bf16_xla.jl")
 include("models/quantized.jl")
