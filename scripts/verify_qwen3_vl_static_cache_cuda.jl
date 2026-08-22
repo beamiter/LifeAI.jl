@@ -711,71 +711,102 @@ function _static_prepare_bfloat16(model_dir, reference_dir)
         checkpoint,
         metadata,
         reference,
+        preparation=(;
+            vision_load=(;
+                seconds=vision_load.time,
+                cpu_bytes=vision_load.bytes,
+                cpu_gc_seconds=vision_load.gctime,
+            ),
+            text_load=(;
+                seconds=text_load.time,
+                cpu_bytes=text_load.bytes,
+                cpu_gc_seconds=text_load.gctime,
+            ),
+            vision_forward=(;
+                seconds=vision_forward.time,
+                cpu_bytes=vision_forward.bytes,
+                cpu_gc_seconds=vision_forward.gctime,
+            ),
+        ),
     )
 end
 
-options = _static_parse_arguments(ARGS)
-CUDA.functional() || error("CUDA.jl is not functional on this machine")
-CUDA.allowscalar(false)
+function _static_main(args=ARGS)
+    options = _static_parse_arguments(args)
+    CUDA.functional() || error("CUDA.jl is not functional on this machine")
+    CUDA.allowscalar(false)
 
-if options.dtype_name == "float32"
-    empty!(ARGS)
-    append!(ARGS, options.chapter45_args)
-    include(joinpath(@__DIR__, "verify_qwen3_vl_decode_cuda.jl"))
-    static_report = _static_verify_four_phases(
-        text_parameters,
-        features,
-        input_ids,
-        rope_layout,
-        checkpoint,
-        metadata,
-        reference,
-        Float32,
-    )
-    println("static_compute_dtype\tfloat32")
-    println("static_capacity_tokens\t", _STATIC_CAPACITY)
-    println("static_bytes_per_token\t", static_report.bytes_per_token)
-    println("static_allocated_bytes\t", static_report.expected_bytes)
-    println("static_final_valid_bytes\t", static_report.bytes_per_token * 79)
-    println("static_storage_identity_passed\ttrue")
-    println("static_dynamic_prefix_bitwise_passed\ttrue")
-    println("static_float32_reference_parity_passed\ttrue")
-    _static_benchmark_32_tokens(
-        text_parameters,
-        features,
-        input_ids,
-        rope_layout,
-        checkpoint,
-        Float32,
-    )
-else
-    prepared = _static_prepare_bfloat16(options.model_dir, options.reference_dir)
-    static_report = _static_verify_four_phases(
-        prepared.text_parameters,
-        prepared.features,
-        prepared.input_ids,
-        prepared.rope_layout,
-        prepared.checkpoint,
-        prepared.metadata,
-        prepared.reference,
-        BFloat16,
-    )
-    println("static_compute_dtype\tbfloat16")
-    println("bf16_numerical_contract\tstatic_dynamic_same_device_smoke")
-    println("bf16_hf_decode_tensor_parity_claimed\tfalse")
-    println("static_capacity_tokens\t", _STATIC_CAPACITY)
-    println("static_bytes_per_token\t", static_report.bytes_per_token)
-    println("static_allocated_bytes\t", static_report.expected_bytes)
-    println("static_final_valid_bytes\t", static_report.bytes_per_token * 79)
-    println("static_storage_identity_passed\ttrue")
-    println("static_dynamic_prefix_bitwise_passed\ttrue")
-    println("static_bfloat16_smoke_passed\ttrue")
-    _static_benchmark_32_tokens(
-        prepared.text_parameters,
-        prepared.features,
-        prepared.input_ids,
-        prepared.rope_layout,
-        prepared.checkpoint,
-        BFloat16,
-    )
+    if options.dtype_name == "float32"
+        previous_args = copy(ARGS)
+        try
+            empty!(ARGS)
+            append!(ARGS, options.chapter45_args)
+            include(joinpath(@__DIR__, "verify_qwen3_vl_decode_cuda.jl"))
+        finally
+            empty!(ARGS)
+            append!(ARGS, previous_args)
+        end
+        static_report = _static_verify_four_phases(
+            text_parameters,
+            features,
+            input_ids,
+            rope_layout,
+            checkpoint,
+            metadata,
+            reference,
+            Float32,
+        )
+        println("static_compute_dtype\tfloat32")
+        println("static_capacity_tokens\t", _STATIC_CAPACITY)
+        println("static_bytes_per_token\t", static_report.bytes_per_token)
+        println("static_allocated_bytes\t", static_report.expected_bytes)
+        println("static_final_valid_bytes\t", static_report.bytes_per_token * 79)
+        println("static_storage_identity_passed\ttrue")
+        println("static_dynamic_prefix_bitwise_passed\ttrue")
+        println("static_float32_reference_parity_passed\ttrue")
+        _static_benchmark_32_tokens(
+            text_parameters,
+            features,
+            input_ids,
+            rope_layout,
+            checkpoint,
+            Float32,
+        )
+    else
+        prepared = _static_prepare_bfloat16(
+            options.model_dir,
+            options.reference_dir,
+        )
+        static_report = _static_verify_four_phases(
+            prepared.text_parameters,
+            prepared.features,
+            prepared.input_ids,
+            prepared.rope_layout,
+            prepared.checkpoint,
+            prepared.metadata,
+            prepared.reference,
+            BFloat16,
+        )
+        println("static_compute_dtype\tbfloat16")
+        println("bf16_numerical_contract\tstatic_dynamic_same_device_smoke")
+        println("bf16_hf_decode_tensor_parity_claimed\tfalse")
+        println("static_capacity_tokens\t", _STATIC_CAPACITY)
+        println("static_bytes_per_token\t", static_report.bytes_per_token)
+        println("static_allocated_bytes\t", static_report.expected_bytes)
+        println("static_final_valid_bytes\t", static_report.bytes_per_token * 79)
+        println("static_storage_identity_passed\ttrue")
+        println("static_dynamic_prefix_bitwise_passed\ttrue")
+        println("static_bfloat16_smoke_passed\ttrue")
+        _static_benchmark_32_tokens(
+            prepared.text_parameters,
+            prepared.features,
+            prepared.input_ids,
+            prepared.rope_layout,
+            prepared.checkpoint,
+            BFloat16,
+        )
+    end
+    return nothing
 end
+
+abspath(PROGRAM_FILE) == abspath(@__FILE__) && _static_main()

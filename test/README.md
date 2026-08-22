@@ -30,9 +30,16 @@ test/
     │   ├── chapter37_qwen3_task_quality/
     │   ├── chapter38_qwen3_tool_task_success/
     │   └── chapter39_persistent_semantic_memory/
-    └── episode08_environment_action_loop/
-        ├── chapter40_deterministic_gridworld/
-        └── chapter42_environment_event_memory/
+    ├── episode08_environment_action_loop/
+    │   ├── chapter40_deterministic_gridworld/
+    │   └── chapter42_environment_event_memory/
+    ├── episode09_qwen3_vl_multimodal_perception/
+    │   ├── chapter43_qwen3_vl_vision_architecture/
+    │   ├── chapter44_qwen3_vl_multimodal_prefill/
+    │   └── chapter45_qwen3_vl_dynamic_decode/
+    └── episode10_qwen3_vl_efficient_generation/
+        ├── chapter46_qwen3_vl_static_cache/
+        └── chapter47_qwen3_vl_long_generation_profile/
 ```
 
 ## Chapter 索引
@@ -81,6 +88,11 @@ test/
 | 07 | 39 | append-only memory journal、fresh load、exact retrieval context 与三臂任务契约 |
 | 08 | 40 | observation/action/transition、GridWorld safety、BFS oracle、反馈对照与完整 replay |
 | 08 | 42 | clean environment-event 显式写回、authoritative-spec 准入、fresh-load exact-spec retrieval、token-matched 三臂与 tokenizer-only replay |
+| 09 | 43 | Qwen3-VL checkpoint/vision architecture、raw processor 与真实 vision parity |
+| 09 | 44 | content-list chat、placeholder、mRoPE、DeepStack 与 decoder prefill |
+| 09 | 45 | dynamic K/V、cached decode、单图 greedy generation 与 HF DynamicCache oracle |
+| 10 | 46 | bounded static K/V、fixed storage identity、overflow/reset 与 dynamic/static parity |
+| 10 | 47 | static decode stage runner 的数值透明性、顺序完整性与长生成 profile 骨架 |
 
 `fixtures/` 只存在于拥有该证据的 Chapter 目录中。跨 Chapter 复用 fixture 时，
 测试显式引用其原始 Chapter，不复制第二份数据。`support/` 只存放无独立产品能力

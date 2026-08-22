@@ -827,7 +827,7 @@ forward 为 `18.959 / 0.0641 s`，冷/热 embedding max-abs 为 `0`；
 token/mask、五档数值、15 组 top-k 与 semantic memory 门禁全部通过。
 普通沙箱内 `nvidia-smi` 因设备隔离失败，不代表宿主机驱动不可用。
 
-## Chapter 43–46 Qwen3-VL-2B-Instruct 资产
+## Chapter 43–47 Qwen3-VL-2B-Instruct 资产
 
 本章使用 ModelScope 国内源恢复完整官方仓库：
 
@@ -1161,6 +1161,26 @@ keyword 定义同名 prefill，后定义会覆盖前定义并触发 precompile m
 最终保留显式 `hf_qwen3_vl_text_prefill_static` / `_decode_step_static` API，generation
 内部只在 positional cache helper 上分派。资产没有变化，但这一语言契约决定了
 reference verifier 必须同时回归 Chapter 45 dynamic 路径。
+
+Chapter 47 继续使用同一 checkpoint、Chapter 45 decode reference、确定性 image
+和 76-token prompt，不新增权重或外部 oracle。长生成 allocation profile 命令为：
+
+```bash
+QWEN3_VL_MODEL_DIR=/home/ubuntu/models/modelscope/Qwen/Qwen3-VL-2B-Instruct
+QWEN3_VL_DECODE_REFERENCE_DIR=/tmp/qwen3-vl-decode-f32
+
+julia --project=. --startup-file=no \
+  scripts/benchmark_qwen3_vl_static_long_generation.jl \
+  "$QWEN3_VL_MODEL_DIR" "$QWEN3_VL_DECODE_REFERENCE_DIR" \
+  /tmp/qwen3_vl_long_profile.json
+```
+
+默认 workload 为 32/128/256-token BF16 static generation、每个长度三次；可用
+`LIFEAI_QWEN3_VL_PROFILE_LENGTHS` 和 `LIFEAI_QWEN3_VL_PROFILE_REPEATS`
+显式缩小 smoke（每个长度至少 4），但缩小结果不能关闭 Chapter 47。脚本输出累计 allocation traffic、
+allocation count、CUDA pool high-water、host greedy selection、无 hook latency 和
+最终 step 的逐 stage attribution。当前尚未提交真实 profile JSON；资产段只记录恢复
+与执行方法，不把 profiler 骨架写成实证结果。
 
 ## Qwen3-30B-A3B 资产状态
 

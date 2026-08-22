@@ -19,6 +19,7 @@ CUDA Graph、零分配 decode 或长上下文部署已经完成。
 ## 章节目录
 
 1. [`Chapter 46 — Qwen3-VL bounded static KV cache 与可复用 generation state`](chapter46_qwen3_vl_static_cache.md)（Closed）
+2. [`Chapter 47 — Qwen3-VL 长生成 allocation profile 与 decoder workspace 归因`](chapter47_qwen3_vl_long_generation_profile.md)（Open）
 
 ## 预期能力变化
 
@@ -58,6 +59,16 @@ boundary，不声称 BF16 strict parity。最终交替顺序三样本的 dynamic
 中位为 `0.849395 / 0.840655 s`，两者接近且对顺序/GC 敏感，因此不作为 gate 或
 普遍加速结论。
 
+Chapter 47 已 Open。它先加入数值透明的 internal decode-stage runner，把 request
+与 28 个 decoder blocks 拆成 token embedding、mRoPE、Q/K/V projection、QK-Norm、
+RoPE、K/V write、attention、O projection/residual、MLP、final norm 和 vocabulary
+logits 等阶段；tiny profiled/unprofiled decode 的 logits、K/V 与状态 exact，调用顺序
+进入默认离线回归。新的真实 benchmark 固定 76-token 单图 prompt 与
+32/128/256-token BF16 static generation，分别记录 allocation traffic、allocation
+count、pool high-water mark、host greedy selection 和无 hook latency。真实报告与
+第 5–256 token 的独立 correctness oracle 尚未采集，因此本章和 Episode 10 都保持
+Open，不提前选择或宣称 workspace 优化对象。
+
 ## Episode Close 条件
 
 - bounded K/V storage 在真实 Qwen3-VL checkpoint 与目标 GPU 上证明地址、容量、
@@ -75,5 +86,6 @@ Chapter 46 关闭的是 K/V growth allocation：它消除了 dynamic `cat` 对�
 重复分配与复制，并提供可 reset 的有界 request state。但 attention、线性投影、mRoPE、
 MLP、final norm、vocabulary logits 和 generation trace 仍会产生临时对象；当前也没有
 CUDA Graph/XLA static executable、并发 request scheduler、长生成 benchmark 或完整
-BF16 strict oracle。因此 Episode 10 保持 Open，下一步应以真实 allocation profile
-选择 workspace reuse 和长生成验收，而不是仅凭固定 K/V shape 宣称部署优化完成。
+BF16 strict oracle。Chapter 47 已提供真实 allocation profile 的可复现入口，但冻结
+32/128/256-token 报告与 workspace 决策尚未完成。因此 Episode 10 保持 Open，不能仅凭
+固定 K/V shape 或 profiler 骨架宣称部署优化完成。

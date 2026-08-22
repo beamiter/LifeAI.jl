@@ -27,7 +27,10 @@ public contract and has a focused regression in `test/test_sampling_core.jl`,
 19. Reject appends whose exact encoded size would exceed the journal budget before writing.
 20. Require Unix journals to be root/current-user owned, single-linked, and private.
 
-The repository's full `Pkg.test()` remains blocked before test execution by
-the current Manifest/dependency resolution combination. The three focused test
-files are intentionally independently loadable so these contracts remain
-verifiable in that environment.
+The ignored local Manifest has since been regenerated, and the CI Julia
+1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
+imports the real `LifeAI` module before these files, preventing their standalone
+fallbacks from polluting later episode tests. The three focused files remain
+independently loadable for fast contract checks, and the complete default suite
+is the integration gate. CI resolves from the tracked `Project.toml`; the local
+Manifest is intentionally not a repository artifact.

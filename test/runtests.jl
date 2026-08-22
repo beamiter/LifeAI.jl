@@ -1,6 +1,7 @@
 using Test
 using Random
 using Lux
+import LifeAI
 using LifeAI: MultiHeadAttention, manual_scaled_dot_product_attention, batched_scaled_dot_product_attention,
     RoPE, apply_rope, TransformerBlock, GPTModel
 
@@ -352,6 +353,15 @@ end
             episode,
             chapter,
             "test_qwen3_vl_static_cache.jl",
+        ))
+    end
+    @testset "Chapter 47 — Long-generation allocation profile" begin
+        episode = "episode10_qwen3_vl_efficient_generation"
+        chapter = "chapter47_qwen3_vl_long_generation_profile"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_long_generation_profile.jl",
         ))
     end
 end

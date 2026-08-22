@@ -268,6 +268,16 @@ function reset_qwen3_vl_static_kv_cache!(
     return cache
 end
 
+@inline function _qwen3_vl_profile_stage(
+    thunk,
+    runner,
+    stage::Symbol,
+    layer_index::Int,
+)
+    runner === nothing && return thunk()
+    return runner(stage, layer_index, thunk)
+end
+
 function _qwen3_vl_cache_block_core(
     spec,
     block,
@@ -276,69 +286,148 @@ function _qwen3_vl_cache_block_core(
     sin_values,
     mask,
     store,
+    profile_runner=nothing,
+    layer_index::Int=0,
 )
     head_dim = spec.head_dim
     sequence_length, batch_size = size(x, 2), size(x, 3)
-    normed = _qwen3_vl_text_rmsnorm(x, block.norm1, spec.rms_norm_eps)
-    queries = reshape(
-        _bf16a_linear(block.q_weight, normed),
-        head_dim, spec.num_attention_heads, sequence_length, batch_size,
-    )
-    keys = reshape(
-        _bf16a_linear(block.k_weight, normed),
-        head_dim, spec.num_key_value_heads, sequence_length, batch_size,
-    )
-    values = reshape(
-        _bf16a_linear(block.v_weight, normed),
-        head_dim, spec.num_key_value_heads, sequence_length, batch_size,
-    )
-    queries = _qwen3_vl_text_rmsnorm(
-        queries,
-        block.q_norm,
-        spec.rms_norm_eps,
-    )
-    keys = _qwen3_vl_text_rmsnorm(keys, block.k_norm, spec.rms_norm_eps)
-    queries = _qwen3_vl_text_apply_rope(queries, cos_values, sin_values)
-    keys = _qwen3_vl_text_apply_rope(keys, cos_values, sin_values)
+    normed = _qwen3_vl_profile_stage(
+        profile_runner,
+        :pre_attention_norm,
+        layer_index,
+    ) do
+        _qwen3_vl_text_rmsnorm(x, block.norm1, spec.rms_norm_eps)
+    end
+    queries, keys, values = _qwen3_vl_profile_stage(
+        profile_runner,
+        :qkv_projection,
+        layer_index,
+    ) do
+        queries = reshape(
+            _bf16a_linear(block.q_weight, normed),
+            head_dim, spec.num_attention_heads, sequence_length, batch_size,
+        )
+        keys = reshape(
+            _bf16a_linear(block.k_weight, normed),
+            head_dim, spec.num_key_value_heads, sequence_length, batch_size,
+        )
+        values = reshape(
+            _bf16a_linear(block.v_weight, normed),
+            head_dim, spec.num_key_value_heads, sequence_length, batch_size,
+        )
+        (queries, keys, values)
+    end
+    queries, keys = _qwen3_vl_profile_stage(
+        profile_runner,
+        :qk_norm,
+        layer_index,
+    ) do
+        queries = _qwen3_vl_text_rmsnorm(
+            queries,
+            block.q_norm,
+            spec.rms_norm_eps,
+        )
+        keys = _qwen3_vl_text_rmsnorm(
+            keys,
+            block.k_norm,
+            spec.rms_norm_eps,
+        )
+        (queries, keys)
+    end
+    queries, keys = _qwen3_vl_profile_stage(
+        profile_runner,
+        :qk_rope,
+        layer_index,
+    ) do
+        (
+            _qwen3_vl_text_apply_rope(queries, cos_values, sin_values),
+            _qwen3_vl_text_apply_rope(keys, cos_values, sin_values),
+        )
+    end
 
-    attention_keys, attention_values, updated_layer_cache = store(keys, values)
+    attention_keys, attention_values, updated_layer_cache =
+        _qwen3_vl_profile_stage(
+            profile_runner,
+            :kv_write,
+            layer_index,
+        ) do
+            store(keys, values)
+        end
     scaling = 1.0f0 / sqrt(Float32(head_dim))
-    context = if eltype(x) === BFloat16
-        _bf16a_attention(
-            queries,
-            attention_keys,
-            attention_values;
-            scaling,
-            mask,
+    context = _qwen3_vl_profile_stage(
+        profile_runner,
+        :attention,
+        layer_index,
+    ) do
+        if eltype(x) === BFloat16
+            _bf16a_attention(
+                queries,
+                attention_keys,
+                attention_values;
+                scaling,
+                mask,
+            )
+        else
+            _qwen3_vl_text_f32_attention(
+                queries,
+                attention_keys,
+                attention_values,
+                mask;
+                scaling,
+            )
+        end
+    end
+    x = _qwen3_vl_profile_stage(
+        profile_runner,
+        :attention_output_projection_residual,
+        layer_index,
+    ) do
+        attention = _bf16a_linear(
+            block.o_weight,
+            reshape(context, spec.hidden_size, sequence_length, batch_size),
         )
-    else
-        _qwen3_vl_text_f32_attention(
-            queries,
-            attention_keys,
-            attention_values,
-            mask;
-            scaling,
+        _qwen3_vl_text_residual(x, attention)
+    end
+    normed = _qwen3_vl_profile_stage(
+        profile_runner,
+        :post_attention_norm,
+        layer_index,
+    ) do
+        _qwen3_vl_text_rmsnorm(x, block.norm2, spec.rms_norm_eps)
+    end
+    gate, up = _qwen3_vl_profile_stage(
+        profile_runner,
+        :mlp_gate_up_projection,
+        layer_index,
+    ) do
+        (
+            _bf16a_linear(block.gate_weight, normed),
+            _bf16a_linear(block.up_weight, normed),
         )
     end
-    attention = _bf16a_linear(
-        block.o_weight,
-        reshape(context, spec.hidden_size, sequence_length, batch_size),
-    )
-    x = _qwen3_vl_text_residual(x, attention)
-
-    normed = _qwen3_vl_text_rmsnorm(x, block.norm2, spec.rms_norm_eps)
-    gate = _bf16a_linear(block.gate_weight, normed)
-    up = _bf16a_linear(block.up_weight, normed)
-    hidden = if eltype(x) === BFloat16
-        gate_f32 = _bf16a_f32(gate)
-        activated = BFloat16.(gate_f32 ./ (1.0f0 .+ exp.(.-gate_f32)))
-        BFloat16.(_bf16a_f32(activated) .* _bf16a_f32(up))
-    else
-        activated = gate ./ (1.0f0 .+ exp.(.-gate))
-        activated .* up
+    hidden = _qwen3_vl_profile_stage(
+        profile_runner,
+        :mlp_activation,
+        layer_index,
+    ) do
+        if eltype(x) === BFloat16
+            gate_f32 = _bf16a_f32(gate)
+            activated = BFloat16.(gate_f32 ./ (1.0f0 .+ exp.(.-gate_f32)))
+            BFloat16.(_bf16a_f32(activated) .* _bf16a_f32(up))
+        else
+            activated = gate ./ (1.0f0 .+ exp.(.-gate))
+            activated .* up
+        end
     end
-    mlp = _bf16a_linear(block.down_weight, hidden)
-    return _qwen3_vl_text_residual(x, mlp), updated_layer_cache
+    x = _qwen3_vl_profile_stage(
+        profile_runner,
+        :mlp_down_projection_residual,
+        layer_index,
+    ) do
+        mlp = _bf16a_linear(block.down_weight, hidden)
+        _qwen3_vl_text_residual(x, mlp)
+    end
+    return x, updated_layer_cache
 end
 
 function _qwen3_vl_cache_block(
@@ -619,6 +708,8 @@ function _qwen3_vl_static_cache_block!(
     mask,
     layer_cache::Qwen3VLStaticLayerKVCache,
     write_start::Int,
+    profile_runner=nothing,
+    layer_index::Int=0,
 )
     sequence_length = size(x, 2)
     write_stop = write_start + sequence_length - 1
@@ -671,6 +762,8 @@ function _qwen3_vl_static_cache_block!(
         sin_values,
         mask,
         store,
+        profile_runner,
+        layer_index,
     )
 end
 
@@ -830,18 +923,11 @@ function hf_qwen3_vl_text_prefill_static(
     return result, cache
 end
 
-"""
-    hf_qwen3_vl_text_decode_step_static(parameters, token, cache)
-
-Write one token in place at physical slot `cache.position + 1`, attend only to
-the valid `1:cache.position+1` prefix, and return `(logits, cache)`. The next
-mRoPE coordinate remains `cache.position + cache.rope_delta` before the
-position increment.
-"""
-function hf_qwen3_vl_text_decode_step_static(
+function _qwen3_vl_text_decode_step_static_impl(
     parameters,
     token,
     cache::Qwen3VLStaticKVCache,
+    profile_runner,
 )
     spec = _qwen3_vl_cache_spec(parameters)
     _validate_qwen3_vl_static_kv_cache(parameters, cache)
@@ -860,18 +946,30 @@ function hf_qwen3_vl_text_decode_step_static(
         "Qwen3-VL decode token is outside the vocabulary",
     ))
 
-    x = reshape(
-        gather(parameters.embedding, tokens),
-        spec.hidden_size,
-        1,
-        cache.batch_size,
-    )
-    position_ids = fill(coordinate, 3, 1, cache.batch_size)
-    cos_values, sin_values = _qwen3_vl_text_mrope(
-        spec,
-        parameters.embedding,
-        position_ids,
-    )
+    x = _qwen3_vl_profile_stage(
+        profile_runner,
+        :token_embedding,
+        0,
+    ) do
+        reshape(
+            gather(parameters.embedding, tokens),
+            spec.hidden_size,
+            1,
+            cache.batch_size,
+        )
+    end
+    cos_values, sin_values = _qwen3_vl_profile_stage(
+        profile_runner,
+        :mrope_prepare,
+        0,
+    ) do
+        position_ids = fill(coordinate, 3, 1, cache.batch_size)
+        _qwen3_vl_text_mrope(
+            spec,
+            parameters.embedding,
+            position_ids,
+        )
+    end
     write_position = cache.position + 1
     for julia_layer in 1:spec.num_hidden_layers
         x, _ = _qwen3_vl_static_cache_block!(
@@ -883,15 +981,77 @@ function hf_qwen3_vl_text_decode_step_static(
             nothing,
             cache.layers[julia_layer],
             write_position,
+            profile_runner,
+            julia_layer,
         )
     end
-    final_hidden = _qwen3_vl_text_rmsnorm(
-        x,
-        parameters.final_norm,
-        spec.rms_norm_eps,
-    )
-    logits = _qwen3_vl_project_tied(parameters.embedding, final_hidden)
+    final_hidden = _qwen3_vl_profile_stage(
+        profile_runner,
+        :final_norm,
+        0,
+    ) do
+        _qwen3_vl_text_rmsnorm(
+            x,
+            parameters.final_norm,
+            spec.rms_norm_eps,
+        )
+    end
+    logits = _qwen3_vl_profile_stage(
+        profile_runner,
+        :vocab_logits,
+        0,
+    ) do
+        _qwen3_vl_project_tied(parameters.embedding, final_hidden)
+    end
     cache.position = write_position
     _validate_qwen3_vl_static_kv_cache(parameters, cache)
     return logits, cache
+end
+
+"""
+    hf_qwen3_vl_text_decode_step_static(parameters, token, cache)
+
+Write one token in place at physical slot `cache.position + 1`, attend only to
+the valid `1:cache.position+1` prefix, and return `(logits, cache)`. The next
+mRoPE coordinate remains `cache.position + cache.rope_delta` before the
+position increment.
+"""
+function hf_qwen3_vl_text_decode_step_static(
+    parameters,
+    token,
+    cache::Qwen3VLStaticKVCache,
+)
+    return _qwen3_vl_text_decode_step_static_impl(
+        parameters,
+        token,
+        cache,
+        nothing,
+    )
+end
+
+"""
+    _profile_qwen3_vl_text_decode_step_static(parameters, token, cache, runner)
+
+Run one bounded-static Qwen3-VL decode step while routing each decoder stage
+through `runner(stage, layer_index, thunk)`. Request-level stages use layer
+index zero; decoder blocks use one-based layer indices. This diagnostic entry
+point preserves the public decode path's validation, cache mutation, and
+numerical operations. It is intended for allocation attribution, not latency
+measurement, because a runner may synchronize between stages.
+"""
+function _profile_qwen3_vl_text_decode_step_static(
+    parameters,
+    token,
+    cache::Qwen3VLStaticKVCache,
+    runner,
+)
+    runner === nothing && throw(ArgumentError(
+        "Qwen3-VL profiling requires a stage runner",
+    ))
+    return _qwen3_vl_text_decode_step_static_impl(
+        parameters,
+        token,
+        cache,
+        runner,
+    )
 end
