@@ -32,6 +32,14 @@ export load_hf_gpt2_tokenizer, hf_gpt2_pretokenize
 export fit_tokenizer, fit_byte_bpe, encode, decode, decode_bytes, vocab_size
 export normalize_text, special_token_id, token_byte_length, encoded_byte_length
 export tokenizer_config, tokenizer_fingerprint, tokenizer_statistics
+export MAX_DIFFUSION_STEPS, DiffusionSchedule, linear_diffusion_schedule, scaled_linear_diffusion_schedule
+export cosine_diffusion_schedule, diffusion_coefficients, diffusion_snr, diffusion_logsnr
+export validate_diffusion_schedule, diffusion_beta, diffusion_alpha, diffusion_alpha_cumprod
+export diffusion_previous_alpha_cumprod, diffusion_posterior_variance
+export diffusion_posterior_mean_coefficients, diffusion_posterior_mean
+export diffusion_ddim_step, diffusion_min_snr_weight, diffusion_p2_weight
+export diffuse_sample, diffusion_sample_from_epsilon, diffusion_epsilon_from_sample
+export diffusion_velocity, diffusion_sample_from_velocity, diffusion_epsilon_from_velocity
 export TOKENIZER_ARTIFACT_VERSION, save_tokenizer, load_tokenizer
 export DatasetLoader, DocumentDatasetLoader, num_samples, num_batches, target_byte_count
 export split_token_stream, split_text_stream, train_validation_loaders
@@ -126,6 +134,10 @@ export agent_loop_summary, wilson_interval
 
 # Persistent exact semantic memory and retrieval context
 export AGENT_MEMORY_FORMAT_VERSION
+export MAX_AGENT_MEMORY_JOURNAL_BYTES, MAX_AGENT_MEMORY_RECORD_BYTES
+export MAX_AGENT_MEMORY_RECORDS, MAX_AGENT_MEMORY_TEXT_BYTES
+export MAX_AGENT_MEMORY_METADATA_ENTRIES, MAX_AGENT_MEMORY_METADATA_KEY_BYTES
+export MAX_AGENT_MEMORY_METADATA_VALUE_BYTES, MAX_AGENT_MEMORY_METADATA_BYTES
 export AgentMemoryRecord, AgentMemoryStore
 export load_agent_memory_store, append_agent_memory!, agent_memory_fingerprint
 export AgentMemoryIndex, AgentMemoryHit, AgentMemoryContext

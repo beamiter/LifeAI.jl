@@ -12,16 +12,14 @@ elementwise ops, reductions and scalar arithmetic, so one implementation runs
 both on ordinary host arrays (reference and tests) and inside a traced XLA
 program (deployment).
 
-Deliberate contract differences from the host policy, which follows
-HuggingFace and keeps every score tied with the k-th largest:
+The host and device policies both keep exactly `top_k` candidates and break
+exact-score ties by the smallest vocabulary index. Probability sums still run
+in descending-score order on the device instead of index order on the host, so
+results can differ only when floating-point accumulation moves an exact
+decision boundary.
 
-  * the device policy keeps exactly `top_k` candidates and breaks exact ties by
-    the smallest vocabulary index;
-  * probability sums run in descending-score order instead of index order, so
-    results can differ by float rounding at an exact decision boundary.
-
-Both differences are characterized by the Week 23 tests instead of assumed
-away. Randomness stays on the host: the caller passes one uniform per step, so
+This remaining difference is characterized by the Week 23 tests instead of
+assumed away. Randomness stays on the host: the caller passes one uniform per step, so
 RNG semantics, seeding and replay are unchanged.
 """
 
@@ -53,20 +51,23 @@ function _validate_device_sampling_options(;
     top_p,
     vocab_size=nothing,
 )
-    temperature isa Real || throw(ArgumentError(
-        "temperature must be a real number for device sampling",
+    temperature isa Real && !(temperature isa Bool) || throw(ArgumentError(
+        "temperature must be a real number other than Bool for device sampling",
     ))
     isfinite(temperature) && temperature > 0 || throw(ArgumentError(
         "temperature must be finite and positive for device sampling",
     ))
-    top_k isa Integer || throw(ArgumentError(
-        "top_k must be an integer for device sampling",
+    top_k isa Integer && !(top_k isa Bool) || throw(ArgumentError(
+        "top_k must be an integer other than Bool for device sampling",
     ))
     top_k > 0 || throw(ArgumentError(
         "top_k must be positive for device sampling",
     ))
-    top_p isa Real || throw(ArgumentError(
-        "top_p must be a real number for device sampling",
+    top_k <= typemax(Int) || throw(ArgumentError(
+        "top_k is too large for device sampling",
+    ))
+    top_p isa Real && !(top_p isa Bool) || throw(ArgumentError(
+        "top_p must be a real number other than Bool for device sampling",
     ))
     isfinite(top_p) && 0 < top_p <= 1 || throw(ArgumentError(
         "top_p must be finite and in (0, 1]",
@@ -76,19 +77,33 @@ function _validate_device_sampling_options(;
             "top_k exceeds the model vocabulary size",
         ))
     end
+    resolved_temperature = Float32(temperature)
+    isfinite(resolved_temperature) && resolved_temperature > 0 || throw(ArgumentError(
+        "temperature must remain finite and positive at Float32 device sampling precision",
+    ))
+    resolved_top_p = Float32(top_p)
+    isfinite(resolved_top_p) && 0 < resolved_top_p <= 1 || throw(ArgumentError(
+        "top_p must remain finite and positive at Float32 device sampling precision",
+    ))
     return (;
-        temperature=Float32(temperature),
+        temperature=resolved_temperature,
         top_k=Int(top_k),
-        top_p=Float32(top_p),
+        top_p=resolved_top_p,
     )
 end
 
 function _validate_device_sampling_uniform(uniform)
-    uniform isa Real || throw(ArgumentError("sample uniform must be a real number"))
+    uniform isa Real && !(uniform isa Bool) || throw(ArgumentError(
+        "sample uniform must be a real number other than Bool",
+    ))
     isfinite(uniform) && 0 <= uniform < 1 || throw(ArgumentError(
         "sample uniform must be finite and in [0, 1)",
     ))
-    return Float32(uniform)
+    resolved = Float32(uniform)
+    isfinite(resolved) && 0 <= resolved < 1 || throw(ArgumentError(
+        "sample uniform must remain finite and in [0, 1) at Float32 device sampling precision",
+    ))
+    return resolved
 end
 
 """
@@ -105,14 +120,14 @@ function _device_top_k_candidates(scores, index_column, top_k::Int)
     values = Vector{Any}(undef, top_k)
     masks = Vector{Any}(undef, top_k)
     indices = Vector{Any}(undef, top_k)
+    sentinel = length(index_column) + 1
     work = scores
     for slot in 1:top_k
         value = maximum(work)
-        # HuggingFace ranks with a stable ascending sort and then reads it
-        # backwards, so the highest index wins an exact tie. `findmax` would
-        # return the lowest index and silently pick a different token whenever
-        # two logits are bit-identical, which BF16 logits make possible.
-        index = maximum(ifelse.(work .== value, index_column, 0))
+        # Match the host's stable descending rank: the smallest vocabulary
+        # index wins an exact tie. The sentinel is outside the one-based
+        # vocabulary, so it cannot win the reduction.
+        index = minimum(ifelse.(work .== value, index_column, sentinel))
         mask = index_column .== index
         values[slot] = value
         masks[slot] = mask
@@ -215,7 +230,7 @@ function _device_sample_next_index(
             )
         end
         positive = probabilities[slot] > zero(total)
-        hit = ifelse(positive, threshold <= cumulative, positive)
+        hit = ifelse(positive, threshold < cumulative, positive)
         first_hit = ifelse(
             ifelse(hit, indices[slot] < first_hit, hit),
             indices[slot],
@@ -249,8 +264,8 @@ function device_sample_token(
     top_k,
     top_p,
 )
+    _sampling_length(logits, "logits")
     vector = vec(collect(logits))
-    isempty(vector) && throw(ArgumentError("logits must not be empty"))
     all(isfinite, vector) || throw(ArgumentError(
         "logits contains non-finite values",
     ))
@@ -260,8 +275,12 @@ function device_sample_token(
         top_p,
     )
     checked_uniform = _validate_device_sampling_uniform(uniform)
+    scores = Float32.(vector)
+    all(isfinite, scores) || throw(ArgumentError(
+        "logits must remain finite at Float32 device sampling precision",
+    ))
     return _device_sample_next_index(
-        Float32.(vector),
+        scores,
         checked_uniform,
         options.temperature,
         options.top_p,

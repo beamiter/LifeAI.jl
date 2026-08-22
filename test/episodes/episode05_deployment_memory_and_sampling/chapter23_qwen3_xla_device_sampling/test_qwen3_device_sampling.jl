@@ -28,6 +28,16 @@ using LifeAI: device_sample_token,
         temperature=0.6, top_k=20, top_p=NaN)
     @test_throws ArgumentError _validate_device_sampling_options(;
         temperature=0.6, top_k=20, top_p=0.95, vocab_size=10)
+    @test_throws ArgumentError _validate_device_sampling_options(;
+        temperature=true, top_k=20, top_p=0.95)
+    @test_throws ArgumentError _validate_device_sampling_options(;
+        temperature=0.6, top_k=true, top_p=0.95)
+    @test_throws ArgumentError _validate_device_sampling_options(;
+        temperature=0.6, top_k=20, top_p=true)
+    @test_throws ArgumentError _validate_device_sampling_options(;
+        temperature=big"1e-1000", top_k=20, top_p=0.95)
+    @test_throws ArgumentError _validate_device_sampling_options(;
+        temperature=0.6, top_k=20, top_p=big"1e-1000")
 
     options = _validate_device_sampling_options(;
         temperature=0.6, top_k=20, top_p=0.95, vocab_size=151936)
@@ -40,6 +50,8 @@ using LifeAI: device_sample_token,
     @test_throws ArgumentError _validate_device_sampling_uniform(1.0)
     @test_throws ArgumentError _validate_device_sampling_uniform(-0.1)
     @test_throws ArgumentError _validate_device_sampling_uniform(NaN)
+    @test_throws ArgumentError _validate_device_sampling_uniform(false)
+    @test_throws ArgumentError _validate_device_sampling_uniform(prevfloat(1.0))
 
     @test_throws ArgumentError device_sample_token(
         Float32[], 0.5f0; temperature=1.0, top_k=1, top_p=1.0)
@@ -119,20 +131,17 @@ end
     @test count(>(0), counts) == count(>(0), probabilities)
 end
 
-@testset "device sampling ranks exact ties like HuggingFace" begin
-    # Two bit-identical maxima. The host sorts ascending and stably, then
-    # protects the last entry, so index 3 outranks index 1; a nucleus tight
-    # enough to keep a single token must therefore keep index 3. `findmax`
-    # would have kept index 1 and silently sampled a different token.
+@testset "device sampling matches the host's stable exact-k tie policy" begin
+    # Two bit-identical maxima. Both paths use a stable descending rank, so the
+    # smallest vocabulary index wins when the nucleus keeps one token.
     tied = Float32[4.0, 1.0, 4.0, 0.0]
     @test device_sample_token(tied, 0.5f0;
-        temperature=1.0, top_k=4, top_p=0.4) == 3
+        temperature=1.0, top_k=4, top_p=0.4) == 1
     @test _sample_token(tied, Random.default_rng();
-        temperature=1.0, top_k=4, top_p=0.4, sample_uniform=0.5f0) == 3
+        temperature=1.0, top_k=4, top_p=0.4, sample_uniform=0.5f0) == 1
 
-    # The documented contract difference: the host keeps every score tied with
-    # the k-th largest, the device keeps exactly k candidates. With three tied
-    # scores and top_k = 2 the host can still reach index 1, the device cannot.
+    # With three tied scores and top_k = 2, both paths retain exactly the first
+    # two stable candidates.
     tie_at_k = Float32[3.0, 3.0, 3.0, -20.0]
     host_choices = Set(
         _sample_token(tie_at_k, Random.default_rng();
@@ -144,9 +153,15 @@ end
             temperature=1.0, top_k=2, top_p=1.0)
         for u in 0.0f0:0.05f0:0.95f0
     )
-    @test host_choices == Set([1, 2, 3])
-    @test device_choices == Set([2, 3])
-    @test issubset(device_choices, host_choices)
+    @test host_choices == Set([1, 2])
+    @test device_choices == host_choices
+
+    # Inverse-CDF intervals are half-open. At an exact cumulative boundary the
+    # following token wins in both implementations.
+    @test device_sample_token(Float32[0, 0], 0.5f0;
+        temperature=1.0, top_k=2, top_p=1.0) == 2
+    @test _sample_token(Float32[0, 0], Random.default_rng();
+        temperature=1.0, top_k=2, top_p=1.0, sample_uniform=0.5f0) == 2
 end
 
 @testset "device sampling is deterministic and RNG compatible" begin

@@ -142,19 +142,28 @@ end
     ) == 2
     @test LifeAI._sample_categorical(Float32[0.6, 0.3999999, 0], 0.9999999) == 2
     @test_throws ArgumentError LifeAI._sample_categorical(zeros(Float32, 3), 0.5)
+    @test_throws ArgumentError LifeAI._sample_categorical(Float32[], 0.5)
+    @test_throws ArgumentError LifeAI._sample_categorical(Float32[0.5, NaN], 0.5)
+    @test_throws ArgumentError LifeAI._sample_categorical(Float32[1.1, -0.1], 0.5)
+    @test_throws ArgumentError LifeAI._sample_categorical(Float32[0.2, 0.2], 0.5)
 
     tied, _ = LifeAI._sampling_distribution(
         Float32[2, 1, 1, 0];
         top_k=2,
         top_p=1.0f0,
     )
-    @test findall(isfinite, tied) == [1, 2, 3]
+    @test findall(isfinite, tied) == [1, 2]
     @test_throws ArgumentError LifeAI._sampling_distribution(logits; top_p=0)
     @test_throws ArgumentError LifeAI._sampling_distribution(logits; top_k=0)
     @test_throws ArgumentError LifeAI._sample_token(
         logits,
         rng;
         sample_uniform=1.0,
+    )
+    @test_throws ArgumentError LifeAI._sample_token(
+        logits,
+        rng;
+        sample_uniform=false,
     )
 end
 
@@ -273,6 +282,13 @@ end
             strategy=:sample,
             max_new_tokens=1,
             sample_uniforms=[NaN],
+        )
+        @test_throws ArgumentError generate_hf_text(
+            bundle,
+            "hi";
+            strategy=:sample,
+            max_new_tokens=1,
+            sample_uniforms=[false],
         )
         @test_throws ArgumentError generate_hf_text(
             bundle,

@@ -39,7 +39,11 @@ function _hf_sample_choice(
         top_k,
         top_p,
     )
-    uniform = sample_uniform === nothing ? rand(rng, Float32) : Float32(sample_uniform)
+    # Preserve an explicit draw's type until `_sample_categorical` validates it
+    # and compares it at host precision. In particular, pre-converting here
+    # would turn `Bool` into an accepted 0/1 value and could move a Float64 CDF
+    # boundary before the sampler sees it.
+    uniform = sample_uniform === nothing ? rand(rng, Float32) : sample_uniform
     token_id = _sample_categorical(probabilities, uniform)
     count = min(2, length(values))
     top_ids = partialsortperm(values, 1:count; rev=true)
@@ -133,14 +137,17 @@ function generate_hf_text(
     resolved_top_k = top_k === nothing ? generation_config.top_k : top_k
     resolved_top_p = top_p === nothing ? generation_config.top_p : top_p
     if resolved_strategy === :sample
-        resolved_temperature isa Real && isfinite(resolved_temperature) &&
+        resolved_temperature isa Real && !(resolved_temperature isa Bool) &&
+            isfinite(resolved_temperature) &&
             resolved_temperature > 0 || throw(ArgumentError(
                 "temperature must be a finite positive number",
             ))
-        resolved_top_k isa Integer && resolved_top_k > 0 || throw(ArgumentError(
+        resolved_top_k isa Integer && !(resolved_top_k isa Bool) &&
+            resolved_top_k > 0 && resolved_top_k <= typemax(Int) || throw(ArgumentError(
             "top_k must be a positive integer",
         ))
-        resolved_top_p isa Real && isfinite(resolved_top_p) &&
+        resolved_top_p isa Real && !(resolved_top_p isa Bool) &&
+            isfinite(resolved_top_p) &&
             0 < resolved_top_p <= 1 || throw(ArgumentError(
                 "top_p must be finite and in (0, 1]",
             ))
@@ -150,7 +157,8 @@ function generate_hf_text(
         "sample_uniforms must contain at least max_new_tokens values",
     ))
     uniforms === nothing || all(
-        value -> value isa Real && isfinite(value) && 0 <= value < 1,
+        value -> value isa Real && !(value isa Bool) &&
+            isfinite(value) && 0 <= value < 1,
         uniforms,
     ) || throw(ArgumentError("sample_uniforms values must be finite and in [0, 1)"))
     prompt_ids = encode(tokenizer, prompt; add_special_tokens=false)

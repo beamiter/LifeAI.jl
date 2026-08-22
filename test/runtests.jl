@@ -10,6 +10,9 @@ const LIFEAI_TEST_SUPPORT = joinpath(LIFEAI_TEST_ROOT, "support")
 const LIFEAI_TEST_EPISODES = joinpath(LIFEAI_TEST_ROOT, "episodes")
 
 include(joinpath(LIFEAI_TEST_SUPPORT, "repository_test_assets.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "test_diffusion_sampling.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "test_sampling_core.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "test_memory_core.jl"))
 
 chapter_test(episode, chapter, filename) =
     joinpath(LIFEAI_TEST_EPISODES, episode, chapter, filename)

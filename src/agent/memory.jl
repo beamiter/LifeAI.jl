@@ -10,6 +10,14 @@ different model revision, dimension, or dtype as interchangeable.
 """
 
 const AGENT_MEMORY_FORMAT_VERSION = 1
+const MAX_AGENT_MEMORY_JOURNAL_BYTES = 64 * 1024 * 1024
+const MAX_AGENT_MEMORY_RECORD_BYTES = 1024 * 1024
+const MAX_AGENT_MEMORY_RECORDS = 100_000
+const MAX_AGENT_MEMORY_TEXT_BYTES = 256 * 1024
+const MAX_AGENT_MEMORY_METADATA_ENTRIES = 64
+const MAX_AGENT_MEMORY_METADATA_KEY_BYTES = 128
+const MAX_AGENT_MEMORY_METADATA_VALUE_BYTES = 16 * 1024
+const MAX_AGENT_MEMORY_METADATA_BYTES = 64 * 1024
 
 """One immutable record in an [`AgentMemoryStore`](@ref)."""
 struct AgentMemoryRecord
@@ -25,26 +33,70 @@ mutable struct AgentMemoryStore
     path::String
     records::Vector{AgentMemoryRecord}
     by_id::Dict{String,Int}
+    journal_device::Union{Nothing,UInt64}
+    journal_inode::Union{Nothing,UInt64}
+    journal_size::Union{Nothing,Int64}
+    poisoned::Bool
 end
+
+# Preserve the original public constructor for callers that assemble an empty
+# store in memory. A store loaded from disk always records an exact descriptor
+# identity below; a compatibility-constructed store may create a new journal,
+# but must reload before appending to an already-existing path.
+AgentMemoryStore(
+    path::String,
+    records::Vector{AgentMemoryRecord},
+    by_id::Dict{String,Int},
+) = AgentMemoryStore(abspath(path), records, by_id, nothing, nothing, nothing, false)
 
 function _agent_memory_metadata(metadata)
     metadata === nothing && return Dict{String,String}()
     output = Dict{String,String}()
+    total_bytes = 0
     for (key, value) in pairs(metadata)
+        length(output) < MAX_AGENT_MEMORY_METADATA_ENTRIES || throw(ArgumentError(
+            "memory metadata exceeds the $MAX_AGENT_MEMORY_METADATA_ENTRIES entry limit",
+        ))
         key isa Union{AbstractString,Symbol} || throw(ArgumentError(
             "memory metadata keys must be strings or symbols",
         ))
         key_string = String(key)
         isempty(key_string) && throw(ArgumentError("memory metadata keys must not be empty"))
+        ncodeunits(key_string) <= MAX_AGENT_MEMORY_METADATA_KEY_BYTES || throw(ArgumentError(
+            "memory metadata keys must not exceed $MAX_AGENT_MEMORY_METADATA_KEY_BYTES bytes",
+        ))
         value isa AbstractString || throw(ArgumentError(
             "memory metadata value for $(repr(key_string)) must be a string",
+        ))
+        value_string = String(value)
+        ncodeunits(value_string) <= MAX_AGENT_MEMORY_METADATA_VALUE_BYTES || throw(ArgumentError(
+            "memory metadata values must not exceed $MAX_AGENT_MEMORY_METADATA_VALUE_BYTES bytes",
+        ))
+        total_bytes += ncodeunits(key_string) + ncodeunits(value_string)
+        total_bytes <= MAX_AGENT_MEMORY_METADATA_BYTES || throw(ArgumentError(
+            "memory metadata exceeds the $MAX_AGENT_MEMORY_METADATA_BYTES byte limit",
         ))
         haskey(output, key_string) && throw(ArgumentError(
             "duplicate memory metadata key $(repr(key_string))",
         ))
-        output[key_string] = String(value)
+        output[key_string] = value_string
     end
     return output
+end
+
+function _agent_memory_int(value, label::AbstractString, line_number::Int)
+    value isa Integer && !(value isa Bool) || throw(ArgumentError(
+        "memory journal line $line_number has a non-integer $label",
+    ))
+    converted = try
+        Int(value)
+    catch error
+        error isa InexactError || rethrow()
+        throw(ArgumentError(
+            "memory journal line $line_number has an out-of-range $label",
+        ))
+    end
+    return converted
 end
 
 function _agent_memory_metadata_payload(metadata::Dict{String,String})
@@ -65,6 +117,160 @@ end
 _agent_memory_record_json(record::AgentMemoryRecord) =
     String(JSON3.write(_agent_memory_record_payload(record)))
 
+@inline function _agent_memory_json_whitespace(byte::UInt8)
+    return byte == 0x20 || byte == 0x09 || byte == 0x0a || byte == 0x0d
+end
+
+function _agent_memory_skip_json_whitespace(bytes, index::Int)
+    while index <= length(bytes) && _agent_memory_json_whitespace(bytes[index])
+        index += 1
+    end
+    return index
+end
+
+function _agent_memory_json_string_end(bytes, index::Int, line_number::Int)
+    index <= length(bytes) || throw(ArgumentError(
+        "truncated memory journal JSON string on line $line_number",
+    ))
+    bytes[index] == UInt8('"') || throw(ArgumentError(
+        "invalid memory journal JSON object key on line $line_number",
+    ))
+    index += 1
+    while index <= length(bytes)
+        byte = bytes[index]
+        byte == UInt8('"') && return index + 1
+        if byte == UInt8('\\')
+            index += 1
+            index <= length(bytes) || throw(ArgumentError(
+                "invalid memory journal JSON escape on line $line_number",
+            ))
+        end
+        index += 1
+    end
+    throw(ArgumentError("unterminated memory journal JSON string on line $line_number"))
+end
+
+function _agent_memory_scan_json_value(bytes, index::Int, line_number::Int, depth::Int)
+    depth <= 32 || throw(ArgumentError(
+        "memory journal JSON nesting exceeds 32 levels on line $line_number",
+    ))
+    index = _agent_memory_skip_json_whitespace(bytes, index)
+    index <= length(bytes) || throw(ArgumentError(
+        "truncated memory journal JSON on line $line_number",
+    ))
+    byte = bytes[index]
+    if byte == UInt8('"')
+        return _agent_memory_json_string_end(bytes, index, line_number)
+    elseif byte == UInt8('{')
+        index = _agent_memory_skip_json_whitespace(bytes, index + 1)
+        index <= length(bytes) || throw(ArgumentError(
+            "truncated memory journal JSON object on line $line_number",
+        ))
+        bytes[index] == UInt8('}') && return index + 1
+        keys_seen = Set{String}()
+        while true
+            index <= length(bytes) || throw(ArgumentError(
+                "truncated memory journal JSON object on line $line_number",
+            ))
+            bytes[index] == UInt8('"') || throw(ArgumentError(
+                "invalid memory journal JSON object key on line $line_number",
+            ))
+            key_start = index
+            index = _agent_memory_json_string_end(bytes, index, line_number)
+            key = try
+                JSON3.read(String(bytes[key_start:(index - 1)]), String)
+            catch
+                throw(ArgumentError(
+                    "invalid memory journal JSON object key on line $line_number",
+                ))
+            end
+            key in keys_seen && throw(ArgumentError(
+                "memory journal line $line_number contains a duplicate JSON object key",
+            ))
+            push!(keys_seen, key)
+            index = _agent_memory_skip_json_whitespace(bytes, index)
+            index <= length(bytes) && bytes[index] == UInt8(':') || throw(ArgumentError(
+                "invalid memory journal JSON object on line $line_number",
+            ))
+            index = _agent_memory_scan_json_value(bytes, index + 1, line_number, depth + 1)
+            index = _agent_memory_skip_json_whitespace(bytes, index)
+            index <= length(bytes) || throw(ArgumentError(
+                "truncated memory journal JSON object on line $line_number",
+            ))
+            bytes[index] == UInt8('}') && return index + 1
+            bytes[index] == UInt8(',') || throw(ArgumentError(
+                "invalid memory journal JSON object on line $line_number",
+            ))
+            index = _agent_memory_skip_json_whitespace(bytes, index + 1)
+            index <= length(bytes) || throw(ArgumentError(
+                "truncated memory journal JSON object on line $line_number",
+            ))
+        end
+    elseif byte == UInt8('[')
+        index = _agent_memory_skip_json_whitespace(bytes, index + 1)
+        index <= length(bytes) || throw(ArgumentError(
+            "truncated memory journal JSON array on line $line_number",
+        ))
+        bytes[index] == UInt8(']') && return index + 1
+        while true
+            index = _agent_memory_scan_json_value(bytes, index, line_number, depth + 1)
+            index = _agent_memory_skip_json_whitespace(bytes, index)
+            index <= length(bytes) || throw(ArgumentError(
+                "truncated memory journal JSON array on line $line_number",
+            ))
+            bytes[index] == UInt8(']') && return index + 1
+            bytes[index] == UInt8(',') || throw(ArgumentError(
+                "invalid memory journal JSON array on line $line_number",
+            ))
+            index = _agent_memory_skip_json_whitespace(bytes, index + 1)
+            index <= length(bytes) || throw(ArgumentError(
+                "truncated memory journal JSON array on line $line_number",
+            ))
+        end
+    end
+
+    start = index
+    while index <= length(bytes) &&
+          !_agent_memory_json_whitespace(bytes[index]) &&
+          !(bytes[index] in (UInt8(','), UInt8(']'), UInt8('}')))
+        index += 1
+    end
+    index > start || throw(ArgumentError(
+        "invalid memory journal JSON value on line $line_number",
+    ))
+    return index
+end
+
+function _agent_memory_reject_duplicate_json_keys(line::AbstractString, line_number::Int)
+    bytes = codeunits(line)
+    final_index = _agent_memory_scan_json_value(bytes, 1, line_number, 0)
+    final_index = _agent_memory_skip_json_whitespace(bytes, final_index)
+    final_index == length(bytes) + 1 || throw(ArgumentError(
+        "invalid trailing memory journal JSON on line $line_number",
+    ))
+    return nothing
+end
+
+function _validate_agent_memory_file_metadata(opened, path::AbstractString)
+    isfile(opened) || throw(ArgumentError("memory journal is not a regular file: $path"))
+    0 <= opened.size <= MAX_AGENT_MEMORY_JOURNAL_BYTES || throw(ArgumentError(
+        "memory journal exceeds the $MAX_AGENT_MEMORY_JOURNAL_BYTES byte limit: $path",
+    ))
+    @static if Sys.isunix()
+        effective_uid = UInt32(ccall(:geteuid, Cuint, ()))
+        (opened.uid == effective_uid || opened.uid == 0) || throw(ArgumentError(
+            "memory journal must be owned by root or the current user: $path",
+        ))
+        opened.nlink == 1 || throw(ArgumentError(
+            "memory journal must have exactly one hard link: $path",
+        ))
+        opened.mode & 0o077 == 0 || throw(ArgumentError(
+            "memory journal must not be accessible by group or other users: $path",
+        ))
+    end
+    return nothing
+end
+
 function _agent_memory_id(value::AbstractString)
     id = String(value)
     occursin(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$", id) || throw(ArgumentError(
@@ -83,16 +289,13 @@ function _agent_memory_record(row, line_number::Int)
         "memory journal line $line_number fields do not match schema version " *
         string(AGENT_MEMORY_FORMAT_VERSION),
     ))
-    version = get(row, "schema_version", nothing)
-    version isa Integer && !isa(version, Bool) || throw(ArgumentError(
-        "memory journal line $line_number has a non-integer schema_version",
-    ))
-    Int(version) == AGENT_MEMORY_FORMAT_VERSION || throw(ArgumentError(
+    version = _agent_memory_int(get(row, "schema_version", nothing), "schema_version", line_number)
+    version == AGENT_MEMORY_FORMAT_VERSION || throw(ArgumentError(
         "unsupported memory journal schema version $(repr(version)) on line $line_number",
     ))
-    sequence = get(row, "sequence", nothing)
-    sequence isa Integer && !isa(sequence, Bool) || throw(ArgumentError(
-        "memory journal line $line_number has a non-integer sequence",
+    sequence = _agent_memory_int(get(row, "sequence", nothing), "sequence", line_number)
+    sequence > 0 || throw(ArgumentError(
+        "memory journal line $line_number has a non-positive sequence",
     ))
     id_value = get(row, "id", nothing)
     id_value isa AbstractString || throw(ArgumentError(
@@ -105,6 +308,9 @@ function _agent_memory_record(row, line_number::Int)
     text = String(text_value)
     isempty(strip(text)) && throw(ArgumentError(
         "memory journal line $line_number has empty text",
+    ))
+    ncodeunits(text) <= MAX_AGENT_MEMORY_TEXT_BYTES || throw(ArgumentError(
+        "memory journal line $line_number text exceeds the $MAX_AGENT_MEMORY_TEXT_BYTES byte limit",
     ))
     checksum_value = get(row, "text_sha256", nothing)
     checksum_value isa AbstractString || throw(ArgumentError(
@@ -119,8 +325,15 @@ function _agent_memory_record(row, line_number::Int)
     metadata_entries isa AbstractVector || throw(ArgumentError(
         "memory journal line $line_number metadata must be a list",
     ))
+    length(metadata_entries) <= MAX_AGENT_MEMORY_METADATA_ENTRIES || throw(ArgumentError(
+        "memory journal line $line_number metadata exceeds the entry limit",
+    ))
     metadata = Dict{String,String}()
+    metadata_bytes = 0
     for entry in metadata_entries
+        entry isa AbstractDict || throw(ArgumentError(
+            "memory journal line $line_number metadata entries must be objects",
+        ))
         entry_fields = Set(String(key) for key in keys(entry))
         entry_fields == Set(("key", "value")) || throw(ArgumentError(
             "memory journal line $line_number has an invalid metadata entry",
@@ -134,14 +347,25 @@ function _agent_memory_record(row, line_number::Int)
         isempty(key_string) && throw(ArgumentError(
             "memory journal line $line_number has an empty metadata key",
         ))
+        ncodeunits(key_string) <= MAX_AGENT_MEMORY_METADATA_KEY_BYTES || throw(ArgumentError(
+            "memory journal line $line_number has an oversized metadata key",
+        ))
+        value_string = String(value)
+        ncodeunits(value_string) <= MAX_AGENT_MEMORY_METADATA_VALUE_BYTES || throw(ArgumentError(
+            "memory journal line $line_number has an oversized metadata value",
+        ))
+        metadata_bytes += ncodeunits(key_string) + ncodeunits(value_string)
+        metadata_bytes <= MAX_AGENT_MEMORY_METADATA_BYTES || throw(ArgumentError(
+            "memory journal line $line_number metadata exceeds the byte limit",
+        ))
         haskey(metadata, key_string) && throw(ArgumentError(
             "memory journal line $line_number repeats metadata key $(repr(key_string))",
         ))
-        metadata[key_string] = String(value)
+        metadata[key_string] = value_string
     end
     return AgentMemoryRecord(
         _agent_memory_id(String(id_value)),
-        Int(sequence),
+        sequence,
         text,
         metadata,
         checksum,
@@ -153,39 +377,244 @@ end
 
 Load and strictly validate an append-only JSONL memory journal. A truncated line,
 unknown field, non-contiguous sequence, duplicate ID, or text checksum mismatch
-fails closed. `create=true` permits a missing path but does not write it until the
-first append.
+fails closed. The journal is read through a no-follow regular-file descriptor on
+Unix, and its device/inode/byte-length identity is retained for later appends. `create=true`
+permits a missing path but does not write it until the first append. On Unix an
+existing journal must be owned by root or the effective user, have one hard
+link, and grant no group/other access; newly created journals use mode `0600`.
 """
 function load_agent_memory_store(path::AbstractString; create::Bool=false)
     resolved = abspath(path)
-    if !isfile(resolved)
-        create || throw(ArgumentError("memory journal does not exist: $resolved"))
-        return AgentMemoryStore(resolved, AgentMemoryRecord[], Dict{String,Int}())
+    flags = Base.Filesystem.JL_O_RDONLY | Base.Filesystem.JL_O_CLOEXEC
+    @static if Sys.isunix()
+        flags |= Base.Filesystem.JL_O_NOFOLLOW | Base.Filesystem.JL_O_NONBLOCK
+    end
+    file = try
+        Base.Filesystem.open(resolved, flags)
+    catch error
+        if error isa Base.IOError && error.code == Base.UV_ENOENT
+            create || throw(ArgumentError("memory journal does not exist: $resolved"))
+            return AgentMemoryStore(
+                resolved,
+                AgentMemoryRecord[],
+                Dict{String,Int}(),
+                nothing,
+                nothing,
+                nothing,
+                false,
+            )
+        end
+        if error isa Base.IOError && error.code == Base.UV_ELOOP
+            throw(ArgumentError("memory journal is not a regular file: $resolved"))
+        end
+        rethrow()
+    end
+    opened = stat(file)
+    try
+        _validate_agent_memory_file_metadata(opened, resolved)
+    catch
+        close(file)
+        rethrow()
     end
     records = AgentMemoryRecord[]
     by_id = Dict{String,Int}()
-    for (line_number, line) in enumerate(eachline(resolved))
-        isempty(strip(line)) && throw(ArgumentError(
-            "memory journal contains an empty line at $line_number",
+    try
+        if opened.size > 0
+            seek(file, opened.size - 1)
+            read(file, UInt8) == UInt8('\n') || throw(ArgumentError(
+                "memory journal ends with a truncated record (missing final newline)",
+            ))
+            seekstart(file)
+        end
+        for (line_number, line) in enumerate(eachline(file))
+            line_number <= MAX_AGENT_MEMORY_RECORDS || throw(ArgumentError(
+                "memory journal exceeds the $MAX_AGENT_MEMORY_RECORDS record limit",
+            ))
+            ncodeunits(line) <= MAX_AGENT_MEMORY_RECORD_BYTES || throw(ArgumentError(
+                "memory journal line $line_number exceeds the $MAX_AGENT_MEMORY_RECORD_BYTES byte limit",
+            ))
+            isempty(strip(line)) && throw(ArgumentError(
+                "memory journal contains an empty line at $line_number",
+            ))
+            _agent_memory_reject_duplicate_json_keys(line, line_number)
+            row = try
+                JSON3.read(line, Dict{String,Any})
+            catch
+                throw(ArgumentError("invalid memory journal JSON on line $line_number"))
+            end
+            record = _agent_memory_record(row, line_number)
+            record.sequence == line_number || throw(ArgumentError(
+                "memory journal sequence $(record.sequence) on line $line_number is not contiguous",
+            ))
+            haskey(by_id, record.id) && throw(ArgumentError(
+                "memory journal repeats id $(repr(record.id)) on line $line_number",
+            ))
+            push!(records, record)
+            by_id[record.id] = length(records)
+        end
+        _agent_memory_path_matches(file, resolved; regular=true) || throw(ArgumentError(
+            "memory journal path changed while loading: $resolved",
         ))
-        row = try
-            JSON3.read(line, Dict{String,Any})
-        catch error
-            throw(ArgumentError(
-                "invalid memory journal JSON on line $line_number: " * sprint(showerror, error),
+        completed = stat(file)
+        _validate_agent_memory_file_metadata(completed, resolved)
+        completed.device == opened.device &&
+            completed.inode == opened.inode &&
+            completed.size == opened.size || throw(ArgumentError(
+                "memory journal changed while loading: $resolved",
+            ))
+    finally
+        close(file)
+    end
+    return AgentMemoryStore(
+        resolved,
+        records,
+        by_id,
+        opened.device,
+        opened.inode,
+        opened.size,
+        false,
+    )
+end
+
+function _fsync_agent_memory_file(io::IO, label::AbstractString)
+    @static if Sys.isunix()
+        result = ccall(:fsync, Cint, (Cint,), fd(io))
+        Base.systemerror("fsync $label", result != 0)
+    end
+    return nothing
+end
+
+function _agent_memory_append_flags()
+    flags = Base.Filesystem.JL_O_WRONLY |
+        Base.Filesystem.JL_O_APPEND |
+        Base.Filesystem.JL_O_CLOEXEC |
+        Base.Filesystem.JL_O_SYNC
+    @static if Sys.isunix()
+        flags |= Base.Filesystem.JL_O_NOFOLLOW | Base.Filesystem.JL_O_NONBLOCK
+    end
+    return flags
+end
+
+function _agent_memory_open_parent(path::String)
+    mkpath(path)
+    flags = Base.Filesystem.JL_O_RDONLY | Base.Filesystem.JL_O_CLOEXEC
+    @static if Sys.isunix()
+        flags |= Base.Filesystem.JL_O_DIRECTORY |
+            Base.Filesystem.JL_O_NOFOLLOW |
+            Base.Filesystem.JL_O_NONBLOCK
+    end
+    directory = try
+        Base.Filesystem.open(path, flags)
+    catch error
+        if error isa Base.IOError && error.code in (Base.UV_ELOOP, Base.UV_ENOTDIR)
+            throw(ArgumentError("memory journal parent is not a regular directory: $path"))
+        end
+        rethrow()
+    end
+    if !isdir(stat(directory)) || !_agent_memory_path_matches(directory, path; directory=true)
+        close(directory)
+        throw(ArgumentError("memory journal parent changed while opening: $path"))
+    end
+    return directory
+end
+
+function _agent_memory_open_at(
+    directory::IO,
+    name::String,
+    flags::Integer,
+    mode::Integer=0,
+    fallback_path::String=name,
+)
+    @static if Sys.isunix()
+        descriptor = ccall(
+            :openat,
+            Cint,
+            (Cint, Cstring, Cint, Cuint),
+            fd(directory),
+            name,
+            Cint(flags),
+            Cuint(mode),
+        )
+        if descriptor < 0
+            error_number = Libc.errno()
+            throw(Base.IOError(
+                "openat memory journal: $(Libc.strerror(error_number))",
+                -error_number,
             ))
         end
-        record = _agent_memory_record(row, line_number)
-        record.sequence == line_number || throw(ArgumentError(
-            "memory journal sequence $(record.sequence) on line $line_number is not contiguous",
-        ))
-        haskey(by_id, record.id) && throw(ArgumentError(
-            "memory journal repeats id $(repr(record.id)) on line $line_number",
-        ))
-        push!(records, record)
-        by_id[record.id] = length(records)
+        return Base.Filesystem.File(RawFD(descriptor))
+    else
+        return Base.Filesystem.open(fallback_path, flags, mode)
     end
-    return AgentMemoryStore(resolved, records, by_id)
+end
+
+function _agent_memory_append_file(store::AgentMemoryStore, directory::IO)
+    has_device = store.journal_device !== nothing
+    has_inode = store.journal_inode !== nothing
+    has_size = store.journal_size !== nothing
+    has_device == has_inode == has_size || throw(ArgumentError(
+        "memory store has an incomplete journal identity; reload it",
+    ))
+    creating = !has_device
+    flags = _agent_memory_append_flags()
+    creating && (flags |= Base.Filesystem.JL_O_CREAT | Base.Filesystem.JL_O_EXCL)
+    file = try
+        _agent_memory_open_at(directory, basename(store.path), flags, 0o600, store.path)
+    catch error
+        if creating && error isa Base.IOError && error.code == Base.UV_EEXIST
+            throw(ArgumentError(
+                "memory journal appeared after the store was loaded; reload it: $(store.path)",
+            ))
+        end
+        if error isa Base.IOError && error.code in (Base.UV_ELOOP, Base.UV_EISDIR)
+            throw(ArgumentError("memory journal is not a regular file: $(store.path)"))
+        end
+        rethrow()
+    end
+    opened = stat(file)
+    try
+        _validate_agent_memory_file_metadata(opened, store.path)
+    catch
+        close(file)
+        rethrow()
+    end
+    if !creating && (
+        opened.device != store.journal_device || opened.inode != store.journal_inode
+    )
+        close(file)
+        throw(ArgumentError("memory journal was replaced after loading: $(store.path)"))
+    end
+    if !creating && opened.size != store.journal_size
+        close(file)
+        throw(ArgumentError("memory journal size changed after loading: $(store.path)"))
+    end
+    return file, opened, creating
+end
+
+function _agent_memory_path_matches(
+    file::IO,
+    path::String;
+    regular::Bool=false,
+    directory::Bool=false,
+)
+    opened = stat(file)
+    linked = try
+        lstat(path)
+    catch error
+        error isa Base.IOError && error.code in (Base.UV_ENOENT, Base.UV_ENOTDIR) && return false
+        rethrow()
+    end
+    return (!regular || isfile(linked)) &&
+        (!directory || isdir(linked)) &&
+        opened.device == linked.device &&
+        opened.inode == linked.inode
+end
+
+function _fsync_agent_memory_directory(directory::IO)
+    @static if Sys.isunix()
+        _fsync_agent_memory_file(directory, "memory journal directory")
+    end
+    return nothing
 end
 
 """Stable digest of the canonical records currently loaded in a memory store."""
@@ -198,8 +627,17 @@ end
 """
     append_agent_memory!(store, text; id=nothing, metadata=nothing)
 
-Append one record and flush it before updating the in-memory index. This API is
-single-writer: concurrent processes must coordinate outside the store.
+Append one record before updating the in-memory index. Every append reopens and
+revalidates the loaded journal through a pinned parent directory; on Unix, an
+existing file is opened without `O_CREAT`, while a new journal uses `O_EXCL`.
+The descriptor's byte length must still match the last committed append, so an
+external truncate or append fails before this store writes. Same-size in-place
+changes remain outside this single-writer API and require external coordination.
+For a new journal, the empty inode is synced first; every append then preflights
+durability of the pinned parent directory before record bytes can be written.
+Record bytes are synced before the in-memory update. Any failure after writing may have begun
+poisons the store, which must then be reloaded before another append. This API
+remains single-writer: concurrent processes must coordinate outside the store.
 """
 function append_agent_memory!(
     store::AgentMemoryStore,
@@ -207,8 +645,28 @@ function append_agent_memory!(
     id=nothing,
     metadata=nothing,
 )
+    store.poisoned && throw(ArgumentError(
+        "memory store has an uncertain prior append; reload it before writing again",
+    ))
+    has_device = store.journal_device !== nothing
+    has_inode = store.journal_inode !== nothing
+    has_size = store.journal_size !== nothing
+    has_device == has_inode == has_size || throw(ArgumentError(
+        "memory store has an incomplete journal identity; reload it",
+    ))
+    if !has_device && (!isempty(store.records) || !isempty(store.by_id))
+        throw(ArgumentError(
+            "memory store without a journal identity must be empty; reload or create a fresh store",
+        ))
+    end
     value = String(text)
     isempty(strip(value)) && throw(ArgumentError("memory text must not be empty"))
+    ncodeunits(value) <= MAX_AGENT_MEMORY_TEXT_BYTES || throw(ArgumentError(
+        "memory text exceeds the $MAX_AGENT_MEMORY_TEXT_BYTES byte limit",
+    ))
+    length(store.records) < MAX_AGENT_MEMORY_RECORDS || throw(ArgumentError(
+        "memory store reached the $MAX_AGENT_MEMORY_RECORDS record limit",
+    ))
     sequence = length(store.records) + 1
     record_id = id === nothing ? "memory-$(lpad(sequence, 6, '0'))" :
         _agent_memory_id(String(id))
@@ -222,14 +680,103 @@ function append_agent_memory!(
         _agent_memory_metadata(metadata),
         _sha256_hex(value),
     )
-    mkpath(dirname(store.path))
-    open(store.path, "a") do io
-        write(io, _agent_memory_record_json(record))
-        write(io, '\n')
-        flush(io)
+    encoded_record = _agent_memory_record_json(record) * "\n"
+    ncodeunits(encoded_record) <= MAX_AGENT_MEMORY_RECORD_BYTES || throw(ArgumentError(
+        "encoded memory record exceeds the $MAX_AGENT_MEMORY_RECORD_BYTES byte limit",
+    ))
+    parent_path = dirname(store.path)
+    parent = _agent_memory_open_parent(parent_path)
+    committed = false
+    try
+        file, opened, created = _agent_memory_append_file(store, parent)
+        try
+            _agent_memory_path_matches(parent, parent_path; directory=true) ||
+                throw(ArgumentError(
+                    "memory journal parent changed while opening: $parent_path",
+                ))
+            _agent_memory_path_matches(file, store.path; regular=true) ||
+                throw(ArgumentError(
+                    "memory journal path changed while opening: $(store.path)",
+                ))
+
+            if created
+                # Persist the new empty inode before asking the directory to
+                # persist its name. If either sync fails, no record bytes have
+                # begun and the exact identity retained below is safe to retry.
+                store.journal_device = opened.device
+                store.journal_inode = opened.inode
+                store.journal_size = opened.size
+                _fsync_agent_memory_file(file, "empty memory journal")
+            end
+
+            # Always preflight directory-entry durability, including a retry
+            # after a failed first-create directory sync. Restricting this to
+            # `created` would let that retry write and report success while the
+            # name was still not durable.
+            _fsync_agent_memory_directory(parent)
+
+            # Recheck immediately before the first record byte. The earlier
+            # open-time check protects the loaded identity, while this second
+            # fstat closes the directory-fsync window for detectable external
+            # truncates/appends without pretending to provide multi-writer
+            # serialization.
+            before_write = stat(file)
+            if before_write.device != store.journal_device ||
+                before_write.inode != store.journal_inode ||
+                before_write.size != store.journal_size
+                throw(ArgumentError(
+                    "memory journal changed before append: $(store.path)",
+                ))
+            end
+            previous_size = store.journal_size::Int64
+            record_size = Int64(ncodeunits(encoded_record))
+            previous_size <= typemax(Int64) - record_size || throw(ArgumentError(
+                "memory journal is too large to track safely: $(store.path)",
+            ))
+            expected_size = previous_size + record_size
+            expected_size <= MAX_AGENT_MEMORY_JOURNAL_BYTES || throw(ArgumentError(
+                "memory journal would exceed the $MAX_AGENT_MEMORY_JOURNAL_BYTES byte limit",
+            ))
+
+            # From the first write onward, any exception may mean that a
+            # prefix or a complete record reached the journal. Keep the store
+            # poisoned until the descriptor, pathname and in-memory index all
+            # agree, so a retry cannot duplicate the same sequence and ID.
+            store.poisoned = true
+            write(file, encoded_record)
+            _fsync_agent_memory_file(file, "memory journal")
+            _agent_memory_path_matches(file, store.path; regular=true) ||
+                throw(ArgumentError(
+                    "memory journal path changed while appending: $(store.path)",
+                ))
+            _agent_memory_path_matches(parent, parent_path; directory=true) ||
+                throw(ArgumentError(
+                    "memory journal parent changed while appending: $parent_path",
+                ))
+            committed_stat = stat(file)
+            _validate_agent_memory_file_metadata(committed_stat, store.path)
+            committed_stat.device == store.journal_device &&
+                committed_stat.inode == store.journal_inode ||
+                throw(ArgumentError(
+                    "memory journal identity changed while appending: $(store.path)",
+                ))
+            committed_stat.size == expected_size || throw(ArgumentError(
+                "memory journal size changed while appending: $(store.path)",
+            ))
+            store.journal_size = committed_stat.size
+            push!(store.records, record)
+            store.by_id[record.id] = length(store.records)
+            committed = true
+        finally
+            close(file)
+        end
+    finally
+        close(parent)
     end
-    push!(store.records, record)
-    store.by_id[record.id] = length(store.records)
+    # A successful append includes closing both file and parent descriptors.
+    # If either close raises after bytes may have reached storage, execution
+    # leaves through the finally block while the store remains poisoned.
+    committed && (store.poisoned = false)
     return record
 end
 

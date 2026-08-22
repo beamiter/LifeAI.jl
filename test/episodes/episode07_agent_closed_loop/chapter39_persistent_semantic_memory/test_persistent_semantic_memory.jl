@@ -42,6 +42,7 @@ const CHAPTER39_MEMORY_TASKS = joinpath(@__DIR__, "fixtures", "memory_tasks.json
         @test first_record.id == "fact-aster"
         @test second_record.id == "memory-000002"
         @test length(readlines(path)) == 2
+        @test store.journal_size == stat(path).size
 
         # Simulate a later process: the journal alone reconstructs the same logical
         # records and fingerprint without loading an embedding or generation model.
@@ -60,7 +61,147 @@ const CHAPTER39_MEMORY_TASKS = joinpath(@__DIR__, "fixtures", "memory_tasks.json
         @test_throws ArgumentError append_agent_memory!(restored, "bad id"; id="bad id")
     end
 
+    mktempdir() do directory
+        # Adding descriptor identity and poison state must not break callers
+        # that use the original three-argument store constructor.
+        store = AgentMemoryStore(
+            joinpath(directory, "compat.jsonl"),
+            AgentMemoryRecord[],
+            Dict{String,Int}(),
+        )
+        @test append_agent_memory!(store, "compatibility record"; id="compat").sequence == 1
+        @test !store.poisoned
+        committed = read(store.path, String)
+        store.poisoned = true
+        @test_throws ArgumentError append_agent_memory!(store, "must reload"; id="blocked")
+        @test read(store.path, String) == committed
+
+        missing = joinpath(directory, "invalid-compat.jsonl")
+        invalid = AgentMemoryStore(
+            missing,
+            copy(store.records),
+            copy(store.by_id),
+        )
+        @test_throws ArgumentError append_agent_memory!(invalid, "must not skip sequence")
+        @test !ispath(missing)
+        @test !invalid.poisoned
+    end
+
     @test_throws ArgumentError load_agent_memory_store("/definitely/missing/memory.jsonl")
+    mktempdir() do directory
+        path = joinpath(directory, "truncated.jsonl")
+        record = AgentMemoryRecord(
+            "truncated",
+            1,
+            "incomplete append",
+            Dict{String,String}(),
+            LifeAI._sha256_hex("incomplete append"),
+        )
+        encoded = LifeAI._agent_memory_record_json(record)
+        @test JSON3.read(encoded)["id"] == "truncated"
+        write(path, encoded)
+        @test_throws ArgumentError load_agent_memory_store(path)
+    end
+    mktempdir() do directory
+        @test_throws ArgumentError load_agent_memory_store(directory; create=true)
+        if Sys.isunix()
+            symlink_path = joinpath(directory, "missing-link.jsonl")
+            symlink(joinpath(directory, "missing-target.jsonl"), symlink_path)
+            @test_throws ArgumentError load_agent_memory_store(symlink_path; create=true)
+
+            target_path = joinpath(directory, "existing-target.jsonl")
+            write(target_path, "")
+            existing_link = joinpath(directory, "existing-link.jsonl")
+            symlink(target_path, existing_link)
+            @test_throws ArgumentError load_agent_memory_store(existing_link)
+        end
+    end
+
+    if Sys.isunix()
+        mktempdir() do directory
+            path = joinpath(directory, "memory.jsonl")
+            replacement = joinpath(directory, "replacement.jsonl")
+            write(replacement, "must remain untouched")
+            store = load_agent_memory_store(path; create=true)
+            append_agent_memory!(store, "first record"; id="first")
+            rm(path)
+            symlink(replacement, path)
+
+            @test_throws ArgumentError append_agent_memory!(store, "second record"; id="second")
+            @test read(replacement, String) == "must remain untouched"
+            @test [record.id for record in store.records] == ["first"]
+        end
+
+        mktempdir() do directory
+            path = joinpath(directory, "memory.jsonl")
+            replacement = joinpath(directory, "replacement.jsonl")
+            store = load_agent_memory_store(path; create=true)
+            append_agent_memory!(store, "first record"; id="first")
+            write(replacement, "regular replacement must remain untouched")
+            rm(path)
+            mv(replacement, path)
+
+            @test_throws ArgumentError append_agent_memory!(store, "second record"; id="second")
+            @test read(path, String) == "regular replacement must remain untouched"
+            @test [record.id for record in store.records] == ["first"]
+            @test !store.poisoned
+        end
+
+        mktempdir() do directory
+            path = joinpath(directory, "memory.jsonl")
+            store = load_agent_memory_store(path; create=true)
+            append_agent_memory!(store, "first record"; id="first")
+            original_inode = stat(path).inode
+            open(path, "w") do io
+                truncate(io, 0)
+            end
+            @test stat(path).inode == original_inode
+
+            @test_throws ArgumentError append_agent_memory!(
+                store,
+                "must reject same-inode truncate";
+                id="second",
+            )
+            @test isempty(read(path))
+            @test [record.id for record in store.records] == ["first"]
+            @test !store.poisoned
+        end
+
+        mktempdir() do directory
+            path = joinpath(directory, "memory.jsonl")
+            store = load_agent_memory_store(path; create=true)
+            append_agent_memory!(store, "first record"; id="first")
+            original_inode = stat(path).inode
+            open(path, "a") do io
+                write(io, "external append\n")
+            end
+            externally_changed = read(path)
+            @test stat(path).inode == original_inode
+
+            @test_throws ArgumentError append_agent_memory!(
+                store,
+                "must reject same-inode append";
+                id="second",
+            )
+            @test read(path) == externally_changed
+            @test [record.id for record in store.records] == ["first"]
+            @test !store.poisoned
+        end
+
+        mktempdir() do directory
+            real_parent = joinpath(directory, "real-parent")
+            linked_parent = joinpath(directory, "linked-parent")
+            mkdir(real_parent)
+            symlink(real_parent, linked_parent)
+            path = joinpath(linked_parent, "memory.jsonl")
+            store = load_agent_memory_store(path; create=true)
+
+            @test_throws ArgumentError append_agent_memory!(store, "must not be written")
+            @test !ispath(joinpath(real_parent, "memory.jsonl"))
+            @test isempty(store.records)
+            @test !store.poisoned
+        end
+    end
 end
 
 @testset "Chapter 39 — frozen cross-request task contract" begin
