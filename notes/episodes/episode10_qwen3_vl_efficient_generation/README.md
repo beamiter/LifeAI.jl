@@ -63,11 +63,12 @@ Chapter 47 已 Open。它先加入数值透明的 internal decode-stage runner�
 与 28 个 decoder blocks 拆成 token embedding、mRoPE、Q/K/V projection、QK-Norm、
 RoPE、K/V write、attention、O projection/residual、MLP、final norm 和 vocabulary
 logits 等阶段；tiny profiled/unprofiled decode 的 logits、K/V 与状态 exact，调用顺序
-进入默认离线回归。新的真实 benchmark 固定 76-token 单图 prompt 与
-32/128/256-token BF16 static generation，分别记录 allocation traffic、allocation
-count、pool high-water mark、host greedy selection 和无 hook latency。真实报告与
-第 5–256 token 的独立 correctness oracle 尚未采集，因此本章和 Episode 10 都保持
-Open，不提前选择或宣称 workspace 优化对象。
+进入默认离线回归。HF Float32/CPU 流式 exporter 与 pinned-SHA loader 已为第 5–256
+token 建立独立 oracle contract；新的真实 benchmark 固定 76-token 单图 prompt 与
+32/128/256-token BF16 static generation，要求完整 prefix exact，再分别记录 allocation
+traffic、pool high-water mark、host greedy selection 和无 hook latency。真实 oracle
+artifact 与 profile 报告尚未采集，因此本章和 Episode 10 都保持 Open，不提前选择或
+宣称 workspace 优化对象。
 
 ## Episode Close 条件
 

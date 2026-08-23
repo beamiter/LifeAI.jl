@@ -6,10 +6,10 @@
 
 ## 当前活动阶段
 
-[`Chapter 47 — Qwen3-VL 长生成 allocation profile 与 decoder workspace 归因`](episodes/episode10_qwen3_vl_efficient_generation/chapter47_qwen3_vl_long_generation_profile.md) 已于 2026-08-22 Open。它没有先猜测应该复用哪块临时数组，而是为 bounded-static 单 token decode 增加 internal stage runner：request 层的 token embedding/mRoPE/final norm/vocabulary logits，以及每层的 norm、Q/K/V projection、QK-Norm、RoPE、K/V write、attention、O projection/residual 和 MLP 均可由诊断调用方独立包裹。默认 tiny 回归证明 profiled/unprofiled logits、四层 K/V、position 与 `rope_delta` exact，固定 48-stage 顺序完整。真实 benchmark 骨架复用 Chapter 46 frozen BF16 preparation，目标为 76-token 单图 prompt 上的 32/128/256-token static generation，严格区分 allocation traffic、allocation count、CUDA pool high-water mark、host greedy selection 和无 hook latency。当前没有提交真实长轨迹 JSON、第 5–256 token 的独立 correctness oracle 或 dominant workspace 结论，因此本章与 Episode 10 都保持 Open。
+[`Chapter 47 — Qwen3-VL 长生成 allocation profile 与 decoder workspace 归因`](episodes/episode10_qwen3_vl_efficient_generation/chapter47_qwen3_vl_long_generation_profile.md) 已于 2026-08-22 Open。它没有先猜测应该复用哪块临时数组，而是为 bounded-static 单 token decode 增加 internal stage runner：request 层的 token embedding/mRoPE/final norm/vocabulary logits，以及每层的 norm、Q/K/V projection、QK-Norm、RoPE、K/V write、attention、O projection/residual 和 MLP 均可由诊断调用方独立包裹。默认 tiny 回归证明 profiled/unprofiled logits、四层 K/V、position 与 `rope_delta` exact，固定 48-stage 顺序完整。现又加入 HF Float32/CPU 流式 256-token oracle exporter 与 pinned-SHA fail-closed loader；真实 BF16 benchmark 的每个 32/128/256-token 完整 prefix 都必须匹配该独立 oracle，并严格区分 allocation traffic、CUDA pool high-water mark、host greedy selection 和无 hook latency。当前没有冻结真实 long-oracle artifact、GPU profile JSON 或 dominant workspace 结论，因此本章与 Episode 10 都保持 Open。
 
-2026-08-22 的隔离复核中，默认 `Pkg.test()` 为 `9,477 passed`、
-`1 intentional broken`、`0 failure / 0 error`；Episode 10 为 `331 / 331`。
+2026-08-23 的隔离复核中，默认 `Pkg.test()` 为 `9,553 passed`、
+`1 intentional broken`、`0 failure / 0 error`；Episode 10 为 `359 / 359`。
 CI 使用的 Chapter 05 Reactant/XLA CPU 独立入口另计 `7 / 7`。唯一 broken 仍是
 未设置真实 Qwen3-VL 模型目录时的 Chapter 43 checkpoint 门禁；真实 Chapter 47
 长生成 benchmark 不属于默认测试，也未在缺少冻结模型与 reference 的本机伪造结果。

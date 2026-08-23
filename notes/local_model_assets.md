@@ -1163,24 +1163,44 @@ keyword 定义同名 prefill，后定义会覆盖前定义并触发 precompile m
 reference verifier 必须同时回归 Chapter 45 dynamic 路径。
 
 Chapter 47 继续使用同一 checkpoint、Chapter 45 decode reference、确定性 image
-和 76-token prompt，不新增权重或外部 oracle。长生成 allocation profile 命令为：
+和 76-token prompt，不新增权重。它新增仓库外的 HF Float32/CPU 256-token 长轨迹
+oracle；exporter 流式消费 DynamicCache，不保存逐步完整 K/V。生成命令为：
 
 ```bash
 QWEN3_VL_MODEL_DIR=/home/ubuntu/models/modelscope/Qwen/Qwen3-VL-2B-Instruct
 QWEN3_VL_DECODE_REFERENCE_DIR=/tmp/qwen3-vl-decode-f32
+QWEN3_VL_ORACLE_PYTHONPATH=/tmp/lifeai-qwen3vl-oracle/lib/python3.10/site-packages:/tmp/lifeai-qwen3vl-uv-cache/archive-v0/SNUjiORDNkYR55Or
+QWEN3_VL_LONG_REFERENCE="$QWEN3_VL_DECODE_REFERENCE_DIR/long_generation_reference.json"
 
+PYTHONPATH="$QWEN3_VL_ORACLE_PYTHONPATH" \
+  .venv/bin/python scripts/export_qwen3_vl_long_generation_reference.py \
+  "$QWEN3_VL_MODEL_DIR" "$QWEN3_VL_LONG_REFERENCE" \
+  --greedy-tokens 256 --checkpoint-lengths 32,128,256
+
+QWEN3_VL_LONG_REFERENCE_SHA256="$(sha256sum "$QWEN3_VL_LONG_REFERENCE" | cut -d' ' -f1)"
+
+LIFEAI_QWEN3_VL_LONG_REFERENCE="$QWEN3_VL_LONG_REFERENCE" \
+LIFEAI_QWEN3_VL_LONG_REFERENCE_SHA256="$QWEN3_VL_LONG_REFERENCE_SHA256" \
 julia --project=. --startup-file=no \
   scripts/benchmark_qwen3_vl_static_long_generation.jl \
   "$QWEN3_VL_MODEL_DIR" "$QWEN3_VL_DECODE_REFERENCE_DIR" \
   /tmp/qwen3_vl_long_profile.json
 ```
 
+上面的即时 SHA 只适合首次 smoke；正式验收必须在两个独立 Python 进程得到逐字节相同
+JSON，人工复核后再把固定 SHA 传给 benchmark。loader 会在模型加载前拒绝 hash/schema、
+Float32 CPU claim、revision/assets、prompt/image/input IDs 或 256-step timeline 不一致。
+若目标 BF16 run 与 oracle 分叉，同一输出路径会保存
+`status="correctness_blocker"` JSON，包含首分叉 step、双方 token、HF top-2 margin
+和完整对照 prefix；该 run 不会继续进入 allocation attribution。
+
 默认 workload 为 32/128/256-token BF16 static generation、每个长度三次；可用
 `LIFEAI_QWEN3_VL_PROFILE_LENGTHS` 和 `LIFEAI_QWEN3_VL_PROFILE_REPEATS`
-显式缩小 smoke（每个长度至少 4），但缩小结果不能关闭 Chapter 47。脚本输出累计 allocation traffic、
+显式缩小 smoke（每个长度至少 4，且不超过 oracle timeline），但缩小结果不能关闭
+Chapter 47。脚本输出累计 allocation traffic、
 allocation count、CUDA pool high-water、host greedy selection、无 hook latency 和
-最终 step 的逐 stage attribution。当前尚未提交真实 profile JSON；资产段只记录恢复
-与执行方法，不把 profiler 骨架写成实证结果。
+最终 step 的逐 stage attribution。当前尚未冻结真实 long-oracle/profile JSON；资产段
+只记录恢复与执行方法，不把 exporter/loader 骨架写成实证结果。
 
 ## Qwen3-30B-A3B 资产状态
 

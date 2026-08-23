@@ -92,7 +92,7 @@ test/
 | 09 | 44 | content-list chat、placeholder、mRoPE、DeepStack 与 decoder prefill |
 | 09 | 45 | dynamic K/V、cached decode、单图 greedy generation 与 HF DynamicCache oracle |
 | 10 | 46 | bounded static K/V、fixed storage identity、overflow/reset 与 dynamic/static parity |
-| 10 | 47 | static decode stage runner 的数值透明性、顺序完整性与长生成 profile 骨架 |
+| 10 | 47 | static decode stage runner 数值透明性/顺序完整性、pinned HF long-oracle fail-closed contract 与长生成 profile 骨架 |
 
 `fixtures/` 只存在于拥有该证据的 Chapter 目录中。跨 Chapter 复用 fixture 时，
 测试显式引用其原始 Chapter，不复制第二份数据。`support/` 只存放无独立产品能力

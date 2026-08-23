@@ -3,6 +3,9 @@
 const _CH47_MODEL_ENV = "LIFEAI_QWEN3_VL_MODEL_DIR"
 const _CH47_REFERENCE_ENV = "LIFEAI_QWEN3_VL_REFERENCE_DIR"
 const _CH47_OUTPUT_ENV = "LIFEAI_QWEN3_VL_LONG_PROFILE_OUTPUT"
+const _CH47_LONG_REFERENCE_ENV = "LIFEAI_QWEN3_VL_LONG_REFERENCE"
+const _CH47_LONG_REFERENCE_SHA_ENV =
+    "LIFEAI_QWEN3_VL_LONG_REFERENCE_SHA256"
 
 function _ch47_usage(io::IO=stdout)
     println(io, "usage: julia --project=. --startup-file=no \\")
@@ -13,10 +16,12 @@ function _ch47_usage(io::IO=stdout)
     println(io, "  MODEL_DIR:     \$", _CH47_MODEL_ENV)
     println(io, "  REFERENCE_DIR: \$", _CH47_REFERENCE_ENV)
     println(io, "  OUTPUT_JSON:   \$", _CH47_OUTPUT_ENV, " or /tmp/qwen3_vl_long_profile.json")
+    println(io, "  LONG_ORACLE:   \$", _CH47_LONG_REFERENCE_ENV, " or REFERENCE_DIR/long_generation_reference.json")
     println(io)
     println(io, "Controls:")
     println(io, "  LIFEAI_QWEN3_VL_PROFILE_LENGTHS   default 32,128,256; each >= 4")
     println(io, "  LIFEAI_QWEN3_VL_PROFILE_REPEATS   default 3")
+    println(io, "  ", _CH47_LONG_REFERENCE_SHA_ENV, "   required pinned file SHA-256")
 end
 
 if any(argument -> argument in ("-h", "--help"), ARGS)
@@ -37,6 +42,7 @@ using Statistics: mean, median, quantile
 # Chapter 46 now exposes its frozen single-image BF16 preparation as an
 # import-safe script helper. Importing this file does not execute its verifier.
 include(joinpath(@__DIR__, "verify_qwen3_vl_static_cache_cuda.jl"))
+include(joinpath(@__DIR__, "qwen3_vl_long_reference_contract.jl"))
 
 function _ch47_positive_int(name::AbstractString, default::Int)
     value = tryparse(Int, get(ENV, name, string(default)))
@@ -71,6 +77,77 @@ function _ch47_required_path(args, index, environment, label)
     path = abspath(value)
     isdir(path) || error("$label does not exist: $path")
     return path
+end
+
+function _ch47_write_oracle_blocker(
+    output_path,
+    sample,
+    long_reference,
+    sample_label,
+    divergence,
+)
+    report = (;
+        schema_version=1,
+        closed=false,
+        chapter=47,
+        status="correctness_blocker",
+        sample_label,
+        generated_tokens=sample.generated_tokens,
+        first_divergence=divergence,
+        lifeai_generated_ids_1_based=sample.generated_ids,
+        lifeai_generated_ids_sha256=sample.generated_ids_sha256,
+        hf_expected_ids_1_based=long_reference.generated_ids_1_based[
+            1:sample.generated_tokens
+        ],
+        long_reference=(;
+            file_sha256=long_reference.file_sha256,
+            token_timeline_u32le_sha256=
+                long_reference.token_timeline_u32le_sha256,
+            claim=long_reference.claim,
+        ),
+    )
+    mkpath(dirname(output_path))
+    open(output_path, "w") do io
+        JSON3.pretty(io, report)
+        println(io)
+    end
+    return report
+end
+
+function _ch47_assert_long_oracle(
+    sample,
+    long_reference;
+    output_path=nothing,
+    sample_label="unspecified",
+)
+    token_count = sample.generated_tokens
+    length(sample.generated_ids) == token_count || error(
+        "length-$token_count sample has an inconsistent token timeline",
+    )
+    divergence = _ch47_long_first_divergence(
+        sample.generated_ids,
+        long_reference,
+    )
+    divergence === nothing && return nothing
+    if output_path !== nothing
+        _ch47_write_oracle_blocker(
+            output_path,
+            sample,
+            long_reference,
+            sample_label,
+            divergence,
+        )
+    end
+    error(
+        "length-$token_count static generation first diverges from the pinned " *
+        "HF oracle at generated step $(divergence.generated_step): " *
+        "LifeAI=$(divergence.lifeai_token_id_0_based), " *
+        "HF=$(divergence.hf_token_id_0_based), " *
+        "HF runner-up=$(divergence.hf_top2_token_id_0_based), " *
+        "HF margin=$(divergence.hf_margin_f32)" *
+        (output_path === nothing ? "" : "; blocker report: $output_path"),
+    )
+    return nothing
 end
 
 function _ch47_sha256_bytes(value)
@@ -519,6 +596,52 @@ output_path = abspath(length(ARGS) >= 3 ? ARGS[3] : get(
 ))
 lengths = _ch47_lengths()
 repeats = _ch47_positive_int("LIFEAI_QWEN3_VL_PROFILE_REPEATS", 3)
+long_reference_path = abspath(get(
+    ENV,
+    _CH47_LONG_REFERENCE_ENV,
+    joinpath(reference_dir, "long_generation_reference.json"),
+))
+long_reference_sha256 = get(ENV, _CH47_LONG_REFERENCE_SHA_ENV, "")
+isempty(long_reference_sha256) && error(
+    "set $_CH47_LONG_REFERENCE_SHA_ENV to the independently reviewed oracle hash",
+)
+long_reference = _ch47_load_long_generation_reference(
+    long_reference_path,
+    long_reference_sha256;
+    model_id=_STATIC_EXPECTED_MODEL_ID,
+    modelscope_revision=_STATIC_EXPECTED_MODELSCOPE_REVISION,
+    huggingface_revision=_STATIC_EXPECTED_HF_REVISION,
+    asset_sha256=_STATIC_EXPECTED_ASSET_SHA256,
+    required_lengths=lengths,
+    expected_image_sha256=_STATIC_EXPECTED_IMAGE_SHA256,
+    expected_rendered_prompt_sha256=
+        _STATIC_EXPECTED_RENDERED_PROMPT_SHA256,
+    expected_chapter45_reference_sha256=
+        _STATIC_EXPECTED_REFERENCE_SHA256,
+    expected_chapter45_metadata_sha256=
+        _STATIC_EXPECTED_METADATA_SHA256,
+    expected_source_sha256=Dict(
+        "export_qwen3_vl_long_generation_reference.py" =>
+            _static_file_sha256(joinpath(
+                @__DIR__,
+                "export_qwen3_vl_long_generation_reference.py",
+            )),
+        "export_qwen3_vl_decode_reference.py" =>
+            _static_file_sha256(joinpath(
+                @__DIR__,
+                "export_qwen3_vl_decode_reference.py",
+            )),
+        "export_qwen3_vl_prefill_reference.py" =>
+            _static_file_sha256(joinpath(
+                @__DIR__,
+                "export_qwen3_vl_prefill_reference.py",
+            )),
+    ),
+)
+long_reference.generated_ids_1_based[1:4] ==
+    _STATIC_EXPECTED_GREEDY_IDS_1_BASED || error(
+        "HF long oracle differs from the frozen Chapter 45 four-token prefix",
+    )
 
 CUDA.functional() || error("CUDA.jl is not functional on this machine")
 CUDA.allowscalar(false)
@@ -529,12 +652,18 @@ preparation = merge(
     prepared.preparation,
 )
 length(prepared.input_ids) == 76 || error("frozen profile prompt length changed")
+prepared.input_ids .- 1 == long_reference.input_ids_0_based || error(
+    "LifeAI prompt tokens differ from the pinned HF long oracle",
+)
 
 # One longest-shape warmup is excluded from every reported sample. Full GC
 # releases the warmup request state while retaining CUDA library workspaces.
 warmup = _ch47_run_generation(prepared, maximum(lengths))
-warmup.generated_ids[1:4] == _STATIC_EXPECTED_GREEDY_IDS_1_BASED || error(
-    "long-generation warmup changed the frozen four-token prefix",
+_ch47_assert_long_oracle(
+    warmup,
+    long_reference;
+    output_path,
+    sample_label="warmup",
 )
 _ch47_warm_profiled_path(prepared)
 warmup_report = merge((; excluded_from_samples=true), warmup)
@@ -547,8 +676,11 @@ for repetition in 1:repeats
     order = isodd(repetition) ? lengths : reverse(lengths)
     for token_count in order
         sample = _ch47_run_generation(prepared, token_count)
-        sample.generated_ids[1:4] == _STATIC_EXPECTED_GREEDY_IDS_1_BASED || error(
-            "length-$token_count sample changed the frozen four-token prefix",
+        _ch47_assert_long_oracle(
+            sample,
+            long_reference;
+            output_path,
+            sample_label="sample.$repetition.$token_count",
         )
         push!(samples[token_count], merge((; repetition), sample))
     end
@@ -580,6 +712,10 @@ source_files = [
     "src/generation/hf_text_generation.jl",
     "src/generation/qwen3_vl_generation.jl",
     "scripts/verify_qwen3_vl_static_cache_cuda.jl",
+    "scripts/qwen3_vl_long_reference_contract.jl",
+    "scripts/export_qwen3_vl_long_generation_reference.py",
+    "scripts/export_qwen3_vl_decode_reference.py",
+    "scripts/export_qwen3_vl_prefill_reference.py",
     "scripts/benchmark_qwen3_vl_static_long_generation.jl",
 ]
 source_sha256 = Dict(
@@ -621,6 +757,18 @@ report = (;
         reference_metadata_sha256=_STATIC_EXPECTED_METADATA_SHA256,
         deterministic_image_sha256=_STATIC_EXPECTED_IMAGE_SHA256,
         rendered_prompt_sha256=_STATIC_EXPECTED_RENDERED_PROMPT_SHA256,
+        long_generation_reference=(;
+            file_sha256=long_reference.file_sha256,
+            token_timeline_u32le_sha256=
+                long_reference.token_timeline_u32le_sha256,
+            generated_token_count=long_reference.generated_token_count,
+            claim=long_reference.claim,
+            compute_device=long_reference.compute_device,
+            cuda_device=long_reference.cuda_device,
+            transformers=long_reference.transformers,
+            torch=long_reference.torch,
+            source_sha256=long_reference.source_sha256,
+        ),
     ),
     workload=(;
         model_id=_STATIC_EXPECTED_MODEL_ID,
@@ -643,6 +791,9 @@ report = (;
         device_free_snapshots="before/after snapshots, not a sampled physical peak",
         latency_is_acceptance_gate=false,
         hf_bf16_strict_parity_claimed=false,
+        hf_float32_token_timeline_oracle=true,
+        oracle_comparison="greedy_token_ids_only",
+        lifeai_profile_dtype="bfloat16",
         same_device_static_profile=true,
     ),
     preparation,
