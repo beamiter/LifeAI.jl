@@ -58,7 +58,8 @@ parameters = load_hf_qwen3_parameters(model, tensors)
 
 - `rope_style` 仅接受 `:interleaved` / `:rotate_half`，并进入 `gpt_config` 与 checkpoint round-trip；旧 config 缺省为 `:interleaved`。
 - `load_hf_qwen3_config` 必须验证 `model_type=qwen3`、dense/full-attention/no-dropout 等当前能力边界，并允许调用方将 `max_seq_len` 限制为不大于 `max_position_embeddings` 的正整数。
-- 参数加载必须报告 missing / unexpected / duplicate / shape mismatch / unsupported dtype，不允许用初始化随机值悄悄补齐。
+- 参数加载必须报告 missing / unexpected / duplicate / shape mismatch / unsupported dtype，
+  并在映射前拒绝 checkpoint 不提供的 LM-head bias；不允许用初始化随机值悄悄补齐。
 - tied 模型复用 `embed_tokens`；untied 模型必须存在并加载 `lm_head.weight`。
 - safetensors 返回 Julia 语义 shape 的数组；row-major 文件字节到 column-major Julia 数组的转换由格式层完成，模型映射层只处理 HF/Lux 语义轴差异。
 

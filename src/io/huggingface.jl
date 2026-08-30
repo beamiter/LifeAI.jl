@@ -1185,6 +1185,9 @@ function _qwen3_validate_moe_semantics(model::GPTModel)
     model.use_bias && throw(ArgumentError(
         "Qwen3 MoE loading requires bias-free projections",
     ))
+    model.lm_head_bias && throw(ArgumentError(
+        "Qwen3 MoE loading requires a bias-free LM head",
+    ))
     return nothing
 end
 
@@ -1459,7 +1462,12 @@ function _qwen3_validate_semantics(model::GPTModel)
     model.use_rope && model.rope_style === :rotate_half || throw(ArgumentError(
         "Qwen3 requires rotate_half RoPE",
     ))
-    model.use_bias && throw(ArgumentError("Qwen3 weight loading requires bias-free projections"))
+    model.use_bias && throw(ArgumentError(
+        "Qwen3 weight loading requires bias-free projections",
+    ))
+    model.lm_head_bias && throw(ArgumentError(
+        "Qwen3 weight loading requires a bias-free LM head",
+    ))
     return nothing
 end
 

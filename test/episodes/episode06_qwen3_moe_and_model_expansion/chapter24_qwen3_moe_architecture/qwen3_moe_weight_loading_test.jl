@@ -7,6 +7,7 @@ using LifeAI:
     Qwen3MoECheckpointSpec,
     Qwen3MoEShardSpec,
     Qwen3SparseMoE,
+    gpt_config,
     hf_qwen3_moe_forward_trace,
     hf_token_ids,
     load_hf_qwen3_moe_config,
@@ -195,6 +196,14 @@ end
         unexpected = copy(tensors)
         unexpected["model.layers.0.mlp.shared_expert.weight"] = ones(Float32, 1)
         @test_throws ArgumentError load_hf_qwen3_moe_parameters(model, unexpected)
+        biased_head_model = GPTModel(merge(
+            gpt_config(model),
+            (; lm_head_bias=true),
+        ))
+        @test_throws ArgumentError load_hf_qwen3_moe_parameters(
+            biased_head_model,
+            tensors,
+        )
 
         write(path, JSON3.write(_qwen3_moe_test_config(decoder_sparse_step=2)))
         @test_throws ArgumentError load_hf_qwen3_moe_config(path)

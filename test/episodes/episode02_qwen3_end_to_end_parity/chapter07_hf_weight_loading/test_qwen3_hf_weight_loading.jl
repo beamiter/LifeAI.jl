@@ -369,6 +369,14 @@ end
         wrong_shape = copy(tensors)
         wrong_shape["model.norm.weight"] = zeros(Float32, model.d_model + 1)
         @test_throws DimensionMismatch load_hf_qwen3_parameters(model, wrong_shape)
+        biased_head_model = GPTModel(merge(
+            gpt_config(model),
+            (; lm_head_bias=true),
+        ))
+        @test_throws ArgumentError load_hf_qwen3_parameters(
+            biased_head_model,
+            tensors,
+        )
 
         @test hf_token_ids([0, 4, 12]; vocab_size=13) == [1, 5, 13]
         @test_throws ArgumentError hf_token_ids([-1])

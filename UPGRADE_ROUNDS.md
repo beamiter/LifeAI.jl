@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the thirty-seven follow-up rounds implemented on top of the
+This ledger records the thirty-eight follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -63,6 +63,8 @@ Chapter 03 reproducible-training test.
 37. Align host and device Qwen3 MoE top-k routing at exact ties by selecting the
     highest remaining expert index, including all-tie and cutoff-tie regressions
     with and without selected-weight normalization.
+38. Reject dense and MoE Qwen3 models with an LM-head bias before weight mapping,
+    rather than returning an incomplete parameter tree that fails at first forward.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
