@@ -554,6 +554,20 @@ end
             )
             @test session.position == preserved_position
         end
+        output_preflight = _qwen3_deployment_captured_error() do
+            generate_hf_qwen3_bf16!(
+                session,
+                nothing;
+                max_new_tokens=true,
+                stop_token_ids=Int[],
+            )
+        end
+        @test output_preflight isa ArgumentError
+        @test occursin(
+            "max_new_tokens must be an integer",
+            sprint(showerror, output_preflight),
+        )
+        @test session.position == preserved_position
 
         zero = generate_hf_qwen3_bf16!(
             session,
@@ -601,6 +615,36 @@ end
             max_prompt_tokens=255,
             enable_thinking=false,
         )
+        wide_full = fit_qwen3_chat_context(
+            session,
+            messages;
+            max_prompt_tokens=Int128(255),
+            enable_thinking=false,
+        )
+        @test wide_full == full
+
+        overflow_integer = big(typemax(Int)) + 1
+        invalid_fit_limits = (
+            (value=true, message="max_prompt_tokens must be an integer"),
+            (value=255.0, message="max_prompt_tokens must be an integer"),
+            (
+                value=overflow_integer,
+                message="max_prompt_tokens is outside the host integer range",
+            ),
+        )
+        for case in invalid_fit_limits
+            failure = _qwen3_deployment_captured_error() do
+                fit_qwen3_chat_context(
+                    session,
+                    nothing;
+                    max_prompt_tokens=case.value,
+                )
+            end
+            @test failure isa ArgumentError
+            @test occursin(case.message, sprint(showerror, failure))
+            @test session.position == 0
+        end
+
         fitted = fit_qwen3_chat_context(
             session,
             messages;
@@ -636,6 +680,108 @@ end
         )
         @test raw_result.prompt == "hi"
         @test raw_result.dropped_messages == 0
+
+        preserved_position = session.position
+        invalid_generation_budgets = (
+            (
+                options=(; max_new_tokens=true),
+                message="max_new_tokens must be an integer",
+            ),
+            (
+                options=(; max_new_tokens=1.0),
+                message="max_new_tokens must be an integer",
+            ),
+            (
+                options=(; max_new_tokens=overflow_integer),
+                message="max_new_tokens is outside the host integer range",
+            ),
+            (
+                options=(; max_new_tokens=typemin(Int)),
+                message="max_new_tokens must be non-negative",
+            ),
+            (
+                options=(; max_new_tokens=Int128(session.context_tokens)),
+                message="max_new_tokens must be less than session.context_tokens",
+            ),
+            (
+                options=(; max_new_tokens=1, max_prompt_tokens=true),
+                message="max_prompt_tokens must be an integer",
+            ),
+            (
+                options=(;
+                    max_new_tokens=1,
+                    max_prompt_tokens=overflow_integer,
+                ),
+                message="max_prompt_tokens is outside the host integer range",
+            ),
+            (
+                options=(; max_new_tokens=1, max_prompt_tokens=0),
+                message="max_prompt_tokens must be in",
+            ),
+            (
+                options=(;
+                    max_new_tokens=1,
+                    max_prompt_tokens=session.context_tokens,
+                ),
+                message="max_prompt_tokens must be in",
+            ),
+        )
+        for case in invalid_generation_budgets
+            failure = _qwen3_deployment_captured_error() do
+                generate_hf_text!(
+                    session,
+                    nothing;
+                    chat=false,
+                    strategy=:greedy,
+                    stop_token_ids=Int[],
+                    case.options...,
+                )
+            end
+            @test failure isa ArgumentError
+            @test occursin(case.message, sprint(showerror, failure))
+            @test session.position == preserved_position
+        end
+
+        chat_budget_preflight = _qwen3_deployment_captured_error() do
+            generate_hf_text!(
+                session,
+                nothing;
+                chat=true,
+                max_new_tokens=true,
+            )
+        end
+        @test chat_budget_preflight isa ArgumentError
+        @test occursin(
+            "max_new_tokens must be an integer",
+            sprint(showerror, chat_budget_preflight),
+        )
+        @test session.position == preserved_position
+
+        explicit_wide_budget = generate_hf_text!(
+            session,
+            "hi";
+            chat=false,
+            max_new_tokens=Int128(0),
+            max_prompt_tokens=big(session.context_tokens),
+            strategy=:greedy,
+            stop_token_ids=Int[],
+        )
+        @test isempty(explicit_wide_budget.generated_ids)
+        @test explicit_wide_budget.prompt == "hi"
+        @test session.position == 0
+
+        default_budget = generate_hf_text!(
+            session,
+            "hi";
+            chat=false,
+            max_new_tokens=Int32(0),
+            strategy=:greedy,
+            stop_token_ids=Int[],
+        )
+        @test isempty(default_budget.generated_ids)
+        @test default_budget.prompt_ids == explicit_wide_budget.prompt_ids
+        @test session.position == 0
+
         @test_throws ArgumentError fit_qwen3_chat_context(
             session,
             [(role="user", content=repeat("x", 80))];

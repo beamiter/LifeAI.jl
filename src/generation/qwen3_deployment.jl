@@ -698,7 +698,7 @@ greedy or official temperature/top-k/top-p sampling, and per-phase timings.
 function generate_hf_qwen3_bf16!(
     session::HFQwen3BF16Session,
     prompt_tokens;
-    max_new_tokens::Integer=512,
+    max_new_tokens=512,
     strategy::Symbol=:config,
     temperature=nothing,
     top_k=nothing,
@@ -708,12 +708,12 @@ function generate_hf_qwen3_bf16!(
     on_token=nothing,
     on_prefill_chunk=nothing,
 )
-    prompt_ids = _qwen3_session_token_vector(session, prompt_tokens)
     requested = _strict_host_int(max_new_tokens, "max_new_tokens")
     requested >= 0 || throw(ArgumentError("max_new_tokens must be non-negative"))
     requested <= session.context_tokens || throw(ArgumentError(
         "requested output exceeds session context_tokens",
     ))
+    prompt_ids = _qwen3_session_token_vector(session, prompt_tokens)
     length(prompt_ids) <= session.context_tokens - requested || throw(ArgumentError(
         "prompt plus requested output exceeds session context_tokens",
     ))
@@ -847,10 +847,10 @@ until it fits. The leading system message and newest message are never dropped.
 function fit_qwen3_chat_context(
     session::HFQwen3BF16Session,
     messages;
-    max_prompt_tokens::Integer,
+    max_prompt_tokens,
     enable_thinking::Bool=false,
 )
-    limit = Int(max_prompt_tokens)
+    limit = _strict_host_int(max_prompt_tokens, "max_prompt_tokens")
     0 < limit <= session.context_tokens || throw(ArgumentError(
         "max_prompt_tokens must be in 1:session.context_tokens",
     ))
@@ -903,6 +903,35 @@ function fit_qwen3_chat_context(
     end
 end
 
+function _qwen3_text_generation_options(
+    session::HFQwen3BF16Session,
+    max_new_tokens,
+    max_prompt_tokens,
+)
+    requested = _strict_host_int(max_new_tokens, "max_new_tokens")
+    requested >= 0 || throw(ArgumentError(
+        "max_new_tokens must be non-negative",
+    ))
+    requested < session.context_tokens || throw(ArgumentError(
+        "max_new_tokens must be less than session.context_tokens",
+    ))
+    available = try
+        Base.Checked.checked_sub(session.context_tokens, requested)
+    catch error
+        error isa OverflowError || rethrow()
+        throw(ArgumentError(
+            "generation context length exceeds the host integer range",
+        ))
+    end
+    limit = max_prompt_tokens === nothing ? available :
+        _strict_host_int(max_prompt_tokens, "max_prompt_tokens")
+    0 < limit <= available || throw(ArgumentError(
+        "max_prompt_tokens must be in " *
+        "1:(session.context_tokens - max_new_tokens)",
+    ))
+    return (; max_new_tokens=requested, max_prompt_tokens=limit)
+end
+
 """
     generate_hf_text!(session, input; chat=true, ...)
 
@@ -915,23 +944,28 @@ function generate_hf_text!(
     input;
     chat::Bool=true,
     enable_thinking::Bool=false,
-    max_new_tokens::Integer=512,
-    max_prompt_tokens::Integer=session.context_tokens - Int(max_new_tokens),
+    max_new_tokens=512,
+    max_prompt_tokens=nothing,
     kwargs...,
 )
+    options = _qwen3_text_generation_options(
+        session,
+        max_new_tokens,
+        max_prompt_tokens,
+    )
     if chat
         messages = input isa AbstractString ?
             [(role="user", content=String(input))] : input
         fitted = fit_qwen3_chat_context(
             session,
             messages;
-            max_prompt_tokens,
+            max_prompt_tokens=options.max_prompt_tokens,
             enable_thinking,
         )
         generated = generate_hf_qwen3_bf16!(
             session,
             fitted.prompt_ids;
-            max_new_tokens,
+            max_new_tokens=options.max_new_tokens,
             kwargs...,
         )
         return merge(generated, (;
@@ -945,13 +979,13 @@ function generate_hf_text!(
     ))
     prompt = String(input)
     prompt_ids = encode(session.tokenizer, prompt; add_special_tokens=false)
-    length(prompt_ids) <= max_prompt_tokens || throw(ArgumentError(
+    length(prompt_ids) <= options.max_prompt_tokens || throw(ArgumentError(
         "raw prompt exceeds max_prompt_tokens",
     ))
     generated = generate_hf_qwen3_bf16!(
         session,
         prompt_ids;
-        max_new_tokens,
+        max_new_tokens=options.max_new_tokens,
         kwargs...,
     )
     return merge(generated, (; prompt, dropped_messages=0))
