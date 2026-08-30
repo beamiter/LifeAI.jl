@@ -146,6 +146,51 @@ end
     @test _quantization_argument_error_message() do
         LinearQuantizationSpec(:int8; group=big(typemax(Int)) + 1)
     end == "quantization group is outside the host integer range"
+    widened_ratios = LinearQuantizationSpec(
+        :int4;
+        calibration=:mse,
+        clip_ratios=BigFloat[1, 0.9],
+    ).clip_ratios
+    @test widened_ratios === (1.0f0, 0.9f0)
+    mixed_ratios = LinearQuantizationSpec(
+        :int4;
+        calibration=:mse,
+        clip_ratios=Any[1, 1 // 2, 0.25],
+    ).clip_ratios
+    @test mixed_ratios === (1.0f0, 0.5f0, 0.25f0)
+    for value in (true, 0.9 + 0im, "0.9", nothing)
+        @test _quantization_argument_error_message() do
+            LinearQuantizationSpec(
+                :int4;
+                calibration=:mse,
+                clip_ratios=(1.0, value),
+            )
+        end == "INT4 clipping ratios must contain real numbers other than Bool"
+    end
+    for invalid_container in (nothing, Set((1.0, 0.9)))
+        @test _quantization_argument_error_message() do
+            LinearQuantizationSpec(
+                :int4;
+                calibration=:mse,
+                clip_ratios=invalid_container,
+            )
+        end == "INT4 clipping ratios must be a tuple or vector"
+    end
+    @test _quantization_argument_error_message() do
+        LinearQuantizationSpec(
+            :int4;
+            calibration=:mse,
+            clip_ratios=(1.0, nextfloat(1.0)),
+        )
+    end == "INT4 clipping ratios must be finite in (0, 1]"
+    @test _quantization_argument_error_message() do
+        LinearQuantizationSpec(
+            :int4;
+            calibration=:mse,
+            clip_ratios=(1.0, BigFloat("1e-1000")),
+        )
+    end ==
+          "INT4 clipping ratios must be finite in (0, 1] at Float32 precision"
     plan = QuantizationPlan(
         default=int4_mse,
         projection_overrides=Dict(:q_proj => int8, :lm_head => bf16),

@@ -31,6 +31,27 @@ const _DEFAULT_INT4_MSE_CLIP_RATIOS = (
     0.8f0,
 )
 
+function _quantization_clip_ratio(value)
+    value isa Real && !(value isa Bool) || throw(ArgumentError(
+        "INT4 clipping ratios must contain real numbers other than Bool",
+    ))
+    isfinite(value) && 0 < value <= 1 || throw(ArgumentError(
+        "INT4 clipping ratios must be finite in (0, 1]",
+    ))
+    resolved = try
+        Float32(value)
+    catch error
+        error isa InterruptException && rethrow()
+        throw(ArgumentError(
+            "INT4 clipping ratios must be finite in (0, 1] at Float32 precision",
+        ))
+    end
+    isfinite(resolved) && 0.0f0 < resolved <= 1.0f0 || throw(ArgumentError(
+        "INT4 clipping ratios must be finite in (0, 1] at Float32 precision",
+    ))
+    return resolved
+end
+
 """
     LinearQuantizationSpec(
         scheme=:int4;
@@ -79,15 +100,16 @@ struct LinearQuantizationSpec{C<:Tuple}
         end
 
         ratios = if scheme === :int4 && calibration in (:mse, :activation_mse)
-            Tuple(Float32(ratio) for ratio in clip_ratios)
+            clip_ratios isa Union{Tuple,AbstractVector} || throw(ArgumentError(
+                "INT4 clipping ratios must be a tuple or vector",
+            ))
+            Tuple(_quantization_clip_ratio(ratio) for ratio in clip_ratios)
         else
             (1.0f0,)
         end
         isempty(ratios) && throw(ArgumentError(
             "INT4 MSE calibration requires at least one clipping ratio",
         ))
-        all(ratio -> isfinite(ratio) && 0.0f0 < ratio <= 1.0f0, ratios) ||
-            throw(ArgumentError("INT4 clipping ratios must be finite in (0, 1]"))
         1.0f0 in ratios || throw(ArgumentError(
             "INT4 MSE clipping ratios must include 1.0 as the max-abs baseline",
         ))

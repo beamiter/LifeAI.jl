@@ -261,6 +261,8 @@ Chapter 03 reproducible-training test.
      plan construction and layer-specific policy lookup.
 130. Accumulate verified Qwen3 deployment asset sizes with checked arithmetic
      so multi-file manifests cannot wrap their total byte report.
+131. Strictly normalize Qwen3 INT4 clipping ratios at source and Float32
+     precision, rejecting Bool, complex, invalid containers, and rounding leaks.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
