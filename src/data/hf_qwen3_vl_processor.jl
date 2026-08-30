@@ -42,6 +42,15 @@ function _qwen3_vl_processor_spec_float3(
     end
 end
 
+function _qwen3_vl_checked_mul(left::Int, right::Int, label)
+    return try
+        Base.Checked.checked_mul(left, right)
+    catch err
+        err isa OverflowError || rethrow()
+        throw(ArgumentError("$label exceeds the host integer range"))
+    end
+end
+
 struct Qwen3VLProcessorSpec
     preprocessor_config_sha256::String
     processor_class::String
@@ -67,33 +76,71 @@ struct Qwen3VLProcessorSpec
         image_std,
     )
         prefix = "Qwen3-VL processor"
+        resolved_sha256 = _qwen3_spec_string(
+            preprocessor_config_sha256,
+            "$prefix preprocessor_config_sha256",
+        )
+        resolved_processor_class = _qwen3_spec_string(
+            processor_class,
+            "$prefix processor_class",
+        )
+        resolved_processor_type = _qwen3_spec_string(
+            image_processor_type,
+            "$prefix image_processor_type",
+        )
+        resolved_min_pixels = _qwen3_spec_positive_int(
+            min_pixels,
+            "$prefix min_pixels",
+        )
+        resolved_max_pixels = _qwen3_spec_positive_int(
+            max_pixels,
+            "$prefix max_pixels",
+        )
+        resolved_patch_size = _qwen3_spec_positive_int(
+            patch_size,
+            "$prefix patch_size",
+        )
+        resolved_temporal_patch_size = _qwen3_spec_positive_int(
+            temporal_patch_size,
+            "$prefix temporal_patch_size",
+        )
+        resolved_merge_size = _qwen3_spec_positive_int(
+            merge_size,
+            "$prefix merge_size",
+        )
+        resolved_image_mean = _qwen3_vl_processor_spec_float3(
+            image_mean,
+            "$prefix image_mean",
+        )
+        resolved_image_std = _qwen3_vl_processor_spec_float3(
+            image_std,
+            "$prefix image_std";
+            positive=true,
+        )
+        resolved_min_pixels <= resolved_max_pixels || throw(ArgumentError(
+            "$prefix min_pixels must not exceed max_pixels",
+        ))
+        resize_factor = _qwen3_vl_checked_mul(
+            resolved_patch_size,
+            resolved_merge_size,
+            "$prefix resize factor",
+        )
+        minimum_aligned_area = Base.widemul(resize_factor, resize_factor)
+        minimum_aligned_area <= resolved_max_pixels || throw(ArgumentError(
+            "$prefix max_pixels must be at least resize factor squared " *
+            "($minimum_aligned_area)",
+        ))
         return new(
-            _qwen3_spec_string(
-                preprocessor_config_sha256,
-                "$prefix preprocessor_config_sha256",
-            ),
-            _qwen3_spec_string(processor_class, "$prefix processor_class"),
-            _qwen3_spec_string(
-                image_processor_type,
-                "$prefix image_processor_type",
-            ),
-            _qwen3_spec_positive_int(min_pixels, "$prefix min_pixels"),
-            _qwen3_spec_positive_int(max_pixels, "$prefix max_pixels"),
-            _qwen3_spec_positive_int(patch_size, "$prefix patch_size"),
-            _qwen3_spec_positive_int(
-                temporal_patch_size,
-                "$prefix temporal_patch_size",
-            ),
-            _qwen3_spec_positive_int(merge_size, "$prefix merge_size"),
-            _qwen3_vl_processor_spec_float3(
-                image_mean,
-                "$prefix image_mean",
-            ),
-            _qwen3_vl_processor_spec_float3(
-                image_std,
-                "$prefix image_std";
-                positive=true,
-            ),
+            resolved_sha256,
+            resolved_processor_class,
+            resolved_processor_type,
+            resolved_min_pixels,
+            resolved_max_pixels,
+            resolved_patch_size,
+            resolved_temporal_patch_size,
+            resolved_merge_size,
+            resolved_image_mean,
+            resolved_image_std,
         )
     end
 end
@@ -334,15 +381,6 @@ function _qwen3_vl_positive_host_int(value, label)
     end
     result > 0 || throw(ArgumentError("$label must be positive"))
     return result
-end
-
-function _qwen3_vl_checked_mul(left::Int, right::Int, label)
-    return try
-        Base.Checked.checked_mul(left, right)
-    catch err
-        err isa OverflowError || rethrow()
-        throw(ArgumentError("$label exceeds the host integer range"))
-    end
 end
 
 """

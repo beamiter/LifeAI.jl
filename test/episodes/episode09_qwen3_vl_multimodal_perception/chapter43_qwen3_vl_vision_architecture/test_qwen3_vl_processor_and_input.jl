@@ -96,6 +96,28 @@ end
         @test sprint(showerror, failure) ==
             "ArgumentError: Qwen3-VL processor $message"
     end
+
+    for (values, message) in (
+        (
+            Base.setindex(valid, 1_001, 4),
+            "min_pixels must not exceed max_pixels",
+        ),
+        (
+            Base.setindex(valid, 15, 5),
+            "max_pixels must be at least resize factor squared (16)",
+        ),
+        (
+            Base.setindex(valid, typemax(Int), 6),
+            "resize factor exceeds the host integer range",
+        ),
+    )
+        failure = _ch43_processor_error() do
+            Qwen3VLProcessorSpec(values...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL processor $message"
+    end
 end
 
 @testset "Qwen3-VL smart resize and image grid" begin

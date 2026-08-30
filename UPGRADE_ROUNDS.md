@@ -297,6 +297,8 @@ Chapter 03 reproducible-training test.
      replacing numeric and symbolic role conversion failures with clear errors.
 148. Make Qwen3 INT8 and packed-INT4 dequantization traceable on Reactant while
      preserving exhaustive host nibble semantics and compiled row slicing.
+149. Reject contradictory or unrepresentable Qwen3-VL processor pixel budgets
+     before resize arithmetic can overflow or produce an impossible geometry.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
