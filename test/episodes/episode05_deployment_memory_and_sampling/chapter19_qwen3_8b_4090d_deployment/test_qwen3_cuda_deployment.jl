@@ -255,6 +255,36 @@ end
         )
         @test report.total_bytes == 5
         @test only(report.files).name == "hello.bin"
+        io_failure = _qwen3_deployment_captured_error() do
+            LifeAI._qwen3_asset_io("synthetic asset I/O failed") do
+                error("sentinel")
+            end
+        end
+        @test io_failure isa ArgumentError
+        @test sprint(showerror, io_failure) ==
+            "ArgumentError: synthetic asset I/O failed: sentinel"
+        @test_throws InterruptException LifeAI._qwen3_asset_io(
+            "synthetic asset I/O interrupted",
+        ) do
+            throw(InterruptException())
+        end
+        missing_asset = joinpath(directory, "missing.bin")
+        missing_size_error = _qwen3_deployment_captured_error() do
+            LifeAI._qwen3_asset_filesize(missing_asset)
+        end
+        @test missing_size_error isa ArgumentError
+        @test occursin(
+            "could not read model asset size",
+            sprint(showerror, missing_size_error),
+        )
+        missing_hash_error = _qwen3_deployment_captured_error() do
+            LifeAI._qwen3_sha256_file(missing_asset)
+        end
+        @test missing_hash_error isa ArgumentError
+        @test occursin(
+            "could not hash model asset",
+            sprint(showerror, missing_hash_error),
+        )
         for (field, message) in (
             ("model_id", "asset manifest model_id must not be empty"),
             ("revision", "asset manifest revision must not be empty"),

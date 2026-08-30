@@ -326,9 +326,28 @@ const _QWEN3_ASSET_MANIFEST_FIELDS = Set((
 ))
 const _QWEN3_ASSET_FILE_FIELDS = Set(("name", "size", "sha256"))
 
+function _qwen3_asset_io(operation, label::AbstractString)
+    return try
+        operation()
+    catch error
+        error isa InterruptException && rethrow()
+        throw(ArgumentError("$label: $(sprint(showerror, error))"))
+    end
+end
+
 function _qwen3_sha256_file(path::AbstractString)
-    return open(path, "r") do io
-        bytes2hex(sha256(io))
+    return _qwen3_asset_io("could not hash model asset $path") do
+        open(path, "r") do io
+            bytes2hex(sha256(io))
+        end
+    end
+end
+
+function _qwen3_asset_filesize(path::AbstractString)
+    return _qwen3_asset_io("could not read model asset size for $path") do
+        metadata = stat(path)
+        isfile(metadata) || throw(ArgumentError("model asset is not a regular file"))
+        filesize(metadata)
     end
 end
 
@@ -428,7 +447,7 @@ function verify_qwen3_deployment_assets(
         expected_sha256 = lowercase(raw_sha256)
         path = joinpath(model_dir, name)
         isfile(path) || throw(ArgumentError("required model asset is missing: $path"))
-        actual_size = filesize(path)
+        actual_size = _qwen3_asset_filesize(path)
         actual_size == expected_size || throw(ArgumentError(
             "model asset size mismatch for $name: expected $expected_size, got $actual_size",
         ))

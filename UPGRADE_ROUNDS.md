@@ -287,6 +287,8 @@ Chapter 03 reproducible-training test.
      retaining uppercase hexadecimal compatibility without suffix ambiguity.
 143. Preserve cancellation through Qwen3 deployment JSON reads instead of
      disguising `InterruptException` as malformed input.
+144. Contextualize Qwen3 asset size and hashing I/O failures as argument errors
+     while preserving cancellation through both operations.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
