@@ -58,7 +58,7 @@ function prepare_qwen3_embedding_inputs(
     padding_side in (:left, :right) || throw(ArgumentError(
         "padding_side must be :left or :right",
     ))
-    resolved_max_length = Int(max_length)
+    resolved_max_length = _strict_host_int(max_length, "max_length")
     1 <= resolved_max_length <= tokenizer.model_max_length || throw(ArgumentError(
         "max_length must be in 1:$(tokenizer.model_max_length)",
     ))
@@ -147,8 +147,8 @@ function qwen3_last_token_pool(
         "final_hidden must have shape (hidden, sequence, batch)",
     ))
     hidden_size, sequence_length, batch_size = size(final_hidden)
-    resolved_minimum = Int(minimum_dimension)
-    resolved_dimension = Int(dimension)
+    resolved_minimum = _strict_host_int(minimum_dimension, "minimum_dimension")
+    resolved_dimension = _strict_host_int(dimension, "dimension")
     1 <= resolved_minimum <= hidden_size || throw(ArgumentError(
         "minimum_dimension must be in 1:$hidden_size",
     ))
@@ -195,6 +195,7 @@ function hf_qwen3_embedding_forward(
     attention_mask;
     dimension::Integer=model.d_model,
 )
+    resolved_dimension = _strict_host_int(dimension, "dimension")
     _qwen3_validate_semantics(model)
     eltype(parameters.token_embedding.weight) === BFloat16 || throw(ArgumentError(
         "hf_qwen3_embedding_forward requires a BFloat16 parameter tree",
@@ -240,7 +241,7 @@ function hf_qwen3_embedding_forward(
     embeddings = qwen3_last_token_pool(
         result.final_hidden,
         mask;
-        dimension,
+        dimension=resolved_dimension,
         minimum_dimension,
     )
     return (;
@@ -266,7 +267,8 @@ function embed_texts(
         hasproperty(bundle, :parameters) || throw(ArgumentError(
             "embedding bundle must contain tokenizer, model, and parameters",
         ))
-    resolved_max_length = Int(max_length)
+    resolved_max_length = _strict_host_int(max_length, "max_length")
+    resolved_dimension = _strict_host_int(dimension, "dimension")
     resolved_max_length <= bundle.model.max_seq_len || throw(ArgumentError(
         "max_length exceeds the loaded embedding model context",
     ))
@@ -281,7 +283,7 @@ function embed_texts(
         bundle.parameters,
         inputs.tokens,
         inputs.attention_mask;
-        dimension,
+        dimension=resolved_dimension,
     )
     return merge(inputs, (; embeddings=forward.embeddings))
 end
@@ -394,7 +396,7 @@ function retrieve_qwen3_semantic_memory(
     size(query, 1) == size(memory.embeddings, 1) || throw(DimensionMismatch(
         "query embedding dimension does not match semantic memory",
     ))
-    resolved_top_k = Int(top_k)
+    resolved_top_k = _strict_host_int(top_k, "top_k")
     1 <= resolved_top_k <= length(memory.texts) || throw(ArgumentError(
         "top_k must be in 1:$(length(memory.texts))",
     ))
@@ -423,6 +425,10 @@ function search_qwen3_semantic_memory(
     top_k::Integer=5,
     max_length::Integer=bundle.model.max_seq_len,
 )
+    resolved_top_k = _strict_host_int(top_k, "top_k")
+    1 <= resolved_top_k <= length(memory.texts) || throw(ArgumentError(
+        "top_k must be in 1:$(length(memory.texts))",
+    ))
     formatted = qwen3_embedding_query(query; instruction)
     embedded = embed_texts(
         bundle,
@@ -434,6 +440,6 @@ function search_qwen3_semantic_memory(
     return retrieve_qwen3_semantic_memory(
         memory,
         vec(embedded.embeddings);
-        top_k,
+        top_k=resolved_top_k,
     )
 end

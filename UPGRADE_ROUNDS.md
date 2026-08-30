@@ -231,6 +231,8 @@ Chapter 03 reproducible-training test.
      probabilities, rejecting Bool and precision-level overflow or underflow.
 115. Strictly parse Qwen3 tokenizer context limits and embedding generation
      lengths, rejecting Bool, non-integers, non-positive values, and overflow.
+116. Strictly normalize Qwen3 embedding lengths, MRL dimensions, and retrieval
+     limits before tokenization, inference, pooling, or similarity work.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

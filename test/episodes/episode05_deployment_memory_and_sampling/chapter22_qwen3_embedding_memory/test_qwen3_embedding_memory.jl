@@ -342,6 +342,21 @@ end
             ["hi!"];
             padding_side=:middle,
         )
+        for (max_length, message) in (
+            (true, "max_length must be an integer"),
+            (
+                big(typemax(Int)) + 1,
+                "max_length is outside the host integer range",
+            ),
+        )
+            @test _embedding_argument_error_message() do
+                prepare_qwen3_embedding_inputs(
+                    tokenizer,
+                    ["hi!"];
+                    max_length,
+                )
+            end == message
+        end
 
         path = joinpath(directory, "embedding-tokenizer.toml")
         save_tokenizer(path, tokenizer)
@@ -397,6 +412,30 @@ end
     expected_first = hidden[1:32, 4, 1]
     expected_first ./= norm(expected_first)
     @test pooled[:, 1] ≈ expected_first atol=1.0f-6
+    @test qwen3_last_token_pool(
+        hidden,
+        mask;
+        dimension=Int128(32),
+        minimum_dimension=big(32),
+    ) == pooled
+
+    too_large = big(typemax(Int)) + 1
+    for (options, message) in (
+        ((; dimension=true), "dimension must be an integer"),
+        (
+            (; dimension=too_large),
+            "dimension is outside the host integer range",
+        ),
+        ((; minimum_dimension=true), "minimum_dimension must be an integer"),
+        (
+            (; minimum_dimension=too_large),
+            "minimum_dimension is outside the host integer range",
+        ),
+    )
+        @test _embedding_argument_error_message() do
+            qwen3_last_token_pool(hidden, mask; options...)
+        end == message
+    end
 
     full = qwen3_last_token_pool(hidden, mask; dimension=64)
     truncated_after_normalization = full[1:32, :]
@@ -436,6 +475,23 @@ end
     results = retrieve_qwen3_semantic_memory(memory, Float32[1, 0]; top_k=2)
     @test [result.index for result in results] == [1, 2]
     @test results[1].metadata === :x
+    @test [result.index for result in retrieve_qwen3_semantic_memory(
+        memory,
+        Float32[1, 0];
+        top_k=big(2),
+    )] == [1, 2]
+    for (top_k, message) in (
+        (true, "top_k must be an integer"),
+        (too_large, "top_k is outside the host integer range"),
+    )
+        @test _embedding_argument_error_message() do
+            retrieve_qwen3_semantic_memory(
+                memory,
+                Float32[1, 0];
+                top_k,
+            )
+        end == message
+    end
     @test_throws DimensionMismatch Qwen3SemanticMemory(
         ["only one"],
         documents,
@@ -524,6 +580,24 @@ end
             left_mask;
             dimension=7,
         )
+        @test _embedding_argument_error_message() do
+            hf_qwen3_embedding_forward(
+                loaded.model,
+                loaded.parameters,
+                left_tokens,
+                left_mask;
+                dimension=true,
+            )
+        end == "dimension must be an integer"
+        @test _embedding_argument_error_message() do
+            hf_qwen3_embedding_forward(
+                loaded.model,
+                loaded.parameters,
+                left_tokens,
+                left_mask;
+                dimension=big(typemax(Int)) + 1,
+            )
+        end == "dimension is outside the host integer range"
     end
 end
 
