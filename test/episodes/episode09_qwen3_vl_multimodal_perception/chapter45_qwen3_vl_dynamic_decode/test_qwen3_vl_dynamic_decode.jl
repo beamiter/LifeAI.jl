@@ -532,7 +532,7 @@ end
 @testset "Chapter 45 — image-token masks fail before dynamic cache writes" begin
     parameters = merge(
         _ch45_tiny_text_parameters(),
-        (; checkpoint=(; image_token_id=2)),
+        (; checkpoint=(; image_token_id=2, video_token_id=8)),
     )
     inputs = _ch45_tiny_prefill_inputs()
     input_ids = Int[1, 2, 3, 3, 3, 3, 4, 5]
@@ -571,6 +571,41 @@ end
         end
         @test error isa ArgumentError
         @test sprint(showerror, error) == message
+        @test isempty(cache)
+        @test cache.position == 0
+        @test cache.rope_delta == 0
+        @test all(
+            layer -> layer.keys === nothing && layer.values === nothing,
+            cache.layers,
+        )
+    end
+end
+
+@testset "Chapter 45 — video placeholders fail before dynamic cache writes" begin
+    parameters = merge(
+        _ch45_tiny_text_parameters(),
+        (; checkpoint=(; image_token_id=2, video_token_id=8)),
+    )
+    inputs = _ch45_tiny_prefill_inputs()
+    bound_tokens = Int[1, 2, 3, 3, 3, 3, 4, 5]
+    expected = "ArgumentError: Qwen3-VL video placeholders are not " *
+        "supported by image-only text prefill"
+
+    for video_position in (2, 3)
+        video_tokens = copy(bound_tokens)
+        video_tokens[video_position] = 9
+        cache = init_qwen3_vl_kv_cache(parameters)
+        error = _ch45_captured_error() do
+            hf_qwen3_vl_text_prefill_cached(
+                parameters,
+                video_tokens,
+                inputs.rope_layout;
+                vision_features=_CH45VisionComputePoison(),
+                cache,
+            )
+        end
+        @test error isa ArgumentError
+        @test sprint(showerror, error) == expected
         @test isempty(cache)
         @test cache.position == 0
         @test cache.rope_delta == 0

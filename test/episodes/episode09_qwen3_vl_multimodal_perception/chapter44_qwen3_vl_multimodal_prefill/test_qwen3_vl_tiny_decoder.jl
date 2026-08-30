@@ -829,7 +829,7 @@ end
     bound_tokens = Int[1, 2, 3, 3, 3, 3, 4, 5]
     checkpoint_parameters = merge(
         parameters,
-        (; checkpoint=(; image_token_id=2)),
+        (; checkpoint=(; image_token_id=2, video_token_id=8)),
     )
     bound = hf_qwen3_vl_text_prefill(
         checkpoint_parameters,
@@ -840,6 +840,40 @@ end
     )
     @test size(bound.logits) == (parameters.spec.vocab_size, 1, 1)
     @test all(isfinite, bound.logits)
+
+    for video_position in (2, 3)
+        video_tokens = copy(bound_tokens)
+        video_tokens[video_position] = 9
+        expected = "ArgumentError: Qwen3-VL video placeholders are not " *
+            "supported by image-only text prefill"
+
+        video_error = _ch44_captured_error() do
+            hf_qwen3_vl_text_prefill(
+                checkpoint_parameters,
+                video_tokens,
+                inputs.rope_layout;
+                vision_features=inputs.vision_features,
+                logits_to_keep=1,
+            )
+        end
+        @test video_error isa ArgumentError
+        @test sprint(showerror, video_error) == expected
+
+        # The combined path must reject the token before touching the vision
+        # tower, represented here by an intentionally unusable sentinel.
+        combined_video_error = _ch44_captured_error() do
+            hf_qwen3_vl_prefill(
+                42,
+                checkpoint_parameters,
+                vision_input,
+                video_tokens;
+                rope_layout=inputs.rope_layout,
+                logits_to_keep=1,
+            )
+        end
+        @test combined_video_error isa ArgumentError
+        @test sprint(showerror, combined_video_error) == expected
+    end
 
     missing_image = copy(inputs.rope_layout.visual_mask)
     missing_image[3, 1] = false
@@ -904,6 +938,57 @@ end
         invalid_checkpoint = merge(
             parameters,
             (; checkpoint=(; image_token_id=raw_id)),
+        )
+        checkpoint_id_error = _ch44_captured_error() do
+            hf_qwen3_vl_text_prefill(
+                invalid_checkpoint,
+                bound_tokens,
+                inputs.rope_layout;
+                vision_features=inputs.vision_features,
+                logits_to_keep=1,
+            )
+        end
+        @test checkpoint_id_error isa ArgumentError
+        @test sprint(showerror, checkpoint_id_error) == message
+    end
+
+    missing_video_id = merge(
+        parameters,
+        (; checkpoint=(; image_token_id=2)),
+    )
+    missing_video_id_error = _ch44_captured_error() do
+        hf_qwen3_vl_text_prefill(
+            missing_video_id,
+            bound_tokens,
+            inputs.rope_layout;
+            vision_features=inputs.vision_features,
+            logits_to_keep=1,
+        )
+    end
+    @test missing_video_id_error isa ArgumentError
+    @test sprint(showerror, missing_video_id_error) ==
+        "ArgumentError: Qwen3-VL checkpoint must contain video_token_id"
+
+    for (raw_id, message) in (
+        (
+            true,
+            "ArgumentError: Qwen3-VL checkpoint video_token_id must be an " *
+            "integer",
+        ),
+        (
+            typemax(Int),
+            "ArgumentError: Qwen3-VL checkpoint video_token_id must be " *
+            "in 0:31",
+        ),
+        (
+            big(typemax(Int)) + 1,
+            "ArgumentError: Qwen3-VL checkpoint video_token_id is outside " *
+            "the host integer range",
+        ),
+    )
+        invalid_checkpoint = merge(
+            parameters,
+            (; checkpoint=(; image_token_id=2, video_token_id=raw_id)),
         )
         checkpoint_id_error = _ch44_captured_error() do
             hf_qwen3_vl_text_prefill(

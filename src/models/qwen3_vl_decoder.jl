@@ -683,10 +683,14 @@ function _qwen3_vl_prompt_visual_token_contract(
     parameters,
     tokens,
     visual_mask,
+    attention_mask,
 )
     hasproperty(parameters, :checkpoint) || return nothing
     size(visual_mask) == size(tokens) || throw(DimensionMismatch(
         "Qwen3-VL visual mask does not match input_ids",
+    ))
+    size(attention_mask) == size(tokens) || throw(DimensionMismatch(
+        "Qwen3-VL attention mask does not match input_ids",
     ))
     checkpoint = parameters.checkpoint
     hasproperty(checkpoint, :image_token_id) || throw(ArgumentError(
@@ -704,6 +708,23 @@ function _qwen3_vl_prompt_visual_token_contract(
         BigInt(raw_image_token) + 1,
         "Qwen3-VL one-based image token id",
     )
+    hasproperty(checkpoint, :video_token_id) || throw(ArgumentError(
+        "Qwen3-VL checkpoint must contain video_token_id",
+    ))
+    raw_video_token = _strict_host_int(
+        checkpoint.video_token_id,
+        "Qwen3-VL checkpoint video_token_id",
+    )
+    0 <= raw_video_token < vocab_size || throw(ArgumentError(
+        "Qwen3-VL checkpoint video_token_id must be in 0:$(vocab_size - 1)",
+    ))
+    video_token = _strict_host_int(
+        BigInt(raw_video_token) + 1,
+        "Qwen3-VL one-based video token id",
+    )
+    any((tokens .== video_token) .& attention_mask) && throw(ArgumentError(
+        "Qwen3-VL video placeholders are not supported by image-only text prefill",
+    ))
     expected_visual_mask = tokens .== image_token
     all((.!expected_visual_mask) .| visual_mask) || throw(ArgumentError(
         "Qwen3-VL checkpoint image tokens must be marked by visual_mask",
@@ -741,6 +762,7 @@ function _qwen3_vl_cache_free_prompt_contract(
         parameters,
         tokens,
         visual_mask,
+        rope_layout.attention_mask,
     )
 
     _qwen3_vl_prompt_rope_deltas(
@@ -919,6 +941,7 @@ function hf_qwen3_vl_prefill(
             text_parameters,
             tokens,
             resolved_rope_layout.visual_mask,
+            resolved_rope_layout.attention_mask,
         )
     end
     features = hf_qwen3_vl_vision_forward(vision_parameters, vision_input)

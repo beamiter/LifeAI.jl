@@ -851,6 +851,7 @@ function _qwen3_vl_cached_prompt_contract(
         parameters,
         tokens,
         rope_layout.visual_mask,
+        rope_layout.attention_mask,
     )
     rope_deltas = _qwen3_vl_prompt_rope_deltas(
         spec,
@@ -1222,6 +1223,7 @@ function _qwen3_vl_static_prompt_contract(
         parameters,
         tokens,
         rope_layout.visual_mask,
+        rope_layout.attention_mask,
     )
     rope_deltas = _qwen3_vl_prompt_rope_deltas(
         spec,

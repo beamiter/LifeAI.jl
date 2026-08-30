@@ -819,7 +819,7 @@ end
 @testset "Chapter 46 — image-token masks fail before static cache writes" begin
     parameters = merge(
         _ch46_tiny_text_parameters(),
-        (; checkpoint=(; image_token_id=2)),
+        (; checkpoint=(; image_token_id=2, video_token_id=8)),
     )
     inputs = _ch46_tiny_prefill_inputs()
     input_ids = Int[1, 2, 3, 3, 3, 3, 4, 5]
@@ -861,6 +861,45 @@ end
         end
         @test error isa ArgumentError
         @test sprint(showerror, error) == message
+        @test isempty(cache)
+        @test cache.position == 0
+        @test cache.rope_delta == 0
+        _ch46_assert_storage_identity(cache, refs)
+        for layer in eachindex(cache.layers)
+            @test cache.layers[layer].keys == key_snapshots[layer]
+            @test cache.layers[layer].values == value_snapshots[layer]
+        end
+    end
+end
+
+@testset "Chapter 46 — video placeholders fail before static cache writes" begin
+    parameters = merge(
+        _ch46_tiny_text_parameters(),
+        (; checkpoint=(; image_token_id=2, video_token_id=8)),
+    )
+    inputs = _ch46_tiny_prefill_inputs()
+    bound_tokens = Int[1, 2, 3, 3, 3, 3, 4, 5]
+    expected = "ArgumentError: Qwen3-VL video placeholders are not " *
+        "supported by image-only text prefill"
+
+    for video_position in (2, 3)
+        video_tokens = copy(bound_tokens)
+        video_tokens[video_position] = 9
+        cache = init_qwen3_vl_static_kv_cache(parameters; capacity=10)
+        refs = _ch46_storage_refs(cache)
+        key_snapshots = map(layer -> copy(layer.keys), cache.layers)
+        value_snapshots = map(layer -> copy(layer.values), cache.layers)
+        error = _ch46_captured_error() do
+            hf_qwen3_vl_text_prefill_static(
+                parameters,
+                video_tokens,
+                inputs.rope_layout;
+                vision_features=inputs.vision_features,
+                cache,
+            )
+        end
+        @test error isa ArgumentError
+        @test sprint(showerror, error) == expected
         @test isempty(cache)
         @test cache.position == 0
         @test cache.rope_delta == 0

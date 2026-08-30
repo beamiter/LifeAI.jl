@@ -466,6 +466,9 @@ Chapter 03 reproducible-training test.
 228. Seal static Qwen GPT cache containers behind coherent layer tuples,
      Int32 or tracked positions, fixed batch/capacity geometry, shared
      dtype/device, distinct storage, and trace-safe private reconstruction.
+229. Reject attended Qwen3-VL video placeholders across cache-free, dynamic,
+     and static image-only prefill before vision compute, feature consumption,
+     or cache writes, with strict checkpoint video-token metadata.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
