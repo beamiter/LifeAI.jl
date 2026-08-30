@@ -1191,6 +1191,7 @@ function apply_qwen3_vl_chat_template(
 end
 
 function _qwen3_vl_grid_columns(grids)
+    grids === nothing && return NTuple{3,Int}[]
     if grids isa AbstractMatrix
         size(grids, 1) == 3 || throw(DimensionMismatch(
             "Qwen3-VL image grids must have shape (3, image_count)",
@@ -1207,6 +1208,9 @@ function _qwen3_vl_grid_columns(grids)
         )
         nested || return [_qwen3_vl_image_grid_tuple(grids)]
     end
+    grids isa Union{Tuple,AbstractVector} || throw(ArgumentError(
+        "Qwen3-VL image grids must be a matrix, one grid, or a grid collection",
+    ))
     return [_qwen3_vl_image_grid_tuple(grid) for grid in grids]
 end
 

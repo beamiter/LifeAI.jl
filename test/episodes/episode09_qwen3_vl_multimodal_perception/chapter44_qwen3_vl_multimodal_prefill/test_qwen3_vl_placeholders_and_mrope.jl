@@ -172,6 +172,20 @@ end
         "no image",
         NTuple{3,Int}[],
     ) == "no image"
+    @test qwen3_vl_expand_image_placeholders("no image", nothing) == "no image"
+    @test_throws ArgumentError qwen3_vl_expand_image_placeholders(
+        image_pad,
+        nothing,
+    )
+    for invalid_grids in (1, :grid, Dict(:grid => (1, 16, 16)))
+        failure = _ch44_layout_captured_error() do
+            qwen3_vl_expand_image_placeholders("no image", invalid_grids)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL image grids must be a matrix, one grid, " *
+            "or a grid collection"
+    end
 
     # Equal total counts are insufficient: every original sentinel consumes
     # exactly its corresponding grid, in prompt order.

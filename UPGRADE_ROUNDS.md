@@ -309,6 +309,8 @@ Chapter 03 reproducible-training test.
      its trace-safe constructor cannot create malformed INT8 or INT4 weights.
 154. Accept one Qwen3-VL image grid as a flat tuple or vector without confusing
      its three dimensions for a collection of three separate image grids.
+155. Normalize absent Qwen3-VL image grids as an empty collection and reject
+     non-container grid payloads before iteration can leak method errors.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
