@@ -85,6 +85,8 @@ Qwen3-8B 是 36 层、8 个 KV heads、head dim 128，即每 token 144 KiB：
 
 - `Qwen3DeploymentProfile`：严格解析配置；未知字段、moving revision、
   context 溢出均 fail closed。
+- dense BF16 session 在读取 tokenizer/config/weights 或执行设备传输前先校验
+  context、prefill chunk 与显式 variant；无效启动参数不会触发整模型重活。
 - 启动前流式校验 config/tokenizer/index 和五个权重分片的 frozen
   size/SHA256；ModelScope `master` 不能绕过 immutable HF revision。
 - `HFQwen3BF16Session`：模型、RoPE 与固定容量 K/V 只创建一次，请求间

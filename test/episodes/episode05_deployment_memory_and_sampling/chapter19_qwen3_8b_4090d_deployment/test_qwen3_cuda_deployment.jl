@@ -13,6 +13,7 @@ using LifeAI:
     hf_generation_config,
     hf_qwen3_bf16_accel_forward,
     init_hf_qwen3_bf16_session,
+    load_hf_qwen3_bf16_session,
     load_hf_qwen3_tokenizer,
     load_qwen3_deployment_profile,
     prefill_hf_qwen3_bf16!,
@@ -32,6 +33,15 @@ const _QWEN3_CUDA_DEPLOYMENT_PROFILE_PATH = joinpath(
     "deployment",
     "qwen3_8b_4090d_bf16_daily.json",
 )
+
+function _qwen3_deployment_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected Qwen3 deployment call to fail")
+end
 
 function _qwen3_cuda_deployment_tiny_bundle(directory; max_seq_len=128)
     write_qwen3_tokenizer_fixture(directory)
@@ -235,9 +245,98 @@ end
     end
 end
 
+@testset "dense session options fail before checkpoint I/O" begin
+    mktempdir() do directory
+        too_large = big(typemax(Int)) + 1
+        cases = (
+            (
+                needle="context_tokens must be an integer",
+                options=(; context_tokens=true, prefill_chunk_tokens=1),
+            ),
+            (
+                needle="context_tokens is outside the host integer range",
+                options=(; context_tokens=too_large, prefill_chunk_tokens=1),
+            ),
+            (
+                needle="context_tokens must be positive",
+                options=(; context_tokens=0, prefill_chunk_tokens=1),
+            ),
+            (
+                needle="prefill_chunk_tokens must be an integer",
+                options=(; context_tokens=8, prefill_chunk_tokens=true),
+            ),
+            (
+                needle="prefill_chunk_tokens is outside the host integer range",
+                options=(; context_tokens=8, prefill_chunk_tokens=too_large),
+            ),
+            (
+                needle="prefill_chunk_tokens must be in 1:context_tokens",
+                options=(; context_tokens=8, prefill_chunk_tokens=0),
+            ),
+            (
+                needle="prefill_chunk_tokens must be in 1:context_tokens",
+                options=(; context_tokens=8, prefill_chunk_tokens=9),
+            ),
+        )
+        for case in cases
+            failure = _qwen3_deployment_captured_error() do
+                load_hf_qwen3_bf16_session(
+                    directory;
+                    case.options...,
+                )
+            end
+            @test failure isa ArgumentError
+            @test occursin(case.needle, sprint(showerror, failure))
+            @test !occursin("tokenizer", sprint(showerror, failure))
+        end
+
+        variant_failure = _qwen3_deployment_captured_error() do
+            load_hf_qwen3_bf16_session(
+                directory;
+                context_tokens=8,
+                prefill_chunk_tokens=1,
+                variant=:not_qwen3,
+            )
+        end
+        @test variant_failure isa ArgumentError
+        @test occursin(
+            "unknown Qwen3 dense variant",
+            sprint(showerror, variant_failure),
+        )
+
+        io_failure = _qwen3_deployment_captured_error() do
+            load_hf_qwen3_bf16_session(
+                directory;
+                context_tokens=Int32(8),
+                prefill_chunk_tokens=big(1),
+            )
+        end
+        @test io_failure isa ArgumentError
+        @test occursin(
+            "required Qwen3 tokenizer file",
+            sprint(showerror, io_failure),
+        )
+    end
+end
+
 @testset "chunked last-logit prefill and reusable static cache" begin
     mktempdir() do directory
         bundle = _qwen3_cuda_deployment_tiny_bundle(directory; max_seq_len=32)
+        @test_throws ArgumentError init_hf_qwen3_bf16_session(
+            bundle;
+            context_tokens=true,
+            prefill_chunk_tokens=1,
+        )
+        @test_throws ArgumentError init_hf_qwen3_bf16_session(
+            bundle;
+            context_tokens=16,
+            prefill_chunk_tokens=true,
+        )
+        @test_throws ArgumentError init_hf_qwen3_bf16_session(
+            bundle;
+            context_tokens=big(typemax(Int)) + 1,
+            prefill_chunk_tokens=1,
+        )
         session = init_hf_qwen3_bf16_session(
             bundle;
             context_tokens=16,

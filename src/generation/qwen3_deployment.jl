@@ -389,6 +389,19 @@ mutable struct HFQwen3BF16Session{M,P,T,G,C,S}
     prefill_chunk_tokens::Int
 end
 
+function _qwen3_session_window_preflight(
+    context_tokens,
+    prefill_chunk_tokens,
+)
+    context = _strict_host_int(context_tokens, "context_tokens")
+    chunk = _strict_host_int(prefill_chunk_tokens, "prefill_chunk_tokens")
+    context > 0 || throw(ArgumentError("context_tokens must be positive"))
+    0 < chunk <= context || throw(ArgumentError(
+        "prefill_chunk_tokens must be in 1:context_tokens",
+    ))
+    return (; context_tokens=context, prefill_chunk_tokens=chunk)
+end
+
 function _qwen3_session_cache(reference, model::GPTModel, context_tokens::Int)
     shape = (
         model.head_dim,
@@ -417,6 +430,10 @@ function init_hf_qwen3_bf16_session(
     context_tokens::Integer=bundle.model.max_seq_len,
     prefill_chunk_tokens::Integer=128,
 )
+    window = _qwen3_session_window_preflight(
+        context_tokens,
+        prefill_chunk_tokens,
+    )
     model = bundle.model
     parameters = bundle.parameters
     tokenizer = bundle.tokenizer
@@ -424,13 +441,10 @@ function init_hf_qwen3_bf16_session(
     eltype(parameters.token_embedding.weight) === BFloat16 || throw(ArgumentError(
         "Qwen3 BF16 sessions require a BFloat16 embedding/compute tree",
     ))
-    context = Int(context_tokens)
-    chunk = Int(prefill_chunk_tokens)
-    0 < context <= model.max_seq_len || throw(ArgumentError(
+    context = window.context_tokens
+    chunk = window.prefill_chunk_tokens
+    context <= model.max_seq_len || throw(ArgumentError(
         "context_tokens must be in 1:model.max_seq_len",
-    ))
-    0 < chunk <= context || throw(ArgumentError(
-        "prefill_chunk_tokens must be in 1:context_tokens",
     ))
     vocab_size(tokenizer) <= model.vocab_size || throw(ArgumentError(
         "tokenizer vocabulary exceeds the model vocabulary",
@@ -478,19 +492,28 @@ function load_hf_qwen3_bf16_session(
     variant=nothing,
     to_device=identity,
 )
+    window = _qwen3_session_window_preflight(
+        context_tokens,
+        prefill_chunk_tokens,
+    )
+    resolved_variant = variant === nothing ?
+        nothing : qwen3_dense_spec(variant).variant
+    isdir(model_dir) || throw(ArgumentError(
+        "model directory does not exist: $model_dir",
+    ))
     loaded = load_hf_qwen3_bundle(
         model_dir;
-        max_seq_len=Int(context_tokens),
+        max_seq_len=window.context_tokens,
         weight_dtype=BFloat16,
         revision,
-        variant,
+        variant=resolved_variant,
     )
     parameters = to_device(loaded.parameters)
     device_bundle = merge(loaded, (; parameters))
     return init_hf_qwen3_bf16_session(
         device_bundle;
-        context_tokens,
-        prefill_chunk_tokens,
+        context_tokens=window.context_tokens,
+        prefill_chunk_tokens=window.prefill_chunk_tokens,
     )
 end
 
