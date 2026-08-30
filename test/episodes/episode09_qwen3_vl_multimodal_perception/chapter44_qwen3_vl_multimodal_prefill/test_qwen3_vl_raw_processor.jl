@@ -97,11 +97,10 @@ end
     processed = qwen3_vl_process_image(image; spec=identity_normalization)
     @test processed.pixel_values[1, 1] == Float32(image[1, 1, 1]) / 255.0f0
 
-    invalid_std = _ch44_processor_with_normalization(
+    @test_throws ArgumentError _ch44_processor_with_normalization(
         (0.5f0, 0.5f0, 0.5f0),
         (0.5f0, 0.0f0, 0.5f0),
     )
-    @test_throws ArgumentError qwen3_vl_process_image(image; spec=invalid_std)
 end
 
 @testset "Chapter 44 — grayscale and alpha image decode" begin

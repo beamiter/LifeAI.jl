@@ -7,6 +7,96 @@ using LifeAI: Qwen3VLProcessorSpec,
     qwen3_vl_processor_spec,
     qwen3_vl_smart_resize
 
+function _ch43_processor_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected Qwen3-VL processor specification to fail")
+end
+
+@testset "Qwen3-VL processor specifications are strict" begin
+    valid = (
+        SubString("xhash", 2),
+        SubString("xprocessor", 2),
+        SubString("ximage", 2),
+        big(1),
+        Int32(1_000),
+        UInt8(2),
+        big(2),
+        Int128(2),
+        (Float64(0.25), Int32(0), Float32(-0.25)),
+        (Float64(0.5), Int32(1), Float32(2)),
+    )
+    spec = Qwen3VLProcessorSpec(valid...)
+    @test spec.preprocessor_config_sha256 === "hash"
+    @test spec.processor_class === "processor"
+    @test spec.min_pixels === 1
+    @test spec.image_mean === (0.25f0, 0.0f0, -0.25f0)
+    @test spec.image_std === (0.5f0, 1.0f0, 2.0f0)
+
+    names = fieldnames(Qwen3VLProcessorSpec)
+    for index in 4:8
+        label = names[index]
+        for (value, message) in (
+            (true, "must be an integer"),
+            (0, "must be positive"),
+        )
+            failure = _ch43_processor_error() do
+                Qwen3VLProcessorSpec(Base.setindex(valid, value, index)...)
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) ==
+                "ArgumentError: Qwen3-VL processor $label $message"
+        end
+    end
+
+    too_large = big(typemax(Int)) + 1
+    for (index, value, message) in (
+        (4, 1.0, "min_pixels must be an integer"),
+        (4, too_large, "min_pixels is outside the host integer range"),
+        (1, :hash, "preprocessor_config_sha256 must be a string"),
+        (2, :processor, "processor_class must be a string"),
+        (3, :image, "image_processor_type must be a string"),
+    )
+        failure = _ch43_processor_error() do
+            Qwen3VLProcessorSpec(Base.setindex(valid, value, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL processor $message"
+    end
+
+    for (index, values, message) in (
+        (9, [0.0, 0.0, 0.0], "image_mean must be a tuple of three numbers"),
+        (9, (0.0, 0.0), "image_mean must be a tuple of three numbers"),
+        (9, (true, 0.0, 0.0), "image_mean[1] must be a real number"),
+        (
+            9,
+            (big(10)^1_000, 0.0, 0.0),
+            "image_mean[1] must be finite at Float32 precision",
+        ),
+        (
+            10,
+            (0.0, 1.0, 1.0),
+            "image_std[1] must be positive and finite at Float32 precision",
+        ),
+        (
+            10,
+            (-1.0, 1.0, 1.0),
+            "image_std[1] must be positive and finite at Float32 precision",
+        ),
+    )
+        failure = _ch43_processor_error() do
+            Qwen3VLProcessorSpec(Base.setindex(valid, values, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL processor $message"
+    end
+end
+
 @testset "Qwen3-VL smart resize and image grid" begin
     spec = qwen3_vl_processor_spec()
     @test qwen3_vl_smart_resize(256, 256) == (256, 256)

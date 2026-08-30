@@ -247,6 +247,8 @@ Chapter 03 reproducible-training test.
      token mapping, rejecting invalid BOS/EOS contracts before prompt work.
 123. Strictly construct Qwen3 embedding checkpoint specifications, normalizing
      provenance strings and every positive architecture dimension.
+124. Strictly construct Qwen3-VL processor specifications, normalizing image
+     geometry and finite channel statistics with positive standard deviations.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

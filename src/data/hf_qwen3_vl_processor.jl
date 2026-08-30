@@ -11,6 +11,37 @@ Frozen image-processor configuration for the official Qwen3-VL-2B checkpoint.
 The same geometry and normalization fields drive both the raw-image path and
 the already-normalized patchify boundary.
 """
+function _qwen3_vl_processor_spec_float3(
+    value,
+    label::AbstractString;
+    positive::Bool=false,
+)
+    value isa Tuple && length(value) == 3 || throw(ArgumentError(
+        "$label must be a tuple of three numbers",
+    ))
+    return ntuple(3) do index
+        entry = value[index]
+        entry isa Real && !(entry isa Bool) || throw(ArgumentError(
+            "$label[$index] must be a real number",
+        ))
+        resolved = try
+            Float32(entry)
+        catch error
+            error isa InterruptException && rethrow()
+            throw(ArgumentError(
+                "$label[$index] must be finite at Float32 precision",
+            ))
+        end
+        isfinite(resolved) || throw(ArgumentError(
+            "$label[$index] must be finite at Float32 precision",
+        ))
+        positive && resolved <= 0 && throw(ArgumentError(
+            "$label[$index] must be positive and finite at Float32 precision",
+        ))
+        resolved
+    end
+end
+
 struct Qwen3VLProcessorSpec
     preprocessor_config_sha256::String
     processor_class::String
@@ -22,6 +53,49 @@ struct Qwen3VLProcessorSpec
     merge_size::Int
     image_mean::NTuple{3,Float32}
     image_std::NTuple{3,Float32}
+
+    function Qwen3VLProcessorSpec(
+        preprocessor_config_sha256,
+        processor_class,
+        image_processor_type,
+        min_pixels,
+        max_pixels,
+        patch_size,
+        temporal_patch_size,
+        merge_size,
+        image_mean,
+        image_std,
+    )
+        prefix = "Qwen3-VL processor"
+        return new(
+            _qwen3_spec_string(
+                preprocessor_config_sha256,
+                "$prefix preprocessor_config_sha256",
+            ),
+            _qwen3_spec_string(processor_class, "$prefix processor_class"),
+            _qwen3_spec_string(
+                image_processor_type,
+                "$prefix image_processor_type",
+            ),
+            _qwen3_spec_positive_int(min_pixels, "$prefix min_pixels"),
+            _qwen3_spec_positive_int(max_pixels, "$prefix max_pixels"),
+            _qwen3_spec_positive_int(patch_size, "$prefix patch_size"),
+            _qwen3_spec_positive_int(
+                temporal_patch_size,
+                "$prefix temporal_patch_size",
+            ),
+            _qwen3_spec_positive_int(merge_size, "$prefix merge_size"),
+            _qwen3_vl_processor_spec_float3(
+                image_mean,
+                "$prefix image_mean",
+            ),
+            _qwen3_vl_processor_spec_float3(
+                image_std,
+                "$prefix image_std";
+                positive=true,
+            ),
+        )
+    end
 end
 
 const _QWEN3_VL_PROCESSOR_SPEC = Qwen3VLProcessorSpec(
