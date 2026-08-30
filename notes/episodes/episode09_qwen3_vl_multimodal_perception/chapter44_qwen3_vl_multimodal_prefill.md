@@ -189,7 +189,9 @@ raw/post hidden、final hidden 和 logits，不以摘要或 argmax 代替 tensor
 这一 oracle 同时钉死 Q/K-Norm 所在轴、RoPE half rotation、mRoPE lane mapping、
 GQA head grouping、SwiGLU 舍入、DeepStack 在 block 后而非 block 前注入、以及 tied
 projection。最终 tiny 各层误差处于 Float32 rounding 量级，Chapter 44 默认专项
-`139 / 139` 通过。
+`185 / 185` 通过。cache-free text prefill 与组合 vision+text 入口都会先严格规范
+`logits_to_keep` / `max_prefill_tokens`；合法多宽度整数保持兼容，Bool、负值和宿主
+溢出在 token、mRoPE 或 vision compute 前 fail closed。
 
 ## 真实 RTX 4090 D 结果
 
@@ -257,7 +259,7 @@ BF16 boundary。reference 保持在仓库外；完整依赖与本机 torchvision
 - **完成了什么**：把 Chapter 43 的预处理后 vision 边界向两端扩展为 raw image、
   Qwen3-VL tokenizer/content-list chat、placeholder expansion、T/H/W mRoPE、main
   visual replacement、DeepStack injection 和完整 28 层 decoder prefill。
-- **验证证据**：默认专项 `139 / 139`；官方 2B Float32/BF16 reference SHA256
+- **验证证据**：默认专项 `185 / 185`；官方 2B Float32/BF16 reference SHA256
   分别为 `d7d3b58c…b60f5` / `711749d9…cb5ae`；RTX 4090 D 两种 dtype 的
   80-stage gate 全部通过，raw max-abs `0`，Float32 final/logits max-abs 为
   `0.00094986 / 0.00083363`。

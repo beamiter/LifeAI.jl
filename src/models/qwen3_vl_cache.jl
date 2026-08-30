@@ -604,17 +604,18 @@ function hf_qwen3_vl_text_prefill_cached(
     rope_layout::Qwen3VLRopeLayout;
     vision_features=nothing,
     cache::Qwen3VLKVCache,
-    logits_to_keep::Int=1,
+    logits_to_keep::Integer=1,
     capture_input_embeddings::Bool=true,
     capture_final_hidden::Bool=true,
 )
+    options = _qwen3_vl_prefill_options(logits_to_keep)
     tokens = _qwen3_vl_token_matrix(input_ids)
     spec, rope_delta = _qwen3_vl_cached_prompt_contract(
         parameters,
         tokens,
         rope_layout,
         cache,
-        logits_to_keep,
+        options.logits_to_keep,
     )
     sequence_length, batch_size = size(tokens)
 
@@ -674,7 +675,7 @@ function hf_qwen3_vl_text_prefill_cached(
         parameters,
         x,
         sequence_length,
-        logits_to_keep,
+        options.logits_to_keep,
         capture_final_hidden,
     )
     logits = _qwen3_vl_project_tied(parameters.embedding, projection)
@@ -951,17 +952,18 @@ function hf_qwen3_vl_text_prefill_static(
     rope_layout::Qwen3VLRopeLayout;
     vision_features=nothing,
     cache::Qwen3VLStaticKVCache,
-    logits_to_keep::Int=1,
+    logits_to_keep::Integer=1,
     capture_input_embeddings::Bool=true,
     capture_final_hidden::Bool=true,
 )
+    options = _qwen3_vl_prefill_options(logits_to_keep)
     tokens = _qwen3_vl_token_matrix(input_ids)
     spec, rope_delta = _qwen3_vl_static_prompt_contract(
         parameters,
         tokens,
         rope_layout,
         cache,
-        logits_to_keep,
+        options.logits_to_keep,
     )
     sequence_length, batch_size = size(tokens)
 
@@ -1021,7 +1023,7 @@ function hf_qwen3_vl_text_prefill_static(
         parameters,
         x,
         sequence_length,
-        logits_to_keep,
+        options.logits_to_keep,
         capture_final_hidden,
     )
     logits = _qwen3_vl_project_tied(parameters.embedding, projection)

@@ -386,6 +386,29 @@ function _qwen3_vl_project_tied(embedding, hidden)
     return reshape(matrix, size(embedding, 2), token_count, batch_size)
 end
 
+function _qwen3_vl_prefill_options(
+    logits_to_keep;
+    max_prefill_tokens=nothing,
+)
+    keep = _strict_host_int(logits_to_keep, "logits_to_keep")
+    keep >= 0 || throw(ArgumentError(
+        "logits_to_keep must be between zero and the prefill length",
+    ))
+    limit = if max_prefill_tokens === nothing
+        nothing
+    else
+        requested = _strict_host_int(
+            max_prefill_tokens,
+            "max_prefill_tokens",
+        )
+        requested > 0 || throw(ArgumentError(
+            "max_prefill_tokens must be positive",
+        ))
+        requested
+    end
+    return (; logits_to_keep=keep, max_prefill_tokens=limit)
+end
+
 function _qwen3_vl_cache_free_prompt_contract(
     spec::Qwen3VLTextSpec,
     tokens,
@@ -472,11 +495,15 @@ function hf_qwen3_vl_text_prefill(
     input_ids,
     rope_layout::Qwen3VLRopeLayout;
     vision_features=nothing,
-    logits_to_keep::Int=1,
+    logits_to_keep::Integer=1,
     capture_layers=(),
     capture_input_embeddings::Bool=false,
-    max_prefill_tokens::Int=2_048,
+    max_prefill_tokens::Integer=2_048,
 )
+    options = _qwen3_vl_prefill_options(
+        logits_to_keep;
+        max_prefill_tokens,
+    )
     tokens = _qwen3_vl_token_matrix(input_ids)
     sequence_length, batch_size = size(tokens)
     batch_size == 1 || throw(ArgumentError(
@@ -493,9 +520,9 @@ function hf_qwen3_vl_text_prefill(
         spec,
         tokens,
         rope_layout,
-        max_prefill_tokens,
+        options.max_prefill_tokens,
     )
-    0 <= logits_to_keep <= sequence_length || throw(ArgumentError(
+    options.logits_to_keep <= sequence_length || throw(ArgumentError(
         "logits_to_keep must be between zero and the prefill length",
     ))
     requested = Set(Int.(collect(capture_layers)))
@@ -557,8 +584,9 @@ function hf_qwen3_vl_text_prefill(
         parameters.final_norm,
         spec.rms_norm_eps,
     )
-    projection = logits_to_keep == 0 ? final_hidden :
-        final_hidden[:, (sequence_length - logits_to_keep + 1):end, :]
+    keep = options.logits_to_keep
+    projection = keep == 0 ? final_hidden :
+        final_hidden[:, (sequence_length - keep + 1):end, :]
     logits = _qwen3_vl_project_tied(parameters.embedding, projection)
     return Qwen3VLTextPrefill(
         captured_input,
@@ -576,15 +604,25 @@ function hf_qwen3_vl_prefill(
     text_parameters,
     vision_input::Qwen3VLVisionInput,
     input_ids;
-    rope_layout=qwen3_vl_rope_layout(input_ids, vision_input.grid_thw),
+    rope_layout=nothing,
+    logits_to_keep::Integer=1,
+    max_prefill_tokens::Integer=2_048,
     kwargs...,
 )
+    options = _qwen3_vl_prefill_options(
+        logits_to_keep;
+        max_prefill_tokens,
+    )
+    resolved_rope_layout = rope_layout === nothing ?
+        qwen3_vl_rope_layout(input_ids, vision_input.grid_thw) : rope_layout
     features = hf_qwen3_vl_vision_forward(vision_parameters, vision_input)
     text = hf_qwen3_vl_text_prefill(
         text_parameters,
         input_ids,
-        rope_layout;
+        resolved_rope_layout;
         vision_features=features,
+        logits_to_keep=options.logits_to_keep,
+        max_prefill_tokens=options.max_prefill_tokens,
         kwargs...,
     )
     return (; vision=features, text)

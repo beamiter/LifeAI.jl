@@ -67,7 +67,8 @@ index `0`，decoder block 使用 one-based layer：
 
 默认离线 tiny regression 已证明 profiled/unprofiled logits、K/V、position 和
 `rope_delta` 完全相同，四层调用顺序为固定的 48 stages。普通 decode 仍传入
-`runner=nothing`，不会把 profiler 变成公共生成契约。
+`runner=nothing`，不会把 profiler 变成公共生成契约；profiled prefill 还显式使用
+`Int32` 的 `logits_to_keep`，验证下游 profiling 路径复用相同的宽整数合同。
 
 ## 独立长轨迹 oracle
 

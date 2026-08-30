@@ -198,6 +198,7 @@ end
         inputs.rope_layout;
         vision_features=inputs.vision_features,
         cache=profiled_cache,
+        logits_to_keep=Int32(1),
     )
     token = _ch46_top_two(baseline_prefill.logits).ids[1]
     @test profiled_prefill.logits == baseline_prefill.logits

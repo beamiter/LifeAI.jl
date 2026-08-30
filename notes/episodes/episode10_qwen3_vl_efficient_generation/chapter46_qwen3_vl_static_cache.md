@@ -199,11 +199,14 @@ Chapter 46 的测试从同一输入同时运行 static 与 dynamic：
 - public `generate_hf_qwen3_vl_tokens(...; cache=:static)` 与 dynamic 模式的 ids、
   trace logits、stop reason 和最终 cache timeline 一致。
 
-Chapter 46 默认离线专项最终为 `372 / 372`；其中还包含
+Chapter 46 默认离线专项最终为 `394 / 394`；其中还包含
 `max_new_tokens=typemax(Int)`，确保 prompt 与 decode append 的长度加法在任何
 allocation 前 checked/fail closed，而不是整数回绕后尝试错误大小的 storage。
 静态 cache 还会用任意精度中间量分别验证单个 tensor、全层 K/V 元素总量与字节
 总量；损坏 spec 的非法类型、零维或溢出尺寸不会抵达 `similar`。
+dynamic/static prefill 也会在 token 解析及任何 K/V 写入前规范
+`logits_to_keep`；失败后动态 cache 仍无 storage，静态 cache 的 position、
+`rope_delta`、全零内容与 backing-array identity 全部不变。
 仓库级 close run 为 `9,307 passed + 1 intentional broken`、`0 failure / 0 error`；
 唯一 broken 是默认离线环境未设置真实 Qwen3-VL checkpoint 时的显式门禁。
 

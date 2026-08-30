@@ -374,6 +374,57 @@ end
         @test !touched[]
     end
 
+    for invalid_keep in (true, overflow_integer)
+        dynamic_guard = init_qwen3_vl_kv_cache(parameters)
+        dynamic_error = try
+            hf_qwen3_vl_text_prefill_cached(
+                parameters,
+                42,
+                inputs.rope_layout;
+                cache=dynamic_guard,
+                logits_to_keep=invalid_keep,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test dynamic_error isa ArgumentError
+        @test occursin("logits_to_keep", sprint(showerror, dynamic_error))
+        @test isempty(dynamic_guard)
+        @test all(
+            layer -> layer.keys === nothing && layer.values === nothing,
+            dynamic_guard.layers,
+        )
+
+        static_guard = init_qwen3_vl_static_kv_cache(
+            parameters;
+            capacity=10,
+        )
+        static_refs = _ch46_storage_refs(static_guard)
+        static_error = try
+            hf_qwen3_vl_text_prefill_static(
+                parameters,
+                42,
+                inputs.rope_layout;
+                cache=static_guard,
+                logits_to_keep=invalid_keep,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test static_error isa ArgumentError
+        @test occursin("logits_to_keep", sprint(showerror, static_error))
+        @test isempty(static_guard)
+        @test static_guard.rope_delta == 0
+        @test all(layer -> all(iszero, layer.keys), static_guard.layers)
+        @test all(layer -> all(iszero, layer.values), static_guard.layers)
+        @test all(eachindex(static_guard.layers)) do layer
+            static_guard.layers[layer].keys === static_refs.keys[layer] &&
+                static_guard.layers[layer].values === static_refs.values[layer]
+        end
+    end
+
     expected_bytes = parameters.spec.num_hidden_layers * 2 *
         parameters.spec.head_dim * parameters.spec.num_key_value_heads *
         cache.capacity * cache.batch_size * sizeof(Float32)
@@ -443,7 +494,7 @@ end
         inputs.rope_layout;
         vision_features=inputs.vision_features,
         cache,
-        logits_to_keep=0,
+        logits_to_keep=Int128(0),
     )
     token = _ch46_top_two(first_prefill.logits).ids[1]
     first_decode, _ = hf_qwen3_vl_text_decode_step_static(
@@ -469,7 +520,7 @@ end
         inputs.rope_layout;
         vision_features=inputs.vision_features,
         cache,
-        logits_to_keep=0,
+        logits_to_keep=big(0),
     )
     @test returned === cache
     @test second_prefill.final_hidden ≈
@@ -511,7 +562,7 @@ end
         inputs.rope_layout;
         vision_features=inputs.vision_features,
         cache=dynamic,
-        logits_to_keep=0,
+        logits_to_keep=Int128(0),
     )
 
     static = init_qwen3_vl_static_kv_cache(parameters; capacity=10)
@@ -523,7 +574,7 @@ end
         inputs.rope_layout;
         vision_features=inputs.vision_features,
         cache=static,
-        logits_to_keep=0,
+        logits_to_keep=big(0),
     )
     @test returned === static
     @test static.position == 8

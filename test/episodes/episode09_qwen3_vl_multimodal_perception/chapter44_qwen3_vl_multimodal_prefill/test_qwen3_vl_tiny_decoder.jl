@@ -3,7 +3,9 @@ using JSON3
 using SHA: sha256
 using Test
 using LifeAI: Qwen3VLRopeLayout,
+    Qwen3VLVisionInput,
     Qwen3VLTextSpec,
+    hf_qwen3_vl_prefill,
     hf_qwen3_vl_text_prefill
 
 const _CH44_TINY_TEXT_SPEC = Qwen3VLTextSpec(
@@ -127,9 +129,10 @@ end
         inputs.input_ids,
         inputs.rope_layout;
         vision_features=inputs.vision_features,
-        logits_to_keep=0,
+        logits_to_keep=Int128(0),
         capture_layers=(0, 1, 2, 3),
         capture_input_embeddings=true,
+        max_prefill_tokens=big(8),
     )
 
     @test size(result.input_embeddings) == (16, 8, 1)
@@ -189,6 +192,57 @@ end
             logits_to_keep=1,
             kwargs...,
         )
+    end
+
+    overflow_integer = big(typemax(Int)) + 1
+    option_cases = (
+        (needle="logits_to_keep", options=(; logits_to_keep=true)),
+        (
+            needle="logits_to_keep",
+            options=(; logits_to_keep=overflow_integer),
+        ),
+        (needle="logits_to_keep", options=(; logits_to_keep=-1)),
+        (needle="max_prefill_tokens", options=(; max_prefill_tokens=true)),
+        (
+            needle="max_prefill_tokens",
+            options=(; max_prefill_tokens=overflow_integer),
+        ),
+        (needle="max_prefill_tokens", options=(; max_prefill_tokens=0)),
+    )
+    vision_input = Qwen3VLVisionInput(
+        zeros(Float32, 1_536, 4),
+        reshape(Int[1, 2, 2], 3, 1),
+    )
+    for case in option_cases
+        text_error = try
+            hf_qwen3_vl_text_prefill(
+                42,
+                42,
+                inputs.rope_layout;
+                case.options...,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test text_error isa ArgumentError
+        @test occursin(case.needle, sprint(showerror, text_error))
+
+        combined_error = try
+            hf_qwen3_vl_prefill(
+                42,
+                42,
+                vision_input,
+                42;
+                rope_layout=inputs.rope_layout,
+                case.options...,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test combined_error isa ArgumentError
+        @test occursin(case.needle, sprint(showerror, combined_error))
     end
 
     @test_throws ArgumentError call_prefill(
