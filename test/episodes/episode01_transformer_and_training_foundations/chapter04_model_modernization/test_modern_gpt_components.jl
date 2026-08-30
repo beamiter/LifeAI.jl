@@ -308,6 +308,103 @@ end
     rebuilt = GPTModel(gpt_config(modern))
     @test gpt_config(rebuilt) == gpt_config(modern)
 
+    wide_head = GPTModel(
+        19,
+        16,
+        2,
+        1;
+        head_dim=Int128(8),
+        use_rope=false,
+        position_embedding_type=:none,
+        max_seq_len=8,
+    )
+    @test wide_head.head_dim == 8
+
+    base_config = gpt_config(modern)
+    wide_config = merge(base_config, (;
+        num_kv_heads=Int128(base_config.num_kv_heads),
+        head_dim=big(base_config.head_dim),
+        num_experts=Int128(0),
+        experts_per_token=big(0),
+    ))
+    wide_rebuilt = GPTModel(wide_config)
+    @test gpt_config(wide_rebuilt) == base_config
+    @test wide_rebuilt.num_kv_heads isa Int
+    @test wide_rebuilt.head_dim isa Int
+    @test wide_rebuilt.num_experts isa Int
+    @test wide_rebuilt.experts_per_token isa Int
+
+    invalid_heads = (
+        (value=true, message="head_dim must be an integer"),
+        (
+            value=big(typemax(Int)) + 1,
+            message="head_dim is outside the host integer range",
+        ),
+    )
+    for case in invalid_heads
+        error = try
+            GPTModel(
+                19,
+                16,
+                2,
+                1;
+                head_dim=case.value,
+                use_rope=false,
+                position_embedding_type=:none,
+                max_seq_len=8,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test error isa ArgumentError
+        @test error isa Exception && occursin(case.message, sprint(showerror, error))
+    end
+
+    overflow = big(typemax(Int)) + 1
+    invalid_config_counts = (
+        (
+            config=merge(base_config, (; vocab_size=typemax(Int), num_kv_heads=true)),
+            message="num_kv_heads must be an integer",
+        ),
+        (
+            config=merge(base_config, (; vocab_size=typemax(Int), num_kv_heads=overflow)),
+            message="num_kv_heads is outside the host integer range",
+        ),
+        (
+            config=merge(base_config, (; vocab_size=typemax(Int), num_experts=true)),
+            message="`num_experts` must be an integer",
+        ),
+        (
+            config=merge(base_config, (; vocab_size=typemax(Int), num_experts=overflow)),
+            message="`num_experts` is outside the host integer range",
+        ),
+        (
+            config=merge(base_config, (;
+                vocab_size=typemax(Int),
+                experts_per_token=true,
+            )),
+            message="`experts_per_token` must be an integer",
+        ),
+        (
+            config=merge(base_config, (;
+                vocab_size=typemax(Int),
+                experts_per_token=overflow,
+            )),
+            message="`experts_per_token` is outside the host integer range",
+        ),
+    )
+    for case in invalid_config_counts
+        error = try
+            GPTModel(case.config)
+            nothing
+        catch caught
+            caught
+        end
+        @test error isa ArgumentError
+        @test error isa Exception && occursin(case.message, sprint(showerror, error))
+    end
+
     rebuilt_legacy = GPTModel(_modern_gpt_components_legacy_config(gpt_config(default_model)))
     @test rebuilt_legacy.norm_type == :layernorm
     @test rebuilt_legacy.mlp_type == :gelu

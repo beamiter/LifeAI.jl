@@ -133,6 +133,21 @@ function _gpt_parameter_count_int(
     return Int(count)
 end
 
+function _gpt_nonnegative_host_int(value, label::AbstractString)
+    value isa Integer && !(value isa Bool) || throw(ArgumentError(
+        "`$label` must be an integer",
+    ))
+    resolved = try
+        Int(value)
+    catch error
+        error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
+            rethrow()
+        throw(ArgumentError("`$label` is outside the host integer range"))
+    end
+    resolved >= 0 || throw(ArgumentError("`$label` must be non-negative"))
+    return resolved
+end
+
 function GPTModel(
     vocab_size::Int,
     d_model::Int,
@@ -180,17 +195,12 @@ function GPTModel(
         "`use_rope` must be true exactly when `position_embedding_type=:rope`",
     ))
 
-    if mlp_ratio !== nothing
-        @assert mlp_ratio > 0 "`mlp_ratio` must be positive"
-    end
-
     resolved_head_dim = if head_dim === nothing
         @assert d_model % num_heads == 0 "`d_model` must be divisible by `num_heads`"
         d_model ÷ num_heads
     else
-        Int(head_dim)
+        _attention_positive_host_int(head_dim, "head_dim")
     end
-    @assert resolved_head_dim > 0 "`head_dim` must be positive"
 
     resolved_mlp_hidden_dim = _resolve_mlp_hidden_dim(
         d_model,
@@ -350,8 +360,11 @@ function GPTModel(config::NamedTuple)
 
     # Pre-Week-06 configs carry no GQA / QK-norm fields; the defaults reproduce
     # the exact legacy architecture (full KV heads, no QK normalization).
-    num_kv_heads = hasproperty(config, :num_kv_heads) ?
-        Int(config.num_kv_heads) : Int(config.num_heads)
+    num_kv_heads = _attention_positive_host_int(
+        hasproperty(config, :num_kv_heads) ?
+            config.num_kv_heads : config.num_heads,
+        "num_kv_heads",
+    )
     use_qk_norm = hasproperty(config, :use_qk_norm) ? config.use_qk_norm : false
     qk_norm_epsilon = hasproperty(config, :qk_norm_epsilon) ?
         config.qk_norm_epsilon : 1.0f-6
@@ -360,9 +373,14 @@ function GPTModel(config::NamedTuple)
         config.position_embedding_type : (config.use_rope ? :rope : :none)
     lm_head_bias = hasproperty(config, :lm_head_bias) ?
         config.lm_head_bias : config.use_bias
-    num_experts = hasproperty(config, :num_experts) ? Int(config.num_experts) : 0
-    experts_per_token = hasproperty(config, :experts_per_token) ?
-        Int(config.experts_per_token) : 0
+    num_experts = _gpt_nonnegative_host_int(
+        hasproperty(config, :num_experts) ? config.num_experts : 0,
+        "num_experts",
+    )
+    experts_per_token = _gpt_nonnegative_host_int(
+        hasproperty(config, :experts_per_token) ? config.experts_per_token : 0,
+        "experts_per_token",
+    )
     normalize_routing = hasproperty(config, :normalize_routing) ?
         config.normalize_routing : true
 

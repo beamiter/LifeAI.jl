@@ -191,6 +191,8 @@ Chapter 03 reproducible-training test.
     prefill limits before token, vision, or K/V work.
 95. Resolve Transformer MLP ratios without machine-integer wraparound and
     preflight complete block parameter counts before layer construction.
+96. Normalize GPT head dimensions and reconstructed KV/expert counts without
+    accepting booleans or leaking host-integer conversion failures.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
