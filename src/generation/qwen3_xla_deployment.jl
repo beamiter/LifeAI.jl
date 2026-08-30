@@ -209,16 +209,22 @@ function load_hf_qwen3_bf16_xla_session(
     strategy in (:greedy, :sample, :device_sample) || throw(ArgumentError(
         "XLA strategy must be :greedy, :sample, or :device_sample",
     ))
-    if sample_top_k !== nothing
+    requested_sample_top_k = if sample_top_k === nothing
+        nothing
+    else
         strategy === :device_sample || throw(ArgumentError(
             "sample_top_k only applies to the :device_sample strategy",
         ))
-        sample_top_k isa Integer && sample_top_k > 0 || throw(ArgumentError(
-            "sample_top_k must be a positive integer",
-        ))
+        requested = _strict_host_int(sample_top_k, "sample_top_k")
+        requested > 0 || throw(ArgumentError("sample_top_k must be positive"))
+        requested
     end
-    context = Int(context_tokens)
-    chunk = Int(prefill_chunk_tokens)
+    context = _strict_host_int(context_tokens, "context_tokens")
+    chunk = _strict_host_int(prefill_chunk_tokens, "prefill_chunk_tokens")
+    context > 0 || throw(ArgumentError("context_tokens must be positive"))
+    context <= typemax(Int32) || throw(ArgumentError(
+        "context_tokens must fit in Int32 device positions",
+    ))
     0 < chunk <= context || throw(ArgumentError(
         "prefill_chunk_tokens must be in 1:context_tokens",
     ))
@@ -286,8 +292,8 @@ function load_hf_qwen3_bf16_xla_session(
     # scalars and can change per request without recompiling.
     top_k_static = 0
     if strategy === :device_sample
-        configured = sample_top_k === nothing ?
-            generation_config.top_k : sample_top_k
+        configured = requested_sample_top_k === nothing ?
+            generation_config.top_k : requested_sample_top_k
         configured isa Integer && configured > 0 || throw(ArgumentError(
             "device sampling requires a positive top_k; the generation " *
             "config did not supply one, pass sample_top_k explicitly",

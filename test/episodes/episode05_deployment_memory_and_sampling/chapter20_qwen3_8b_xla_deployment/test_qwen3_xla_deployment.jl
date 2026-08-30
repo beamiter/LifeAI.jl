@@ -5,6 +5,7 @@ using SHA: sha256
 using LifeAI:
     HFQwen3BF16XLASession,
     generate_hf_qwen3_bf16_xla!,
+    load_hf_qwen3_bf16_xla_session,
     load_hf_qwen3_compact_model,
     load_hf_qwen3_model,
     open_safetensors_reader,
@@ -165,6 +166,90 @@ end
         1;
         context_tokens=typemax(Int),
     )
+end
+
+@testset "XLA session options fail before bundle and device I/O" begin
+    mktempdir() do directory
+        too_large = big(typemax(Int)) + 1
+        cases = (
+            (
+                "XLA strategy must be",
+                (; strategy=:invalid),
+            ),
+            (
+                "context_tokens must be an integer",
+                (; context_tokens=true),
+            ),
+            (
+                "context_tokens is outside the host integer range",
+                (; context_tokens=too_large),
+            ),
+            (
+                "context_tokens must be positive",
+                (; context_tokens=0),
+            ),
+            (
+                "context_tokens must fit in Int32 device positions",
+                (; context_tokens=big(typemax(Int32)) + 1),
+            ),
+            (
+                "prefill_chunk_tokens must be an integer",
+                (; context_tokens=8, prefill_chunk_tokens=true),
+            ),
+            (
+                "prefill_chunk_tokens is outside the host integer range",
+                (; context_tokens=8, prefill_chunk_tokens=too_large),
+            ),
+            (
+                "prefill_chunk_tokens must be in 1:context_tokens",
+                (; context_tokens=8, prefill_chunk_tokens=0),
+            ),
+            (
+                "context_tokens must be divisible by prefill_chunk_tokens",
+                (; context_tokens=8, prefill_chunk_tokens=3),
+            ),
+            (
+                "sample_top_k only applies",
+                (; context_tokens=8, prefill_chunk_tokens=2, sample_top_k=1),
+            ),
+            (
+                "sample_top_k must be an integer",
+                (; context_tokens=8, prefill_chunk_tokens=2,
+                    strategy=:device_sample, sample_top_k=true),
+            ),
+            (
+                "sample_top_k is outside the host integer range",
+                (; context_tokens=8, prefill_chunk_tokens=2,
+                    strategy=:device_sample, sample_top_k=too_large),
+            ),
+            (
+                "sample_top_k must be positive",
+                (; context_tokens=8, prefill_chunk_tokens=2,
+                    strategy=:device_sample, sample_top_k=0),
+            ),
+        )
+        for (needle, options) in cases
+            failure = _qwen3_xla_captured_error() do
+                load_hf_qwen3_bf16_xla_session(directory; options...)
+            end
+            @test failure isa ArgumentError
+            @test occursin(needle, sprint(showerror, failure))
+            @test !occursin("tokenizer", sprint(showerror, failure))
+        end
+
+        io_failure = _qwen3_xla_captured_error() do
+            load_hf_qwen3_bf16_xla_session(
+                directory;
+                context_tokens=Int32(8),
+                prefill_chunk_tokens=big(2),
+            )
+        end
+        @test io_failure isa ArgumentError
+        @test occursin(
+            "required Qwen3 tokenizer file",
+            sprint(showerror, io_failure),
+        )
+    end
 end
 
 @testset "frozen Qwen3 XLA deployment hardware evidence is self-consistent" begin

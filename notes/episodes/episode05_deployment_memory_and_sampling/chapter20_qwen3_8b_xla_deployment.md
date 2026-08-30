@@ -93,6 +93,8 @@ planner 的 context/prompt/output/chunk 输入先严格归一为宿主 `Int`，�
 采用 checked arithmetic，避免跨宿主字宽时回绕。padding helper 与公开生成入口
 对 prompt/pad id 复用同一严格整数合同，非法 id 会在任何 compiled prefill/decode
 或 session mutation 前失败；stop-id 集合也与 dense session 共用同一预检。
+XLA session loader 在 tokenizer/compact weights/Reactant 前同样预检 context、
+prefill chunk、strategy 与显式 device-sampling top-k，并限制 device position 为 Int32。
 compiled greedy/device-sampling 输出回到 host 时必须恰好包含一个非 Bool、可表示且
 词表内的整数；host sampling 的 choice 也在进入结果/callback 前复用该标量合同。
 每次 compiled prefill/decode 成功返回后立即提交 host `session.position`；单参数
