@@ -2,6 +2,7 @@ using Base64: base64decode
 using JSON3
 using SHA: sha256
 using Test
+import MLDataDevices
 using LifeAI: Qwen3VLRopeLayout,
     Qwen3VLStaticLayerKVCache,
     Qwen3VLStaticKVCache,
@@ -48,6 +49,20 @@ function Base.similar(
     sentinel.touched[] = true
     error("Qwen3-VL cache allocation ran before arithmetic preflight")
 end
+
+struct _Ch46ForeignDevice <: MLDataDevices.AbstractDevice end
+
+struct _Ch46ForeignDeviceArray{T,N,A<:AbstractArray{T,N}} <:
+       AbstractArray{T,N}
+    data::A
+end
+
+Base.size(values::_Ch46ForeignDeviceArray) = size(values.data)
+Base.axes(values::_Ch46ForeignDeviceArray) = axes(values.data)
+Base.IndexStyle(::Type{<:_Ch46ForeignDeviceArray}) = IndexCartesian()
+Base.getindex(values::_Ch46ForeignDeviceArray, indices...) =
+    getindex(values.data, indices...)
+MLDataDevices.get_device(::_Ch46ForeignDeviceArray) = _Ch46ForeignDevice()
 
 function _ch46_bad_cache_spec(;
     num_hidden_layers=1,
@@ -269,7 +284,9 @@ end
 end
 
 @testset "Chapter 46 — static cache constructor is strict" begin
-    layers = ()
+    keys = zeros(Float32, 8, 1, 4, 1)
+    values = ones(Float32, 8, 1, 4, 1)
+    layers = (Qwen3VLStaticLayerKVCache(keys, values),)
     cache = Qwen3VLStaticKVCache(
         layers,
         Int32(2),
@@ -356,12 +373,104 @@ end
         @test failure isa ArgumentError
         @test sprint(showerror, failure) == "ArgumentError: $message"
     end
-    @test_throws MethodError Qwen3VLStaticKVCache{Tuple{}}(
-        (),
+    @test_throws MethodError Qwen3VLStaticKVCache{typeof(layers)}(
+        layers,
         false,
         true,
         true,
         false,
+    )
+end
+
+@testset "Chapter 46 — static cache layer collection is strict" begin
+    make_layer(shape=(8, 1, 4, 1), dtype=Float32) = begin
+        keys = zeros(dtype, shape)
+        values = similar(keys)
+        fill!(values, one(dtype))
+        Qwen3VLStaticLayerKVCache(keys, values)
+    end
+
+    first_layer = make_layer()
+    second_layer = make_layer()
+    layers = (first_layer, second_layer)
+    cache = Qwen3VLStaticKVCache(layers, 0, 0, 1, 4)
+    @test cache.layers === layers
+    @test cache.layers[1] === first_layer
+    @test cache.layers[2] === second_layer
+    @test cache.layers[1].keys !== cache.layers[2].keys
+
+    @test_throws ArgumentError Qwen3VLStaticKVCache(
+        Qwen3VLStaticLayerKVCache[first_layer],
+        0,
+        0,
+        1,
+        4,
+    )
+    @test_throws ArgumentError Qwen3VLStaticKVCache((), 0, 0, 1, 4)
+    @test_throws ArgumentError Qwen3VLStaticKVCache((1,), 0, 0, 1, 4)
+    @test_throws DimensionMismatch Qwen3VLStaticKVCache(
+        (make_layer((8, 1, 3, 1)),),
+        0,
+        0,
+        1,
+        4,
+    )
+    @test_throws DimensionMismatch Qwen3VLStaticKVCache(
+        (make_layer((8, 1, 4, 2)),),
+        0,
+        0,
+        1,
+        4,
+    )
+    @test_throws DimensionMismatch Qwen3VLStaticKVCache(
+        (first_layer, make_layer((7, 1, 4, 1))),
+        0,
+        0,
+        1,
+        4,
+    )
+    @test_throws ArgumentError Qwen3VLStaticKVCache(
+        (first_layer, make_layer((8, 1, 4, 1), Core.BFloat16)),
+        0,
+        0,
+        1,
+        4,
+    )
+    @test_throws ArgumentError Qwen3VLStaticKVCache(
+        (first_layer, first_layer),
+        0,
+        0,
+        1,
+        4,
+    )
+    cross_reused_layer = Qwen3VLStaticLayerKVCache(
+        first_layer.values,
+        first_layer.keys,
+    )
+    @test_throws ArgumentError Qwen3VLStaticKVCache(
+        (first_layer, cross_reused_layer),
+        0,
+        0,
+        1,
+        4,
+    )
+    foreign_layer = Qwen3VLStaticLayerKVCache(
+        _Ch46ForeignDeviceArray(zeros(Float32, 8, 1, 4, 1)),
+        _Ch46ForeignDeviceArray(ones(Float32, 8, 1, 4, 1)),
+    )
+    @test_throws ArgumentError Qwen3VLStaticKVCache(
+        (first_layer, foreign_layer),
+        0,
+        0,
+        1,
+        4,
+    )
+
+    cache.layers = (first_layer, first_layer)
+    @test_throws ArgumentError reset_qwen3_vl_static_kv_cache!(cache)
+    @test_throws ArgumentError reset_qwen3_vl_static_kv_cache!(
+        cache;
+        clear=true,
     )
 end
 

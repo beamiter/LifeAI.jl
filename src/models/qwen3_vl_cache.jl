@@ -199,6 +199,58 @@ struct Qwen3VLStaticLayerKVCache{K,V}
     end
 end
 
+function _validate_qwen3_vl_static_cache_layers(
+    layers,
+    batch_size::Int,
+    capacity::Int,
+)
+    layers isa Tuple || throw(ArgumentError(
+        "Qwen3-VL static cache layers must be a tuple",
+    ))
+    isempty(layers) && throw(ArgumentError(
+        "Qwen3-VL static cache layers must not be empty",
+    ))
+    first_layer = first(layers)
+    first_layer isa Qwen3VLStaticLayerKVCache || throw(ArgumentError(
+        "Qwen3-VL static cache layers must contain static layer storage",
+    ))
+    expected_shape = (
+        size(first_layer.keys, 1),
+        size(first_layer.keys, 2),
+        capacity,
+        batch_size,
+    )
+    expected_dtype = eltype(first_layer.keys)
+    expected_device = get_device(first_layer.keys)
+    seen_storage = IdDict{Any,Nothing}()
+    for (layer_index, layer) in enumerate(layers)
+        layer isa Qwen3VLStaticLayerKVCache || throw(ArgumentError(
+            "Qwen3-VL static cache layer $layer_index is not static layer storage",
+        ))
+        size(layer.keys) == expected_shape || throw(DimensionMismatch(
+            "Qwen3-VL static cache layer $layer_index has the wrong shape",
+        ))
+        size(layer.values) == expected_shape || throw(DimensionMismatch(
+            "Qwen3-VL static cache layer $layer_index has the wrong shape",
+        ))
+        eltype(layer.keys) == expected_dtype &&
+            eltype(layer.values) == expected_dtype || throw(ArgumentError(
+            "Qwen3-VL static cache layer dtypes must match",
+        ))
+        get_device(layer.keys) == expected_device &&
+            get_device(layer.values) == expected_device || throw(ArgumentError(
+            "Qwen3-VL static cache layer devices must match",
+        ))
+        for storage in (layer.keys, layer.values)
+            haskey(seen_storage, storage) && throw(ArgumentError(
+                "Qwen3-VL static cache layers must use distinct storage",
+            ))
+            seen_storage[storage] = nothing
+        end
+    end
+    return nothing
+end
+
 """
     Qwen3VLStaticKVCache(layers, position, rope_delta, batch_size, capacity)
 
@@ -253,6 +305,11 @@ mutable struct Qwen3VLStaticKVCache{C}
             throw(ArgumentError(
                 "an empty Qwen3-VL static cache must have rope_delta == 0",
             ))
+        _validate_qwen3_vl_static_cache_layers(
+            layers,
+            resolved_batch,
+            resolved_capacity,
+        )
         return new{typeof(layers)}(
             layers,
             resolved_position,
@@ -404,6 +461,11 @@ function _validate_qwen3_vl_static_kv_cache(
     cache.position == 0 && cache.rope_delta != 0 && throw(ArgumentError(
         "an empty Qwen3-VL static cache must have rope_delta == 0",
     ))
+    _validate_qwen3_vl_static_cache_layers(
+        cache.layers,
+        cache.batch_size,
+        cache.capacity,
+    )
 
     expected_shape = (
         dimensions.head_dim,
@@ -451,6 +513,11 @@ function reset_qwen3_vl_static_kv_cache!(
     cache::Qwen3VLStaticKVCache;
     clear::Bool=false,
 )
+    _validate_qwen3_vl_static_cache_layers(
+        cache.layers,
+        cache.batch_size,
+        cache.capacity,
+    )
     if clear
         for layer_cache in cache.layers
             fill!(layer_cache.keys, zero(eltype(layer_cache.keys)))
