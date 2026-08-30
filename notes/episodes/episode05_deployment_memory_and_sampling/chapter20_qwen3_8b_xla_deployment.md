@@ -115,6 +115,10 @@ logical sequence 4,096、cache position 4,095。
 - `generate_hf_qwen3_bf16_xla!`
 - `reset_hf_qwen3_bf16_xla_session!`
 
+XLA host-sampling 路径复用 eager session 的严格 sampling 规范化，
+temperature/top-k/top-p 的 Boolean、宿主溢出或 Float32 不可表示值
+会在 compiled prefill/decode 前失败，并保留原 session position。
+
 日常入口复用 Chapter 19 的 frozen asset 校验、Qwen3 chat template、
 thinking 开关、system message、最老 user/assistant turn-pair 裁剪、
 `/clear`、EOF 处理与 tokenizer bytes 流式输出：
@@ -170,7 +174,7 @@ SHA256、10 个 frozen assets，以及三个 case 的 prompt/output 长度：
 
 ### 离线与编译 smoke
 
-- Chapter 20 离线专项：`105 / 105`。
+- Chapter 20 离线专项：`254 / 254`。
 - 默认完整套件：`5,380 / 5,380`。
 - 独立 Reactant CPU compiled prefill smoke：`5 / 5`。
 - compact streamed tree 与 ordinary→compact reference 逐值相同；

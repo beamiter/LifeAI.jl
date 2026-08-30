@@ -770,6 +770,52 @@ end
     @test session.position == 7
     @test !prefill_reached[]
     @test !decode_reached[]
+
+    sampled_session = HFQwen3BF16XLASession(
+        (; vocab_size=16),
+        nothing,
+        (; eos_ids=Int[]),
+        (; temperature=0.7f0, top_k=5, top_p=0.8f0),
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        compiled_prefill,
+        compiled_decode,
+        :sample,
+        16,
+        8,
+        0,
+        7,
+        nothing,
+    )
+    invalid_sampling_options = (
+        (; temperature=true, top_k=5, top_p=0.8),
+        (;
+            temperature=big(floatmax(Float32)) * 2,
+            top_k=5,
+            top_p=0.8,
+        ),
+        (; temperature=0.7, top_k=true, top_p=0.8),
+        (; temperature=0.7, top_k=too_large, top_p=0.8),
+        (; temperature=0.7, top_k=5, top_p=true),
+        (; temperature=0.7, top_k=5, top_p=big"1e-1000"),
+    )
+    for options in invalid_sampling_options
+        failure = _qwen3_xla_captured_error() do
+            generate_hf_qwen3_bf16_xla!(
+                sampled_session,
+                [2, 3];
+                max_new_tokens=1,
+                options...,
+                stop_token_ids=Int[],
+            )
+        end
+        @test failure isa ArgumentError
+        @test sampled_session.position == 7
+        @test !prefill_reached[]
+        @test !decode_reached[]
+    end
 end
 
 @testset "XLA generated tokens cross a strict scalar host boundary" begin

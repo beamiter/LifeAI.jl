@@ -563,6 +563,16 @@ function generate_hf_qwen3_bf16_xla!(
         session.generation_config.top_k : top_k
     resolved_top_p = top_p === nothing ?
         session.generation_config.top_p : top_p
+    if session.strategy === :sample
+        options = _qwen3_session_sampling_options(
+            resolved_temperature,
+            resolved_top_k,
+            resolved_top_p,
+        )
+        resolved_temperature = options.temperature
+        resolved_top_k = options.top_k
+        resolved_top_p = options.top_p
+    end
 
     uniforms = nothing
     if sample_uniforms !== nothing
