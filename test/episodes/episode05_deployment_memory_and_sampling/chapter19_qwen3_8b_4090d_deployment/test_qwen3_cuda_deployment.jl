@@ -262,6 +262,29 @@ end
             manifest[field] = original
         end
         write(path, valid_manifest_json)
+        original_sha256 = manifest["files"][1]["sha256"]
+        manifest["files"][1]["sha256"] = uppercase(original_sha256)
+        write(path, JSON3.write(manifest))
+        uppercase_report = verify_qwen3_deployment_assets(directory, path)
+        @test only(uppercase_report.files).sha256 == original_sha256
+        for invalid_sha256 in (
+            original_sha256[1:63],
+            original_sha256 * "0",
+            original_sha256 * "\n",
+            original_sha256 * " ",
+            original_sha256[1:63] * "λ",
+        )
+            manifest["files"][1]["sha256"] = invalid_sha256
+            write(path, JSON3.write(manifest))
+            failure = _qwen3_deployment_captured_error() do
+                verify_qwen3_deployment_assets(directory, path)
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) ==
+                "ArgumentError: asset sha256 must contain exactly 64 hexadecimal digits"
+        end
+        manifest["files"][1]["sha256"] = original_sha256
+        write(path, valid_manifest_json)
         @test LifeAI._qwen3_add_asset_bytes(0, 5) == 5
         @test LifeAI._qwen3_add_asset_bytes(typemax(Int) - 1, 1) ==
             typemax(Int)

@@ -420,10 +420,11 @@ function verify_qwen3_deployment_assets(
         push!(seen, name)
         expected_size = _qwen3_required_integer(entry, "size")
         expected_size >= 0 || throw(ArgumentError("asset size must be non-negative"))
-        expected_sha256 = lowercase(_qwen3_required_string(entry, "sha256"))
-        occursin(r"^[0-9a-f]{64}$", expected_sha256) || throw(ArgumentError(
-            "asset sha256 must contain exactly 64 lowercase hex digits",
+        raw_sha256 = _qwen3_required_string(entry, "sha256")
+        occursin(r"^[0-9A-Fa-f]{64}\z", raw_sha256) || throw(ArgumentError(
+            "asset sha256 must contain exactly 64 hexadecimal digits",
         ))
+        expected_sha256 = lowercase(raw_sha256)
         path = joinpath(model_dir, name)
         isfile(path) || throw(ArgumentError("required model asset is missing: $path"))
         actual_size = filesize(path)

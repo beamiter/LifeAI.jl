@@ -283,6 +283,8 @@ Chapter 03 reproducible-training test.
      exported constructor before dequantization or row slicing.
 141. Require non-empty model and revision provenance in Qwen3 deployment asset
      manifests even when no external identity expectation is supplied.
+142. Canonically validate Qwen3 asset SHA256 strings across the full field,
+     retaining uppercase hexadecimal compatibility without suffix ambiguity.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
