@@ -97,6 +97,16 @@ function _qwen3_embedding_config_matches(config, spec::Qwen3EmbeddingSpec)
         config.tie_embeddings
 end
 
+function _qwen3_embedding_requested_max_seq_len(value)
+    requested = _qwen3_requested_max_seq_len(value)
+    requested === nothing && return nothing
+    maximum = qwen3_embedding_spec().max_position_embeddings
+    requested <= maximum || throw(ArgumentError(
+        "max_seq_len must be in 1:$maximum; got $requested",
+    ))
+    return requested
+end
+
 """
     load_hf_qwen3_embedding_config(path; max_seq_len=8192)
 
@@ -107,13 +117,14 @@ function load_hf_qwen3_embedding_config(
     path::AbstractString;
     max_seq_len=8_192,
 )
+    requested_max_seq_len = _qwen3_embedding_requested_max_seq_len(max_seq_len)
     spec = qwen3_embedding_spec()
     actual_sha256 = _qwen3_embedding_sha256_file(path)
     actual_sha256 == spec.config_sha256 || throw(ArgumentError(
         "Qwen3 embedding config checksum mismatch: expected " *
         "$(spec.config_sha256), computed $actual_sha256",
     ))
-    config = load_hf_qwen3_config(path; max_seq_len)
+    config = load_hf_qwen3_config(path; max_seq_len=requested_max_seq_len)
     _qwen3_embedding_config_matches(config, spec) || throw(ArgumentError(
         "config does not match the frozen $(spec.variant) architecture",
     ))
@@ -208,18 +219,20 @@ function load_hf_qwen3_embedding_model(
     max_seq_len=8_192,
     weight_dtype::Type=BFloat16,
 )
+    requested_max_seq_len = _qwen3_embedding_requested_max_seq_len(max_seq_len)
+    requested_weight_dtype = _qwen3_weight_dtype(weight_dtype)
     isdir(model_dir) || throw(ArgumentError(
         "model directory does not exist: $model_dir",
     ))
-    weight_dtype in (Float32, BFloat16) || throw(ArgumentError(
-        "weight_dtype must be Float32 or BFloat16",
-    ))
     config = load_hf_qwen3_embedding_config(
         joinpath(model_dir, "config.json");
-        max_seq_len,
+        max_seq_len=requested_max_seq_len,
     )
     model = GPTModel(config)
-    source_tensors = load_safetensors(model_dir; target_dtype=weight_dtype)
+    source_tensors = load_safetensors(
+        model_dir;
+        target_dtype=requested_weight_dtype,
+    )
     tensors = _qwen3_embedding_base_state_dict(source_tensors)
     parameters = load_hf_qwen3_parameters(model, tensors)
     empty!(source_tensors)
@@ -259,6 +272,8 @@ function load_hf_qwen3_embedding_bundle(
         "unsupported Qwen3 embedding revision $(repr(revision)); expected " *
         spec.revision,
     ))
+    requested_max_seq_len = _qwen3_embedding_requested_max_seq_len(max_seq_len)
+    requested_weight_dtype = _qwen3_weight_dtype(weight_dtype)
     tokenizer = load_hf_qwen3_embedding_tokenizer(model_dir; revision)
     tokenizer.profile === :embedding || error(
         "internal Qwen3 embedding tokenizer profile mismatch",
@@ -279,8 +294,8 @@ function load_hf_qwen3_embedding_bundle(
     ))
     loaded = load_hf_qwen3_embedding_model(
         model_dir;
-        max_seq_len,
-        weight_dtype,
+        max_seq_len=requested_max_seq_len,
+        weight_dtype=requested_weight_dtype,
     )
     vocab_size(tokenizer) == loaded.model.vocab_size || throw(ArgumentError(
         "embedding tokenizer vocabulary must exactly match the model vocabulary",

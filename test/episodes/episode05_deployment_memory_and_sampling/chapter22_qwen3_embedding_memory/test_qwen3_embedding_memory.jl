@@ -11,6 +11,7 @@ using LifeAI:
     hf_qwen3_embedding_forward,
     load_hf_qwen3_embedding_bundle,
     load_hf_qwen3_embedding_config,
+    load_hf_qwen3_embedding_model,
     load_hf_qwen3_embedding_tokenizer,
     load_hf_qwen3_model,
     load_tokenizer,
@@ -43,6 +44,16 @@ const _QWEN3_EMBEDDING_ASSETS_PATH = joinpath(_QWEN3_EMBEDDING_FIXTURE_DIR, "ass
 const _QWEN3_EMBEDDING_REFERENCE_PATH = joinpath(_QWEN3_EMBEDDING_FIXTURE_DIR, "reference.json")
 const _QWEN3_EMBEDDING_CUDA_REPORT_PATH =
     repository_test_asset("qwen3_embedding_0_6b_cuda.json")
+
+function _embedding_argument_error_message(f)
+    try
+        f()
+    catch exception
+        exception isa ArgumentError || rethrow()
+        return exception.msg
+    end
+    return nothing
+end
 
 function _embedding_tokenizer_payloads()
     payloads = qwen3_tokenizer_fixture_payloads()
@@ -140,7 +151,7 @@ end
 
     config = load_hf_qwen3_embedding_config(
         _QWEN3_EMBEDDING_CONFIG_PATH;
-        max_seq_len=512,
+        max_seq_len=big(512),
     )
     @test config.vocab_size == spec.vocab_size
     @test config.max_seq_len == 512
@@ -157,6 +168,70 @@ end
         path = joinpath(directory, "config.json")
         write(path, changed)
         @test_throws ArgumentError load_hf_qwen3_embedding_config(path)
+    end
+end
+
+@testset "Qwen3 embedding load preflight" begin
+    mktempdir() do directory
+        missing_config = joinpath(directory, "missing-config.json")
+        cases = (
+            (true, "max_seq_len must be an integer"),
+            (0, "max_seq_len must be positive"),
+            (big(typemax(Int)) + 1, "max_seq_len is outside the host integer range"),
+            (32_769, "max_seq_len must be in 1:32768; got 32769"),
+        )
+        for (value, expected) in cases
+            @test _embedding_argument_error_message() do
+                load_hf_qwen3_embedding_config(
+                    missing_config;
+                    max_seq_len=value,
+                )
+            end == expected
+        end
+
+        @test _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_model(directory; max_seq_len=true)
+        end == "max_seq_len must be an integer"
+        @test _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_model(directory; max_seq_len=32_769)
+        end == "max_seq_len must be in 1:32768; got 32769"
+        @test _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_model(directory; weight_dtype=Float64)
+        end == "weight_dtype must be Float32 or BFloat16"
+
+        @test _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_bundle(directory; max_seq_len=true)
+        end == "max_seq_len must be an integer"
+        @test _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_bundle(directory; max_seq_len=32_769)
+        end == "max_seq_len must be in 1:32768; got 32769"
+        @test _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_bundle(directory; weight_dtype=Float64)
+        end == "weight_dtype must be Float32 or BFloat16"
+
+        revision_message = _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_bundle(
+                directory;
+                revision="moving",
+                max_seq_len=true,
+            )
+        end
+        @test startswith(
+            revision_message,
+            "unsupported Qwen3 embedding revision \"moving\"; expected ",
+        )
+
+        tokenizer_message = _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_bundle(
+                directory;
+                max_seq_len=big(512),
+                weight_dtype=BFloat16,
+            )
+        end
+        @test startswith(
+            tokenizer_message,
+            "required Qwen3 embedding tokenizer file does not exist: ",
+        )
     end
 end
 

@@ -76,6 +76,9 @@ Qwen3-Embedding-0.6B 的 last-token pooling、归一化与 MRL 语义，并驱�
   严格 Qwen3 参数校验；causal-LM loader 未放宽。
 - `qwen3_embedding_parameter_count` 以任意精度计算完整公式，仅在公开返回边界
   收窄为宿主 `Int`；官方精确值不变，超范围规格不会静默回绕。
+- config/model/bundle 入口现在会在 checksum、tokenizer 或权重 I/O 前
+  严格规范化 `max_seq_len` 与 `weight_dtype`；context 不能超过冻结的
+  32,768，而 bundle 仍保留 revision 校验的最高优先级。
 - Python reference 使用项目内 `.venv`：Python `3.10.12`、
   PyTorch `2.7.1+cpu`、Transformers `4.51.3`、Tokenizers `0.21.4`。
   8 条文本、35-token padded sequence、280 padded / 181 valid tokens 的
