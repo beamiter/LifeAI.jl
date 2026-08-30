@@ -425,8 +425,11 @@ function _hf_validate_tokenizer_config(
         _hf_exact_bool(entry, "special", token.special, "added_tokens_decoder[$key]")
     end
 
-    model_max_length = _hf_required(config, "model_max_length", "tokenizer_config.json")
-    model_max_length isa Integer && model_max_length > 0 || throw(ArgumentError(
+    model_max_length = _hf_strict_host_int(
+        _hf_required(config, "model_max_length", "tokenizer_config.json"),
+        "model_max_length",
+    )
+    model_max_length > 0 || throw(ArgumentError(
         "model_max_length must be a positive integer",
     ))
     chat_template = _hf_required(config, "chat_template", "tokenizer_config.json")
@@ -462,7 +465,7 @@ function _hf_validate_tokenizer_config(
     additional == expected_additional || throw(ArgumentError(
         "additional_special_tokens conflicts with tokenizer added tokens",
     ))
-    return bos_id, eos_id, pad_id, Int(model_max_length), String(chat_template)
+    return bos_id, eos_id, pad_id, model_max_length, String(chat_template)
 end
 
 function _hf_strict_host_int(value, label::AbstractString)
@@ -590,12 +593,15 @@ function _hf_validate_embedding_generation_config(
         total_vocabulary,
         "eos_token_id",
     )
-    max_new_tokens = _hf_required(
-        config,
+    max_new_tokens = _hf_strict_host_int(
+        _hf_required(
+            config,
+            "max_new_tokens",
+            "generation_config.json",
+        ),
         "max_new_tokens",
-        "generation_config.json",
     )
-    max_new_tokens isa Integer && max_new_tokens > 0 || throw(ArgumentError(
+    max_new_tokens > 0 || throw(ArgumentError(
         "max_new_tokens must be a positive integer",
     ))
     transformers_version = _hf_required(

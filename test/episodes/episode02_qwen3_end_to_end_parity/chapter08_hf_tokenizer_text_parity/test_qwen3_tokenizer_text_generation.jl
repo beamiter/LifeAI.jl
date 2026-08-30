@@ -169,6 +169,14 @@ end
 
     generation_mutations = (
         (
+            payloads -> (payloads.tokenizer_config["model_max_length"] = true),
+            "model_max_length must be an integer",
+        ),
+        (
+            payloads -> (payloads.tokenizer_config["model_max_length"] = 0),
+            "model_max_length must be a positive integer",
+        ),
+        (
             payloads -> (payloads.generation_config["bos_token_id"] = true),
             "`bos_token_id` must be an integer",
         ),

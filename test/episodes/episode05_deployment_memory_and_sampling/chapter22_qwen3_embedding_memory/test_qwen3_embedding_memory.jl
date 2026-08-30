@@ -359,6 +359,22 @@ end
         write_qwen3_tokenizer_fixture(directory; payloads)
         @test_throws ArgumentError load_hf_qwen3_embedding_tokenizer(directory)
     end
+
+    for (value, message) in (
+        (true, "max_new_tokens must be an integer"),
+        (1.5, "max_new_tokens must be an integer"),
+        (0, "max_new_tokens must be a positive integer"),
+        (-1, "max_new_tokens must be a positive integer"),
+    )
+        mktempdir() do directory
+            payloads = _embedding_tokenizer_payloads()
+            payloads.generation_config["max_new_tokens"] = value
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            @test _embedding_argument_error_message() do
+                load_hf_qwen3_embedding_tokenizer(directory)
+            end == message
+        end
+    end
 end
 
 @testset "last-token pooling, MRL, and cosine retrieval" begin
