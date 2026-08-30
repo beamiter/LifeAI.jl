@@ -77,7 +77,8 @@ This is the correctness-first host implementation. It deliberately makes the
 top-k boundary explicit; [`qwen3_device_topk_routing`](@ref) provides the
 compact accelerator representation without changing the expert or checkpoint
 parameter contract. Exact ties select the highest remaining expert index first,
-matching the compact device path.
+matching the compact device path. Router logits must remain finite after
+conversion to the Float32 routing precision.
 """
 function qwen3_topk_routing(
     router_logits::AbstractMatrix,
@@ -90,7 +91,11 @@ function qwen3_topk_routing(
         "experts_per_token must be in 1:num_experts",
     ))
 
-    probabilities = softmax(Float32.(router_logits); dims=1)
+    logits = Float32.(router_logits)
+    all(isfinite, logits) || throw(ArgumentError(
+        "router logits must be finite at Float32 routing precision",
+    ))
+    probabilities = softmax(logits; dims=1)
     routing = zeros(Float32, num_experts, num_tokens)
     for token in 1:num_tokens
         selected = partialsortperm(
@@ -118,6 +123,9 @@ selects, so Reactant/XLA can trace it without data-dependent host control flow.
 
 Exact ties select the highest remaining expert index first. The tie rule is
 explicit and deterministic; normal checkpoint logits are not expected to tie.
+If non-finite logits poison a softmax column, ranking still emits distinct,
+in-bounds expert indices while the selected weights remain non-finite. This
+prevents invalid device indexing without disguising a poisoned model output.
 """
 function qwen3_device_topk_routing(
     router_logits::AbstractMatrix,
@@ -130,7 +138,9 @@ function qwen3_device_topk_routing(
         "experts_per_token must be in 1:num_experts",
     ))
 
-    probabilities = softmax(Float32.(router_logits); dims=1)
+    logits = Float32.(router_logits)
+    finite_columns = all(isfinite.(logits); dims=1)
+    probabilities = softmax(logits; dims=1)
     # Expert count is a compile-time model constant. Building into `similar`
     # keeps this column on the same CUDA/XLA device as the probabilities.
     index_column = similar(probabilities, Int32, num_experts, 1)
@@ -139,7 +149,16 @@ function qwen3_device_topk_routing(
         num_experts,
         1,
     )
-    work = probabilities
+    # A poisoned softmax must never manufacture expert index zero. Keep invalid
+    # candidates below every finite probability, but distinct from the `-Inf`
+    # marker used to remove an already-selected expert. Original probabilities
+    # are still gathered below, so invalid routing weights continue to poison
+    # the numerical result instead of being silently repaired.
+    work = ifelse.(
+        isfinite.(probabilities),
+        probabilities,
+        -floatmax(Float32),
+    )
     selected_indices = Vector{Any}(undef, experts_per_token)
     selected_weights = Vector{Any}(undef, experts_per_token)
     for slot in 1:experts_per_token
@@ -160,6 +179,11 @@ function qwen3_device_topk_routing(
     if normalize
         routing_weights = routing_weights ./ sum(routing_weights; dims=1)
     end
+    routing_weights = ifelse.(
+        finite_columns,
+        routing_weights,
+        Float32(NaN),
+    )
     return (; expert_indices, routing_weights)
 end
 

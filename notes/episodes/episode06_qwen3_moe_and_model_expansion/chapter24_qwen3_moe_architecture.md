@@ -58,6 +58,9 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - host `partialsortperm` 显式按 `(probability, expert index)` 选择，精确并列时与
   CUDA/XLA compact 路径一致地优先较高 expert index；它仍不是 accelerator 路由
   实现，不能把现有 Float32 CPU 通过写成 accelerator 已支持。
+- host router 在 Float32 路由精度拒绝非有限 logits；设备 router 不引入逐层 host
+  同步，但其排名工作副本会保证 poisoned softmax 仍只产生互异且范围合法的 expert
+  id，原始 routing weight 保持 `NaN`，因此坏状态不会转成 CUDA 越界或静默正常输出。
 - Qwen3 后续系列可能使用融合 expert tensor、shared expert、不同 attention 或 hybrid layer；必须按各自配置重新建立契约。
 
 ## 实验与过程记录

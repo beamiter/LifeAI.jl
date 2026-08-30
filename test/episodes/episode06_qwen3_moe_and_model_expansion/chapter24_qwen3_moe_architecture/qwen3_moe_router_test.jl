@@ -27,6 +27,14 @@ using LifeAI: Qwen3SparseMoE, qwen3_topk_routing
 
     @test_throws ArgumentError qwen3_topk_routing(logits, 0)
     @test_throws ArgumentError qwen3_topk_routing(logits, 5)
+    for invalid_logits in (
+        reshape(Float32[NaN, 0, 0, 0], :, 1),
+        fill(-Inf32, 4, 1),
+        reshape(Float32[Inf, 0, 0, 0], :, 1),
+        reshape(Float64[1.0e300, 0, 0, 0], :, 1),
+    )
+        @test_throws ArgumentError qwen3_topk_routing(invalid_logits, 2)
+    end
     @test_throws ArgumentError Qwen3SparseMoE(4, 3, 0, 1)
     @test_throws ArgumentError Qwen3SparseMoE(4, 3, 4, 5)
 end

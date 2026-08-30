@@ -65,6 +65,23 @@ using LifeAI:
         @test reconstructed_boundary == dense_boundary
         @test findall(!iszero, vec(dense_boundary)) == [1, 4]
     end
+
+    poisoned_columns = (
+        reshape(Float32[NaN, 0, 0, 0], :, 1),
+        fill(-Inf32, 4, 1),
+        reshape(Float32[Inf, 0, 0, 0], :, 1),
+    )
+    for poisoned in poisoned_columns, normalize in (true, false)
+        compact_poisoned = qwen3_device_topk_routing(
+            poisoned,
+            2;
+            normalize,
+        )
+        indices = vec(compact_poisoned.expert_indices)
+        @test all(1 .<= indices .<= size(poisoned, 1))
+        @test length(unique(indices)) == 2
+        @test all(isnan, compact_poisoned.routing_weights)
+    end
 end
 
 @testset "Qwen3 MoE route-major expert compute matches the all-expert oracle" begin
