@@ -277,7 +277,9 @@ function target_byte_count(loader::DocumentDatasetLoader)
     for sample_index in 1:emitted_samples
         document_index, start = loader.starts[sample_index]
         lengths = loader.byte_lengths[document_index]
-        total += sum(@view(lengths[(start + 1):(start + loader.seq_len)]))
+        for position in (start + 1):(start + loader.seq_len)
+            total = Base.Checked.checked_add(total, lengths[position])
+        end
     end
     return total
 end

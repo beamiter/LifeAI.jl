@@ -485,6 +485,10 @@ end
             (;
                 format_version=1,
                 model_config=_modern_gpt_components_legacy_config(raw_payload.model_config),
+                progress=(;
+                    epoch=raw_payload.progress.epoch,
+                    batch=raw_payload.progress.batch,
+                ),
             ),
         )
         legacy_v1_path = joinpath(directory, "legacy-v1.checkpoint")
@@ -499,6 +503,7 @@ end
         @test migrated.model.mlp_type == :gelu
         @test !migrated.model.tie_embeddings
         @test gpt_config(migrated.model) == gpt_config(legacy_model)
+        @test migrated.progress.step == migrated.train_state.step
 
         legacy_tokens = reshape([1, 2, 3], 3, 1)
         original_logits, _ = legacy_model(

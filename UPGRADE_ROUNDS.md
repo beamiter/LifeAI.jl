@@ -1,9 +1,9 @@
 # Additional Upgrade Rounds
 
-This ledger records the twenty follow-up rounds implemented on top of the
-existing uncommitted hardening work. Each round changes runtime behavior or a
-public contract and has a focused regression in `test/test_sampling_core.jl`,
-`test/test_diffusion_sampling.jl`, or `test/test_memory_core.jl`.
+This ledger records the thirty-six follow-up rounds implemented on top of the
+existing hardening work. Each round changes runtime behavior or a public
+contract and has a focused regression in the core contract files or the
+Chapter 03 reproducible-training test.
 
 1. Reject Boolean and platform-overflowing `top_k` inputs.
 2. Keep exactly `top_k` candidates with deterministic original-index tie breaking.
@@ -26,11 +26,47 @@ public contract and has a focused regression in `test/test_sampling_core.jl`,
     nesting level, and convert integers with explicit Bool/overflow rejection.
 19. Reject appends whose exact encoded size would exceed the journal budget before writing.
 20. Require Unix journals to be root/current-user owned, single-linked, and private.
+21. Reject Boolean, non-finite, and Float32-overflowing or underflowing learning rates.
+22. Apply the same representability contract to global-gradient clipping limits and epsilon.
+23. Reject non-finite host gradient norms before CPU clipping can poison parameters.
+24. Require literal Boolean gradient-return flags, reject Boolean train-loop and
+    checkpoint-progress counts, and prevent resume epoch/batch arithmetic overflow.
+25. Validate every host evaluation NLL and detect aggregate token/NLL overflow.
+26. Accumulate evaluation NLL with deterministic compensated summation and reject
+    Boolean or platform-overflowing byte denominators.
+27. Reject loss, perplexity, and byte-normalized metrics that would silently
+    overflow their public Float32 representation.
+28. Reject exact target-byte totals that overflow the platform integer before
+    they can become a plausible but incorrect evaluation denominator.
+29. Reject non-finite, negative (including values that underflow while
+    narrowing), and Float32-overflowing training loss and callback gradient
+    metrics before an optimiser update can mutate caller-owned state on either
+    the host or XLA backend.
+30. Refuse a training update before Lux can wrap a `typemax(Int)` step counter,
+    and validate checkpoint step counters before saving or restoring them.
+31. Validate and snapshot loader length, including the `typemax(Int)` boundary,
+    without overflowing the permitted one-past-the-end resume position.
+32. Reject nonzero loss and public evaluation metrics that underflow while
+    narrowing to their documented Float64 or Float32 representation.
+33. Require current checkpoint progress to contain non-negative epoch, batch,
+    and step fields, and reject any step inconsistent with the restored state;
+    legacy v1 payloads may fill only a missing progress step from that state.
+    Progress with epoch zero may only use batch zero.
+34. Reject Boolean or platform-overflowing checkpoint format versions and
+    resume batches beyond the current loader, while treating exact end-of-loader
+    progress as a completed epoch.
+35. Detect Float64 underflow in mean and byte-normalized evaluation ratios before
+    a nonzero aggregate can silently become an apparently exact zero.
+36. Compute global gradient norms with scale normalization so squaring finite
+    Float32 or integer leaves cannot first underflow or overflow, and calculate
+    clipping ratios in Float64 before enforcing the public Float32 metric contract.
 
-The ignored local Manifest has since been regenerated, and the CI Julia
-1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
+The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
+Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
 imports the real `LifeAI` module before these files, preventing their standalone
-fallbacks from polluting later episode tests. The three focused files remain
-independently loadable for fast contract checks, and the complete default suite
-is the integration gate. CI resolves from the tracked `Project.toml`; the local
-Manifest is intentionally not a repository artifact.
+fallbacks from polluting later episode tests. The three core focused files
+remain independently loadable for fast contract checks; Chapter 03 exercises
+the training/evaluation boundary through the real module, and the complete
+default suite is the integration gate. CI instantiates the checked-in
+`Project.toml`/`Manifest.toml` pair and rejects dependency-file drift after the
+suite, so a registry update cannot silently change the validated environment.

@@ -5,22 +5,38 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          version: "1.12"
-      - uses: julia-actions/cache@v2
-      - name: Instantiate and test
+          persist-credentials: false
+      - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32  # v3.0.2
+        with:
+          version: "1.12.6"
+      - uses: julia-actions/cache@a7bed9df697e5d7309d68afe7542a87621a8b6c8  # v3.3.0
+        with:
+          delete-old-caches: "false"
+      - name: Instantiate the locked environment and test
         run: |
-          set -o pipefail
-          julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()' 2>&1 | tee week05-test.log
-      - uses: actions/upload-artifact@v4
+          set -euo pipefail
+          test -f Manifest.toml
+          julia --startup-file=no --project=. \
+            -e 'using Pkg; Pkg.instantiate(); Pkg.test(; allow_reresolve=false)' \
+            2>&1 | tee week05-test.log
+          git diff --exit-code -- Project.toml Manifest.toml
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         if: always()
         with:
           name: week05-test-log
@@ -31,23 +47,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          version: "1.12"
-      - uses: julia-actions/cache@v2
+          persist-credentials: false
+      - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32  # v3.0.2
+        with:
+          version: "1.12.6"
+      - uses: julia-actions/cache@a7bed9df697e5d7309d68afe7542a87621a8b6c8  # v3.3.0
+        with:
+          delete-old-caches: "false"
       - name: Instantiate
-        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
       - name: Run Week 05 end-to-end example
-        run: julia --project=. examples/week05_chinese_pipeline.jl
+        run: julia --startup-file=no --project=. examples/week05_chinese_pipeline.jl
       - name: Run Week 05 three-seed CPU comparison
         env:
           LIFEAI_WEEK05_TRAIN_STEPS: "8"
           LIFEAI_WEEK05_TOKENIZER_REPETITIONS: "10"
         run: |
-          set -o pipefail
+          set -euo pipefail
           bash scripts/benchmark_week05.sh benchmark_results/week05-ci 2>&1 | tee week05-benchmark.log
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         if: always()
         with:
           name: week05-evidence
@@ -60,16 +80,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          version: "1.12"
-      - uses: julia-actions/cache@v2
+          persist-credentials: false
+      - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32  # v3.0.2
+        with:
+          version: "1.12.6"
+      - uses: julia-actions/cache@a7bed9df697e5d7309d68afe7542a87621a8b6c8  # v3.3.0
+        with:
+          delete-old-caches: "false"
       - name: Instantiate
-        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
       - name: Run Chapter 05 XLA CPU smoke
         run: >-
-          julia --project=.
+          julia --startup-file=no --project=.
           test/episodes/episode01_transformer_and_training_foundations/chapter05_tokenizer_data_pipeline/test_tokenizer_xla.jl
 
   week05-legacy-checkpoint:
@@ -77,19 +101,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: master
           path: legacy-master
-      - uses: julia-actions/setup-julia@v2
+          persist-credentials: false
+      - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32  # v3.0.2
         with:
-          version: "1.12"
-      - uses: julia-actions/cache@v2
+          version: "1.12.6"
+      - uses: julia-actions/cache@a7bed9df697e5d7309d68afe7542a87621a8b6c8  # v3.3.0
+        with:
+          delete-old-caches: "false"
       - name: Generate a real master-branch v2 checkpoint
         working-directory: legacy-master
         run: |
-          julia --project=. -e '
+          julia --startup-file=no --project=. -e '
             using Pkg; Pkg.instantiate()
             using LifeAI, Random
             text = repeat("abc生命", 24)
@@ -116,7 +145,7 @@ jobs:
           '
       - name: Load the real legacy checkpoint with Week 05 code
         run: |
-          julia --project=. -e '
+          julia --startup-file=no --project=. -e '
             using Pkg; Pkg.instantiate()
             using LifeAI
             text = repeat("abc生命", 24)

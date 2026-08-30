@@ -20,8 +20,13 @@ Backends:
 
 - `backend=:zygote`: ordinary Lux training, defaulting to the CPU.
 - `backend=:xla`: move parameters, states, optimizer state, and batches to a
-  Reactant device. Lux automatically compiles the complete Enzyme gradient and
-  optimizer update into one XLA train step when gradient clipping is disabled.
+  Reactant device. Gradient computation and the optimizer update are compiled
+  as separate stages so loss and global-gradient metrics can be materialized
+  and validated before any parameter update.
+
+`return_gradients=false` suppresses the gradient tree in the return value only;
+all backends still compute and validate the loss and global gradient norm before
+applying an optimizer update.
 
 Set `max_grad_norm` to a positive value to enable true global L2 norm clipping
 over the complete parameter tree. Clipping requires a separate gradient
@@ -37,6 +42,110 @@ struct TrainerGPT{O, A, D}
     max_grad_norm::Union{Nothing,Float32}
 end
 
+function _training_positive_float32(value, name::AbstractString)
+    value isa Real && !(value isa Bool) || throw(ArgumentError(
+        "`$name` must be a real number",
+    ))
+    is_positive = try
+        value > 0
+    catch error
+        error isa MethodError || error isa DomainError ||
+            error isa ArgumentError || rethrow()
+        throw(ArgumentError("`$name` must support a finite sign comparison"))
+    end
+    is_positive isa Bool || throw(ArgumentError(
+        "`$name` sign comparison must return Bool",
+    ))
+    is_positive || throw(ArgumentError("`$name` must be positive"))
+    converted = try
+        Float32(value)
+    catch error
+        error isa InexactError || error isa OverflowError ||
+            error isa DomainError || error isa MethodError || rethrow()
+        throw(ArgumentError("`$name` must be representable as Float32"))
+    end
+    iszero(converted) && throw(OverflowError(
+        "`$name` underflows Float32",
+    ))
+    isfinite(converted) || throw(ArgumentError(
+        "`$name` must be finite and positive at Float32 precision",
+    ))
+    return converted
+end
+
+function _training_loop_int(value, name::AbstractString; allow_zero::Bool=false)
+    value isa Integer && !(value isa Bool) || throw(ArgumentError(
+        "`$name` must be an integer",
+    ))
+    converted = try
+        Int(value)
+    catch error
+        error isa InexactError || error isa OverflowError ||
+            error isa DomainError || error isa MethodError || rethrow()
+        throw(ArgumentError("`$name` is outside the supported integer range"))
+    end
+    lower_bound = allow_zero ? 0 : 1
+    converted >= lower_bound || throw(ArgumentError(
+        "`$name` must be $(allow_zero ? "non-negative" : "positive")",
+    ))
+    return converted
+end
+
+function _training_metric_float32(
+    value,
+    name::AbstractString;
+    nonnegative::Bool=false,
+)
+    value isa Number && !(value isa Bool) && !(value isa Complex) || throw(ArgumentError(
+        "`$name` must be a real scalar number",
+    ))
+    if nonnegative
+        is_negative = try
+            value < 0
+        catch error
+            error isa MethodError || error isa DomainError ||
+                error isa ArgumentError || rethrow()
+            throw(ArgumentError("`$name` must support a finite sign comparison"))
+        end
+        is_negative isa Bool || throw(ArgumentError(
+            "`$name` sign comparison must return Bool",
+        ))
+        is_negative && throw(ArgumentError("`$name` must be non-negative"))
+    end
+    if value isa AbstractFloat && !isfinite(value)
+        throw(ArgumentError("`$name` must be finite"))
+    end
+    converted = try
+        Float32(value)
+    catch error
+        error isa InexactError || error isa OverflowError ||
+            error isa DomainError || error isa MethodError || rethrow()
+        throw(ArgumentError("`$name` must be representable as Float32"))
+    end
+    isfinite(converted) || throw(OverflowError(
+        "`$name` is not representable as finite Float32",
+    ))
+    if iszero(converted)
+        is_nonzero = try
+            value != 0
+        catch error
+            error isa MethodError || error isa DomainError ||
+                error isa ArgumentError || rethrow()
+            throw(ArgumentError(
+                "`$name` must support a finite zero comparison",
+            ))
+        end
+        is_nonzero isa Bool || throw(ArgumentError(
+            "`$name` zero comparison must return Bool",
+        ))
+        is_nonzero && throw(OverflowError("`$name` underflows Float32"))
+    end
+    if nonnegative && converted < 0
+        throw(ArgumentError("`$name` must be non-negative"))
+    end
+    return converted
+end
+
 function TrainerGPT(;
     learning_rate::Real=3.0f-4,
     optimizer=nothing,
@@ -48,10 +157,10 @@ function TrainerGPT(;
     static_shapes::Bool=true,
     max_grad_norm=nothing,
 )
-    learning_rate > 0 || throw(ArgumentError("`learning_rate` must be positive"))
+    learning_rate_value = _training_positive_float32(learning_rate, "learning_rate")
 
     optimizer_rule = if optimizer === nothing
-        Optimisers.Adam(Float32(learning_rate))
+        Optimisers.Adam(learning_rate_value)
     else
         optimizer
     end
@@ -73,15 +182,16 @@ function TrainerGPT(;
     return_gradients_flag = if return_gradients === nothing
         backend !== :xla
     else
-        Bool(return_gradients)
+        return_gradients isa Bool || throw(ArgumentError(
+            "`return_gradients` must be Bool or `nothing`",
+        ))
+        return_gradients
     end
 
     max_grad_norm_value = if max_grad_norm === nothing
         nothing
     else
-        max_grad_norm > 0 ||
-            throw(ArgumentError("`max_grad_norm` must be positive or `nothing`"))
-        Float32(max_grad_norm)
+        _training_positive_float32(max_grad_norm, "max_grad_norm")
     end
 
     return TrainerGPT(
@@ -168,24 +278,59 @@ function _gpt_objective(model, ps, st, data)
     return loss, st_new, NamedTuple()
 end
 
-_gradient_sqnorm(::Nothing) = 0.0f0
-_gradient_sqnorm(x::Number) = abs2(x)
-_gradient_sqnorm(x::AbstractArray) = sum(abs2, x)
-_gradient_sqnorm(x::NamedTuple) = _gradient_sqnorm_children(values(x))
-_gradient_sqnorm(x::Tuple) = _gradient_sqnorm_children(x)
-_gradient_sqnorm(_) = 0.0f0
+_gradient_norm(::Nothing) = 0.0f0
+_gradient_norm(x::Number) = abs(float(x))
 
-function _gradient_sqnorm_children(children)
+function _gradient_array_norm(x::AbstractArray)
+    isempty(x) && return 0.0f0
+    max_abs = maximum(abs, x)
+    safe_scale = ifelse(iszero(max_abs), one(max_abs), max_abs)
+    return max_abs * sqrt(sum(abs2, x ./ safe_scale))
+end
+
+function _gradient_array_norm(x::Reactant.ConcreteRArray)
+    isempty(x) && return 0.0f0
+    max_abs_device = maximum(abs, x)
+    max_abs = Float64(max_abs_device)
+    (iszero(max_abs) || !isfinite(max_abs)) && return max_abs
+    normalized_sq_sum = Float64(sum(abs2, x ./ max_abs_device))
+    return max_abs * sqrt(normalized_sq_sum)
+end
+
+_gradient_norm(x::Reactant.ConcreteRNumber) = abs(Float64(x))
+_gradient_norm(x::AbstractArray{<:AbstractFloat}) = _gradient_array_norm(x)
+_gradient_norm(x::AbstractArray) = _gradient_array_norm(float.(x))
+_gradient_norm(x::NamedTuple) = _gradient_norm_children(values(x))
+_gradient_norm(x::Tuple) = _gradient_norm_children(x)
+_gradient_norm(_) = 0.0f0
+
+function _combine_gradient_norms(left::Real, right::Real)
+    scale = max(abs(left), abs(right))
+    safe_scale = ifelse(iszero(scale), one(scale), scale)
+    return scale * sqrt(abs2(left / safe_scale) + abs2(right / safe_scale))
+end
+
+function _gradient_norm_children(children)
     accumulator = nothing
     for child in children
-        value = _gradient_sqnorm(child)
-        accumulator = accumulator === nothing ? value : accumulator + value
+        value = _gradient_norm(child)
+        accumulator = accumulator === nothing ? value :
+            _combine_gradient_norms(accumulator, value)
     end
     return accumulator === nothing ? 0.0f0 : accumulator
 end
 
 """Compute the L2 norm over every numeric leaf in a nested gradient tree."""
-global_gradient_norm(gradients) = sqrt(_gradient_sqnorm(gradients))
+global_gradient_norm(gradients) = _gradient_norm(gradients)
+
+function _checked_training_gradient_norm(gradients)
+    norm = global_gradient_norm(gradients)
+    return _training_metric_float32(
+        norm,
+        "gradient norm";
+        nonnegative=true,
+    )
+end
 
 _scale_gradient(::Nothing, _) = nothing
 _scale_gradient(x::Number, scale) = x * scale
@@ -209,18 +354,28 @@ function clip_global_gradient_norm(
     max_norm::Real;
     epsilon::Real=1.0f-6,
 )
-    max_norm > 0 || throw(ArgumentError("`max_norm` must be positive"))
-    epsilon > 0 || throw(ArgumentError("`epsilon` must be positive"))
+    max_norm_value = _training_positive_float32(max_norm, "max_norm")
+    epsilon_value = _training_positive_float32(epsilon, "epsilon")
 
-    norm_before = global_gradient_norm(gradients)
-    scale = min(
-        one(norm_before),
-        Float32(max_norm) / (norm_before + Float32(epsilon)),
+    norm_before = _checked_training_gradient_norm(gradients)
+    scale = _training_metric_float32(
+        min(
+            1.0,
+            Float64(max_norm_value) /
+                (Float64(norm_before) + Float64(epsilon_value)),
+        ),
+        "gradient clipping scale";
+        nonnegative=true,
+    )
+    norm_after = _training_metric_float32(
+        Float64(norm_before) * Float64(scale),
+        "gradient norm after clipping";
+        nonnegative=true,
     )
     clipped_gradients = _scale_gradient(gradients, scale)
     metrics = (;
         before=norm_before,
-        after=norm_before * scale,
+        after=norm_after,
         scale,
     )
 
@@ -228,6 +383,17 @@ function clip_global_gradient_norm(
 end
 
 function _train_step_with_metrics!(trainer::TrainerGPT, train_state, batch)
+    hasproperty(train_state, :step) || throw(ArgumentError(
+        "`train_state` has no step counter",
+    ))
+    current_step = _training_loop_int(
+        train_state.step,
+        "train_state.step";
+        allow_zero=true,
+    )
+    current_step < typemax(Int) || throw(OverflowError(
+        "training step counter cannot be incremented beyond typemax(Int)",
+    ))
     length(batch) == 2 || throw(ArgumentError("`batch` must be `(x, targets)`"))
     x, targets = batch
 
@@ -237,48 +403,35 @@ function _train_step_with_metrics!(trainer::TrainerGPT, train_state, batch)
     x_device, targets_device = trainer.device((x, targets))
     device_batch = (x_device, targets_device)
 
-    if trainer.max_grad_norm === nothing
-        gradients, loss, _, train_state = if trainer.return_gradients
-            Lux.Training.single_train_step!(
-                trainer.ad,
-                _gpt_objective,
-                device_batch,
-                train_state,
-            )
-        else
-            Lux.Training.single_train_step!(
-                trainer.ad,
-                _gpt_objective,
-                device_batch,
-                train_state;
-                return_gradients=Val(false),
-            )
-        end
-
-        metrics = if gradients === nothing
-            nothing
-        else
-            norm = global_gradient_norm(gradients)
-            (; before=norm, after=norm, scale=one(norm))
-        end
-
-        return train_state, loss, gradients, metrics
-    end
-
-    gradients, loss, _, train_state = Lux.Training.compute_gradients(
+    # Lux's fused in-place step updates parameter arrays before returning its
+    # metrics; the Reactant cache-hit path can do so even through the nominally
+    # functional wrapper. Keep every backend on the explicit two-stage path so
+    # invalid loss or gradient metrics fail before any optimiser update.
+    gradients, loss, _, candidate_state = Lux.Training.compute_gradients(
         trainer.ad,
         _gpt_objective,
         device_batch,
         train_state,
     )
+    _training_metric_float32(loss, "training loss"; nonnegative=true)
+
+    if trainer.max_grad_norm === nothing
+        norm = _checked_training_gradient_norm(gradients)
+        metrics = (; before=norm, after=norm, scale=one(norm))
+        candidate_state = Lux.Training.apply_gradients!(candidate_state, gradients)
+        returned_gradients = trainer.return_gradients ? gradients : nothing
+
+        return candidate_state, loss, returned_gradients, metrics
+    end
+
     clipped_gradients, metrics = clip_global_gradient_norm(
         gradients,
         trainer.max_grad_norm,
     )
-    train_state = Lux.Training.apply_gradients!(train_state, clipped_gradients)
+    candidate_state = Lux.Training.apply_gradients!(candidate_state, clipped_gradients)
 
     returned_gradients = trainer.return_gradients ? clipped_gradients : nothing
-    return train_state, loss, returned_gradients, metrics
+    return candidate_state, loss, returned_gradients, metrics
 end
 
 """
@@ -301,7 +454,8 @@ function train_step!(trainer::TrainerGPT, train_state, x, targets)
     return train_step!(trainer, train_state, (x, targets))
 end
 
-_metric_float(value) = value === nothing ? nothing : Float32(value)
+_metric_float(value, name::AbstractString) = value === nothing ? nothing :
+    _training_metric_float32(value, name; nonnegative=true)
 
 """
     train_gpt!(trainer, train_state, loader; kwargs...)
@@ -315,23 +469,37 @@ function train_gpt!(
     trainer::TrainerGPT,
     train_state,
     loader;
-    epochs::Int=1,
-    start_epoch::Int=1,
-    start_batch::Int=1,
+    epochs::Integer=1,
+    start_epoch::Integer=1,
+    start_batch::Integer=1,
     max_steps=nothing,
     validation_loader=nothing,
     evaluate_every=nothing,
     callback=nothing,
 )
-    epochs > 0 || throw(ArgumentError("`epochs` must be positive"))
-    start_epoch > 0 || throw(ArgumentError("`start_epoch` must be positive"))
-    1 <= start_batch <= length(loader) + 1 ||
-        throw(ArgumentError("`start_batch` must be in 1:$(length(loader) + 1)"))
+    epochs = _training_loop_int(epochs, "epochs")
+    start_epoch = _training_loop_int(start_epoch, "start_epoch")
+    start_batch = _training_loop_int(start_batch, "start_batch")
+    loader_length = _training_loop_int(
+        length(loader),
+        "loader length";
+        allow_zero=true,
+    )
+    epochs - 1 <= typemax(Int) - start_epoch || throw(ArgumentError(
+        "`start_epoch + epochs - 1` exceeds the supported integer range",
+    ))
+    start_batch_limit = loader_length == typemax(Int) ?
+        typemax(Int) : loader_length + 1
+    start_batch <= start_batch_limit || throw(ArgumentError(
+        "`start_batch` must be in 1:$start_batch_limit",
+    ))
 
     if max_steps !== nothing
-        max_steps isa Integer ||
-            throw(ArgumentError("`max_steps` must be an integer or `nothing`"))
-        max_steps >= 0 || throw(ArgumentError("`max_steps` must be non-negative"))
+        max_steps = _training_loop_int(
+            max_steps,
+            "max_steps";
+            allow_zero=true,
+        )
         max_steps == 0 && return train_state, Float32[]
     end
 
@@ -339,9 +507,7 @@ function train_gpt!(
         validation_loader === nothing && throw(ArgumentError(
             "`validation_loader` is required when `evaluate_every` is set",
         ))
-        evaluate_every isa Integer ||
-            throw(ArgumentError("`evaluate_every` must be an integer or `nothing`"))
-        evaluate_every > 0 || throw(ArgumentError("`evaluate_every` must be positive"))
+        evaluate_every = _training_loop_int(evaluate_every, "evaluate_every")
     end
 
     losses = Float32[]
@@ -352,7 +518,7 @@ function train_gpt!(
         epoch = start_epoch + epoch_offset
         first_batch = epoch_offset == 0 ? start_batch : 1
 
-        for batch_index in first_batch:length(loader)
+        for batch_index in first_batch:loader_length
             batch = loader[batch_index]
             batch_shape = (size(batch[1]), size(batch[2]))
 
@@ -376,13 +542,20 @@ function train_gpt!(
             )
             step_seconds = Float64(time_ns() - step_start) / 1.0e9
 
+            invocation_steps < typemax(Int) || throw(OverflowError(
+                "training invocation-step counter overflow",
+            ))
             invocation_steps += 1
-            loss_value = Float32(loss)
+            loss_value = _training_metric_float32(
+                loss,
+                "training loss";
+                nonnegative=true,
+            )
             push!(losses, loss_value)
 
             should_evaluate = validation_loader !== nothing && (
                 evaluate_every === nothing ?
-                    batch_index == length(loader) :
+                    batch_index == loader_length :
                     train_state.step % evaluate_every == 0
             )
             validation_metrics = if should_evaluate
@@ -408,11 +581,20 @@ function train_gpt!(
                     step_seconds,
                     xla_compilation=(trainer.backend === :xla && invocation_steps == 1),
                     grad_norm_before=gradient_metrics === nothing ?
-                        nothing : _metric_float(gradient_metrics.before),
+                        nothing : _metric_float(
+                            gradient_metrics.before,
+                            "gradient norm before clipping",
+                        ),
                     grad_norm_after=gradient_metrics === nothing ?
-                        nothing : _metric_float(gradient_metrics.after),
+                        nothing : _metric_float(
+                            gradient_metrics.after,
+                            "gradient norm after clipping",
+                        ),
                     grad_clip_scale=gradient_metrics === nothing ?
-                        nothing : _metric_float(gradient_metrics.scale),
+                        nothing : _metric_float(
+                            gradient_metrics.scale,
+                            "gradient clipping scale",
+                        ),
                     validation_loss=validation_metrics === nothing ?
                         nothing : validation_metrics.loss,
                     perplexity=validation_metrics === nothing ?

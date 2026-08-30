@@ -47,7 +47,9 @@ Chapter 01—46 均已 Closed，Chapter 47 已 Open，Episode 06/07/09 已 Close
 - 支持 legacy interleaved 与 HF rotate_half 配对的 RoPE、learned absolute position、pre-norm TransformerBlock 和 decoder-only GPTModel。
 - 可独立切换的 LayerNorm / RMSNorm、GELU / GELU-New / SwiGLU、projection bias / LM-head bias、untied / tied embedding-output projection；legacy 默认保持不变。
 - 字符级 Tokenizer、DatasetLoader、next-token loss 和训练循环。
-- 无泄漏 train / validation 划分、token-weighted evaluation / perplexity 和 global gradient norm clipping。
+- 无泄漏 train / validation 划分、采用补偿求和的 token-weighted evaluation / perplexity，
+  训练/评估指标无法有限表示为 Float32 时显式报错，以及带有限 Float32
+  超参数边界的 global gradient norm clipping。
 - checkpoint v2、设备无关保存/加载、确定性断点续训和 v1 legacy checkpoint 迁移。
 - 基于 Zygote 的常规训练，以及 Reactant/Enzyme 驱动的 XLA 训练路径。
 - greedy、temperature、top-k、top-p 文本生成；Qwen3 可严格读取官方 generation config，并支持固定 uniform 流的可重放采样。

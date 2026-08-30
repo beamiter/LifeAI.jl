@@ -2,7 +2,6 @@
 .venv/
 __pycache__/
 *.py[cod]
-Manifest.toml
 notebook/assets/
 # Locally regenerated training/generation checkpoints; the examples that write them
 # are reproducible, so the binaries do not belong in the repository.

@@ -1,13 +1,17 @@
 using Test
 using Random
 using Lux
+using Serialization
+import LifeAI
 using LifeAI:
     CHECKPOINT_FORMAT_VERSION,
     DatasetLoader,
+    DocumentDatasetLoader,
     GPTModel,
     TrainerGPT,
     benchmark_kv_cache,
     benchmark_xla_cache_modes,
+    bits_per_byte,
     clip_global_gradient_norm,
     evaluate_gpt,
     fit_tokenizer,
@@ -21,6 +25,8 @@ using LifeAI:
     resume_gpt!,
     save_checkpoint,
     split_token_stream,
+    target_byte_count,
+    train_gpt!,
     train_step!,
     train_validation_loaders,
     vocab_size
@@ -57,6 +63,52 @@ function _tree_isapprox(left, right; atol=1.0f-6, rtol=1.0f-5)
     end
 
     return isequal(left, right)
+end
+
+struct ExtremeEvaluationModel
+    vocab_size::Int
+end
+
+function (model::ExtremeEvaluationModel)(x, ps, st)
+    logits = fill(-1.0f3, model.vocab_size, size(x)...)
+    logits[1, :, :] .= 0.0f0
+    return logits, st
+end
+
+struct MaximumLengthLoader end
+Base.length(::MaximumLengthLoader) = typemax(Int)
+
+struct InvalidTrainingModel <: Lux.AbstractLuxLayer
+    vocab_size::Int
+    failure::Symbol
+end
+
+function Lux.initialparameters(::AbstractRNG, model::InvalidTrainingModel)
+    initial_scale = model.failure in (:gradient, :large_gradient) ? 0.0 : 1.0
+    return (; scale=Float64[initial_scale])
+end
+
+Lux.initialstates(::AbstractRNG, ::InvalidTrainingModel) = NamedTuple()
+
+function (model::InvalidTrainingModel)(x, ps, st)
+    offset = if model.failure === :loss
+        1.0e40 + only(ps.scale)
+    elseif model.failure === :gradient
+        sqrt(only(ps.scale))
+    elseif model.failure === :large_gradient
+        only(ps.scale) * 1.0e100
+    elseif model.failure === :valid
+        only(ps.scale)
+    else
+        error("unsupported invalid-training fixture")
+    end
+    logits = repeat(
+        reshape(Float64[0, -offset], 2, 1, 1),
+        1,
+        size(x, 1),
+        size(x, 2),
+    )
+    return logits, st
 end
 
 @testset "Leakage-safe train/validation split" begin
@@ -122,6 +174,46 @@ end
     ps_before = deepcopy(ps)
 
     metrics, _ = evaluate_gpt(model, ps, st, loader)
+    document_loader_without_bytes = DocumentDatasetLoader(
+        [Int[1, 2, 1, 2, 1]];
+        seq_len=2,
+        batch_size=1,
+        drop_last=false,
+    )
+    metrics_without_bytes, _ = evaluate_gpt(
+        model,
+        ps,
+        st,
+        document_loader_without_bytes,
+    )
+    @test metrics_without_bytes.bytes === nothing
+    @test metrics_without_bytes.nll_per_byte === nothing
+    @test metrics_without_bytes.bits_per_byte === nothing
+    @test_throws ArgumentError evaluate_gpt(
+        model, ps, st, loader; byte_count=true,
+    )
+    @test_throws ArgumentError evaluate_gpt(
+        model, ps, st, loader; byte_count=big(typemax(Int)) + 1,
+    )
+    overflowing_byte_loader = DocumentDatasetLoader(
+        [Int[1, 2, 3, 4]];
+        byte_lengths=[[0, typemax(Int), typemax(Int), typemax(Int)]],
+        seq_len=3,
+        batch_size=1,
+        drop_last=false,
+    )
+    @test_throws OverflowError target_byte_count(overflowing_byte_loader)
+    extreme_loader = [(
+        reshape(Int[1], 1, 1),
+        reshape(Int[2], 1, 1),
+    )]
+    @test_throws OverflowError evaluate_gpt(
+        ExtremeEvaluationModel(2),
+        NamedTuple(),
+        NamedTuple(),
+        extreme_loader;
+        device=identity,
+    )
 
     manual_nll = 0.0
     manual_tokens = 0
@@ -137,6 +229,277 @@ end
     @test metrics.loss ≈ manual_mean atol=1.0f-6
     @test metrics.perplexity ≈ exp(manual_mean) atol=1.0f-5
     @test _tree_isapprox(ps, ps_before)
+end
+
+@testset "Training and evaluation numeric contracts" begin
+    @test bits_per_byte(2.0, 2) ≈ 1 / log(2.0)
+    @test_throws ArgumentError bits_per_byte(true, 1)
+    @test_throws ArgumentError bits_per_byte(-1.0, 1)
+    @test_throws ArgumentError bits_per_byte(-big"1e-1000", 1)
+    @test_throws OverflowError bits_per_byte(big"1e-1000", 1)
+    @test_throws OverflowError bits_per_byte(nextfloat(0.0), typemax(Int))
+    @test_throws ArgumentError bits_per_byte(NaN, 1)
+    @test_throws ArgumentError bits_per_byte(Inf, 1)
+    @test_throws ArgumentError bits_per_byte(big"1e1000", 1)
+    @test_throws ArgumentError bits_per_byte(1.0, true)
+    @test_throws ArgumentError bits_per_byte(1.0, big(typemax(Int)) + 1)
+
+    @test_throws ArgumentError TrainerGPT(learning_rate=true)
+    @test_throws ArgumentError TrainerGPT(learning_rate=NaN)
+    @test_throws ArgumentError TrainerGPT(learning_rate=Inf)
+    @test_throws ArgumentError TrainerGPT(learning_rate=big"1e1000")
+    @test_throws OverflowError TrainerGPT(learning_rate=1.0e-100)
+    @test_throws ArgumentError TrainerGPT(max_grad_norm=true)
+    @test_throws ArgumentError TrainerGPT(max_grad_norm=Inf)
+    @test_throws ArgumentError TrainerGPT(max_grad_norm=big"1e1000")
+    @test_throws OverflowError TrainerGPT(max_grad_norm=1.0e-100)
+    @test_throws ArgumentError TrainerGPT(return_gradients=1)
+
+    @test LifeAI._training_metric_float32(1.25, "test metric") == 1.25f0
+    @test_throws ArgumentError LifeAI._training_metric_float32(
+        NaN, "test metric",
+    )
+    @test_throws ArgumentError LifeAI._training_metric_float32(
+        Inf, "test metric",
+    )
+    @test_throws OverflowError LifeAI._training_metric_float32(
+        floatmax(Float64), "test metric",
+    )
+    @test_throws OverflowError LifeAI._training_metric_float32(
+        big"1e-1000", "test metric",
+    )
+    @test_throws OverflowError LifeAI._evaluation_metric_float32(
+        big"1e-1000", "test metric",
+    )
+    @test_throws ArgumentError LifeAI._training_metric_float32(
+        -1.0, "test metric"; nonnegative=true,
+    )
+    @test_throws ArgumentError LifeAI._training_metric_float32(
+        -1.0e-100, "test metric"; nonnegative=true,
+    )
+    @test_throws ArgumentError LifeAI._training_metric_float32(
+        true, "test metric",
+    )
+    @test_throws ArgumentError LifeAI._training_metric_float32(
+        Complex(1, 0), "test metric",
+    )
+    @test_throws ArgumentError LifeAI._checked_training_gradient_norm((;
+        value=Float64[Inf],
+    ))
+    @test_throws OverflowError LifeAI._checked_training_gradient_norm((;
+        value=Float64[1.0e100],
+    ))
+    @test global_gradient_norm((; value=Float32[1.0f-30])) == 1.0f-30
+    @test global_gradient_norm((; value=Float32[1.9f19])) == 1.9f19
+    @test global_gradient_norm((; value=Int[typemax(Int)])) ==
+        Float64(typemax(Int))
+    @test global_gradient_norm((; value=Int[typemin(Int)])) ==
+        -Float64(typemin(Int))
+
+    trainer = TrainerGPT()
+    @test_throws ArgumentError train_gpt!(trainer, nothing, (); epochs=true)
+    @test_throws ArgumentError train_gpt!(trainer, nothing, (); start_epoch=true)
+    @test_throws ArgumentError train_gpt!(trainer, nothing, (); start_batch=true)
+    @test_throws ArgumentError train_gpt!(trainer, nothing, (); max_steps=true)
+    @test_throws ArgumentError train_gpt!(
+        trainer, nothing, (); epochs=big(typemax(Int)) + 1,
+    )
+    @test_throws ArgumentError train_gpt!(
+        trainer, nothing, (); max_steps=big(typemax(Int)) + 1,
+    )
+    @test_throws ArgumentError train_gpt!(
+        trainer,
+        nothing,
+        ();
+        epochs=2,
+        start_epoch=typemax(Int),
+    )
+    @test_throws ArgumentError train_gpt!(
+        trainer,
+        nothing,
+        ();
+        validation_loader=(),
+        evaluate_every=true,
+    )
+    max_length_state, max_length_losses = train_gpt!(
+        trainer,
+        nothing,
+        MaximumLengthLoader();
+        start_batch=typemax(Int),
+        max_steps=0,
+    )
+    @test max_length_state === nothing
+    @test isempty(max_length_losses)
+    @test_throws OverflowError train_gpt!(
+        trainer,
+        (; step=typemax(Int)),
+        [(reshape(Int[1], 1, 1), reshape(Int[1], 1, 1))];
+        max_steps=1,
+    )
+
+    invalid_batch = (
+        reshape(Int[1], 1, 1),
+        reshape(Int[2], 1, 1),
+    )
+    for (failure, exception_type) in [
+        (:loss, OverflowError),
+        (:gradient, ArgumentError),
+    ]
+        invalid_model = InvalidTrainingModel(2, failure)
+        invalid_state = init_train_state(
+            Xoshiro(20260829),
+            invalid_model,
+            trainer,
+        )
+        parameters_before = deepcopy(invalid_state.parameters)
+        optimizer_state_before = deepcopy(invalid_state.optimizer_state)
+        step_before = invalid_state.step
+
+        @test_throws exception_type train_step!(
+            trainer,
+            invalid_state,
+            invalid_batch,
+        )
+        @test _tree_isapprox(
+            invalid_state.parameters,
+            parameters_before;
+            atol=0,
+            rtol=0,
+        )
+        @test _tree_isapprox(
+            invalid_state.optimizer_state,
+            optimizer_state_before;
+            atol=0,
+            rtol=0,
+        )
+        @test invalid_state.step == step_before
+    end
+
+    clipping_trainer = TrainerGPT(max_grad_norm=1.0f0)
+    for (failure, exception_type) in [
+        (:gradient, ArgumentError),
+        (:large_gradient, OverflowError),
+    ]
+        invalid_model = InvalidTrainingModel(2, failure)
+        invalid_state = init_train_state(
+            Xoshiro(20260829),
+            invalid_model,
+            clipping_trainer,
+        )
+        parameters_before = deepcopy(invalid_state.parameters)
+        optimizer_state_before = deepcopy(invalid_state.optimizer_state)
+        step_before = invalid_state.step
+
+        @test_throws exception_type train_step!(
+            clipping_trainer,
+            invalid_state,
+            invalid_batch,
+        )
+        @test _tree_isapprox(
+            invalid_state.parameters,
+            parameters_before;
+            atol=0,
+            rtol=0,
+        )
+        @test _tree_isapprox(
+            invalid_state.optimizer_state,
+            optimizer_state_before;
+            atol=0,
+            rtol=0,
+        )
+        @test invalid_state.step == step_before
+    end
+
+    no_return_trainer = TrainerGPT(return_gradients=false)
+    no_return_state = init_train_state(
+        Xoshiro(20260829),
+        InvalidTrainingModel(2, :valid),
+        no_return_trainer,
+    )
+    no_return_state, no_return_loss, returned_gradients = train_step!(
+        no_return_trainer,
+        no_return_state,
+        invalid_batch,
+    )
+    @test isfinite(no_return_loss)
+    @test returned_gradients === nothing
+    @test no_return_state.step == 1
+
+    gradients = (; value=Float32[3, 4])
+    @test_throws ArgumentError clip_global_gradient_norm(gradients, true)
+    @test_throws ArgumentError clip_global_gradient_norm(gradients, Inf)
+    @test_throws ArgumentError clip_global_gradient_norm(gradients, big"1e1000")
+    @test_throws OverflowError clip_global_gradient_norm(gradients, 1.0e-100)
+    @test_throws ArgumentError clip_global_gradient_norm(
+        gradients, 1.0f0; epsilon=true,
+    )
+    @test_throws OverflowError clip_global_gradient_norm(
+        gradients, 1.0f0; epsilon=1.0e-100,
+    )
+    @test_throws ArgumentError clip_global_gradient_norm(
+        (; value=Float32[Inf]), 1.0f0,
+    )
+    @test_throws ArgumentError clip_global_gradient_norm(
+        (; value=Float32[NaN]), 1.0f0,
+    )
+    @test_throws OverflowError clip_global_gradient_norm(
+        (; value=Float32[1.0f19]), nextfloat(0.0f0),
+    )
+
+    checkpoint_with_boolean_progress = (;
+        trainer,
+        train_state=(; step=0),
+        progress=(; epoch=true, batch=0, step=0),
+    )
+    @test_throws ArgumentError resume_gpt!(
+        checkpoint_with_boolean_progress,
+        (),
+    )
+    checkpoint_with_overflowing_batch = (;
+        trainer,
+        train_state=(; step=0),
+        progress=(; epoch=1, batch=typemax(Int), step=0),
+    )
+    @test_throws ArgumentError resume_gpt!(
+        checkpoint_with_overflowing_batch,
+        (),
+    )
+    checkpoint_with_mismatched_step = (;
+        trainer,
+        train_state=(; step=1),
+        progress=(; epoch=1, batch=0, step=2),
+    )
+    @test_throws ArgumentError resume_gpt!(
+        checkpoint_with_mismatched_step,
+        (),
+    )
+    checkpoint_with_missing_step = (;
+        trainer,
+        train_state=(; step=1),
+        progress=(; epoch=1, batch=0),
+    )
+    @test_throws ArgumentError resume_gpt!(
+        checkpoint_with_missing_step,
+        (),
+    )
+    checkpoint_past_loader = (;
+        trainer,
+        train_state=(; step=0),
+        progress=(; epoch=1, batch=2, step=0),
+    )
+    @test_throws ArgumentError resume_gpt!(
+        checkpoint_past_loader,
+        [invalid_batch],
+    )
+    checkpoint_with_impossible_position = (;
+        trainer,
+        train_state=(; step=0),
+        progress=(; epoch=0, batch=1, step=0),
+    )
+    @test_throws ArgumentError resume_gpt!(
+        checkpoint_with_impossible_position,
+        [invalid_batch],
+    )
 end
 
 @testset "Global gradient norm clipping" begin
@@ -228,6 +591,68 @@ end
 
         @test saved_path == abspath(path)
         @test isfile(path)
+        @test_throws ArgumentError save_checkpoint(
+            joinpath(directory, "invalid-progress.checkpoint"),
+            model,
+            tokenizer,
+            trainer,
+            interrupted_state;
+            progress=(; epoch=true, batch=0),
+        )
+        @test_throws ArgumentError save_checkpoint(
+            joinpath(directory, "mismatched-progress-step.checkpoint"),
+            model,
+            tokenizer,
+            trainer,
+            interrupted_state;
+            progress=(; epoch=1, batch=1, step=interrupted_state.step + 1),
+        )
+        @test_throws ArgumentError save_checkpoint(
+            joinpath(directory, "impossible-progress-position.checkpoint"),
+            model,
+            tokenizer,
+            trainer,
+            interrupted_state;
+            progress=(; epoch=0, batch=1),
+        )
+
+        raw_payload = open(path, "r") do io
+            deserialize(io)
+        end
+        tampered_progresses = (
+            (; epoch=1, batch=1, step=raw_payload.step + 1),
+            (; epoch=true, batch=1, step=raw_payload.step),
+            (; epoch=1, batch=-1, step=raw_payload.step),
+            (; epoch=1, batch=1, step=true),
+            (; epoch=0, batch=1, step=raw_payload.step),
+            (; epoch=1, batch=1),
+        )
+        for (index, tampered_progress) in enumerate(tampered_progresses)
+            tampered_path = joinpath(directory, "tampered-progress-$index.checkpoint")
+            open(tampered_path, "w") do io
+                serialize(io, merge(raw_payload, (; progress=tampered_progress)))
+            end
+            @test_throws ArgumentError load_checkpoint(
+                tampered_path;
+                backend=:zygote,
+            )
+        end
+        for (label, invalid_version) in (
+            ("boolean", true),
+            ("overflow", big(typemax(Int)) + 1),
+        )
+            invalid_version_path = joinpath(
+                directory,
+                "invalid-$label-version.checkpoint",
+            )
+            open(invalid_version_path, "w") do io
+                serialize(
+                    io,
+                    merge(raw_payload, (; format_version=invalid_version)),
+                )
+            end
+            @test_throws ArgumentError load_checkpoint(invalid_version_path)
+        end
 
         checkpoint = load_checkpoint(path; backend=:zygote)
         @test checkpoint.format_version == CHECKPOINT_FORMAT_VERSION
@@ -276,6 +701,42 @@ end
             atol=2.0f-6,
             rtol=2.0f-5,
         )
+
+        completed_events = NamedTuple[]
+        completed_checkpoint = merge(
+            checkpoint,
+            (;
+                progress=(;
+                    epoch=1,
+                    batch=length(loader),
+                    step=checkpoint.train_state.step,
+                ),
+            ),
+        )
+        completed_state, completed_losses = resume_gpt!(
+            completed_checkpoint,
+            loader;
+            epochs=1,
+            max_steps=1,
+            callback=event -> push!(completed_events, event),
+        )
+        @test completed_state.step == checkpoint.train_state.step + 1
+        @test length(completed_losses) == 1
+        @test length(completed_events) == 1
+        @test only(completed_events).epoch == 2
+        @test only(completed_events).batch == 1
+
+        progress_past_loader = merge(
+            checkpoint,
+            (;
+                progress=(;
+                    epoch=1,
+                    batch=length(loader) + 1,
+                    step=checkpoint.train_state.step,
+                ),
+            ),
+        )
+        @test_throws ArgumentError resume_gpt!(progress_past_loader, loader)
     end
 end
 

@@ -16,7 +16,11 @@ function _migrate_v1_model_config(config::NamedTuple)
 end
 
 function _migrate_checkpoint_payload(payload::NamedTuple)
-    source_version = Int(payload.format_version)
+    source_version = _training_loop_int(
+        payload.format_version,
+        "checkpoint format version";
+        allow_zero=true,
+    )
 
     if source_version == CHECKPOINT_FORMAT_VERSION
         return payload, source_version
@@ -166,13 +170,73 @@ function _tokenizer_from_payload(payload)
 end
 
 function _normalize_progress(progress, step::Int)
-    epoch = hasproperty(progress, :epoch) ? Int(progress.epoch) : 0
-    batch = hasproperty(progress, :batch) ? Int(progress.batch) : 0
+    epoch = hasproperty(progress, :epoch) ? _training_loop_int(
+        progress.epoch,
+        "checkpoint progress epoch";
+        allow_zero=true,
+    ) : 0
+    batch = hasproperty(progress, :batch) ? _training_loop_int(
+        progress.batch,
+        "checkpoint progress batch";
+        allow_zero=true,
+    ) : 0
+    progress_step = hasproperty(progress, :step) ? _training_loop_int(
+        progress.step,
+        "checkpoint progress step";
+        allow_zero=true,
+    ) : step
+    progress_step == step || throw(ArgumentError(
+        "checkpoint progress step $progress_step does not match train_state.step $step",
+    ))
+    _validate_checkpoint_progress_position(epoch, batch)
 
-    epoch >= 0 || throw(ArgumentError("checkpoint progress epoch must be non-negative"))
-    batch >= 0 || throw(ArgumentError("checkpoint progress batch must be non-negative"))
+    return (; epoch, batch, step=progress_step)
+end
 
-    return (; epoch, batch, step)
+function _validate_checkpoint_progress_position(epoch::Int, batch::Int)
+    epoch == 0 && batch > 0 && throw(ArgumentError(
+        "checkpoint progress batch must be zero when epoch is zero",
+    ))
+    return nothing
+end
+
+function _restore_checkpoint_progress(progress, step::Int, source_format_version::Int)
+    progress isa NamedTuple || throw(ArgumentError(
+        "checkpoint progress must be a named tuple",
+    ))
+    hasproperty(progress, :epoch) || throw(ArgumentError(
+        "checkpoint progress has no epoch",
+    ))
+    hasproperty(progress, :batch) || throw(ArgumentError(
+        "checkpoint progress has no batch",
+    ))
+    epoch = _training_loop_int(
+        progress.epoch,
+        "checkpoint progress epoch";
+        allow_zero=true,
+    )
+    batch = _training_loop_int(
+        progress.batch,
+        "checkpoint progress batch";
+        allow_zero=true,
+    )
+    progress_step = if hasproperty(progress, :step)
+        _training_loop_int(
+            progress.step,
+            "checkpoint progress step";
+            allow_zero=true,
+        )
+    elseif source_format_version < CHECKPOINT_FORMAT_VERSION
+        step
+    else
+        throw(ArgumentError("checkpoint progress has no step"))
+    end
+    progress_step == step || throw(ArgumentError(
+        "checkpoint progress step $progress_step does not match restored train_state.step $step",
+    ))
+    _validate_checkpoint_progress_position(epoch, batch)
+
+    return (; epoch, batch, step=progress_step)
 end
 
 """
@@ -201,6 +265,11 @@ function save_checkpoint(
     _model_tokenizer_vocab_compatible(model.vocab_size, tokenizer) || throw(ArgumentError(
         "model vocabulary size $(model.vocab_size) is incompatible with tokenizer vocabulary size $(vocab_size(tokenizer))",
     ))
+    step = _training_loop_int(
+        train_state.step,
+        "train_state.step";
+        allow_zero=true,
+    )
 
     host = Lux.cpu_device()
     payload = (;
@@ -211,14 +280,14 @@ function save_checkpoint(
         states=host(train_state.states),
         optimizer=trainer.optimizer,
         optimizer_state=host(train_state.optimizer_state),
-        step=Int(train_state.step),
+        step,
         trainer_config=(;
             backend=trainer.backend,
             return_gradients=trainer.return_gradients,
             static_shapes=trainer.static_shapes,
             max_grad_norm=trainer.max_grad_norm,
         ),
-        progress=_normalize_progress(progress, Int(train_state.step)),
+        progress=_normalize_progress(progress, step),
         rng=rng === nothing ? nothing : deepcopy(rng),
         train_config=deepcopy(train_config),
         metrics=deepcopy(metrics),
@@ -243,6 +312,11 @@ function save_checkpoint(
 end
 
 function _restore_train_state(model, trainer, payload)
+    step = _training_loop_int(
+        payload.step,
+        "checkpoint training step";
+        allow_zero=true,
+    )
     parameters, states, optimizer_state = trainer.device((
         payload.parameters,
         payload.states,
@@ -268,7 +342,7 @@ function _restore_train_state(model, trainer, payload)
         base_state.states,
         base_state.optimizer,
         optimizer_state,
-        Int(payload.step),
+        step,
     )
 end
 
@@ -336,6 +410,14 @@ function load_checkpoint(
         max_grad_norm=resolved_max_grad_norm,
     )
     train_state = _restore_train_state(model, trainer, payload)
+    hasproperty(payload, :progress) || throw(ArgumentError(
+        "checkpoint has no progress",
+    ))
+    progress = _restore_checkpoint_progress(
+        payload.progress,
+        train_state.step,
+        source_format_version,
+    )
 
     return (;
         format_version=payload.format_version,
@@ -345,7 +427,7 @@ function load_checkpoint(
         trainer,
         train_state,
         rng=payload.rng,
-        progress=payload.progress,
+        progress,
         train_config=payload.train_config,
         metrics=payload.metrics,
         metadata=payload.metadata,
@@ -361,7 +443,7 @@ Resume from the next unprocessed batch recorded in `checkpoint.progress`.
 function resume_gpt!(
     checkpoint,
     loader;
-    epochs::Int=1,
+    epochs::Integer=1,
     max_steps=nothing,
     validation_loader=nothing,
     evaluate_every=nothing,
@@ -378,12 +460,59 @@ function resume_gpt!(
     ))
 
     progress = checkpoint.progress
-    start_epoch = max(1, Int(progress.epoch))
-    start_batch = Int(progress.batch) + 1
-
-    if start_batch > length(loader)
+    hasproperty(progress, :epoch) || throw(ArgumentError(
+        "checkpoint progress has no epoch",
+    ))
+    hasproperty(progress, :batch) || throw(ArgumentError(
+        "checkpoint progress has no batch",
+    ))
+    hasproperty(progress, :step) || throw(ArgumentError(
+        "checkpoint progress has no step",
+    ))
+    hasproperty(checkpoint.train_state, :step) || throw(ArgumentError(
+        "checkpoint train_state has no step",
+    ))
+    restored_step = _training_loop_int(
+        checkpoint.train_state.step,
+        "checkpoint training step";
+        allow_zero=true,
+    )
+    saved_step = _training_loop_int(
+        progress.step,
+        "checkpoint progress step";
+        allow_zero=true,
+    )
+    saved_step == restored_step || throw(ArgumentError(
+        "checkpoint progress step $saved_step does not match train_state.step $restored_step",
+    ))
+    saved_epoch = _training_loop_int(
+        progress.epoch,
+        "checkpoint progress epoch";
+        allow_zero=true,
+    )
+    saved_batch = _training_loop_int(
+        progress.batch,
+        "checkpoint progress batch";
+        allow_zero=true,
+    )
+    _validate_checkpoint_progress_position(saved_epoch, saved_batch)
+    loader_length = _training_loop_int(
+        length(loader),
+        "loader length";
+        allow_zero=true,
+    )
+    saved_batch <= loader_length || throw(ArgumentError(
+        "checkpoint progress batch $saved_batch exceeds loader length $loader_length",
+    ))
+    start_epoch = max(1, saved_epoch)
+    start_batch = if saved_batch == loader_length
+        start_epoch < typemax(Int) || throw(ArgumentError(
+            "checkpoint progress epoch is too large to resume",
+        ))
         start_epoch += 1
-        start_batch = 1
+        1
+    else
+        saved_batch + 1
     end
 
     return train_gpt!(
