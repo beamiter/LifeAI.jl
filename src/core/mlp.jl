@@ -3,6 +3,21 @@ using ConcreteStructs
 using NNlib: batched_mul, gather, softmax, swish
 using Random: AbstractRNG
 
+function _mlp_positive_host_int(value, label::AbstractString)
+    value isa Integer && !(value isa Bool) || throw(ArgumentError(
+        "$label must be an integer",
+    ))
+    resolved = try
+        Int(value)
+    catch error
+        error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
+            rethrow()
+        throw(ArgumentError("$label is outside the host integer range"))
+    end
+    resolved > 0 || throw(ArgumentError("$label must be positive"))
+    return resolved
+end
+
 """
     SwiGLU(d_model, hidden_dim; use_bias=false)
 
@@ -64,6 +79,21 @@ function (mlp::SwiGLU)(x, ps, st::NamedTuple)
     )
 end
 
+function _qwen3_routing_controls(num_experts, experts_per_token, normalize)
+    num_experts > 0 || throw(ArgumentError(
+        "router must contain at least one expert",
+    ))
+    resolved_experts_per_token = _mlp_positive_host_int(
+        experts_per_token,
+        "experts_per_token",
+    )
+    resolved_experts_per_token <= num_experts || throw(ArgumentError(
+        "experts_per_token must be in 1:num_experts",
+    ))
+    normalize isa Bool || throw(ArgumentError("normalize must be Bool"))
+    return resolved_experts_per_token
+end
+
 """
     qwen3_topk_routing(router_logits, experts_per_token; normalize=true)
 
@@ -82,14 +112,15 @@ conversion to the Float32 routing precision.
 """
 function qwen3_topk_routing(
     router_logits::AbstractMatrix,
-    experts_per_token::Int;
-    normalize::Bool=true,
+    experts_per_token;
+    normalize=true,
 )
     num_experts, num_tokens = size(router_logits)
-    num_experts > 0 || throw(ArgumentError("router must contain at least one expert"))
-    1 <= experts_per_token <= num_experts || throw(ArgumentError(
-        "experts_per_token must be in 1:num_experts",
-    ))
+    experts_per_token = _qwen3_routing_controls(
+        num_experts,
+        experts_per_token,
+        normalize,
+    )
 
     logits = Float32.(router_logits)
     all(isfinite, logits) || throw(ArgumentError(
@@ -129,13 +160,17 @@ prevents invalid device indexing without disguising a poisoned model output.
 """
 function qwen3_device_topk_routing(
     router_logits::AbstractMatrix,
-    experts_per_token::Int;
-    normalize::Bool=true,
+    experts_per_token;
+    normalize=true,
 )
     num_experts, num_tokens = size(router_logits)
-    num_experts > 0 || throw(ArgumentError("router must contain at least one expert"))
-    1 <= experts_per_token <= num_experts || throw(ArgumentError(
-        "experts_per_token must be in 1:num_experts",
+    experts_per_token = _qwen3_routing_controls(
+        num_experts,
+        experts_per_token,
+        normalize,
+    )
+    num_experts <= typemax(Int32) || throw(ArgumentError(
+        "device router expert count exceeds the Int32 index range",
     ))
 
     logits = Float32.(router_logits)
@@ -208,21 +243,6 @@ arrays use compact routes: the portable fallback is route-major
 gather/matmul/combine, while CUDA activates indexed kernels through a package
 extension. Grouped-GEMM/tensor-core tuning remains a separate concern.
 """
-function _mlp_positive_host_int(value, label::AbstractString)
-    value isa Integer && !(value isa Bool) || throw(ArgumentError(
-        "$label must be an integer",
-    ))
-    resolved = try
-        Int(value)
-    catch error
-        error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
-            rethrow()
-        throw(ArgumentError("$label is outside the host integer range"))
-    end
-    resolved > 0 || throw(ArgumentError("$label must be positive"))
-    return resolved
-end
-
 struct Qwen3SparseMoE <: AbstractLuxLayer
     d_model::Int
     hidden_dim::Int

@@ -9,6 +9,13 @@ using LifeAI:
     qwen3_moe_device_forward,
     qwen3_topk_routing
 
+struct _OversizedQwen3Router <: AbstractMatrix{Float32} end
+
+Base.size(::_OversizedQwen3Router) = (Int(typemax(Int32)) + 1, 0)
+Base.getindex(::_OversizedQwen3Router, ::Int, ::Int) = error(
+    "oversized router elements must not be accessed",
+)
+
 @testset "Qwen3 MoE compact device routing matches the dense route contract" begin
     rng = Xoshiro(20260811)
     logits = randn(rng, Float32, 8, 11)
@@ -82,6 +89,35 @@ using LifeAI:
         @test length(unique(indices)) == 2
         @test all(isnan, compact_poisoned.routing_weights)
     end
+end
+
+@testset "Qwen3 device router controls and index range are strict" begin
+    logits = reshape(Float32[4, 3, 2, 1], :, 1)
+    expected = qwen3_device_topk_routing(logits, 2)
+    for count in (Int32(2), UInt8(2), big(2))
+        actual = qwen3_device_topk_routing(logits, count)
+        @test actual.expert_indices == expected.expert_indices
+        @test actual.routing_weights == expected.routing_weights
+    end
+
+    oversized = big(typemax(Int)) + 1
+    for invalid_count in (true, 2.0, oversized)
+        @test_throws ArgumentError qwen3_device_topk_routing(
+            logits,
+            invalid_count,
+        )
+    end
+    for invalid_normalize in (0, 1, :yes, nothing)
+        @test_throws ArgumentError qwen3_device_topk_routing(
+            logits,
+            2;
+            normalize=invalid_normalize,
+        )
+    end
+    @test_throws ArgumentError qwen3_device_topk_routing(
+        _OversizedQwen3Router(),
+        1,
+    )
 end
 
 @testset "Qwen3 MoE route-major expert compute matches the all-expert oracle" begin

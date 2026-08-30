@@ -39,6 +39,26 @@ using LifeAI: Qwen3SparseMoE, qwen3_topk_routing
     @test_throws ArgumentError Qwen3SparseMoE(4, 3, 4, 5)
 end
 
+@testset "Qwen3 host router controls are strict host values" begin
+    logits = reshape(Float32[4, 3, 2, 1], :, 1)
+    @test qwen3_topk_routing(logits, Int32(2)) ==
+        qwen3_topk_routing(logits, 2)
+    @test qwen3_topk_routing(logits, big(2); normalize=false) ==
+        qwen3_topk_routing(logits, 2; normalize=false)
+
+    oversized = big(typemax(Int)) + 1
+    for invalid_count in (true, 2.0, oversized)
+        @test_throws ArgumentError qwen3_topk_routing(logits, invalid_count)
+    end
+    for invalid_normalize in (0, 1, :yes, nothing)
+        @test_throws ArgumentError qwen3_topk_routing(
+            logits,
+            2;
+            normalize=invalid_normalize,
+        )
+    end
+end
+
 @testset "Qwen3 sparse MoE construction validates every entry point" begin
     layer = Qwen3SparseMoE(
         Int32(4),

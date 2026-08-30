@@ -323,6 +323,8 @@ Chapter 03 reproducible-training test.
      iterable inputs while replacing mixed-payload method errors.
 161. Seal Qwen3 sparse-MoE construction behind strict host dimensions and a
      literal-Bool routing-normalization policy across every constructor entry.
+162. Normalize Qwen3 host and device top-k controls through strict host
+     integers and literal Bool flags, guarding device expert indices at Int32.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
