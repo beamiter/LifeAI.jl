@@ -6,6 +6,7 @@ using Random: Xoshiro
 import LifeAI
 using LifeAI:
     GPTModel,
+    Qwen3DeploymentProfile,
     decode_hf_qwen3_bf16!,
     fit_qwen3_chat_context,
     generate_hf_qwen3_bf16!,
@@ -242,6 +243,149 @@ end
         manifest["files"][1]["name"] = "../hello.bin"
         write(path, JSON3.write(manifest))
         @test_throws ArgumentError verify_qwen3_deployment_assets(directory, path)
+    end
+end
+
+@testset "Qwen3 deployment profile constructor is strict" begin
+    loaded = load_qwen3_deployment_profile(_QWEN3_CUDA_DEPLOYMENT_PROFILE_PATH)
+    base = ntuple(
+        index -> getfield(loaded, index),
+        fieldcount(Qwen3DeploymentProfile),
+    )
+    replace_field = (values, index, value) -> ntuple(
+        current -> current == index ? value : values[current],
+        length(values),
+    )
+    integer_fields = (
+        1 => "schema_version",
+        7 => "context_tokens",
+        8 => "max_prompt_tokens",
+        9 => "max_new_tokens",
+        10 => "prefill_chunk_tokens",
+        11 => "prefill_reclaim_interval_chunks",
+        12 => "decode_reclaim_interval_tokens",
+        16 => "top_k",
+        18 => "minimum_gpu_bytes",
+        19 => "workspace_reserve_bytes",
+    )
+    string_fields = (
+        2 => "name",
+        3 => "model_id",
+        4 => "revision",
+        20 => "asset_manifest",
+    )
+    symbol_fields = (5 => "variant", 6 => "weight_dtype", 14 => "strategy")
+
+    normalized_values = ntuple(length(base)) do index
+        if any(first(field) == index for field in integer_fields)
+            big(base[index])
+        elseif any(first(field) == index for field in string_fields)
+            SubString("x$(base[index])", 2)
+        elseif index in (15, 17)
+            BigFloat(base[index])
+        else
+            base[index]
+        end
+    end
+    normalized = Qwen3DeploymentProfile(normalized_values...)
+    @test ntuple(index -> getfield(normalized, index), length(base)) == base
+    @test all(
+        getfield(normalized, index) isa Int for (index, _) in integer_fields
+    )
+    @test all(
+        getfield(normalized, index) isa String for (index, _) in string_fields
+    )
+    @test normalized.temperature isa Float32
+    @test normalized.top_p isa Float32
+
+    too_large = big(typemax(Int)) + 1
+    for (index, label) in integer_fields
+        for (value, message) in (
+            (true, "$label must be an integer"),
+            (1.0, "$label must be an integer"),
+            (too_large, "$label is outside the host integer range"),
+        )
+            failure = _qwen3_deployment_captured_error() do
+                Qwen3DeploymentProfile(replace_field(base, index, value)...)
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+    end
+
+    for (index, label) in string_fields
+        failure = _qwen3_deployment_captured_error() do
+            Qwen3DeploymentProfile(replace_field(base, index, Symbol(label))...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: $label must be a string"
+    end
+    for (index, label) in symbol_fields
+        failure = _qwen3_deployment_captured_error() do
+            Qwen3DeploymentProfile(replace_field(base, index, label)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: $label must be a Symbol"
+    end
+    thinking_failure = _qwen3_deployment_captured_error() do
+        Qwen3DeploymentProfile(replace_field(base, 13, 0)...)
+    end
+    @test thinking_failure isa ArgumentError
+    @test sprint(showerror, thinking_failure) ==
+        "ArgumentError: enable_thinking must be a boolean"
+
+    for (index, label) in ((15, "temperature"), (17, "top_p"))
+        for (value, message) in (
+            (true, "$label must be a real number"),
+            (
+                big(10)^1000,
+                "$label must be positive and finite at Float32 precision",
+            ),
+            (
+                BigFloat("1e-1000"),
+                "$label must be positive and finite at Float32 precision",
+            ),
+        )
+            failure = _qwen3_deployment_captured_error() do
+                Qwen3DeploymentProfile(replace_field(base, index, value)...)
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+    end
+
+    semantic_failures = (
+        (1, 2, "unsupported Qwen3 deployment profile schema_version 2"),
+        (2, "", "deployment profile name must not be empty"),
+        (
+            3,
+            "wrong-model",
+            "profile model_id does not match the frozen qwen3_8b spec",
+        ),
+        (
+            4,
+            "moving-target",
+            "profile revision does not match the frozen qwen3_8b spec",
+        ),
+        (
+            6,
+            :f16,
+            "the Week 19 deployment runtime currently requires weight_dtype=bf16",
+        ),
+        (14, :config, "strategy must be greedy or sample"),
+        (16, 0, "top_k must be positive"),
+        (17, 1.5, "top_p must be finite and in (0, 1]"),
+        (19, -1, "workspace_reserve_bytes must be non-negative"),
+        (20, "", "asset_manifest must not be empty"),
+    )
+    for (index, value, message) in semantic_failures
+        failure = _qwen3_deployment_captured_error() do
+            Qwen3DeploymentProfile(replace_field(base, index, value)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
     end
 end
 

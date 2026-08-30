@@ -27,6 +27,34 @@ const _QWEN3_DEPLOYMENT_PROFILE_FIELDS = Set((
     "asset_manifest",
 ))
 
+function _qwen3_profile_string(value, label::AbstractString)
+    value isa AbstractString || throw(ArgumentError("$label must be a string"))
+    return String(value)
+end
+
+function _qwen3_profile_symbol(value, label::AbstractString)
+    value isa Symbol || throw(ArgumentError("$label must be a Symbol"))
+    return value
+end
+
+function _qwen3_profile_positive_float32(value, label::AbstractString)
+    value isa Real && !(value isa Bool) || throw(ArgumentError(
+        "$label must be a real number",
+    ))
+    resolved = try
+        Float32(value)
+    catch error
+        error isa InterruptException && rethrow()
+        throw(ArgumentError(
+            "$label must be positive and finite at Float32 precision",
+        ))
+    end
+    isfinite(resolved) && resolved > 0 || throw(ArgumentError(
+        "$label must be positive and finite at Float32 precision",
+    ))
+    return resolved
+end
+
 """
     Qwen3DeploymentProfile
 
@@ -55,6 +83,65 @@ struct Qwen3DeploymentProfile
     minimum_gpu_bytes::Int
     workspace_reserve_bytes::Int
     asset_manifest::String
+
+    function Qwen3DeploymentProfile(
+        schema_version,
+        name,
+        model_id,
+        revision,
+        variant,
+        weight_dtype,
+        context_tokens,
+        max_prompt_tokens,
+        max_new_tokens,
+        prefill_chunk_tokens,
+        prefill_reclaim_interval_chunks,
+        decode_reclaim_interval_tokens,
+        enable_thinking,
+        strategy,
+        temperature,
+        top_k,
+        top_p,
+        minimum_gpu_bytes,
+        workspace_reserve_bytes,
+        asset_manifest,
+    )
+        enable_thinking isa Bool || throw(ArgumentError(
+            "enable_thinking must be a boolean",
+        ))
+        profile = new(
+            _strict_host_int(schema_version, "schema_version"),
+            _qwen3_profile_string(name, "name"),
+            _qwen3_profile_string(model_id, "model_id"),
+            _qwen3_profile_string(revision, "revision"),
+            _qwen3_profile_symbol(variant, "variant"),
+            _qwen3_profile_symbol(weight_dtype, "weight_dtype"),
+            _strict_host_int(context_tokens, "context_tokens"),
+            _strict_host_int(max_prompt_tokens, "max_prompt_tokens"),
+            _strict_host_int(max_new_tokens, "max_new_tokens"),
+            _strict_host_int(prefill_chunk_tokens, "prefill_chunk_tokens"),
+            _strict_host_int(
+                prefill_reclaim_interval_chunks,
+                "prefill_reclaim_interval_chunks",
+            ),
+            _strict_host_int(
+                decode_reclaim_interval_tokens,
+                "decode_reclaim_interval_tokens",
+            ),
+            enable_thinking,
+            _qwen3_profile_symbol(strategy, "strategy"),
+            _qwen3_profile_positive_float32(temperature, "temperature"),
+            _strict_host_int(top_k, "top_k"),
+            _qwen3_profile_positive_float32(top_p, "top_p"),
+            _strict_host_int(minimum_gpu_bytes, "minimum_gpu_bytes"),
+            _strict_host_int(
+                workspace_reserve_bytes,
+                "workspace_reserve_bytes",
+            ),
+            _qwen3_profile_string(asset_manifest, "asset_manifest"),
+        )
+        return _validate_qwen3_deployment_profile(profile)
+    end
 end
 
 function _qwen3_profile_value(object, key::String)
@@ -83,11 +170,7 @@ function _qwen3_required_string(object, key::String)
 end
 
 function _qwen3_required_integer(object, key::String)
-    value = _qwen3_profile_value(object, key)
-    value isa Integer && !(value isa Bool) || throw(ArgumentError(
-        "$key must be an integer",
-    ))
-    return Int(value)
+    return _strict_host_int(_qwen3_profile_value(object, key), key)
 end
 
 function _qwen3_required_real(object, key::String)
@@ -104,56 +187,25 @@ function _qwen3_required_bool(object, key::String)
     return Bool(value)
 end
 
-"""
-    load_qwen3_deployment_profile(path)
-
-Load and validate a version-1 Qwen3 deployment JSON file. Unknown fields and
-values that disagree with the frozen dense-family registry are rejected.
-"""
-function load_qwen3_deployment_profile(path::AbstractString)
-    isfile(path) || throw(ArgumentError("deployment profile does not exist: $path"))
-    object = _qwen3_json_object(path, "Qwen3 deployment profile")
-    unknown = sort!(collect(setdiff(
-        Set(String.(collect(keys(object)))),
-        _QWEN3_DEPLOYMENT_PROFILE_FIELDS,
-    )))
-    isempty(unknown) || throw(ArgumentError(
-        "unknown Qwen3 deployment profile field(s): $(join(unknown, ", "))",
-    ))
-
-    profile = Qwen3DeploymentProfile(
-        _qwen3_required_integer(object, "schema_version"),
-        _qwen3_required_string(object, "name"),
-        _qwen3_required_string(object, "model_id"),
-        _qwen3_required_string(object, "revision"),
-        Symbol(_qwen3_required_string(object, "variant")),
-        Symbol(_qwen3_required_string(object, "weight_dtype")),
-        _qwen3_required_integer(object, "context_tokens"),
-        _qwen3_required_integer(object, "max_prompt_tokens"),
-        _qwen3_required_integer(object, "max_new_tokens"),
-        _qwen3_required_integer(object, "prefill_chunk_tokens"),
-        _qwen3_required_integer(object, "prefill_reclaim_interval_chunks"),
-        _qwen3_required_integer(object, "decode_reclaim_interval_tokens"),
-        _qwen3_required_bool(object, "enable_thinking"),
-        Symbol(_qwen3_required_string(object, "strategy")),
-        Float32(_qwen3_required_real(object, "temperature")),
-        _qwen3_required_integer(object, "top_k"),
-        Float32(_qwen3_required_real(object, "top_p")),
-        _qwen3_required_integer(object, "minimum_gpu_bytes"),
-        _qwen3_required_integer(object, "workspace_reserve_bytes"),
-        _qwen3_required_string(object, "asset_manifest"),
-    )
-
+function _validate_qwen3_deployment_profile(profile::Qwen3DeploymentProfile)
     profile.schema_version == 1 || throw(ArgumentError(
         "unsupported Qwen3 deployment profile schema_version $(profile.schema_version)",
     ))
-    !isempty(profile.name) || throw(ArgumentError("deployment profile name must not be empty"))
+    !isempty(profile.name) || throw(ArgumentError(
+        "deployment profile name must not be empty",
+    ))
     profile.weight_dtype === :bf16 || throw(ArgumentError(
         "the Week 19 deployment runtime currently requires weight_dtype=bf16",
     ))
-    profile.context_tokens > 0 || throw(ArgumentError("context_tokens must be positive"))
-    profile.max_prompt_tokens > 0 || throw(ArgumentError("max_prompt_tokens must be positive"))
-    profile.max_new_tokens > 0 || throw(ArgumentError("max_new_tokens must be positive"))
+    profile.context_tokens > 0 || throw(ArgumentError(
+        "context_tokens must be positive",
+    ))
+    profile.max_prompt_tokens > 0 || throw(ArgumentError(
+        "max_prompt_tokens must be positive",
+    ))
+    profile.max_new_tokens > 0 || throw(ArgumentError(
+        "max_new_tokens must be positive",
+    ))
     profile.prefill_chunk_tokens > 0 || throw(ArgumentError(
         "prefill_chunk_tokens must be positive",
     ))
@@ -206,6 +258,48 @@ function load_qwen3_deployment_profile(path::AbstractString)
     profile.context_tokens <= spec.max_position_embeddings || throw(ArgumentError(
         "profile context exceeds the checkpoint's native position limit",
     ))
+    return profile
+end
+
+"""
+    load_qwen3_deployment_profile(path)
+
+Load and validate a version-1 Qwen3 deployment JSON file. Unknown fields and
+values that disagree with the frozen dense-family registry are rejected.
+"""
+function load_qwen3_deployment_profile(path::AbstractString)
+    isfile(path) || throw(ArgumentError("deployment profile does not exist: $path"))
+    object = _qwen3_json_object(path, "Qwen3 deployment profile")
+    unknown = sort!(collect(setdiff(
+        Set(String.(collect(keys(object)))),
+        _QWEN3_DEPLOYMENT_PROFILE_FIELDS,
+    )))
+    isempty(unknown) || throw(ArgumentError(
+        "unknown Qwen3 deployment profile field(s): $(join(unknown, ", "))",
+    ))
+
+    profile = Qwen3DeploymentProfile(
+        _qwen3_required_integer(object, "schema_version"),
+        _qwen3_required_string(object, "name"),
+        _qwen3_required_string(object, "model_id"),
+        _qwen3_required_string(object, "revision"),
+        Symbol(_qwen3_required_string(object, "variant")),
+        Symbol(_qwen3_required_string(object, "weight_dtype")),
+        _qwen3_required_integer(object, "context_tokens"),
+        _qwen3_required_integer(object, "max_prompt_tokens"),
+        _qwen3_required_integer(object, "max_new_tokens"),
+        _qwen3_required_integer(object, "prefill_chunk_tokens"),
+        _qwen3_required_integer(object, "prefill_reclaim_interval_chunks"),
+        _qwen3_required_integer(object, "decode_reclaim_interval_tokens"),
+        _qwen3_required_bool(object, "enable_thinking"),
+        Symbol(_qwen3_required_string(object, "strategy")),
+        _qwen3_required_real(object, "temperature"),
+        _qwen3_required_integer(object, "top_k"),
+        _qwen3_required_real(object, "top_p"),
+        _qwen3_required_integer(object, "minimum_gpu_bytes"),
+        _qwen3_required_integer(object, "workspace_reserve_bytes"),
+        _qwen3_required_string(object, "asset_manifest"),
+    )
     return profile
 end
 

@@ -255,6 +255,8 @@ Chapter 03 reproducible-training test.
      preventing Boolean equality from masquerading as numeric zero.
 127. Fail closed on non-string Qwen3 embedding template token metadata instead
      of leaking element-conversion exceptions.
+128. Enforce the full Qwen3 deployment profile contract at direct construction,
+     including strict scalar types and Float32 sampling boundaries.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
