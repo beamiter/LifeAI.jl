@@ -489,11 +489,50 @@ end
             9 11
             13 15
         ]
+        missing_directory = joinpath(directory, "missing-model")
+        too_large = big(typemax(Int)) + 1
+        for (invalid_tokens, message) in (
+            (reshape(Bool[true], 1, 1), "activation calibration token id must be an integer"),
+            (
+                reshape(ComplexF64[1 + 0im], 1, 1),
+                "activation calibration token id must be an integer",
+            ),
+            (
+                reshape(Any["1"], 1, 1),
+                "activation calibration token id must be an integer",
+            ),
+            (
+                reshape(BigInt[too_large], 1, 1),
+                "activation calibration token id is outside the host integer range",
+            ),
+        )
+            @test _activation_calibration_argument_error_message() do
+                calibrate_hf_qwen3_activations(
+                    missing_directory,
+                    invalid_tokens;
+                    max_seq_len=1,
+                )
+            end == message
+        end
+        for (invalid_limit, message) in (
+            (true, "max_seq_len must be an integer"),
+            (1.0, "max_seq_len must be an integer"),
+            (too_large, "max_seq_len is outside the host integer range"),
+            (0, "max_seq_len must be positive"),
+        )
+            @test _activation_calibration_argument_error_message() do
+                calibrate_hf_qwen3_activations(
+                    missing_directory,
+                    reshape([1], 1, 1);
+                    max_seq_len=invalid_limit,
+                )
+            end == message
+        end
         first = calibrate_hf_qwen3_activations(
             directory,
-            tokens;
-            max_seq_len=16,
-            source="qwen3_activation_quantization-test",
+            Int128.(tokens);
+            max_seq_len=Int128(16),
+            source=SubString("xqwen3_activation_quantization-test", 2),
         )
         second = calibrate_hf_qwen3_activations(
             directory,

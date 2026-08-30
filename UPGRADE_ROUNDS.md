@@ -277,6 +277,8 @@ Chapter 03 reproducible-training test.
      overrides, avoiding attacker-sized loops over declared model depth.
 138. Reject variable-width Qwen3 quantized tensor element types before storage
      accounting can undercount object payloads or leak `sizeof` exceptions.
+139. Normalize Qwen3 activation-calibration tokens and sequence limits before
+     checkpoint I/O, rejecting Bool, non-integers, and host-range overflow.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

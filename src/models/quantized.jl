@@ -467,31 +467,38 @@ dependency.
 """
 function calibrate_hf_qwen3_activations(
     model_dir::AbstractString,
-    tokens::AbstractMatrix{<:Integer};
-    max_seq_len::Integer=max(64, size(tokens, 1)),
+    tokens::AbstractMatrix;
+    max_seq_len=max(64, size(tokens, 1)),
     variant=nothing,
     source::AbstractString="",
     accelerated::Bool=false,
     to_device=identity,
     to_host=identity,
 )
-    isdir(model_dir) || throw(ArgumentError(
-        "model directory does not exist: $model_dir",
-    ))
     size(tokens, 1) > 0 && size(tokens, 2) > 0 || throw(ArgumentError(
         "activation calibration tokens must be a non-empty matrix",
     ))
-    size(tokens, 1) <= max_seq_len || throw(ArgumentError(
+    resolved_max_seq_len = _strict_host_int(max_seq_len, "max_seq_len")
+    resolved_max_seq_len > 0 || throw(ArgumentError(
+        "max_seq_len must be positive",
+    ))
+    token_matrix = _strict_host_int_array(
+        tokens,
+        "activation calibration token id",
+    )
+    size(token_matrix, 1) <= resolved_max_seq_len || throw(ArgumentError(
         "activation calibration sequence exceeds max_seq_len",
+    ))
+    isdir(model_dir) || throw(ArgumentError(
+        "model directory does not exist: $model_dir",
     ))
     config = load_hf_qwen3_config(
         joinpath(model_dir, "config.json");
-        max_seq_len,
+        max_seq_len=resolved_max_seq_len,
         variant,
     )
     model = GPTModel(config)
     _qwen3_validate_semantics(model)
-    token_matrix = Int.(collect(tokens))
     _validate_generation_ids(token_matrix, model.vocab_size)
 
     reader = open_safetensors_reader(model_dir)
