@@ -199,7 +199,7 @@ Chapter 46 的测试从同一输入同时运行 static 与 dynamic：
 - public `generate_hf_qwen3_vl_tokens(...; cache=:static)` 与 dynamic 模式的 ids、
   trace logits、stop reason 和最终 cache timeline 一致。
 
-Chapter 46 默认离线专项最终为 `313 / 313`；其中还包含
+Chapter 46 默认离线专项最终为 `339 / 339`；其中还包含
 `max_new_tokens=typemax(Int)`，确保 prompt 与 decode append 的长度加法在任何
 allocation 前 checked/fail closed，而不是整数回绕后尝试错误大小的 storage。
 仓库级 close run 为 `9,307 passed + 1 intentional broken`、`0 failure / 0 error`；
@@ -346,6 +346,9 @@ layout，但将 prompt-sized input embeddings/final hidden 置为 `nothing`。�
 static capacity 在高层 raw preflight 与低层 token API 都使用严格宿主整数转换；Bool
 和越界 `BigInt` 不会泄漏为 `InexactError`，而且 intrinsic context 上限与
 prompt-dependent capacity 下界分别在 vision 前完成检查。
+低层 dynamic/static cache 构造器同样会在读取 parameter spec 或分配 storage 前规范
+`batch_size` 与 `capacity`；合法多宽度整数保持兼容，Bool 与宿主范围外整数统一
+fail closed。
 
 ## 一个真实 Julia API 踩坑：keyword 不能参与 dispatch
 

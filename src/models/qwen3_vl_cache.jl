@@ -47,8 +47,9 @@ Create an empty dynamic cache for one Qwen3-VL generation request.  Layer
 storage is adopted lazily from the first cached prefill, preserving the text
 parameters' dtype and CPU/CUDA residency.  Chapter 45 supports batch size one.
 """
-function init_qwen3_vl_kv_cache(text_parameters; batch_size::Int=1)
-    batch_size == 1 || throw(ArgumentError(
+function init_qwen3_vl_kv_cache(text_parameters; batch_size::Integer=1)
+    batch = _strict_host_int(batch_size, "batch_size")
+    batch == 1 || throw(ArgumentError(
         "Qwen3-VL dynamic generation currently supports batch size one",
     ))
     spec = _qwen3_vl_cache_spec(text_parameters)
@@ -57,7 +58,7 @@ function init_qwen3_vl_kv_cache(text_parameters; batch_size::Int=1)
             "Qwen3-VL decoder parameter layer count is invalid",
         ))
     layers = ntuple(_ -> LayerKVCache(), spec.num_hidden_layers)
-    return Qwen3VLKVCache(layers, 0, 0, batch_size)
+    return Qwen3VLKVCache(layers, 0, 0, batch)
 end
 
 function _validate_qwen3_vl_kv_cache(parameters, cache::Qwen3VLKVCache)
@@ -153,10 +154,12 @@ would consume excessive host or accelerator memory.
 """
 function init_qwen3_vl_static_kv_cache(
     text_parameters;
-    capacity::Int,
-    batch_size::Int=1,
+    capacity::Integer,
+    batch_size::Integer=1,
 )
-    batch_size == 1 || throw(ArgumentError(
+    requested_capacity = _strict_host_int(capacity, "capacity")
+    batch = _strict_host_int(batch_size, "batch_size")
+    batch == 1 || throw(ArgumentError(
         "Qwen3-VL static generation currently supports batch size one",
     ))
     spec = _qwen3_vl_cache_spec(text_parameters)
@@ -164,9 +167,10 @@ function init_qwen3_vl_static_kv_cache(
         throw(DimensionMismatch(
             "Qwen3-VL decoder parameter layer count is invalid",
         ))
-    0 < capacity <= spec.max_position_embeddings || throw(ArgumentError(
-        "Qwen3-VL static cache capacity must be in 1:max_position_embeddings",
-    ))
+    0 < requested_capacity <= spec.max_position_embeddings ||
+        throw(ArgumentError(
+            "Qwen3-VL static cache capacity must be in 1:max_position_embeddings",
+        ))
     dtype = eltype(text_parameters.embedding)
     dtype in (Float32, BFloat16) || throw(ArgumentError(
         "Qwen3-VL static cache supports Float32 or BFloat16 parameters",
@@ -175,8 +179,8 @@ function init_qwen3_vl_static_kv_cache(
     shape = (
         spec.head_dim,
         spec.num_key_value_heads,
-        capacity,
-        batch_size,
+        requested_capacity,
+        batch,
     )
     layers = ntuple(spec.num_hidden_layers) do _
         keys = similar(text_parameters.embedding, dtype, shape)
@@ -185,7 +189,7 @@ function init_qwen3_vl_static_kv_cache(
         fill!(values, zero(dtype))
         Qwen3VLStaticLayerKVCache(keys, values)
     end
-    cache = Qwen3VLStaticKVCache(layers, 0, 0, batch_size, capacity)
+    cache = Qwen3VLStaticKVCache(layers, 0, 0, batch, requested_capacity)
     _validate_qwen3_vl_static_kv_cache(text_parameters, cache)
     return cache
 end

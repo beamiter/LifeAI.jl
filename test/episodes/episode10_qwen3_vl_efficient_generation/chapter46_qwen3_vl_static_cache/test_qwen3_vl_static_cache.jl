@@ -189,8 +189,8 @@ end
     inputs = _ch46_tiny_prefill_inputs()
     cache = init_qwen3_vl_static_kv_cache(
         parameters;
-        capacity=10,
-        batch_size=1,
+        capacity=Int128(10),
+        batch_size=big(1),
     )
 
     @test cache isa Qwen3VLStaticKVCache
@@ -211,6 +211,48 @@ end
     )
     @test all(layer -> eltype(layer.keys) === Float32, cache.layers)
     @test all(layer -> eltype(layer.values) === Float32, cache.layers)
+
+    dynamic = init_qwen3_vl_kv_cache(parameters; batch_size=Int32(1))
+    @test dynamic.batch_size === 1
+    @test length(dynamic.layers) == parameters.spec.num_hidden_layers
+
+    overflow_integer = big(typemax(Int)) + 1
+    for invalid_integer in (true, overflow_integer)
+        dynamic_error = try
+            init_qwen3_vl_kv_cache(42; batch_size=invalid_integer)
+            nothing
+        catch caught
+            caught
+        end
+        @test dynamic_error isa ArgumentError
+        @test occursin("batch_size", sprint(showerror, dynamic_error))
+
+        capacity_error = try
+            init_qwen3_vl_static_kv_cache(
+                42;
+                capacity=invalid_integer,
+                batch_size=1,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test capacity_error isa ArgumentError
+        @test occursin("capacity", sprint(showerror, capacity_error))
+
+        batch_error = try
+            init_qwen3_vl_static_kv_cache(
+                42;
+                capacity=1,
+                batch_size=invalid_integer,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test batch_error isa ArgumentError
+        @test occursin("batch_size", sprint(showerror, batch_error))
+    end
 
     expected_bytes = parameters.spec.num_hidden_layers * 2 *
         parameters.spec.head_dim * parameters.spec.num_key_value_heads *
@@ -569,7 +611,7 @@ end
         stop_token_ids=Int[],
         capture_logits=true,
         cache=:static,
-        static_capacity=10,
+        static_capacity=big(10),
     )
     dynamic = generate_hf_qwen3_vl_tokens(
         parameters,
