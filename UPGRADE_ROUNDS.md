@@ -365,6 +365,8 @@ Chapter 03 reproducible-training test.
      enormous merge factors cannot wrap into plausible vision dimensions.
 182. Preflight Qwen3-VL fused QKV widths with exact arithmetic before tensor-shape
      construction so individually valid hidden sizes cannot overflow tripling.
+183. Validate Qwen3 deployment probabilities in their original Real domain before
+     Float32 storage so just-over-one top-p values cannot round into acceptance.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

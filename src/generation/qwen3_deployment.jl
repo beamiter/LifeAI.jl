@@ -68,6 +68,14 @@ function _qwen3_profile_positive_float32(value, label::AbstractString)
     return resolved
 end
 
+function _qwen3_profile_probability_float32(value, label::AbstractString)
+    resolved = _qwen3_profile_positive_float32(value, label)
+    isfinite(value) && 0 < value <= 1 || throw(ArgumentError(
+        "$label must be finite and in (0, 1]",
+    ))
+    return resolved
+end
+
 """
     Qwen3DeploymentProfile
 
@@ -145,7 +153,7 @@ struct Qwen3DeploymentProfile
             _qwen3_profile_symbol(strategy, "strategy"),
             _qwen3_profile_positive_float32(temperature, "temperature"),
             _strict_host_int(top_k, "top_k"),
-            _qwen3_profile_positive_float32(top_p, "top_p"),
+            _qwen3_profile_probability_float32(top_p, "top_p"),
             _strict_host_int(minimum_gpu_bytes, "minimum_gpu_bytes"),
             _strict_host_int(
                 workspace_reserve_bytes,

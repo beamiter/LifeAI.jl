@@ -530,6 +530,11 @@ end
         (14, :config, "strategy must be greedy or sample"),
         (16, 0, "top_k must be positive"),
         (17, 1.5, "top_p must be finite and in (0, 1]"),
+        (
+            17,
+            nextfloat(1.0),
+            "top_p must be finite and in (0, 1]",
+        ),
         (19, -1, "workspace_reserve_bytes must be non-negative"),
         (20, "", "asset_manifest must not be empty"),
     )
