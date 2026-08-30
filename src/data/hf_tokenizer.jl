@@ -107,6 +107,9 @@ struct HFQwen3GenerationConfig
     end
 end
 
+struct _HFQwen3TokenizerValidated end
+const _HF_QWEN3_TOKENIZER_VALIDATED = _HFQwen3TokenizerValidated()
+
 """A strict, imported HuggingFace Qwen3 byte-level BPE tokenizer."""
 struct HFQwen3Tokenizer <: AbstractTokenizer
     vocabulary::Dict{String,Int}
@@ -134,6 +137,63 @@ struct HFQwen3Tokenizer <: AbstractTokenizer
     tokenizer_sha256::String
     tokenizer_config_sha256::String
     generation_config_sha256::String
+
+    function HFQwen3Tokenizer(
+        ::_HFQwen3TokenizerValidated,
+        vocabulary::Dict{String,Int},
+        id_to_token::Vector{String},
+        token_bytes::Vector{Vector{UInt8}},
+        model_vocabulary_size::Int,
+        merge_ranks::Dict{Tuple{String,String},Int},
+        pretokenizer_pattern::String,
+        pretokenizer_regex::Regex,
+        added_tokens::Vector{HFAddedToken},
+        added_by_content::Dict{String,HFAddedToken},
+        special_ids::Set{Int},
+        bos_id::Union{Nothing,Int},
+        eos_id::Union{Nothing,Int},
+        eos_ids::Vector{Int},
+        pad_id::Union{Nothing,Int},
+        generation::HFQwen3GenerationConfig,
+        profile::Symbol,
+        model_max_length::Int,
+        chat_template::String,
+        revision::String,
+        raw_tokenizer_json::String,
+        raw_tokenizer_config_json::String,
+        raw_generation_config_json::String,
+        tokenizer_sha256::String,
+        tokenizer_config_sha256::String,
+        generation_config_sha256::String,
+    )
+        return new(
+            vocabulary,
+            id_to_token,
+            token_bytes,
+            model_vocabulary_size,
+            merge_ranks,
+            pretokenizer_pattern,
+            pretokenizer_regex,
+            added_tokens,
+            added_by_content,
+            special_ids,
+            bos_id,
+            eos_id,
+            eos_ids,
+            pad_id,
+            generation,
+            profile,
+            model_max_length,
+            chat_template,
+            revision,
+            raw_tokenizer_json,
+            raw_tokenizer_config_json,
+            raw_generation_config_json,
+            tokenizer_sha256,
+            tokenizer_config_sha256,
+            generation_config_sha256,
+        )
+    end
 end
 
 function _hf_json(raw::AbstractString, label::AbstractString)
@@ -812,6 +872,7 @@ function _hf_qwen3_tokenizer_from_json(
         throw(ArgumentError("Qwen3 pre-tokenizer regex cannot be compiled: $(sprint(showerror, err))"))
     end
     return HFQwen3Tokenizer(
+        _HF_QWEN3_TOKENIZER_VALIDATED,
         vocabulary,
         id_to_token,
         token_bytes,

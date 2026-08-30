@@ -379,6 +379,8 @@ Chapter 03 reproducible-training test.
      boundary so Boolean, floating-point, and oversized ids cannot be coerced.
 189. Bind Qwen3-VL vision feature shapes, dtypes, DeepStack arity, and captured
      layer metadata while preserving device arrays and intentional aliases.
+190. Seal imported Qwen3 tokenizer construction behind the validated JSON-loader
+     path so converting field constructors cannot forge inconsistent vocabularies.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

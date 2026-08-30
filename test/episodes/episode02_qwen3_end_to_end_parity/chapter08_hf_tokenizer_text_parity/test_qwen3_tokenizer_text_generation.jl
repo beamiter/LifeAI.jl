@@ -50,6 +50,14 @@ isdefined(@__MODULE__, :qwen3_tokenizer_fixture_payloads) ||
         @test special_token_id(tokenizer, :unk) === nothing
         @test tokenizer.eos_ids == [261, 259]
 
+        fields = ntuple(
+            index -> getfield(tokenizer, index),
+            fieldcount(HFQwen3Tokenizer),
+        )
+        @test_throws MethodError HFQwen3Tokenizer(fields...)
+        malformed_fields = Base.setindex(fields, true, 4)
+        @test_throws MethodError HFQwen3Tokenizer(malformed_fields...)
+
         @test encode(tokenizer, "hi!") == [257, 34]
         @test encode(tokenizer, "hi"; add_special_tokens=true) == [257]
         @test encode(tokenizer, "hi"; add_special_tokens=false) == [257]
