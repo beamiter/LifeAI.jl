@@ -374,6 +374,41 @@ end
         end
     end
 
+    model_field_mutations = (
+        (
+            payloads -> (
+                payloads.tokenizer["model"]["future_behavior"] = true
+            ),
+            "unsupported tokenizer.json model fields: future_behavior",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer["model"]["added_tokens_decoder"] =
+                    Dict{String,Any}()
+            ),
+            "unsupported tokenizer.json model fields: added_tokens_decoder",
+        ),
+        (
+            payloads -> delete!(payloads.tokenizer["model"], "merges"),
+            "missing `merges` in tokenizer.json model",
+        ),
+    )
+    for (mutate!, message) in model_field_mutations
+        mktempdir() do directory
+            payloads = qwen3_tokenizer_fixture_payloads()
+            mutate!(payloads)
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            failure = try
+                load_hf_qwen3_tokenizer(directory)
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+    end
+
     byte_level_field_mutations = (
         (
             payloads -> (

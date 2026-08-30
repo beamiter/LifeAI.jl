@@ -63,4 +63,19 @@ end
             @test_throws ArgumentError load_hf_qwen3_vl_tokenizer(directory)
         end
     end
+
+    mktempdir() do directory
+        payloads = _ch44_vl_tokenizer_payloads()
+        payloads.tokenizer["model"]["future_behavior"] = true
+        write_qwen3_tokenizer_fixture(directory; payloads)
+        failure = try
+            load_hf_qwen3_vl_tokenizer(directory)
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: unsupported tokenizer.json model fields: future_behavior"
+    end
 end

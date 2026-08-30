@@ -559,8 +559,39 @@ function _hf_parse_model(tokenizer_json, char_to_byte, profile::Symbol)
         haskey(model, "ignore_merges") && throw(ArgumentError(
             "Qwen3-VL tokenizer model must omit `ignore_merges`",
         ))
+        _hf_reject_unknown_fields(
+            model,
+            (
+                "type",
+                "dropout",
+                "unk_token",
+                "continuing_subword_prefix",
+                "end_of_word_suffix",
+                "fuse_unk",
+                "byte_fallback",
+                "vocab",
+                "merges",
+            ),
+            "tokenizer.json model",
+        )
     else
         _hf_exact_bool(model, "ignore_merges", false, "tokenizer.json model")
+        _hf_reject_unknown_fields(
+            model,
+            (
+                "type",
+                "dropout",
+                "unk_token",
+                "continuing_subword_prefix",
+                "end_of_word_suffix",
+                "fuse_unk",
+                "byte_fallback",
+                "ignore_merges",
+                "vocab",
+                "merges",
+            ),
+            "tokenizer.json model",
+        )
     end
 
     raw_vocabulary = _hf_required(model, "vocab", "tokenizer.json model")
