@@ -44,6 +44,10 @@ function _qwen3_deployment_captured_error(thunk)
     error("expected Qwen3 deployment call to fail")
 end
 
+struct _InterruptingQwen3JSONPath <: AbstractString end
+Base.read(::_InterruptingQwen3JSONPath, ::Type{String}) =
+    throw(InterruptException())
+
 function _qwen3_cuda_deployment_tiny_bundle(directory; max_seq_len=128)
     write_qwen3_tokenizer_fixture(directory)
     tokenizer = load_hf_qwen3_tokenizer(directory; revision="qwen3_cuda_deployment-test")
@@ -82,6 +86,10 @@ function _qwen3_cuda_deployment_tiny_bundle(directory; max_seq_len=128)
 end
 
 @testset "4090D profile and exact context budget" begin
+    @test_throws InterruptException LifeAI._qwen3_json_object(
+        _InterruptingQwen3JSONPath(),
+        "test JSON",
+    )
     profile = load_qwen3_deployment_profile(_QWEN3_CUDA_DEPLOYMENT_PROFILE_PATH)
     @test profile.schema_version == 1
     @test profile.variant === :qwen3_8b

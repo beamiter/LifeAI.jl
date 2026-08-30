@@ -168,6 +168,7 @@ function _qwen3_json_object(path::AbstractString, label::AbstractString)
     value = try
         JSON3.read(read(path, String))
     catch error
+        error isa InterruptException && rethrow()
         throw(ArgumentError(
             "invalid $label JSON in $path: $(sprint(showerror, error))",
         ))
