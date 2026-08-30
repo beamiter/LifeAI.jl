@@ -42,6 +42,34 @@ end
     )
 
     @test qwen3_cuda_indexed_workspace_bytes(128, 64, 64, 8) == 425_984
+    @test qwen3_cuda_indexed_workspace_bytes(
+        Int32(128),
+        UInt8(64),
+        big(64),
+        Int16(8);
+        element_bytes=Int128(4),
+    ) == 425_984
+
+    oversized = big(typemax(Int)) + 1
+    valid_dimensions = (128, 64, 64, 8)
+    for dimension in eachindex(valid_dimensions)
+        for invalid_value in (true, 1.0, 0, -1, oversized)
+            invalid_dimensions = Base.setindex(
+                valid_dimensions,
+                invalid_value,
+                dimension,
+            )
+            @test_throws ArgumentError qwen3_cuda_indexed_workspace_bytes(
+                invalid_dimensions...,
+            )
+        end
+    end
+    for invalid_element_bytes in (true, 4.0, 0, -1, oversized)
+        @test_throws ArgumentError qwen3_cuda_indexed_workspace_bytes(
+            valid_dimensions...;
+            element_bytes=invalid_element_bytes,
+        )
+    end
     @test_throws ArgumentError qwen3_cuda_indexed_workspace_bytes(
         typemax(Int),
         1,

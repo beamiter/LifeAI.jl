@@ -631,15 +631,20 @@ end
 
 """Return the temporary bytes used by the CUDA indexed MoE route kernels."""
 function qwen3_cuda_indexed_workspace_bytes(
-    d_model::Int,
-    hidden_dim::Int,
-    num_tokens::Int,
-    experts_per_token::Int;
-    element_bytes::Int=sizeof(Float32),
+    d_model,
+    hidden_dim,
+    num_tokens,
+    experts_per_token;
+    element_bytes=sizeof(Float32),
 )
-    all(>(0), (d_model, hidden_dim, num_tokens, experts_per_token)) ||
-        throw(ArgumentError("CUDA indexed workspace dimensions must be positive"))
-    element_bytes > 0 || throw(ArgumentError("element_bytes must be positive"))
+    d_model = _mlp_positive_host_int(d_model, "d_model")
+    hidden_dim = _mlp_positive_host_int(hidden_dim, "hidden_dim")
+    num_tokens = _mlp_positive_host_int(num_tokens, "num_tokens")
+    experts_per_token = _mlp_positive_host_int(
+        experts_per_token,
+        "experts_per_token",
+    )
+    element_bytes = _mlp_positive_host_int(element_bytes, "element_bytes")
     return _qwen3_moe_checked_size("CUDA indexed workspace byte count") do
         pair_count = Base.Checked.checked_mul(num_tokens, experts_per_token)
         hidden_routes = Base.Checked.checked_mul(hidden_dim, pair_count)
