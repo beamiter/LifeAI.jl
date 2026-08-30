@@ -155,6 +155,20 @@ end
     @test layout.route_tile == 8
     @test layout.padded_capacity == length(expert_ids) + 7 * num_experts
     @test Array(layout.padded_offsets) == Int32[1, 9, 9, 25, 33]
+
+    metadata_limit = Int(typemax(Int32)) - 1
+    @test_throws ArgumentError _QWEN3_MOE_CUDA_EXT._qwen3_cuda_grouped_bf16_layout(
+        CUDA.cu(Int32[1]),
+        1,
+        metadata_limit + 1,
+        1,
+    )
+    @test_throws ArgumentError _QWEN3_MOE_CUDA_EXT._qwen3_cuda_grouped_bf16_layout(
+        CUDA.cu(Int32[1]),
+        1,
+        1,
+        2,
+    )
 end
 
 @testset "Qwen3 MoE CUDA grouped BF16 dispatch preserves routed SwiGLU semantics" begin

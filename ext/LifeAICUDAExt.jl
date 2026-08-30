@@ -493,6 +493,11 @@ function _qwen3_cuda_grouped_bf16_layout(
     pair_count,
     route_tile,
 )
+    padded_capacity = LifeAI._qwen3_cuda_route_layout_capacity(
+        pair_count,
+        num_experts;
+        route_tile,
+    )
     threads = 256
     expert_blocks = cld(num_experts, threads)
     padded_counts = CUDA.zeros(Int32, num_experts)
@@ -511,7 +516,7 @@ function _qwen3_cuda_grouped_bf16_layout(
     )
     return (;
         padded_offsets,
-        padded_capacity=pair_count + (route_tile - 1) * num_experts,
+        padded_capacity,
         route_tile,
     )
 end
@@ -852,7 +857,7 @@ function qwen3_cuda_grouped_bf16_sparse_expert_dispatch(
     hidden_dim % 16 == 0 || throw(ArgumentError(
         "grouped BF16 dispatch hidden dimension must be divisible by 16",
     ))
-    pair_count = experts_per_token * num_tokens
+    pair_count = length(expert_indices)
     buckets = qwen3_cuda_bucket_routes(expert_indices, num_experts)
     route_tile = d_model % 32 == 0 && hidden_dim % 32 == 0 ? 8 : 16
     layout = _qwen3_cuda_grouped_bf16_layout(
@@ -955,6 +960,7 @@ function qwen3_cuda_bucket_routes(
     num_experts > 0 || throw(ArgumentError("expert count must be positive"))
     pair_count = length(expert_indices)
     pair_count > 0 || throw(ArgumentError("route table must not be empty"))
+    LifeAI._qwen3_cuda_route_layout_capacity(pair_count, num_experts)
     sorted_experts = copy(vec(expert_indices))
     route_permutation = CUDA.zeros(Int32, pair_count)
     expert_counts = CUDA.zeros(Int32, num_experts)
@@ -1375,7 +1381,7 @@ function qwen3_cuda_bucketed_sparse_expert_dispatch(
 
     buckets = qwen3_cuda_bucket_routes(expert_indices, num_experts)
     hidden_dim = size(expert_parameters.gate_proj, 1)
-    pair_count = experts_per_token * num_tokens
+    pair_count = length(expert_indices)
     hidden = similar(tokens, Float32, hidden_dim, pair_count)
     routed_output = similar(tokens, Float32, d_model, pair_count)
     output = similar(tokens, Float32, d_model, num_tokens)
@@ -1448,7 +1454,7 @@ function qwen3_cuda_indexed_sparse_expert_dispatch(
     ))
 
     hidden_dim = size(expert_parameters.gate_proj, 1)
-    pair_count = experts_per_token * num_tokens
+    pair_count = length(expert_indices)
     hidden = similar(tokens, Float32, hidden_dim, pair_count)
     routed_output = similar(tokens, Float32, d_model, pair_count)
     output = similar(tokens, Float32, d_model, num_tokens)
@@ -1747,7 +1753,7 @@ function _qwen3_cuda_grouped_scattered_dispatch!(
     d_model, num_tokens = size(tokens)
     num_experts = length(pointer_plan.expert_ids)
     experts_per_token = size(expert_indices, 1)
-    pair_count = experts_per_token * num_tokens
+    pair_count = length(expert_indices)
     d_model % 16 == 0 || throw(ArgumentError(
         "grouped scattered dispatch model dimension must be divisible by 16",
     ))
@@ -1900,7 +1906,7 @@ function LifeAI._qwen3_scattered_expert_dispatch(
     up_pointers = pointer_plan.up_device
     down_pointers = pointer_plan.down_device
     pointer_bytes_uploaded = pointer_table_built ? pointer_plan.bytes : 0
-    pair_count = experts_per_token * num_tokens
+    pair_count = length(expert_indices)
 
     if grouped_experts
         output, workspace_allocated, workspace_reused =

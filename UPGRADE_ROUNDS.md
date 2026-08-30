@@ -367,6 +367,8 @@ Chapter 03 reproducible-training test.
      construction so individually valid hidden sizes cannot overflow tripling.
 183. Validate Qwen3 deployment probabilities in their original Real domain before
      Float32 storage so just-over-one top-p values cannot round into acceptance.
+184. Preflight Qwen3 CUDA route and padded-layout capacities against the Int32
+     metadata sentinel before any device allocation or kernel launch.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

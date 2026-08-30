@@ -844,6 +844,44 @@ function qwen3_cuda_indexed_workspace_bytes(
 end
 
 """
+    _qwen3_cuda_route_layout_capacity(
+        pair_count, num_experts; route_tile=1)
+
+Validate the route metadata capacity used by the CUDA MoE bucket and padded
+layouts. Route permutations, counts, and 1-based half-open offsets use
+`Int32`, so the final offset sentinel reserves one value beyond the last
+route. This helper only validates representability; it does not imply that a
+layout near the metadata limit is practical to allocate.
+"""
+function _qwen3_cuda_route_layout_capacity(
+    pair_count,
+    num_experts;
+    route_tile=1,
+)
+    pair_count = _mlp_positive_host_int(pair_count, "pair_count")
+    num_experts = _mlp_positive_host_int(num_experts, "num_experts")
+    route_tile = _mlp_positive_host_int(route_tile, "route_tile")
+    route_tile in (1, 8, 16) || throw(ArgumentError(
+        "CUDA route_tile must be 1, 8, or 16",
+    ))
+
+    capacity = _qwen3_moe_checked_size("CUDA route layout capacity") do
+        padding = Base.Checked.checked_mul(route_tile - 1, num_experts)
+        Base.Checked.checked_add(pair_count, padding)
+    end
+    _qwen3_moe_checked_size("CUDA route offset count") do
+        Base.Checked.checked_add(num_experts, 1)
+    end
+
+    maximum_capacity = Int(typemax(Int32)) - 1
+    capacity <= maximum_capacity || throw(ArgumentError(
+        "CUDA route layout capacity must not exceed $maximum_capacity " *
+        "for Int32 metadata",
+    ))
+    return capacity
+end
+
+"""
     qwen3_moe_device_forward(moe, x, ps)
 
 Run Qwen3 MoE routing and compact expert dispatch without host routing

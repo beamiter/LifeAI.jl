@@ -2,6 +2,7 @@ using Test
 using Lux
 using NNlib: softmax, swish
 using Random: Xoshiro
+import LifeAI
 using LifeAI: Qwen3SparseMoE, qwen3_cuda_indexed_workspace_bytes
 
 function _qwen3_moe_manual_forward(layer, x, parameters)
@@ -89,6 +90,39 @@ end
         1;
         element_bytes=typemax(Int),
     )
+end
+
+@testset "Qwen3 CUDA route metadata capacity stays Int32 representable" begin
+    capacity = LifeAI._qwen3_cuda_route_layout_capacity
+    metadata_limit = Int(typemax(Int32)) - 1
+
+    @test capacity(metadata_limit, 1) == metadata_limit
+    @test_throws ArgumentError capacity(metadata_limit + 1, 1)
+    @test capacity(metadata_limit - 7, 1; route_tile=8) == metadata_limit
+    @test_throws ArgumentError capacity(metadata_limit - 6, 1; route_tile=8)
+    @test capacity(metadata_limit - 15, 1; route_tile=16) == metadata_limit
+    @test_throws ArgumentError capacity(metadata_limit - 14, 1; route_tile=16)
+    @test capacity(Int32(17), UInt8(4); route_tile=Int16(8)) == 45
+
+    oversized = big(typemax(Int)) + 1
+    for (pair_count, num_experts) in (
+        (true, 1),
+        (1.0, 1),
+        (0, 1),
+        (-1, 1),
+        (oversized, 1),
+        (1, true),
+        (1, 1.0),
+        (1, 0),
+        (1, -1),
+        (1, oversized),
+    )
+        @test_throws ArgumentError capacity(pair_count, num_experts)
+    end
+    for route_tile in (true, 1.0, 0, -1, 2, oversized)
+        @test_throws ArgumentError capacity(1, 1; route_tile)
+    end
+    @test_throws ArgumentError capacity(1, typemax(Int))
 end
 
 @testset "Qwen3 MoE selected expert mixture output" begin
