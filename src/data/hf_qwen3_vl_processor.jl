@@ -1190,7 +1190,7 @@ zero-based because they are RoPE coordinates, not token ids. Multiple images
 in the single prompt are supported, while batches and video are deliberately
 rejected in the Chapter 44 prefill boundary.
 """
-function _qwen3_vl_layout_token_id(
+function _qwen3_vl_checkpoint_token_id(
     raw_id::Int,
     vocab_size::Int,
     label::AbstractString,
@@ -1208,22 +1208,22 @@ function qwen3_vl_rope_layout(
     checkpoint::Qwen3VLCheckpointSpec=qwen3_vl_checkpoint_spec(),
 )
     checkpoint_vocab_size = checkpoint.text.vocab_size
-    image_token = _qwen3_vl_layout_token_id(
+    image_token = _qwen3_vl_checkpoint_token_id(
         checkpoint.image_token_id,
         checkpoint_vocab_size,
         "image_token_id",
     )
-    video_token = _qwen3_vl_layout_token_id(
+    video_token = _qwen3_vl_checkpoint_token_id(
         checkpoint.video_token_id,
         checkpoint_vocab_size,
         "video_token_id",
     )
-    vision_start = _qwen3_vl_layout_token_id(
+    vision_start = _qwen3_vl_checkpoint_token_id(
         checkpoint.vision_start_token_id,
         checkpoint_vocab_size,
         "vision_start_token_id",
     )
-    vision_end = _qwen3_vl_layout_token_id(
+    vision_end = _qwen3_vl_checkpoint_token_id(
         checkpoint.vision_end_token_id,
         checkpoint_vocab_size,
         "vision_end_token_id",

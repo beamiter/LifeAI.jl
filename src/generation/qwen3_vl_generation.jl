@@ -4,7 +4,18 @@ function _qwen3_vl_generation_stop_ids(parameters, stop_token_ids)
     raw = if stop_token_ids === nothing
         if hasproperty(parameters, :checkpoint)
             checkpoint = parameters.checkpoint
-            (checkpoint.eos_token_id + 1, checkpoint.bos_token_id + 1)
+            (
+                _qwen3_vl_checkpoint_token_id(
+                    checkpoint.eos_token_id,
+                    checkpoint.text.vocab_size,
+                    "eos_token_id",
+                ),
+                _qwen3_vl_checkpoint_token_id(
+                    checkpoint.bos_token_id,
+                    checkpoint.text.vocab_size,
+                    "bos_token_id",
+                ),
+            )
         else
             ()
         end

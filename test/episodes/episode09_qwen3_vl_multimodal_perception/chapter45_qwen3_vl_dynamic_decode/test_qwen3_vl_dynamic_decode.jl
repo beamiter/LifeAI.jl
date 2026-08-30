@@ -10,7 +10,8 @@ using LifeAI: Qwen3VLRopeLayout,
     hf_qwen3_vl_text_decode_step,
     hf_qwen3_vl_text_prefill_cached,
     init_qwen3_vl_kv_cache,
-    load_hf_qwen3_vl_tokenizer
+    load_hf_qwen3_vl_tokenizer,
+    qwen3_vl_checkpoint_spec
 
 isdefined(@__MODULE__, :qwen3_tokenizer_fixture_payloads) || include(joinpath(
     @__DIR__,
@@ -68,6 +69,14 @@ function _ch45_captured_error(thunk)
         return error
     end
     error("expected the test call to fail")
+end
+
+function _ch45_replace_spec_field(value, name::Symbol, replacement)
+    names = fieldnames(typeof(value))
+    index = findfirst(==(name), names)
+    index === nothing && error("unknown specification field: $name")
+    fields = Tuple(getfield(value, field) for field in names)
+    return typeof(value)(Base.setindex(fields, replacement, index)...)
 end
 
 struct _CH45VisionComputePoison end
@@ -542,6 +551,52 @@ end
     reference = _ch45_reference()
     parameters = _ch45_tiny_text_parameters()
     inputs = _ch45_tiny_prefill_inputs()
+
+    default_checkpoint = qwen3_vl_checkpoint_spec()
+    default_checkpoint = _ch45_replace_spec_field(
+        default_checkpoint,
+        :text,
+        parameters.spec,
+    )
+    default_checkpoint = _ch45_replace_spec_field(
+        default_checkpoint,
+        :eos_token_id,
+        7,
+    )
+    default_checkpoint = _ch45_replace_spec_field(
+        default_checkpoint,
+        :bos_token_id,
+        6,
+    )
+    default_parameters = merge(parameters, (; checkpoint=default_checkpoint))
+    default_stops = generate_hf_qwen3_vl_tokens(
+        default_parameters,
+        inputs.input_ids,
+        inputs.rope_layout;
+        vision_features=inputs.vision_features,
+        max_new_tokens=0,
+    )
+    @test isempty(default_stops.generated_ids)
+
+    for name in (:eos_token_id, :bos_token_id)
+        invalid_checkpoint = _ch45_replace_spec_field(
+            default_checkpoint,
+            name,
+            parameters.spec.vocab_size,
+        )
+        failure = _ch45_captured_error() do
+            generate_hf_qwen3_vl_tokens(
+                merge(parameters, (; checkpoint=invalid_checkpoint)),
+                42,
+                inputs.rope_layout;
+                vision_features=inputs.vision_features,
+                max_new_tokens=0,
+            )
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL checkpoint $name must be in 0:31"
+    end
 
     generated = generate_hf_qwen3_vl_tokens(
         parameters,

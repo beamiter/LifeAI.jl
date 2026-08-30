@@ -243,6 +243,8 @@ Chapter 03 reproducible-training test.
      keeping the immutable file manifest one-to-one with verification work.
 121. Preflight Qwen3-VL mRoPE checkpoint token bounds and prompt context before
      token conversion, grid parsing, mask creation, or coordinate allocation.
+122. Derive default Qwen3-VL generation stop ids through checked checkpoint
+     token mapping, rejecting invalid BOS/EOS contracts before prompt work.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
