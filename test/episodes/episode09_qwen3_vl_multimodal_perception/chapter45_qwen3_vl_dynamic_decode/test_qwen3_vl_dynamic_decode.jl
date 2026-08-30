@@ -507,12 +507,26 @@ end
         inputs.input_ids,
         inputs.rope_layout;
         vision_features=inputs.vision_features,
-        max_new_tokens=0,
+        max_new_tokens=Int128(0),
     )
     @test isempty(zero.generated_ids)
     @test zero.token_ids == collect(1:8)
     @test zero.prefill === nothing
     @test isempty(zero.cache)
+    overflow_length = big(typemax(Int)) + 1
+    for invalid_length in (true, overflow_length)
+        failure = _ch45_captured_error() do
+            generate_hf_qwen3_vl_tokens(
+                parameters,
+                42,
+                inputs.rope_layout;
+                vision_features=inputs.vision_features,
+                max_new_tokens=invalid_length,
+            )
+        end
+        @test failure isa ArgumentError
+        @test occursin("max_new_tokens", sprint(showerror, failure))
+    end
     @test_throws ArgumentError generate_hf_qwen3_vl_tokens(
         parameters,
         inputs.input_ids,
@@ -628,6 +642,7 @@ end
     )
     @test normalized.stops == Set([8])
     @test normalized.static_capacity === 10
+    @test normalized.max_new_tokens === 3
     @test LifeAI._qwen3_vl_generation_prompt_preflight(
         text_parameters,
         collect(1:8),
@@ -664,6 +679,17 @@ end
     )
 
     cases = (
+        (
+            needle="max_new_tokens",
+            options=(; max_new_tokens=true, stop_token_ids=Int[]),
+        ),
+        (
+            needle="max_new_tokens",
+            options=(;
+                max_new_tokens=big(typemax(Int)) + 1,
+                stop_token_ids=Int[],
+            ),
+        ),
         (
             needle="max_new_tokens",
             options=(; max_new_tokens=-1, stop_token_ids=Int[]),
@@ -719,7 +745,7 @@ end
             text_parameters,
             tokenizer,
             poison_messages;
-            max_new_tokens=0,
+            max_new_tokens=Int128(0),
             stop_token_ids=Int[],
         )
     end

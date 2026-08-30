@@ -171,10 +171,13 @@ fixture 完整冻结三阶段：
 prefix bit-exact 不变。Chapter 44 的 prefill final hidden/logits SHA256
 `f2e5565a…f154` / `9f38d30c…d0d6` 也被复用，防止“加 cache 后 prefill 语义变化”。
 
-Chapter 45 专项共 `331 / 331`：frozen fixture contract `122 / 122`、cached
-prefill/two-step decode `170 / 170`、greedy generation timeline `39 / 39`。本章
-新增的 cached-prefill case 专门拒绝 shape 合法但与 position ids 不一致的
-`rope_delta`。最终隔离 `Pkg.test()` 为 `8,994 passed`、
+Chapter 45 专项共 `414 / 414`：frozen fixture contract `122 / 122`、cached
+prefill/two-step decode `191 / 191`、greedy generation timeline `67 / 67`，以及
+raw generation option preflight `34 / 34`。本章新增的 cached-prefill case
+专门拒绝 shape 合法但与 position ids 不一致的 `rope_delta`。两个公开
+generation 入口还会在 token/image 处理前严格归一化 `max_new_tokens`：合法
+多宽度整数被收窄为宿主 `Int`，Boolean 和超范围 BigInt 统一 fail closed，
+不再泄漏 keyword `TypeError`。最终隔离 `Pkg.test()` 为 `8,994 passed`、
 `1 intentional broken`、`0 failure / 0 error`；唯一 broken 是未提供真实
 Qwen3-VL checkpoint 环境变量时的 opt-in 门禁。首次隔离运行还暴露了 Chapter
 44/45 fixture 使用的 `Base64` 未列入 test target，补齐该标准库测试依赖后全套通过。

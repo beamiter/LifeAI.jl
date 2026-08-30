@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the eighty-seven follow-up rounds implemented on top of the
+This ledger records the eighty-eight follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -174,6 +174,8 @@ Chapter 03 reproducible-training test.
     count every Qwen topology without initializing parameter arrays.
 87. Strictly normalize Qwen3 MoE offload prefill and decode tokens before
     resetting positions, expert-cache metrics, or checkpoint traffic.
+88. Normalize Qwen3-VL generation lengths at both public entry points before
+    token or image processing while accepting valid cross-width integers.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

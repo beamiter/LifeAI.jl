@@ -21,12 +21,13 @@ end
 function _qwen3_vl_generation_preflight(
     text_parameters,
     stop_token_ids,
-    max_new_tokens::Int,
+    max_new_tokens,
     cache::Symbol,
     static_capacity,
     decode_errors::Symbol,
 )
-    max_new_tokens >= 0 || throw(ArgumentError(
+    requested = _strict_host_int(max_new_tokens, "max_new_tokens")
+    requested >= 0 || throw(ArgumentError(
         "max_new_tokens must be non-negative",
     ))
     decode_errors in (:strict, :replace) || throw(ArgumentError(
@@ -54,7 +55,11 @@ function _qwen3_vl_generation_preflight(
     end
 
     stops = _qwen3_vl_generation_stop_ids(text_parameters, stop_token_ids)
-    return (; stops, static_capacity=normalized_capacity)
+    return (;
+        stops,
+        static_capacity=normalized_capacity,
+        max_new_tokens=requested,
+    )
 end
 
 function _qwen3_vl_generation_limits(
@@ -232,13 +237,22 @@ function generate_hf_qwen3_vl_tokens(
     input_ids,
     rope_layout::Qwen3VLRopeLayout;
     vision_features=nothing,
-    max_new_tokens::Int=32,
+    max_new_tokens::Integer=32,
     stop_token_ids=nothing,
     capture_logits::Bool=false,
     cache::Symbol=:dynamic,
     static_capacity=nothing,
     capture_prefill_states::Bool=false,
 )
+    preflight = _qwen3_vl_generation_preflight(
+        text_parameters,
+        stop_token_ids,
+        max_new_tokens,
+        cache,
+        static_capacity,
+        :replace,
+    )
+    requested = preflight.max_new_tokens
     tokens = _qwen3_vl_token_matrix(input_ids)
     prompt_length, batch_size = size(tokens)
     batch_size == 1 || throw(ArgumentError(
@@ -247,12 +261,12 @@ function generate_hf_qwen3_vl_tokens(
     required_capacity = _qwen3_vl_generation_limits(
         text_parameters.spec,
         prompt_length,
-        max_new_tokens,
+        requested,
     )
     all(id -> 1 <= id <= text_parameters.spec.vocab_size, tokens) || throw(
         ArgumentError("Qwen3-VL input_ids contain an out-of-vocabulary id"),
     )
-    stops = _qwen3_vl_generation_stop_ids(text_parameters, stop_token_ids)
+    stops = preflight.stops
     prompt_ids = vec(copy(tokens))
     generated_ids = Int[]
     trace = NamedTuple[]
@@ -260,11 +274,11 @@ function generate_hf_qwen3_vl_tokens(
         text_parameters,
         required_capacity,
         cache,
-        static_capacity,
+        preflight.static_capacity,
     )
     stop_reason = :length
 
-    if max_new_tokens == 0
+    if requested == 0
         return (;
             prompt_ids,
             generated_ids,
@@ -289,7 +303,7 @@ function generate_hf_qwen3_vl_tokens(
     logits = prefill_result.logits
     host = cpu_device()
 
-    for step in 1:max_new_tokens
+    for step in 1:requested
         token_id, token_trace = _hf_greedy_choice(
             logits,
             host,
@@ -301,7 +315,7 @@ function generate_hf_qwen3_vl_tokens(
             stop_reason = :eos
             break
         end
-        if step < max_new_tokens
+        if step < requested
             logits, cache_state = _qwen3_vl_generation_decode(
                 text_parameters,
                 token_id,
@@ -421,7 +435,7 @@ function generate_hf_qwen3_vl(
     text_parameters,
     tokenizer::HFQwen3Tokenizer,
     messages;
-    max_new_tokens::Int=32,
+    max_new_tokens::Integer=32,
     stop_token_ids=nothing,
     tools=nothing,
     add_vision_id::Bool=false,
@@ -459,6 +473,7 @@ function generate_hf_qwen3_vl(
         static_capacity,
         decode_errors,
     )
+    requested = preflight.max_new_tokens
 
     message_list = collect(Any, messages)
     image = _qwen3_vl_generation_image(message_list)
@@ -479,7 +494,7 @@ function generate_hf_qwen3_vl(
     _qwen3_vl_generation_prompt_preflight(
         text_parameters,
         prompt_ids,
-        max_new_tokens,
+        requested,
         preflight.static_capacity,
     )
     rope_layout = qwen3_vl_rope_layout(
@@ -491,14 +506,14 @@ function generate_hf_qwen3_vl(
     vision_features = _qwen3_vl_generation_vision_features(
         vision_parameters,
         processed,
-        max_new_tokens,
+        requested,
     )
     generated = generate_hf_qwen3_vl_tokens(
         text_parameters,
         prompt_ids,
         rope_layout;
         vision_features,
-        max_new_tokens,
+        max_new_tokens=requested,
         stop_token_ids=preflight.stops,
         capture_logits,
         cache,
