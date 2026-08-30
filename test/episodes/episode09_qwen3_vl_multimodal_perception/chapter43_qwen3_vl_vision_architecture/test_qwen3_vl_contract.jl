@@ -55,6 +55,17 @@ function _ch43_captured_error(thunk)
     error("expected Qwen3-VL call to fail")
 end
 
+function _ch43_raw_processor_error(payload::AbstractString)
+    return mktemp() do path, io
+        write(io, payload)
+        close(io)
+        failure = _ch43_captured_error() do
+            load_hf_qwen3_vl_processor_config(path)
+        end
+        return (; failure, path=String(path))
+    end
+end
+
 @testset "Qwen3-VL asset specifications are strict" begin
     spec = Qwen3VLAssetSpec(
         SubString("xmodel.safetensors", 2),
@@ -915,6 +926,60 @@ end
     @test_throws ArgumentError _ch43_load_mutated_processor() do document
         document["size"]["longest_edge"] = 16_777_215
     end
+
+    processor_json = read(_CH43_VL_PREPROCESSOR, String)
+    unknown_document = JSON3.read(processor_json, Dict{String,Any})
+    unknown_document["z_unexpected"] = false
+    unknown_document["a_unexpected"] = true
+    unknown = _ch43_raw_processor_error(JSON3.write(unknown_document))
+    @test unknown.failure isa ArgumentError
+    @test sprint(showerror, unknown.failure) ==
+        "ArgumentError: invalid fields in `preprocessor config` in " *
+        "$(unknown.path) (unexpected: a_unexpected, z_unexpected)"
+
+    delete!(unknown_document, "processor_class")
+    delete!(unknown_document, "image_processor_type")
+    missing_unknown = _ch43_raw_processor_error(JSON3.write(unknown_document))
+    @test missing_unknown.failure isa ArgumentError
+    @test sprint(showerror, missing_unknown.failure) ==
+        "ArgumentError: invalid fields in `preprocessor config` in " *
+        "$(missing_unknown.path) (missing: image_processor_type, processor_class; " *
+        "unexpected: a_unexpected, z_unexpected)"
+
+    duplicate_patch_size = replace(
+        processor_json,
+        "\"patch_size\": 16," =>
+            "\"patch_size\": 8,\n    \"patch_size\": 16,";
+        count=1,
+    )
+    duplicate_root = _ch43_raw_processor_error(duplicate_patch_size)
+    @test duplicate_root.failure isa ArgumentError
+    @test sprint(showerror, duplicate_root.failure) ==
+        "ArgumentError: invalid fields in `preprocessor config` in " *
+        "$(duplicate_root.path) (duplicate: patch_size)"
+
+    duplicate_shortest_edge = replace(
+        processor_json,
+        "\"shortest_edge\": 65536" =>
+            "\"shortest_edge\": 1,\n        \"shortest_edge\": 65536";
+        count=1,
+    )
+    duplicate_size = _ch43_raw_processor_error(duplicate_shortest_edge)
+    @test duplicate_size.failure isa ArgumentError
+    @test sprint(showerror, duplicate_size.failure) ==
+        "ArgumentError: invalid fields in `size` in $(duplicate_size.path) " *
+        "(duplicate: shortest_edge)"
+
+    # Duplicate bytes are rejected structurally before the frozen SHA is checked.
+    @test !occursin(
+        "checksum mismatch",
+        sprint(showerror, duplicate_root.failure),
+    )
+    @test !occursin(
+        "checksum mismatch",
+        sprint(showerror, duplicate_size.failure),
+    )
+
     @test_throws ArgumentError _ch43_load_mutated_processor() do document
         document["unexpected"] = false
     end

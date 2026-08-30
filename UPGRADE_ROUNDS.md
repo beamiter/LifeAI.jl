@@ -429,6 +429,8 @@ Chapter 03 reproducible-training test.
      TemplateProcessing post-processor tree with deterministic diagnostics.
 214. Bind Qwen3 semantic-memory texts, normalized embeddings, and metadata to
      owned collections so retained constructor inputs cannot rewrite retrieval.
+215. Reject duplicate Qwen3-VL processor fields at the frozen root and nested
+     size boundaries before semantic values or asset checksums are trusted.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

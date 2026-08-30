@@ -169,14 +169,23 @@ function _qwen3_vl_exact_json_keys(value, expected, path, label)
     value isa JSON3.Object || throw(ArgumentError(
         "`$label` must be an object in $path",
     ))
-    actual = Set(String(key) for key in keys(value))
+    counts = Dict{String,Int}()
+    for raw_key in keys(value)
+        key = String(raw_key)
+        counts[key] = get(counts, key, 0) + 1
+    end
+    actual = Set(keys(counts))
     required = Set(String(key) for key in expected)
-    actual == required || begin
+    duplicates = sort!([
+        key for (key, count) in counts if count > 1
+    ])
+    (actual == required && isempty(duplicates)) || begin
         missing = sort!(collect(setdiff(required, actual)))
         extra = sort!(collect(setdiff(actual, required)))
         details = String[]
         isempty(missing) || push!(details, "missing: " * join(missing, ", "))
         isempty(extra) || push!(details, "unexpected: " * join(extra, ", "))
+        isempty(duplicates) || push!(details, "duplicate: " * join(duplicates, ", "))
         throw(ArgumentError(
             "invalid fields in `$label` in $path ($(join(details, "; ")))",
         ))
