@@ -196,7 +196,7 @@ logits or retained KV caches, then apply mask-aware last-token/MRL pooling.
 function hf_qwen3_embedding_forward(
     model::GPTModel,
     parameters,
-    tokens::AbstractMatrix{<:Integer},
+    tokens::AbstractMatrix,
     attention_mask;
     dimension::Integer=model.d_model,
 )
@@ -212,7 +212,7 @@ function hf_qwen3_embedding_forward(
     sequence_length <= model.max_seq_len || throw(ArgumentError(
         "embedding input exceeds model.max_seq_len",
     ))
-    token_matrix = Int.(collect(tokens))
+    token_matrix = _strict_host_int_array(tokens, "embedding token ids")
     _validate_generation_ids(token_matrix, model.vocab_size)
     mask = _qwen3_embedding_bool_mask(
         attention_mask,

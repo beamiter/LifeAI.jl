@@ -720,6 +720,44 @@ end
         )
         @test left.embeddings[:, 1] == first.embeddings[:, 1]
         @test left.embeddings[:, 2] ≈ second.embeddings[:, 1] atol=2.0f-3
+        left_int32 = hf_qwen3_embedding_forward(
+            loaded.model,
+            loaded.parameters,
+            Int32.(left_tokens),
+            left_mask;
+            dimension=8,
+        )
+        @test left_int32.embeddings == left.embeddings
+
+        missing_tokens = Matrix{Any}(left_tokens)
+        missing_tokens[1, 1] = missing
+        for invalid_tokens in (
+            Bool.(left_tokens .> 0),
+            Float64.(left_tokens),
+            ComplexF64.(left_tokens),
+            missing_tokens,
+        )
+            @test _embedding_argument_error_message() do
+                hf_qwen3_embedding_forward(
+                    loaded.model,
+                    loaded.parameters,
+                    invalid_tokens,
+                    left_mask;
+                    dimension=8,
+                )
+            end == "embedding token ids must be an integer"
+        end
+        overflow_tokens = BigInt.(left_tokens)
+        overflow_tokens[1, 1] = big(typemax(Int)) + 1
+        @test _embedding_argument_error_message() do
+            hf_qwen3_embedding_forward(
+                loaded.model,
+                loaded.parameters,
+                overflow_tokens,
+                left_mask;
+                dimension=8,
+            )
+        end == "embedding token ids is outside the host integer range"
 
         @test_throws ArgumentError hf_qwen3_embedding_forward(
             loaded.model,

@@ -317,6 +317,8 @@ Chapter 03 reproducible-training test.
      local position, batch, and empty-cache RoPE invariants.
 158. Enforce host-safe Qwen3-VL static cache capacity, position, batch, and
      empty-state invariants through its sole inferred inner constructor.
+159. Normalize Qwen3 embedding-forward token matrices through strict host
+     integers, rejecting Bool, non-integers, and range overflow consistently.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
