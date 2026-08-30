@@ -1062,6 +1062,11 @@ function hf_qwen3_vl_text_prefill_cached(
         length(vision_features.deepstack) == 3 || throw(DimensionMismatch(
             "Qwen3-VL cached prefill requires exactly three DeepStack features",
         ))
+        _validate_qwen3_vl_text_feature_geometry(
+            parameters,
+            vision_features,
+            count(rope_layout.visual_mask),
+        )
         _validate_qwen3_vl_text_feature_residency(
             parameters,
             vision_features,
@@ -1544,6 +1549,11 @@ function hf_qwen3_vl_text_prefill_static(
         length(vision_features.deepstack) == 3 || throw(DimensionMismatch(
             "Qwen3-VL static prefill requires exactly three DeepStack features",
         ))
+        _validate_qwen3_vl_text_feature_geometry(
+            parameters,
+            vision_features,
+            count(rope_layout.visual_mask),
+        )
         _validate_qwen3_vl_text_feature_residency(
             parameters,
             vision_features,

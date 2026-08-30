@@ -586,17 +586,40 @@ end
             1,
         ),
     ))
+    wrong_visual_shape = merge(inputs.vision_features, (;
+        visual_embeddings=inputs.vision_features.visual_embeddings[:, 1:3],
+    ))
+    nonmatrix_deepstack = merge(inputs.vision_features, (;
+        deepstack=Base.setindex(
+            inputs.vision_features.deepstack,
+            vec(inputs.vision_features.deepstack[1]),
+            1,
+        ),
+    ))
 
-    for (features, message) in (
+    for (features, error_type, message) in (
         (
             dtype_features,
+            ArgumentError,
             "ArgumentError: Qwen3-VL visual_embeddings dtype must match " *
             "text parameter embedding",
         ),
         (
             foreign_deepstack,
+            ArgumentError,
             "ArgumentError: Qwen3-VL deepstack[1] device must match " *
             "text parameter embedding",
+        ),
+        (
+            wrong_visual_shape,
+            DimensionMismatch,
+            "DimensionMismatch: Qwen3-VL main visual feature count does " *
+            "not match image placeholders",
+        ),
+        (
+            nonmatrix_deepstack,
+            ArgumentError,
+            "ArgumentError: Qwen3-VL deepstack[1] must be a matrix",
         ),
     )
         cache = init_qwen3_vl_kv_cache(parameters)
@@ -609,7 +632,7 @@ end
                 cache,
             ),
         )
-        @test error isa ArgumentError
+        @test isa(error, error_type)
         @test sprint(showerror, error) == message
         @test isempty(cache)
         @test cache.position == 0

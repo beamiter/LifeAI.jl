@@ -552,6 +552,37 @@ function _validate_qwen3_vl_text_feature_residency(
     return nothing
 end
 
+"""Validate feature ranks and shapes without reading feature elements."""
+function _validate_qwen3_vl_text_feature_geometry(
+    parameters,
+    vision_features,
+    visual_count::Int,
+)
+    spec = parameters.spec
+    visual_embeddings = vision_features.visual_embeddings
+    visual_embeddings isa AbstractMatrix || throw(ArgumentError(
+        "Qwen3-VL visual_embeddings must be a matrix",
+    ))
+    size(visual_embeddings, 2) == visual_count || throw(DimensionMismatch(
+        "Qwen3-VL main visual feature count does not match image placeholders",
+    ))
+    size(visual_embeddings, 1) == spec.hidden_size || throw(DimensionMismatch(
+        "Qwen3-VL visual feature width does not match text hidden size",
+    ))
+
+    expected_shape = (spec.hidden_size, visual_count)
+    for index in 1:min(3, spec.num_hidden_layers)
+        feature = vision_features.deepstack[index]
+        feature isa AbstractMatrix || throw(ArgumentError(
+            "Qwen3-VL deepstack[$index] must be a matrix",
+        ))
+        size(feature) == expected_shape || throw(DimensionMismatch(
+            "Qwen3-VL DeepStack feature shape does not match visual positions",
+        ))
+    end
+    return nothing
+end
+
 function _qwen3_vl_add_deepstack(x, features, visual_mask)
     sequence_length, batch_size = size(visual_mask)
     batch_size == 1 || throw(ArgumentError(
@@ -843,6 +874,11 @@ function hf_qwen3_vl_text_prefill(
         length(vision_features.deepstack) == 3 || throw(DimensionMismatch(
             "Qwen3-VL prefill requires exactly three DeepStack features",
         ))
+        _validate_qwen3_vl_text_feature_geometry(
+            parameters,
+            vision_features,
+            count(rope_layout.visual_mask),
+        )
         _validate_qwen3_vl_text_feature_residency(
             parameters,
             vision_features,

@@ -605,12 +605,64 @@ end
         "DimensionMismatch: Qwen3-VL prefill requires exactly three " *
         "DeepStack features"
 
+    geometry_cases = (
+        (
+            merge(inputs.vision_features, (;
+                visual_embeddings=vec(
+                    inputs.vision_features.visual_embeddings,
+                ),
+            )),
+            ArgumentError,
+            "ArgumentError: Qwen3-VL visual_embeddings must be a matrix",
+        ),
+        (
+            merge(inputs.vision_features, (;
+                visual_embeddings=
+                    inputs.vision_features.visual_embeddings[:, 1:3],
+            )),
+            DimensionMismatch,
+            "DimensionMismatch: Qwen3-VL main visual feature count does " *
+            "not match image placeholders",
+        ),
+        (
+            merge(inputs.vision_features, (;
+                deepstack=Base.setindex(
+                    inputs.vision_features.deepstack,
+                    vec(inputs.vision_features.deepstack[1]),
+                    1,
+                ),
+            )),
+            ArgumentError,
+            "ArgumentError: Qwen3-VL deepstack[1] must be a matrix",
+        ),
+        (
+            merge(inputs.vision_features, (;
+                deepstack=Base.setindex(
+                    inputs.vision_features.deepstack,
+                    inputs.vision_features.deepstack[2][:, 1:3],
+                    2,
+                ),
+            )),
+            DimensionMismatch,
+            "DimensionMismatch: Qwen3-VL DeepStack feature shape does " *
+            "not match visual positions",
+        ),
+    )
+    for (features, error_type, message) in geometry_cases
+        error = prefill_error(features)
+        @test isa(error, error_type)
+        @test sprint(showerror, error) == message
+    end
+
     # Shallow toy decoders retain the three-item public contract, but feature
-    # residency matters only for the DeepStack entries their layers consume.
+    # geometry and residency matter only for entries their layers consume.
     for num_hidden_layers in 0:2
         shallow_parameters = (;
             embedding=parameters.embedding,
-            spec=(; num_hidden_layers),
+            spec=(;
+                num_hidden_layers,
+                hidden_size=parameters.spec.hidden_size,
+            ),
         )
         shallow_deepstack = ntuple(3) do index
             index <= num_hidden_layers &&
@@ -626,6 +678,11 @@ end
         @test isnothing(LifeAI._validate_qwen3_vl_text_feature_residency(
             shallow_parameters,
             shallow_features,
+        ))
+        @test isnothing(LifeAI._validate_qwen3_vl_text_feature_geometry(
+            shallow_parameters,
+            shallow_features,
+            count(inputs.rope_layout.visual_mask),
         ))
     end
 end
