@@ -162,6 +162,24 @@ end
         document["image_token_id"] = true
     end
     @test_throws ArgumentError _ch43_load_mutated_config() do document
+        document["image_token_id"] = big(typemax(Int)) + 1
+    end
+    for path_to_field in (
+        ("tie_word_embeddings",),
+        ("text_config", "attention_bias"),
+        ("text_config", "use_cache"),
+        ("text_config", "tie_word_embeddings"),
+        ("text_config", "rope_scaling", "mrope_interleaved"),
+    )
+        @test_throws ArgumentError _ch43_load_mutated_config() do document
+            target = document
+            for name in path_to_field[1:(end - 1)]
+                target = target[name]
+            end
+            target[path_to_field[end]] = path_to_field[end] == "attention_bias" ? 0 : 1
+        end
+    end
+    @test_throws ArgumentError _ch43_load_mutated_config() do document
         document["transformers_version"] = "4.57.0"
     end
     @test_throws ArgumentError _ch43_load_mutated_config() do document

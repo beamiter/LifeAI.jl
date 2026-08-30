@@ -75,6 +75,8 @@ revision `78448d793a7eb2f7a987a1da76d464384aa1becd`。ModelScope 的移动分支
 
 `qwen3_vl_expected_tensor_shapes` 从冻结 text/vision config 独立推导全部 625
 个名称与 shape；验证器不会只相信 safetensors metadata 中自报的总量。config
+中的布尔字段要求 JSON Bool identity，整数 `0/1` 不再因 Julia 的相等比较而冒充
+`false/true`；整数及 mRoPE section 的宿主范围转换同样 fail closed。config
 还严格检查 mRoPE、DeepStack indexes、special ids、tied head 和 text/vision
 width 接口，未知字段或 shape 漂移直接拒绝。
 

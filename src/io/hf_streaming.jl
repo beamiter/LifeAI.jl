@@ -396,7 +396,7 @@ function load_hf_qwen3_compact_model(
     ))
     config = load_hf_qwen3_config(
         joinpath(model_dir, "config.json");
-        max_seq_len=Int(max_seq_len),
+        max_seq_len,
         variant,
     )
     model = GPTModel(config)

@@ -58,6 +58,9 @@ parameters = load_hf_qwen3_parameters(model, tensors)
 
 - `rope_style` 仅接受 `:interleaved` / `:rotate_half`，并进入 `gpt_config` 与 checkpoint round-trip；旧 config 缺省为 `:interleaved`。
 - `load_hf_qwen3_config` 必须验证 `model_type=qwen3`、dense/full-attention/no-dropout 等当前能力边界，并允许调用方将 `max_seq_len` 限制为不大于 `max_position_embeddings` 的正整数。
+- 所有结构整数与 `max_seq_len` override 都要求非 Bool、平台可表示的整数；RMSNorm
+  epsilon 与 RoPE theta 必须在 Float32 收窄后仍为正且有限，zero dropout 也不能用
+  `false` 冒充。compact streaming loader 将原始 override 交给同一严格边界。
 - 参数加载必须报告 missing / unexpected / duplicate / shape mismatch / unsupported dtype，
   并在映射前拒绝 checkpoint 不提供的 LM-head bias；不允许用初始化随机值悄悄补齐。
 - tied 模型复用 `embed_tokens`；untied 模型必须存在并加载 `lm_head.weight`。

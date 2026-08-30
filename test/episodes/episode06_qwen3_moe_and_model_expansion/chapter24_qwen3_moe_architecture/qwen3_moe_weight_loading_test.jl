@@ -177,6 +177,14 @@ end
         @test config.experts_per_token == 2
         @test config.normalize_routing
         @test config.max_seq_len == 16
+        @test load_hf_qwen3_moe_config(path; max_seq_len=Int32(16)).max_seq_len == 16
+        @test load_hf_qwen3_moe_config(path; max_seq_len=big(16)).max_seq_len == 16
+        for invalid_limit in (true, 16.0, big(typemax(Int)) + 1)
+            @test_throws ArgumentError load_hf_qwen3_moe_config(
+                path;
+                max_seq_len=invalid_limit,
+            )
+        end
 
         model = GPTModel(config)
         @test model.blocks.layers.layer_1.mlp isa Qwen3SparseMoE
@@ -211,6 +219,38 @@ end
         @test_throws ArgumentError load_hf_qwen3_moe_config(path)
         write(path, JSON3.write(_qwen3_moe_test_config(num_experts_per_tok=5)))
         @test_throws ArgumentError load_hf_qwen3_moe_config(path)
+
+        for name in (
+            "decoder_sparse_step",
+            "vocab_size",
+            "hidden_size",
+            "intermediate_size",
+            "moe_intermediate_size",
+            "num_hidden_layers",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "head_dim",
+            "num_experts",
+            "num_experts_per_tok",
+            "max_position_embeddings",
+        )
+            document = _qwen3_moe_test_config()
+            document[name] = true
+            write(path, JSON3.write(document))
+            @test_throws ArgumentError load_hf_qwen3_moe_config(path)
+        end
+        for (name, value) in (
+            "attention_dropout" => false,
+            "rms_norm_eps" => true,
+            "rope_theta" => true,
+            "rms_norm_eps" => 1.0e-300,
+            "rope_theta" => 1.0e300,
+        )
+            document = _qwen3_moe_test_config()
+            document[name] = value
+            write(path, JSON3.write(document))
+            @test_throws ArgumentError load_hf_qwen3_moe_config(path)
+        end
     end
 end
 

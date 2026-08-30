@@ -269,10 +269,7 @@ end
 
 function _qwen3_vl_int(object, name::AbstractString, context::AbstractString)
     value = _json_required(object, name, context)
-    value isa Integer && !(value isa Bool) || throw(ArgumentError(
-        "`$name` must be an integer in $context",
-    ))
-    return Int(value)
+    return _strict_host_int(value, "`$name` in $context")
 end
 
 function _qwen3_vl_number(object, name::AbstractString, context::AbstractString)
@@ -289,6 +286,18 @@ end
 function _qwen3_vl_expect(object, name, expected, context)
     actual = _json_required(object, name, context)
     actual == expected || throw(ArgumentError(
+        "unsupported `$name` in $context: expected $(repr(expected)), " *
+        "got $(repr(actual))",
+    ))
+    return actual
+end
+
+function _qwen3_vl_expect(object, name, expected::Bool, context)
+    actual = _json_required(object, name, context)
+    actual isa Bool || throw(ArgumentError(
+        "`$name` must be a boolean in $context",
+    ))
+    actual === expected || throw(ArgumentError(
         "unsupported `$name` in $context: expected $(repr(expected)), " *
         "got $(repr(actual))",
     ))
@@ -319,10 +328,7 @@ function _qwen3_vl_int_tuple(value, length_expected::Int, context::AbstractStrin
         "$context must contain exactly $length_expected integers",
     ))
     converted = map(value) do item
-        item isa Integer && !(item isa Bool) || throw(ArgumentError(
-            "$context must contain only integers",
-        ))
-        Int(item)
+        _strict_host_int(item, context)
     end
     return Tuple(converted)
 end

@@ -414,15 +414,50 @@ end
 
 function _required_int(object, name::AbstractString, path::AbstractString)
     value = _json_required(object, name, path)
-    value isa Integer || throw(ArgumentError("`$name` must be an integer in $path"))
-    value > 0 || throw(ArgumentError("`$name` must be positive in $path"))
-    return Int(value)
+    result = _strict_host_int(value, "`$name` in $path")
+    result > 0 || throw(ArgumentError("`$name` must be positive in $path"))
+    return result
 end
 
 function _required_bool(object, name::AbstractString, path::AbstractString)
     value = _json_required(object, name, path)
     value isa Bool || throw(ArgumentError("`$name` must be a boolean in $path"))
     return value
+end
+
+function _required_zero_real(object, name::AbstractString, path::AbstractString)
+    value = _json_required(object, name, path)
+    value isa Real && !(value isa Bool) || throw(ArgumentError(
+        "`$name` must be numeric in $path",
+    ))
+    isfinite(value) && iszero(value) || throw(ArgumentError(
+        "`$name` must be finite and zero in $path",
+    ))
+    return value
+end
+
+function _required_positive_float32(
+    object,
+    name::AbstractString,
+    path::AbstractString,
+)
+    value = _json_required(object, name, path)
+    value isa Real && !(value isa Bool) || throw(ArgumentError(
+        "`$name` must be numeric in $path",
+    ))
+    result = try
+        Float32(value)
+    catch error
+        error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
+            rethrow()
+        throw(ArgumentError(
+            "`$name` is not representable as Float32 in $path",
+        ))
+    end
+    isfinite(result) && result > 0 || throw(ArgumentError(
+        "`$name` must be positive and finite at Float32 precision in $path",
+    ))
+    return result
 end
 
 """
@@ -464,13 +499,7 @@ function load_hf_qwen3_config(
     attention_bias = _required_bool(config, "attention_bias", path)
     attention_bias && throw(ArgumentError("Qwen3 attention bias is not supported"))
 
-    attention_dropout = _json_required(config, "attention_dropout", path)
-    attention_dropout isa Real || throw(ArgumentError(
-        "`attention_dropout` must be numeric in $path",
-    ))
-    iszero(attention_dropout) || throw(ArgumentError(
-        "non-zero attention dropout is not supported",
-    ))
+    _required_zero_real(config, "attention_dropout", path)
 
     use_sliding_window = haskey(config, "use_sliding_window") ?
         config["use_sliding_window"] : false
@@ -503,19 +532,14 @@ function load_hf_qwen3_config(
     ))
     iseven(head_dim) || throw(ArgumentError("Qwen3 head_dim must be even for RoPE"))
 
-    resolved_max_seq_len = max_seq_len === nothing ? max_positions : Int(max_seq_len)
+    resolved_max_seq_len = max_seq_len === nothing ? max_positions :
+        _strict_host_int(max_seq_len, "max_seq_len")
     1 <= resolved_max_seq_len <= max_positions || throw(ArgumentError(
         "max_seq_len must be in 1:$max_positions; got $resolved_max_seq_len",
     ))
 
-    rms_norm_eps = _json_required(config, "rms_norm_eps", path)
-    rms_norm_eps isa Real && rms_norm_eps > 0 || throw(ArgumentError(
-        "`rms_norm_eps` must be positive in $path",
-    ))
-    rope_theta = _json_required(config, "rope_theta", path)
-    rope_theta isa Real && rope_theta > 0 || throw(ArgumentError(
-        "`rope_theta` must be positive in $path",
-    ))
+    rms_norm_eps = _required_positive_float32(config, "rms_norm_eps", path)
+    rope_theta = _required_positive_float32(config, "rope_theta", path)
     tie_embeddings = _required_bool(config, "tie_word_embeddings", path)
     dense_spec = _qwen3_dense_spec(
         vocab_size,
@@ -597,10 +621,7 @@ function load_hf_qwen3_moe_config(
     _required_bool(config, "attention_bias", path) && throw(ArgumentError(
         "Qwen3 MoE attention bias is not supported",
     ))
-    attention_dropout = _json_required(config, "attention_dropout", path)
-    attention_dropout isa Real && iszero(attention_dropout) || throw(ArgumentError(
-        "Qwen3 MoE requires zero attention_dropout",
-    ))
+    _required_zero_real(config, "attention_dropout", path)
 
     use_sliding_window = haskey(config, "use_sliding_window") ?
         config["use_sliding_window"] : false
@@ -645,18 +666,13 @@ function load_hf_qwen3_moe_config(
     ))
     iseven(head_dim) || throw(ArgumentError("Qwen3 MoE head_dim must be even for RoPE"))
 
-    resolved_max_seq_len = max_seq_len === nothing ? max_positions : Int(max_seq_len)
+    resolved_max_seq_len = max_seq_len === nothing ? max_positions :
+        _strict_host_int(max_seq_len, "max_seq_len")
     1 <= resolved_max_seq_len <= max_positions || throw(ArgumentError(
         "max_seq_len must be in 1:$max_positions; got $resolved_max_seq_len",
     ))
-    rms_norm_eps = _json_required(config, "rms_norm_eps", path)
-    rms_norm_eps isa Real && rms_norm_eps > 0 || throw(ArgumentError(
-        "`rms_norm_eps` must be positive in $path",
-    ))
-    rope_theta = _json_required(config, "rope_theta", path)
-    rope_theta isa Real && rope_theta > 0 || throw(ArgumentError(
-        "`rope_theta` must be positive in $path",
-    ))
+    rms_norm_eps = _required_positive_float32(config, "rms_norm_eps", path)
+    rope_theta = _required_positive_float32(config, "rope_theta", path)
     tie_embeddings = _required_bool(config, "tie_word_embeddings", path)
 
     return (;

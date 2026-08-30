@@ -71,6 +71,9 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - router 在 Float32 上 softmax，保留固定 top-k，并支持 `norm_topk_prob`。
 - `GPTModel` / `TransformerBlock` 增加 MoE 构造配置；现有 full、dynamic cache、static cache 路径无需专用分支。
 - 新增 strict `load_hf_qwen3_moe_config` 与原始逐 expert 权重名映射。
+- MoE config 的结构整数、runtime context override 与数值字段复用 dense 严格标量
+  合同：Bool、浮点伪整数、越界宿主整数，以及 Float32 下溢/溢出的 norm/RoPE 值均
+  在模型构造前拒绝。
 - 四个按测试内容命名的专项共 `43 / 43` 通过：router 13、expert mixture 6、config/weight mapping 18、cached decode 6。
 - Dense 回归：Qwen3 HF weight loading `54 / 54`、dense family `91 / 91` 通过。
 

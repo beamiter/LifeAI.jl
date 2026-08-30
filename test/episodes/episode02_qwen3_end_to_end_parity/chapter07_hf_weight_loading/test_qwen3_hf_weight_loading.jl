@@ -239,6 +239,15 @@ end
         @test config.tie_embeddings
         @test config.max_seq_len == 16
 
+        @test load_hf_qwen3_config(path; max_seq_len=Int32(16)).max_seq_len == 16
+        @test load_hf_qwen3_config(path; max_seq_len=big(16)).max_seq_len == 16
+        for invalid_limit in (true, 16.0, big(typemax(Int)) + 1)
+            @test_throws ArgumentError load_hf_qwen3_config(
+                path;
+                max_seq_len=invalid_limit,
+            )
+        end
+
         @test_throws ArgumentError load_hf_qwen3_config(path; max_seq_len=33)
         bad_model = _qwen3_weight_loading_write_config(
             joinpath(directory, "bad-model.json");
@@ -256,6 +265,35 @@ end
             sliding_window=8,
         )
         @test_throws ArgumentError load_hf_qwen3_config(bad_sliding)
+
+        invalid_scalar = joinpath(directory, "invalid-scalar.json")
+        for name in (
+            "vocab_size",
+            "hidden_size",
+            "intermediate_size",
+            "num_hidden_layers",
+            "num_attention_heads",
+            "num_key_value_heads",
+            "head_dim",
+            "max_position_embeddings",
+        )
+            document = _qwen3_weight_loading_config()
+            document[name] = true
+            write(invalid_scalar, JSON3.write(document))
+            @test_throws ArgumentError load_hf_qwen3_config(invalid_scalar)
+        end
+        for (name, value) in (
+            "attention_dropout" => false,
+            "rms_norm_eps" => true,
+            "rope_theta" => true,
+            "rms_norm_eps" => 1.0e-300,
+            "rope_theta" => 1.0e300,
+        )
+            document = _qwen3_weight_loading_config()
+            document[name] = value
+            write(invalid_scalar, JSON3.write(document))
+            @test_throws ArgumentError load_hf_qwen3_config(invalid_scalar)
+        end
         write(joinpath(directory, "invalid.json"), "[")
         @test_throws ArgumentError load_hf_qwen3_config(joinpath(directory, "invalid.json"))
     end
