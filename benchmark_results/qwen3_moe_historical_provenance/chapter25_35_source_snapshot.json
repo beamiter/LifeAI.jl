@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "scope": "Qwen3 MoE Chapter 25-35 per-report historical source snapshots",
+  "scope": "Qwen3 MoE Chapter 25-35 and 41 per-report historical source snapshots",
   "policy": {
     "original_report_commit": "The commit that first added the measured report and its original source_sha256 values.",
-    "repair_scope": "Restore source_sha256 provenance metadata and the one Chapter 33 baseline.source_report_sha256 provenance link; recorded timing, traffic, memory, correctness, and all other metrics are unchanged.",
+    "repair_scope": "Restore Chapter 25-35 source_sha256 provenance metadata and the one Chapter 33 baseline.source_report_sha256 provenance link, and register the unchanged Chapter 41 source_sha256 values against its original report commit; recorded timing, traffic, memory, correctness, and all other metrics are unchanged.",
     "timing_or_metric_values_changed": false,
     "source_sha256_meaning": "Digest of the exact source bytes recorded with that historical benchmark, not a requirement that the current working tree remain unchanged.",
     "current_source_may_differ": true,
@@ -201,6 +201,23 @@
         "cuda_extension": {
           "path": "ext/LifeAICUDAExt.jl",
           "sha256": "49482b9648956df51b3c098b23795eb1187190f78dd0998e50c216f070c85661"
+        }
+      }
+    },
+    "benchmark_results/qwen3_moe_cuda_grouped_scattered/summary.json": {
+      "original_report_commit": "4c127aaac76f1b6da4fae635a265b6a9f502b44c",
+      "sources": {
+        "benchmark_script": {
+          "path": "scripts/benchmark_qwen3_moe_cuda_grouped_scattered.jl",
+          "sha256": "00a9b3a1204bd3b8a914539890515690a48e6cbc5de8a54a953051c36dbd5d78"
+        },
+        "offload_implementation": {
+          "path": "src/generation/qwen3_moe_offload.jl",
+          "sha256": "77145e0964a17cc4225b7d98814ddcf8db5d35d4f764030e03279680ad144118"
+        },
+        "cuda_extension": {
+          "path": "ext/LifeAICUDAExt.jl",
+          "sha256": "8ee5fcd6333e60fb7c183701cd8da512dc6f34819825a540b4bcecd929b0d5b3"
         }
       }
     }

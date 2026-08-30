@@ -31,15 +31,17 @@
 
 ### 历史 benchmark provenance
 
-Chapter 25–35 冻结报告中的 `source_sha256` 表示**产生该次 timing 时的源码字节**，
+Chapter 25–35 与 Chapter 41 冻结报告中的 `source_sha256` 表示**产生该次 timing 时的源码字节**，
 不要求后来演进的工作树继续保持相同 hash。每份报告各自的
 `original_report_commit`（即首次加入该 measured report 的提交）及其源码快照由
 [`chapter25_35_source_snapshot.json`](../../../benchmark_results/qwen3_moe_historical_provenance/chapter25_35_source_snapshot.json)
-集中冻结。此次 provenance 修复把各 summary 的 `source_sha256` 元数据恢复为其
+集中冻结。provenance 修复把 Chapter 25–35 各 summary 的 `source_sha256` 元数据恢复为其
 `original_report_commit` 已记录的原值，并恢复 Chapter 33 的
 `baseline.source_report_sha256` 这一处 Chapter 32 报告引用；后者是唯一位于
-`source_sha256` 外的修复字段。timing、traffic、memory、correctness 及其他 metric
-均未改动。测试将旧报告 hash 与对应的 per-report 快照对照；有完整 Git 历史时
+`source_sha256` 外的修复字段。Chapter 41 的三个原始 digest 没有重写，只登记到
+其首次加入报告的提交 `4c127aaac76f1b6da4fae635a265b6a9f502b44c`。timing、traffic、
+memory、correctness 及其他 metric 均未改动。测试将旧报告 hash 与对应的
+per-report 快照对照；有完整 Git 历史时
 还会从原提交重算，无完整历史的源码包仍可验证登记信息。当前源码路径必须存在，但
 文件可以继续演进。没有重跑原 workload 时，禁止把新源码 hash 写回旧 timing/report；
 新实现必须生成自己的新章节报告与 provenance。

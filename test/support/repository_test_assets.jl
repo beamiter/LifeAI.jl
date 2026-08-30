@@ -57,7 +57,7 @@ _repository_relative_path(path::AbstractString) =
     replace(normpath(String(path)), '\\' => '/')
 
 """
-Return audit fields for one source in a Chapter 25-35 historical report.
+Return audit fields for one source in a registered historical MoE report.
 
 The report digest identifies the source bytes used when the timing was recorded.
 It is checked against that report's immutable historical snapshot, not against

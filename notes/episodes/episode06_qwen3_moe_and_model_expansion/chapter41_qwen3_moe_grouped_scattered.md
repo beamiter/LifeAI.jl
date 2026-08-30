@@ -195,11 +195,12 @@ semantics。
 
 - 新 grouped pointer CUDA synthetic/lifecycle：`47 / 47`；
 - 既有 Episode 06 CUDA 回归：`181 / 181`；
-- Chapter 41 真实结果 contract：`60 / 60`；
+- Chapter 41 真实结果 contract：`78 / 78`；
 - 真实 30B：2 workloads × 3 configurations × 1 warmup + 3 measured runs，最终
   verification gate 全部通过；
 - 冻结报告：
   `benchmark_results/qwen3_moe_cuda_grouped_scattered/summary.json`；
 - 报告绑定 benchmark script、offload implementation 与 CUDA extension 的 SHA256；
-  旧 Chapter 25–35 timing 的历史源码 provenance 单独按原运行 commit 恢复，不把
-  Chapter 41 新 hash 追写进旧报告。
+  三个 digest 保持实测报告原值，并按首次加入报告的提交 `4c127aaa` 登记到历史
+  provenance；后续源码加固不反向改写本章 timing 或 hash。旧 Chapter 25–35 timing
+  同样按各自原运行 commit 验证，不把 Chapter 41 的 hash 追写进旧报告。

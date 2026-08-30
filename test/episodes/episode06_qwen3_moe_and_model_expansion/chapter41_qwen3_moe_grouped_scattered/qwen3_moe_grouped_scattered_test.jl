@@ -1,6 +1,8 @@
 using JSON3
-using SHA: sha256
 using Test
+
+isdefined(@__MODULE__, :qwen3_moe_historical_benchmark_source_status) ||
+    include(joinpath(@__DIR__, "..", "..", "..", "support", "repository_test_assets.jl"))
 
 @testset "Qwen3 MoE grouped scattered real-result contract" begin
     repo_root = normpath(joinpath(@__DIR__, "..", "..", "..", ".."))
@@ -141,8 +143,20 @@ using Test
         "cuda_extension" => joinpath("ext", "LifeAICUDAExt.jl"),
     )
     for (name, relative_path) in source_paths
-        expected = String(summary["source_sha256"][name])
-        actual = bytes2hex(sha256(read(joinpath(repo_root, relative_path))))
-        @test actual == expected
+        status = qwen3_moe_historical_benchmark_source_status(
+            summary_path,
+            summary,
+            name,
+            relative_path,
+        )
+        @test status.source_path_matches
+        @test status.digest_is_sha256
+        @test status.current_source_exists
+        @test status.report_registered
+        @test status.snapshot_registered
+        @test status.digest_matches_snapshot
+        if status.git_snapshot_matches !== nothing
+            @test status.git_snapshot_matches
+        end
     end
 end

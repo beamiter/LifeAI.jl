@@ -443,6 +443,9 @@ Chapter 03 reproducible-training test.
 220. Bind generic dynamic K/V layer construction to coherent lazy or positive
      four-dimensional same-shape/dtype/device distinct zero-copy storage while
      preserving trace-safe internal appends.
+221. Bind the archived Qwen3 MoE grouped-scattered report to its frozen
+     original-commit source snapshots without rewriting historical measurement
+     digests as the implementation evolves.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
