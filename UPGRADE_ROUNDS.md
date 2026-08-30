@@ -389,6 +389,8 @@ Chapter 03 reproducible-training test.
      to their shared RoPE sequence and batch geometry without copying arrays.
 194. Reject unknown Qwen3 added-token fields in both tokenizer JSON mirrors
      while preserving required-field semantics and sorted diagnostics.
+195. Seal Qwen3 agent-tool declarations behind their canonical schema builder
+     so advertised and enforced required arguments cannot diverge.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -7,6 +7,9 @@ serializes each tool with CPython `json.dumps(..., ensure_ascii=false)`, so the
 schema must keep insertion order to stay byte identical to the reference prompt.
 """
 
+struct _AgentToolValidated end
+const _AGENT_TOOL_VALIDATED = _AgentToolValidated()
+
 """One registered tool: an ordered JSON schema plus a pure Julia handler."""
 struct AgentTool
     name::String
@@ -14,6 +17,17 @@ struct AgentTool
     parameters::Any
     required::Vector{String}
     handler::Any
+
+    function AgentTool(
+        ::_AgentToolValidated,
+        name::String,
+        description::String,
+        parameters,
+        required::Vector{String},
+        handler,
+    )
+        return new(name, description, parameters, required, handler)
+    end
 end
 
 function AgentTool(;
@@ -26,7 +40,14 @@ function AgentTool(;
     isempty(name) && throw(ArgumentError("tool name must not be empty"))
     required_names = String[String(entry) for entry in required]
     parameters = (; type="object", properties, required=required_names)
-    return AgentTool(String(name), String(description), parameters, required_names, handler)
+    return AgentTool(
+        _AGENT_TOOL_VALIDATED,
+        String(name),
+        String(description),
+        parameters,
+        required_names,
+        handler,
+    )
 end
 
 """Ordered collection of tools addressable by name."""

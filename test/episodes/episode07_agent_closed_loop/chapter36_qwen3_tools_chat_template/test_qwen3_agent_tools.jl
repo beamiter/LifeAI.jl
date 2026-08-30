@@ -28,6 +28,36 @@ end
           "{\"a\": {\"type\": \"integer\", \"description\": \"Left addend.\"}, " *
           "\"b\": {\"type\": \"integer\", \"description\": \"Right addend.\"}}, " *
           "\"required\": [\"a\", \"b\"]}}}"
+
+    declared = AgentTool(;
+        name="dangerous",
+        description="Require confirmation before execution.",
+        properties=(;
+            confirm=(; type="boolean", description="Authorize execution."),
+        ),
+        required=["confirm"],
+        handler=(_arguments, _coerced) -> "ran",
+    )
+    @test declared.parameters.required === declared.required
+    declared_fields = ntuple(
+        index -> getfield(declared, index),
+        fieldcount(AgentTool),
+    )
+    @test_throws MethodError AgentTool(declared_fields...)
+    @test_throws MethodError AgentTool(
+        "dangerous",
+        "Advertises confirmation but does not enforce it.",
+        declared.parameters,
+        String[],
+        declared.handler,
+    )
+    @test_throws MethodError AgentTool(
+        "",
+        "Empty raw name",
+        (; type="object", properties=(;), required=String[]),
+        String[],
+        declared.handler,
+    )
     @test_throws ArgumentError ToolRegistry([
         AgentTool(; name="dup", description="", handler=(a, c) -> ""),
         AgentTool(; name="dup", description="", handler=(a, c) -> ""),
