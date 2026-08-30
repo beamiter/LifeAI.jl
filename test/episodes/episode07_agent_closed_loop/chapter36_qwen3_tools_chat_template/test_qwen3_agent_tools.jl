@@ -156,6 +156,20 @@ end
         @test boundary.output == string(value)
     end
 
+    for (left, right) in ((typemax(Int), 1), (typemin(Int), -1))
+        overflow = invoke_agent_tool(
+            registry,
+            call(
+                "<tool_call>\n{\"name\": \"add_integers\", \"arguments\": " *
+                "{\"a\": $left, \"b\": $right}}\n</tool_call>",
+            ),
+        )
+        @test !overflow.ok
+        @test overflow.error ==
+            "ArgumentError: integer addition result is outside the host integer range"
+        @test isempty(overflow.coerced_arguments)
+    end
+
     unsigned_arguments = LifeAI.OrderedJSONObject([
         "a" => UInt(typemax(Int)) + UInt(1),
     ])

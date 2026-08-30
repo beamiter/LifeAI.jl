@@ -347,6 +347,8 @@ Chapter 03 reproducible-training test.
      canonical Python-style rendering, closing malformed and duplicate-key bypasses.
 173. Normalize Qwen3 tool integer arguments through the strict host boundary so
      oversized JSON integers and unsigned values report stable argument failures.
+174. Check Qwen3 integer-tool addition for host overflow so boundary operands
+     cannot silently wrap into a plausible but incorrect tool response.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -169,6 +169,17 @@ function _tool_integer(arguments, name::AbstractString, coerced::Vector{String})
     throw(ArgumentError("argument $(repr(name)) must be an integer"))
 end
 
+function _tool_checked_add(left::Int, right::Int)
+    return try
+        Base.Checked.checked_add(left, right)
+    catch error
+        error isa OverflowError || rethrow()
+        throw(ArgumentError(
+            "integer addition result is outside the host integer range",
+        ))
+    end
+end
+
 function _tool_string(arguments, name::AbstractString)
     value = _tool_argument(arguments, name)
     value isa AbstractString || throw(ArgumentError("argument $(repr(name)) must be a string"))
@@ -382,9 +393,10 @@ add_integers_tool() = AgentTool(;
         b=(; type="integer", description="Right addend."),
     ),
     required=["a", "b"],
-    handler=(arguments, coerced) -> string(
-        _tool_integer(arguments, "a", coerced) + _tool_integer(arguments, "b", coerced),
-    ),
+    handler=(arguments, coerced) -> string(_tool_checked_add(
+        _tool_integer(arguments, "a", coerced),
+        _tool_integer(arguments, "b", coerced),
+    )),
 )
 
 """List the immediate subdirectories of a frozen root, newest name order aside."""
