@@ -31,6 +31,37 @@ const _CH46_TINY_TEXT_SPEC = Qwen3VLTextSpec(
     "silu",
 )
 
+struct _Ch46NoAllocate{T} <: AbstractMatrix{T}
+    touched::Base.RefValue{Bool}
+end
+
+Base.size(::_Ch46NoAllocate) = (1, 1)
+Base.getindex(::_Ch46NoAllocate, ::Int, ::Int) = error(
+    "Qwen3-VL allocation sentinel must not be read",
+)
+function Base.similar(
+    sentinel::_Ch46NoAllocate,
+    ::Type,
+    ::Dims,
+)
+    sentinel.touched[] = true
+    error("Qwen3-VL cache allocation ran before arithmetic preflight")
+end
+
+function _ch46_bad_cache_spec(;
+    num_hidden_layers=1,
+    head_dim=8,
+    num_key_value_heads=1,
+    max_position_embeddings=1,
+)
+    return (;
+        num_hidden_layers,
+        head_dim,
+        num_key_value_heads,
+        max_position_embeddings,
+    )
+end
+
 function _ch46_tiny_values(count::Int, offset::Int; scale=0.02f0)
     return Float32[
         scale * sin(0.173f0 * Float32(offset + index))
@@ -252,6 +283,95 @@ end
         end
         @test batch_error isa ArgumentError
         @test occursin("batch_size", sprint(showerror, batch_error))
+    end
+
+    arithmetic_cases = (
+        (
+            spec=_ch46_bad_cache_spec(num_hidden_layers=true),
+            block_count=1,
+            needle="num_hidden_layers",
+        ),
+        (
+            spec=_ch46_bad_cache_spec(head_dim=1.0),
+            block_count=1,
+            needle="head_dim",
+        ),
+        (
+            spec=_ch46_bad_cache_spec(
+                num_key_value_heads=overflow_integer,
+            ),
+            block_count=1,
+            needle="num_key_value_heads",
+        ),
+        (
+            spec=_ch46_bad_cache_spec(max_position_embeddings=true),
+            block_count=1,
+            needle="max_position_embeddings",
+        ),
+        (
+            spec=_ch46_bad_cache_spec(num_hidden_layers=0),
+            block_count=0,
+            needle="num_hidden_layers must be positive",
+        ),
+        (
+            spec=_ch46_bad_cache_spec(head_dim=0),
+            block_count=1,
+            needle="head_dim must be positive",
+        ),
+        (
+            spec=_ch46_bad_cache_spec(num_key_value_heads=0),
+            block_count=1,
+            needle="num_key_value_heads must be positive",
+        ),
+        (
+            spec=_ch46_bad_cache_spec(max_position_embeddings=0),
+            block_count=1,
+            needle="max_position_embeddings must be positive",
+        ),
+        (
+            spec=_ch46_bad_cache_spec(
+                head_dim=typemax(Int),
+                num_key_value_heads=2,
+            ),
+            block_count=1,
+            needle="tensor element count",
+        ),
+        (
+            spec=_ch46_bad_cache_spec(
+                num_hidden_layers=2,
+                head_dim=typemax(Int) ÷ 4 + 1,
+            ),
+            block_count=2,
+            needle="total element count",
+        ),
+        (
+            spec=_ch46_bad_cache_spec(
+                head_dim=typemax(Int) ÷ 8 + 1,
+            ),
+            block_count=1,
+            needle="byte count",
+        ),
+    )
+    for case in arithmetic_cases
+        touched = Ref(false)
+        parameters_with_bad_spec = (;
+            embedding=_Ch46NoAllocate{Float32}(touched),
+            blocks=ntuple(_ -> nothing, case.block_count),
+            final_norm=nothing,
+            spec=case.spec,
+        )
+        arithmetic_error = try
+            init_qwen3_vl_static_kv_cache(
+                parameters_with_bad_spec;
+                capacity=1,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test arithmetic_error isa ArgumentError
+        @test occursin(case.needle, sprint(showerror, arithmetic_error))
+        @test !touched[]
     end
 
     expected_bytes = parameters.spec.num_hidden_layers * 2 *

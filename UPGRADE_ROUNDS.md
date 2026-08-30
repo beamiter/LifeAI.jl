@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the ninety-two follow-up rounds implemented on top of the
+This ledger records the ninety-three follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -185,6 +185,8 @@ Chapter 03 reproducible-training test.
     device transfer, slicing, or inbounds mutation.
 92. Normalize Qwen3-VL dynamic/static cache batch and capacity integers before
     parameter inspection or storage allocation.
+93. Preflight Qwen3-VL static cache tensor, aggregate K/V, and byte counts with
+    exact arithmetic before device allocation, including malformed specs.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

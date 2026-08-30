@@ -144,6 +144,72 @@ end
 Base.length(cache::Qwen3VLStaticKVCache) = cache.position
 Base.isempty(cache::Qwen3VLStaticKVCache) = cache.position == 0
 
+function _qwen3_vl_static_cache_dimensions(spec)
+    num_layers = _strict_host_int(
+        spec.num_hidden_layers,
+        "Qwen3-VL static cache num_hidden_layers",
+    )
+    head_dim = _strict_host_int(
+        spec.head_dim,
+        "Qwen3-VL static cache head_dim",
+    )
+    num_kv_heads = _strict_host_int(
+        spec.num_key_value_heads,
+        "Qwen3-VL static cache num_key_value_heads",
+    )
+    max_positions = _strict_host_int(
+        spec.max_position_embeddings,
+        "Qwen3-VL static cache max_position_embeddings",
+    )
+    num_layers > 0 || throw(ArgumentError(
+        "Qwen3-VL static cache num_hidden_layers must be positive",
+    ))
+    head_dim > 0 || throw(ArgumentError(
+        "Qwen3-VL static cache head_dim must be positive",
+    ))
+    num_kv_heads > 0 || throw(ArgumentError(
+        "Qwen3-VL static cache num_key_value_heads must be positive",
+    ))
+    max_positions > 0 || throw(ArgumentError(
+        "Qwen3-VL static cache max_position_embeddings must be positive",
+    ))
+    return (; num_layers, head_dim, num_kv_heads, max_positions)
+end
+
+function _qwen3_vl_static_cache_layout(
+    dimensions,
+    capacity::Int,
+    batch_size::Int,
+    dtype::Type,
+)
+    per_tensor_elements = BigInt(dimensions.head_dim) *
+        dimensions.num_kv_heads * capacity * batch_size
+    per_tensor_elements <= typemax(Int) || throw(ArgumentError(
+        "Qwen3-VL static cache tensor element count exceeds the host integer range",
+    ))
+
+    total_elements = 2 * BigInt(dimensions.num_layers) * per_tensor_elements
+    total_elements <= typemax(Int) || throw(ArgumentError(
+        "Qwen3-VL static cache total element count exceeds the host integer range",
+    ))
+
+    total_bytes = total_elements * sizeof(dtype)
+    total_bytes <= typemax(Int) || throw(ArgumentError(
+        "Qwen3-VL static cache byte count exceeds the host integer range",
+    ))
+    return (;
+        shape=(
+            dimensions.head_dim,
+            dimensions.num_kv_heads,
+            capacity,
+            batch_size,
+        ),
+        per_tensor_elements=Int(per_tensor_elements),
+        total_elements=Int(total_elements),
+        total_bytes=Int(total_bytes),
+    )
+end
+
 """
     init_qwen3_vl_static_kv_cache(text_parameters; capacity, batch_size=1)
 
@@ -163,11 +229,12 @@ function init_qwen3_vl_static_kv_cache(
         "Qwen3-VL static generation currently supports batch size one",
     ))
     spec = _qwen3_vl_cache_spec(text_parameters)
-    length(text_parameters.blocks) == spec.num_hidden_layers ||
+    dimensions = _qwen3_vl_static_cache_dimensions(spec)
+    length(text_parameters.blocks) == dimensions.num_layers ||
         throw(DimensionMismatch(
             "Qwen3-VL decoder parameter layer count is invalid",
         ))
-    0 < requested_capacity <= spec.max_position_embeddings ||
+    0 < requested_capacity <= dimensions.max_positions ||
         throw(ArgumentError(
             "Qwen3-VL static cache capacity must be in 1:max_position_embeddings",
         ))
@@ -175,16 +242,16 @@ function init_qwen3_vl_static_kv_cache(
     dtype in (Float32, BFloat16) || throw(ArgumentError(
         "Qwen3-VL static cache supports Float32 or BFloat16 parameters",
     ))
-
-    shape = (
-        spec.head_dim,
-        spec.num_key_value_heads,
+    layout = _qwen3_vl_static_cache_layout(
+        dimensions,
         requested_capacity,
         batch,
+        dtype,
     )
-    layers = ntuple(spec.num_hidden_layers) do _
-        keys = similar(text_parameters.embedding, dtype, shape)
-        values = similar(text_parameters.embedding, dtype, shape)
+
+    layers = ntuple(dimensions.num_layers) do _
+        keys = similar(text_parameters.embedding, dtype, layout.shape)
+        values = similar(text_parameters.embedding, dtype, layout.shape)
         fill!(keys, zero(dtype))
         fill!(values, zero(dtype))
         Qwen3VLStaticLayerKVCache(keys, values)
@@ -199,13 +266,14 @@ function _validate_qwen3_vl_static_kv_cache(
     cache::Qwen3VLStaticKVCache,
 )
     spec = _qwen3_vl_cache_spec(parameters)
+    dimensions = _qwen3_vl_static_cache_dimensions(spec)
     cache.batch_size == 1 || throw(ArgumentError(
         "Qwen3-VL static generation currently supports batch size one",
     ))
-    length(cache.layers) == spec.num_hidden_layers || throw(DimensionMismatch(
+    length(cache.layers) == dimensions.num_layers || throw(DimensionMismatch(
         "Qwen3-VL static KV cache layer count does not match the decoder",
     ))
-    0 < cache.capacity <= spec.max_position_embeddings || throw(ArgumentError(
+    0 < cache.capacity <= dimensions.max_positions || throw(ArgumentError(
         "Qwen3-VL static cache capacity is outside the decoder context",
     ))
     0 <= cache.position <= cache.capacity || throw(ArgumentError(
@@ -216,8 +284,8 @@ function _validate_qwen3_vl_static_kv_cache(
     ))
 
     expected_shape = (
-        spec.head_dim,
-        spec.num_key_value_heads,
+        dimensions.head_dim,
+        dimensions.num_kv_heads,
         cache.capacity,
         cache.batch_size,
     )
