@@ -212,6 +212,9 @@ function load_hf_qwen3_embedding_config(
     max_seq_len=8_192,
 )
     requested_max_seq_len = _qwen3_embedding_requested_max_seq_len(max_seq_len)
+    isfile(path) || throw(ArgumentError(
+        "required Qwen3 embedding config does not exist: $path",
+    ))
     spec = qwen3_embedding_spec()
     actual_sha256 = _qwen3_embedding_sha256_file(path)
     actual_sha256 == spec.config_sha256 || throw(ArgumentError(

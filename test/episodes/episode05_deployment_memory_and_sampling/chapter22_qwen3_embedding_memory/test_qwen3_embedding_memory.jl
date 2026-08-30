@@ -295,6 +295,12 @@ end
                 )
             end == expected
         end
+        @test _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_config(
+                missing_config;
+                max_seq_len=big(512),
+            )
+        end == "required Qwen3 embedding config does not exist: $missing_config"
 
         @test _embedding_argument_error_message() do
             load_hf_qwen3_embedding_model(directory; max_seq_len=true)
