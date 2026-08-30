@@ -61,7 +61,16 @@ struct HFQwen3GenerationConfig
         temperature isa Real && !(temperature isa Bool) || throw(ArgumentError(
             "temperature must be a finite positive number",
         ))
-        resolved_temperature = Float32(temperature)
+        isfinite(temperature) && temperature > 0 || throw(ArgumentError(
+            "temperature must be a finite positive number",
+        ))
+        resolved_temperature = try
+            Float32(temperature)
+        catch error
+            error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
+                rethrow()
+            throw(ArgumentError("temperature must be representable as Float32"))
+        end
         isfinite(resolved_temperature) && resolved_temperature > 0 ||
             throw(ArgumentError("temperature must be a finite positive number"))
         resolved_top_k = _hf_strict_host_int(top_k, "top_k")
@@ -69,7 +78,16 @@ struct HFQwen3GenerationConfig
         top_p isa Real && !(top_p isa Bool) || throw(ArgumentError(
             "top_p must be in (0, 1]",
         ))
-        resolved_top_p = Float32(top_p)
+        isfinite(top_p) && 0 < top_p <= 1 || throw(ArgumentError(
+            "top_p must be in (0, 1]",
+        ))
+        resolved_top_p = try
+            Float32(top_p)
+        catch error
+            error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
+                rethrow()
+            throw(ArgumentError("top_p must be representable as Float32"))
+        end
         isfinite(resolved_top_p) && 0 < resolved_top_p <= 1 ||
             throw(ArgumentError("top_p must be in (0, 1]"))
         transformers_version isa AbstractString &&
@@ -612,6 +630,9 @@ function _hf_validate_generation_config(
     raw_temperature isa Real && !(raw_temperature isa Bool) || throw(ArgumentError(
         "temperature must be a finite positive number",
     ))
+    isfinite(raw_temperature) && raw_temperature > 0 || throw(ArgumentError(
+        "temperature must be a finite positive number",
+    ))
     temperature = Float32(raw_temperature)
     isfinite(temperature) && temperature > 0 || throw(ArgumentError(
         "temperature must be a finite positive number",
@@ -623,6 +644,9 @@ function _hf_validate_generation_config(
     top_k > 0 || throw(ArgumentError("top_k must be a positive integer"))
     raw_top_p = _hf_required(config, "top_p", "generation_config.json")
     raw_top_p isa Real && !(raw_top_p isa Bool) || throw(ArgumentError(
+        "top_p must be in (0, 1]",
+    ))
+    isfinite(raw_top_p) && 0 < raw_top_p <= 1 || throw(ArgumentError(
         "top_p must be in (0, 1]",
     ))
     top_p = Float32(raw_top_p)

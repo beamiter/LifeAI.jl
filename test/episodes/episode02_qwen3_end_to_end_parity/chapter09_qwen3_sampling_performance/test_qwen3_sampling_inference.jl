@@ -101,6 +101,29 @@ end
     source_eos_ids[1] = 1
     @test direct.eos_ids == [261, 259]
 
+    minimum_temperature = HFQwen3GenerationConfig(
+        1,
+        [1],
+        1,
+        false,
+        nextfloat(0.0f0),
+        1,
+        1.0f0,
+        "boundary",
+    )
+    @test minimum_temperature.temperature == nextfloat(0.0f0)
+    maximum_temperature = HFQwen3GenerationConfig(
+        1,
+        [1],
+        1,
+        false,
+        floatmax(Float32),
+        1,
+        1.0f0,
+        "boundary",
+    )
+    @test maximum_temperature.temperature == floatmax(Float32)
+
     too_large = big(typemax(Int)) + 1
     huge_real = big(10)^1_000
     valid_fields = (259, [261, 259], 259, true, 0.6, 20, 0.95, "4.51.0")
@@ -126,7 +149,15 @@ end
         invalid = Base.setindex(valid_fields, invalid_do_sample, 4)
         @test_throws ArgumentError HFQwen3GenerationConfig(invalid...)
     end
-    for invalid_temperature in (true, 0, -1, NaN, Inf, huge_real)
+    for invalid_temperature in (
+        true,
+        0,
+        -1,
+        NaN,
+        Inf,
+        BigFloat("1e-1000"),
+        huge_real,
+    )
         invalid = Base.setindex(valid_fields, invalid_temperature, 5)
         @test_throws ArgumentError HFQwen3GenerationConfig(invalid...)
     end
@@ -134,7 +165,16 @@ end
         invalid = Base.setindex(valid_fields, invalid_top_k, 6)
         @test_throws ArgumentError HFQwen3GenerationConfig(invalid...)
     end
-    for invalid_top_p in (true, 0, -1, 1.1, NaN, Inf)
+    for invalid_top_p in (
+        true,
+        0,
+        -1,
+        nextfloat(1.0),
+        BigFloat(1) + eps(BigFloat),
+        1.1,
+        NaN,
+        Inf,
+    )
         invalid = Base.setindex(valid_fields, invalid_top_p, 7)
         @test_throws ArgumentError HFQwen3GenerationConfig(invalid...)
     end
@@ -164,6 +204,7 @@ end
         payloads -> (payloads.generation_config["temperature"] = 0.0),
         payloads -> (payloads.generation_config["top_k"] = 0),
         payloads -> (payloads.generation_config["top_p"] = 1.1),
+        payloads -> (payloads.generation_config["top_p"] = nextfloat(1.0)),
         payloads -> (payloads.generation_config["transformers_version"] = ""),
         payloads -> (payloads.generation_config["min_p"] = 0.1),
     ]
