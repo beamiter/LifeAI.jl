@@ -1,8 +1,11 @@
 using Test
 using Random
 using Lux
+import Reactant
+import LifeAI
 using LifeAI:
     GPTModel,
+    StaticLayerKVCache,
     TrainerGPT,
     XLAKVDecoder,
     benchmark_xla_cache_modes,
@@ -10,6 +13,29 @@ using LifeAI:
     train_step!,
     xla_decode_step!,
     xla_prefill!
+
+function _ch02_xla_rebuild_static_layer(cache)
+    return LifeAI.StaticLayerKVCache(
+        LifeAI._STATIC_LAYER_KV_CACHE_VALIDATED,
+        cache.keys .+ 1.0f0,
+        cache.values .+ 2.0f0,
+    )
+end
+
+@testset "StaticLayerKVCache remains reconstructible while tracing" begin
+    Reactant.set_default_backend("cpu")
+    keys = Reactant.to_rarray(zeros(Float32, 2, 1, 3, 1))
+    values = Reactant.to_rarray(ones(Float32, 2, 1, 3, 1))
+    cache = StaticLayerKVCache(keys, values)
+    @test cache.keys === keys
+    @test cache.values === values
+
+    compiled = Reactant.@compile _ch02_xla_rebuild_static_layer(cache)
+    rebuilt = compiled(cache)
+    @test rebuilt isa StaticLayerKVCache
+    @test Array(rebuilt.keys) == ones(Float32, 2, 1, 3, 1)
+    @test Array(rebuilt.values) == fill(3.0f0, 2, 1, 3, 1)
+end
 
 @testset "Reactant/XLA fixed-shape KV decoding" begin
     rng = Xoshiro(20260717)

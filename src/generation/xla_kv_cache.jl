@@ -14,9 +14,35 @@ fixed physical shape:
 
 Only the prefix selected by `StaticGPTKVCache.position` is logically valid.
 """
+struct _StaticLayerKVCacheValidated end
+const _STATIC_LAYER_KV_CACHE_VALIDATED = _StaticLayerKVCacheValidated()
+
 struct StaticLayerKVCache{K,V}
     keys::K
     values::V
+
+    function StaticLayerKVCache(
+        ::_StaticLayerKVCacheValidated,
+        keys::K,
+        values::V,
+    ) where {K,V}
+        return new{K,V}(keys, values)
+    end
+end
+
+function StaticLayerKVCache(keys::AbstractArray, values::AbstractArray)
+    _validate_layer_kv_arrays(keys, values)
+    eltype(keys) <: AbstractFloat || throw(ArgumentError(
+        "static layer KV cache storage must contain floating-point values",
+    ))
+    get_device(keys) == get_device(values) || throw(ArgumentError(
+        "static layer KV cache keys and values must use the same device",
+    ))
+    return StaticLayerKVCache(
+        _STATIC_LAYER_KV_CACHE_VALIDATED,
+        keys,
+        values,
+    )
 end
 
 """

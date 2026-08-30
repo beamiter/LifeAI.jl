@@ -1,11 +1,13 @@
 using Test
 using Random
 using Lux
+using BFloat16s: BFloat16
 import MLDataDevices
 using LifeAI:
     GPTModel,
     GPTKVCache,
     LayerKVCache,
+    StaticLayerKVCache,
     _append_kv,
     decode_step,
     generate,
@@ -140,6 +142,89 @@ end
         zeros(Float64, 2, 3, 1, 1),
         ones(Float64, 2, 3, 1, 1),
     )
+end
+
+@testset "StaticLayerKVCache seals fixed storage invariants" begin
+    keys = zeros(Float32, 2, 3, 4, 1)
+    values = ones(Float32, 2, 3, 4, 1)
+    cache = StaticLayerKVCache(keys, values)
+    @test cache.keys === keys
+    @test cache.values === values
+    @test size(cache.keys) == (2, 3, 4, 1)
+    @test eltype(cache.values) === Float32
+
+    float16_keys = zeros(Float16, 2, 3, 4, 1)
+    float16_values = ones(Float16, 2, 3, 4, 1)
+    float16_cache = StaticLayerKVCache(float16_keys, float16_values)
+    @test float16_cache.keys === float16_keys
+    @test float16_cache.values === float16_values
+
+    float64_keys = zeros(Float64, 2, 3, 4, 1)
+    float64_values = ones(Float64, 2, 3, 4, 1)
+    float64_cache = StaticLayerKVCache(float64_keys, float64_values)
+    @test float64_cache.keys === float64_keys
+    @test float64_cache.values === float64_values
+
+    bfloat16_keys = zeros(BFloat16, 2, 3, 4, 1)
+    bfloat16_values = ones(BFloat16, 2, 3, 4, 1)
+    bfloat16_cache = StaticLayerKVCache(bfloat16_keys, bfloat16_values)
+    @test bfloat16_cache.keys === bfloat16_keys
+    @test bfloat16_cache.values === bfloat16_values
+
+    @test_throws MethodError StaticLayerKVCache(1, 2)
+    @test_throws MethodError StaticLayerKVCache{
+        typeof(keys),
+        typeof(values),
+    }(keys, values)
+    @test_throws DimensionMismatch StaticLayerKVCache(
+        zeros(Float32, 2, 3, 4),
+        zeros(Float32, 2, 3, 4),
+    )
+    @test_throws DimensionMismatch StaticLayerKVCache(
+        zeros(Float32, 2, 3, 4, 1),
+        zeros(Float32, 2, 3, 4, 1, 1),
+    )
+    @test_throws DimensionMismatch StaticLayerKVCache(
+        keys,
+        zeros(Float32, 2, 3, 5, 1),
+    )
+
+    base_shape = size(keys)
+    for dimension in 1:4
+        empty_shape = ntuple(
+            index -> index == dimension ? 0 : base_shape[index],
+            4,
+        )
+        @test_throws ArgumentError StaticLayerKVCache(
+            zeros(Float32, empty_shape),
+            zeros(Float32, empty_shape),
+        )
+    end
+    @test_throws ArgumentError StaticLayerKVCache(
+        _Ch02OffsetArray(keys, (1, 0, 0, 0)),
+        values,
+    )
+    @test_throws ArgumentError StaticLayerKVCache(
+        keys,
+        _Ch02OffsetArray(values, (0, 0, 1, 0)),
+    )
+    @test_throws ArgumentError StaticLayerKVCache(
+        zeros(Int32, 2, 3, 4, 1),
+        ones(Int32, 2, 3, 4, 1),
+    )
+    @test_throws ArgumentError StaticLayerKVCache(
+        zeros(ComplexF32, 2, 3, 4, 1),
+        ones(ComplexF32, 2, 3, 4, 1),
+    )
+    @test_throws ArgumentError StaticLayerKVCache(
+        keys,
+        zeros(Float64, 2, 3, 4, 1),
+    )
+    @test_throws ArgumentError StaticLayerKVCache(
+        keys,
+        _Ch02ForeignDeviceArray(values),
+    )
+    @test_throws ArgumentError StaticLayerKVCache(keys, keys)
 end
 
 @testset "GPTKVCache seals dynamic container invariants" begin

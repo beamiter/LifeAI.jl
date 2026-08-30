@@ -451,6 +451,9 @@ Chapter 03 reproducible-training test.
      internal constructor.
 223. Reject empty or offset-axis Qwen3-VL prompt RoPE layouts at construction
      while preserving zero-copy storage and Reactant-compatible reconstruction.
+224. Seal static Qwen K/V layers behind positive four-dimensional floating,
+     same-shape/dtype/device, distinct zero-copy storage while preserving
+     private-token Reactant reconstruction.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
