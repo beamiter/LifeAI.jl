@@ -753,6 +753,40 @@ end
     )
     @test_throws ArgumentError qwen3_vl_expected_tensor_shapes(aggregate_spec)
 
+    excessive_layer_fields = map(fieldnames(Qwen3VLTextSpec)) do name
+        name === :num_hidden_layers && return typemax(Int)
+        return getfield(spec.text, name)
+    end
+    excessive_layer_text = Qwen3VLTextSpec(excessive_layer_fields...)
+    excessive_layer_spec_fields = map(fieldnames(Qwen3VLCheckpointSpec)) do name
+        name === :tensor_count && return 0
+        name === :text && return excessive_layer_text
+        return getfield(spec, name)
+    end
+    excessive_layer_spec = Qwen3VLCheckpointSpec(
+        excessive_layer_spec_fields...,
+    )
+    excessive_layer_failure = _ch43_captured_error() do
+        qwen3_vl_expected_tensor_shapes(excessive_layer_spec)
+    end
+    @test excessive_layer_failure isa ArgumentError
+    @test sprint(showerror, excessive_layer_failure) ==
+        "ArgumentError: Qwen3-VL tensor oracle tensor count exceeds " *
+        "the host integer range"
+
+    mismatched_count_fields = map(fieldnames(Qwen3VLCheckpointSpec)) do name
+        name === :tensor_count && return spec.tensor_count - 1
+        return getfield(spec, name)
+    end
+    mismatched_count_spec = Qwen3VLCheckpointSpec(mismatched_count_fields...)
+    mismatched_count_failure = _ch43_captured_error() do
+        qwen3_vl_expected_tensor_shapes(mismatched_count_spec)
+    end
+    @test mismatched_count_failure isa ArgumentError
+    @test sprint(showerror, mismatched_count_failure) ==
+        "ArgumentError: Qwen3-VL tensor oracle tensor count is inconsistent: " *
+        "expected 624, computed 625"
+
     half_byte_text = Qwen3VLTextSpec(
         half,
         1,

@@ -955,6 +955,22 @@ function _qwen3_vl_bf16_byte_count(parameter_count::Integer, label::AbstractStri
     )
 end
 
+function _qwen3_vl_expected_tensor_count(spec::Qwen3VLCheckpointSpec)
+    text = spec.text
+    vision = spec.vision
+    # Text has embedding/final-norm leaves, eleven leaves per decoder block,
+    # and an optional untied head. Vision has three input leaves, twelve per
+    # block, six in the main merger and six in each deepstack merger.
+    text_count = BigInt(2) + 11 * BigInt(text.num_hidden_layers) +
+        (text.tie_word_embeddings ? 0 : 1)
+    vision_count = BigInt(9) + 12 * BigInt(vision.depth) +
+        6 * length(vision.deepstack_visual_indexes)
+    return _qwen3_parameter_count_int(
+        text_count + vision_count,
+        "Qwen3-VL tensor oracle tensor count",
+    )
+end
+
 """
     qwen3_vl_expected_tensor_shapes([spec])
 
@@ -965,6 +981,11 @@ parameter conversion.
 function qwen3_vl_expected_tensor_shapes(
     spec::Qwen3VLCheckpointSpec=qwen3_vl_checkpoint_spec(),
 )
+    expected_tensor_count = _qwen3_vl_expected_tensor_count(spec)
+    expected_tensor_count == spec.tensor_count || throw(ArgumentError(
+        "Qwen3-VL tensor oracle tensor count is inconsistent: expected " *
+        "$(spec.tensor_count), computed $expected_tensor_count",
+    ))
     shapes = Dict{String,Tuple}()
     text = spec.text
     text_prefix = "model.language_model"
@@ -1183,9 +1204,9 @@ function qwen3_vl_expected_tensor_shapes(
         )
     end
 
-    length(shapes) == spec.tensor_count || error(
+    length(shapes) == expected_tensor_count || error(
         "Qwen3-VL tensor oracle has $(length(shapes)) tensors; " *
-        "expected $(spec.tensor_count)",
+        "expected $expected_tensor_count",
     )
     parameters = BigInt(0)
     for (name, shape) in pairs(shapes)
