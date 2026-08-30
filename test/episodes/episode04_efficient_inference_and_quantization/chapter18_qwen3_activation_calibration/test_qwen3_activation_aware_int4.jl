@@ -325,6 +325,25 @@ end
     @test activation_second_moment(calibration, :lm_head) ==
         fill(2.0f0, 8)
 
+    moments[(1, :q_proj)][1] = 99.0f0
+    moments[(1, :gate_proj)][1] = 99.0f0
+    layer_snapshot = calibration.layer_moments
+    layer_snapshot[(1, :q_proj)][1] = 77.0f0
+    head_snapshot = calibration.lm_head_moment
+    head_snapshot[1] = 77.0f0
+    resolved_snapshot = activation_second_moment(
+        calibration,
+        :q_proj;
+        layer=1,
+    )
+    resolved_snapshot[1] = 55.0f0
+    @test activation_second_moment(calibration, :q_proj; layer=1) ==
+        ones(Float32, 8)
+    @test activation_second_moment(calibration, :gate_proj; layer=1) ==
+        Float32[1, 2, 3, 4, 5, 6, 7, 8]
+    @test activation_second_moment(calibration, :lm_head) ==
+        fill(2.0f0, 8)
+
     wide = ActivationCalibration(
         Dict((Int128(1), :q_proj) => ones(Float64, 8));
         token_count=Int128(12),

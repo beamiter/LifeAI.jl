@@ -566,6 +566,26 @@ end
     @test quantization_spec(plan, :q_proj; layer=2) === bf16
     @test quantization_spec(plan, :lm_head) === bf16
 
+    owned_projection_overrides =
+        Dict{Symbol,LinearQuantizationSpec}(:q_proj => int8)
+    owned_layer_overrides =
+        Dict{Tuple{Int,Symbol},LinearQuantizationSpec}((2, :q_proj) => bf16)
+    owned_plan = QuantizationPlan(
+        int4_mse,
+        owned_projection_overrides,
+        owned_layer_overrides,
+    )
+    owned_projection_overrides[:q_proj] = bf16
+    empty!(owned_layer_overrides)
+    @test quantization_spec(owned_plan, :q_proj; layer=1) === int8
+    @test quantization_spec(owned_plan, :q_proj; layer=2) === bf16
+    projection_snapshot = owned_plan.projection_overrides
+    layer_snapshot = owned_plan.layer_overrides
+    projection_snapshot[:q_proj] = bf16
+    empty!(layer_snapshot)
+    @test quantization_spec(owned_plan, :q_proj; layer=1) === int8
+    @test quantization_spec(owned_plan, :q_proj; layer=2) === bf16
+
     wide_plan = QuantizationPlan(
         int4_mse,
         Dict(:q_proj => int8),

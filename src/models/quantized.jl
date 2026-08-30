@@ -161,8 +161,21 @@ struct QuantizationPlan
                 "lm_head does not accept a layer-specific quantization override",
             ))
         end
-        return new(default, projection_overrides, layer_overrides)
+        return new(
+            default,
+            copy(projection_overrides),
+            copy(layer_overrides),
+        )
     end
+end
+
+# Quantization policy is value-like: callers may inspect the override maps, but
+# mutating those snapshots must not change a plan already used by a loader.
+function Base.getproperty(plan::QuantizationPlan, name::Symbol)
+    name === :projection_overrides &&
+        return copy(getfield(plan, :projection_overrides))
+    name === :layer_overrides && return copy(getfield(plan, :layer_overrides))
+    return getfield(plan, name)
 end
 
 QuantizationPlan(default, projection_overrides, layer_overrides) =
@@ -245,9 +258,14 @@ function quantization_spec(
     ))
     if resolved_layer !== nothing
         target = (resolved_layer, projection)
-        haskey(plan.layer_overrides, target) && return plan.layer_overrides[target]
+        layer_overrides = getfield(plan, :layer_overrides)
+        haskey(layer_overrides, target) && return layer_overrides[target]
     end
-    return get(plan.projection_overrides, projection, plan.default)
+    return get(
+        getfield(plan, :projection_overrides),
+        projection,
+        getfield(plan, :default),
+    )
 end
 
 function _validate_quantization_plan_layers(
@@ -255,7 +273,7 @@ function _validate_quantization_plan_layers(
     num_layers::Integer,
 )
     num_layers > 0 || throw(ArgumentError("model must contain at least one layer"))
-    for ((layer, projection), _) in plan.layer_overrides
+    for ((layer, projection), _) in getfield(plan, :layer_overrides)
         layer <= num_layers || throw(ArgumentError(
             "quantization override ($layer, $(repr(projection))) exceeds " *
             "model depth $num_layers",
@@ -387,6 +405,23 @@ struct ActivationCalibration
     end
 end
 
+# Public collection properties are defensive snapshots. Quantization internals
+# use `getfield` and `_activation_second_moment_ref` so streamed weight loading
+# does not copy the complete calibration set.
+function Base.getproperty(calibration::ActivationCalibration, name::Symbol)
+    if name === :layer_moments
+        return Dict(
+            target => copy(moment)
+            for (target, moment) in getfield(calibration, :layer_moments)
+        )
+    end
+    if name === :lm_head_moment
+        moment = getfield(calibration, :lm_head_moment)
+        return moment === nothing ? nothing : copy(moment)
+    end
+    return getfield(calibration, name)
+end
+
 function ActivationCalibration(
     layer_moments;
     lm_head_moment=nothing,
@@ -403,13 +438,7 @@ function ActivationCalibration(
     )
 end
 
-"""
-    activation_second_moment(calibration, projection; layer=nothing)
-
-Resolve one calibration vector. Transformer projections require a one-based
-`layer`; `:lm_head` requires `layer=nothing`. Missing statistics fail closed.
-"""
-function activation_second_moment(
+function _activation_second_moment_ref(
     calibration::ActivationCalibration,
     projection::Symbol;
     layer=nothing,
@@ -421,21 +450,37 @@ function activation_second_moment(
         layer === nothing || throw(ArgumentError(
             "lm_head does not belong to a transformer layer",
         ))
-        calibration.lm_head_moment === nothing && throw(ArgumentError(
+        moment = getfield(calibration, :lm_head_moment)
+        moment === nothing && throw(ArgumentError(
             "activation calibration is missing lm_head statistics",
         ))
-        return calibration.lm_head_moment
+        return moment
     end
     resolved_layer = _strict_host_int(layer, "activation calibration layer")
-    1 <= resolved_layer <= calibration.num_layers || throw(ArgumentError(
-        "activation calibration layer must be in 1:$(calibration.num_layers)",
+    num_layers = getfield(calibration, :num_layers)
+    1 <= resolved_layer <= num_layers || throw(ArgumentError(
+        "activation calibration layer must be in 1:$num_layers",
     ))
     target = (resolved_layer, projection)
-    haskey(calibration.layer_moments, target) || throw(ArgumentError(
+    layer_moments = getfield(calibration, :layer_moments)
+    haskey(layer_moments, target) || throw(ArgumentError(
         "activation calibration is missing target $target",
     ))
-    return calibration.layer_moments[target]
+    return layer_moments[target]
 end
+
+"""
+    activation_second_moment(calibration, projection; layer=nothing)
+
+Resolve one calibration vector. Transformer projections require a one-based
+`layer`; `:lm_head` requires `layer=nothing`. Missing statistics fail closed.
+The returned vector is an owned snapshot of the sealed calibration data.
+"""
+activation_second_moment(
+    calibration::ActivationCalibration,
+    projection::Symbol;
+    layer=nothing,
+) = copy(_activation_second_moment_ref(calibration, projection; layer))
 
 _bf16_calibration_parameters(array::AbstractArray) = BFloat16.(array)
 _bf16_calibration_parameters(values::NamedTuple) =
@@ -1041,7 +1086,7 @@ function _activation_moment_for_quantization(
         "quantization plan requires an ActivationCalibration for " *
         "$(layer === nothing ? projection : (layer, projection))",
     ))
-    return activation_second_moment(calibration, projection; layer)
+    return _activation_second_moment_ref(calibration, projection; layer)
 end
 
 function _validate_activation_calibration_depth(
@@ -1483,7 +1528,7 @@ function _estimate_qwen3_quantized_bytes(
         down_proj=(d_model, hidden_dim),
     )
     override_counts = Dict{Symbol,Int}()
-    for ((_, projection), override_spec) in plan.layer_overrides
+    for ((_, projection), override_spec) in getfield(plan, :layer_overrides)
         out_dim, in_dim = getproperty(layer_shapes, projection)
         bytes += _linear_quantized_bytes(out_dim, in_dim, override_spec)
         override_counts[projection] = get(override_counts, projection, 0) + 1
@@ -1492,9 +1537,9 @@ function _estimate_qwen3_quantized_bytes(
         baseline_layers = num_layers - get(override_counts, projection, 0)
         if baseline_layers > 0
             baseline_spec = get(
-                plan.projection_overrides,
+                getfield(plan, :projection_overrides),
                 projection,
-                plan.default,
+                getfield(plan, :default),
             )
             bytes += BigInt(baseline_layers) *
                 _linear_quantized_bytes(out_dim, in_dim, baseline_spec)
