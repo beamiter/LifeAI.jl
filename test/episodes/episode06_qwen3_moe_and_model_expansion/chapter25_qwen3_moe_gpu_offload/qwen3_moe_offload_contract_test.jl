@@ -38,6 +38,15 @@ function _qwen3_offload_session_state(session)
     )
 end
 
+function _qwen3_offload_atomic_failure(thunk, session)
+    preserved = _qwen3_offload_session_state(session)
+    failure = _qwen3_offload_captured_error(thunk)
+    return (;
+        failure,
+        unchanged=isequal(_qwen3_offload_session_state(session), preserved),
+    )
+end
+
 @testset "Qwen3 MoE session options fail before checkpoint I/O" begin
     mktempdir() do directory
         too_large = big(typemax(Int)) + 1
@@ -314,6 +323,12 @@ end
         prefill_chunk_tokens=1,
         grouped_experts=false,
     )
+    raw_fields = ntuple(
+        index -> getfield(session, index),
+        fieldcount(typeof(session)),
+    )
+    @test_throws MethodError HFQwen3MoEOffloadSession(raw_fields...)
+
     prefill = prefill_hf_qwen3_moe_offload!(session, Int128[2, 3])
     @test prefill.position == 2
     @test length(prefill.chunks) == 2
@@ -364,6 +379,128 @@ end
         )
         @test isequal(_qwen3_offload_session_state(session), preserved)
     end
+
+
+    valid_position = session.position
+    session.position = session.context_tokens + 1
+    for operation in (
+        () -> reset_hf_qwen3_moe_offload_session!(session),
+        () -> prefill_hf_qwen3_moe_offload!(session, [2]),
+        () -> decode_hf_qwen3_moe_offload!(session, 4),
+    )
+        rejected = _qwen3_offload_atomic_failure(operation, session)
+        @test rejected.failure isa ArgumentError
+        @test occursin(
+            "position must be in 0:context_tokens",
+            sprint(showerror, rejected.failure),
+        )
+        @test rejected.unchanged
+    end
+    session.position = valid_position
+
+    valid_chunk = session.prefill_chunk_tokens
+    session.prefill_chunk_tokens = 0
+    rejected_chunk = _qwen3_offload_atomic_failure(session) do
+        reset_hf_qwen3_moe_offload_session!(session)
+    end
+    @test rejected_chunk.failure isa ArgumentError
+    @test occursin(
+        "prefill_chunk_tokens must be in 1:context_tokens",
+        sprint(showerror, rejected_chunk.failure),
+    )
+    @test rejected_chunk.unchanged
+    session.prefill_chunk_tokens = valid_chunk
+
+    valid_context = session.context_tokens
+    session.context_tokens -= 1
+    rejected_context = _qwen3_offload_atomic_failure(session) do
+        prefill_hf_qwen3_moe_offload!(session, [2])
+    end
+    @test rejected_context.failure isa DimensionMismatch
+    @test occursin(
+        "context does not match model.max_seq_len",
+        sprint(showerror, rejected_context.failure),
+    )
+    @test rejected_context.unchanged
+    session.context_tokens = valid_context
+
+    removed_cache = pop!(session.caches)
+    rejected_layer_count = _qwen3_offload_atomic_failure(session) do
+        decode_hf_qwen3_moe_offload!(session, 4)
+    end
+    @test rejected_layer_count.failure isa DimensionMismatch
+    @test occursin(
+        "cache layer count does not match model.num_layers",
+        sprint(showerror, rejected_layer_count.failure),
+    )
+    @test rejected_layer_count.unchanged
+    push!(session.caches, removed_cache)
+
+    valid_first_cache = session.caches[1]
+    invalid_shape = (
+        session.model.head_dim,
+        session.model.num_kv_heads,
+        session.context_tokens - 1,
+        1,
+    )
+    session.caches[1] = LifeAI.BF16AStaticLayerCache(
+        zeros(BFloat16, invalid_shape),
+        zeros(BFloat16, invalid_shape),
+    )
+    rejected_geometry = _qwen3_offload_atomic_failure(session) do
+        reset_hf_qwen3_moe_offload_session!(session)
+    end
+    @test rejected_geometry.failure isa DimensionMismatch
+    @test occursin(
+        "does not match the model/session geometry",
+        sprint(showerror, rejected_geometry.failure),
+    )
+    @test rejected_geometry.unchanged
+    session.caches[1] = valid_first_cache
+
+    session.caches[1] = LifeAI.BF16AStaticLayerCache(
+        valid_first_cache.keys,
+        valid_first_cache.keys,
+    )
+    rejected_alias = _qwen3_offload_atomic_failure(session) do
+        decode_hf_qwen3_moe_offload!(session, 4)
+    end
+    @test rejected_alias.failure isa ArgumentError
+    @test occursin(
+        "keys and values must use distinct storage",
+        sprint(showerror, rejected_alias.failure),
+    )
+    @test rejected_alias.unchanged
+    session.caches[1] = valid_first_cache
+
+    valid_second_cache = session.caches[2]
+    session.caches[2] = valid_first_cache
+    rejected_cross_layer_alias = _qwen3_offload_atomic_failure(session) do
+        prefill_hf_qwen3_moe_offload!(session, [2])
+    end
+    @test rejected_cross_layer_alias.failure isa ArgumentError
+    @test occursin(
+        "cache layers must use distinct storage",
+        sprint(showerror, rejected_cross_layer_alias.failure),
+    )
+    @test rejected_cross_layer_alias.unchanged
+    session.caches[2] = valid_second_cache
+
+    session.caches[1] = LifeAI.BF16AStaticLayerCache(
+        zeros(Float32, size(valid_first_cache.keys)),
+        zeros(Float32, size(valid_first_cache.values)),
+    )
+    rejected_dtype = _qwen3_offload_atomic_failure(session) do
+        decode_hf_qwen3_moe_offload!(session, 4)
+    end
+    @test rejected_dtype.failure isa ArgumentError
+    @test occursin(
+        "cache storage must use BFloat16",
+        sprint(showerror, rejected_dtype.failure),
+    )
+    @test rejected_dtype.unchanged
+    session.caches[1] = valid_first_cache
+
     @test reset_hf_qwen3_moe_offload_session!(session).position == 0
 end
 

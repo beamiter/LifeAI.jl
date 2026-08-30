@@ -161,6 +161,10 @@ function _qwen3_grouped_bf16_expert_dispatch(
     )
 end
 
+struct _HFQwen3MoEOffloadSessionValidated end
+const _HF_QWEN3_MOE_OFFLOAD_SESSION_VALIDATED =
+    _HFQwen3MoEOffloadSessionValidated()
+
 mutable struct HFQwen3MoEOffloadSession
     model
     config
@@ -220,6 +224,140 @@ mutable struct HFQwen3MoEOffloadSession
     expert_read_tasks::Int
     expert_parallel_read_layers::Int
     expert_pinned_bytes_uploaded::Int
+
+    function HFQwen3MoEOffloadSession(
+        ::_HFQwen3MoEOffloadSessionValidated,
+        fields...,
+    )
+        return new(fields...)
+    end
+end
+
+function _qwen3_moe_validate_offload_session(
+    session::HFQwen3MoEOffloadSession,
+)
+    model = session.model
+    model isa GPTModel || throw(ArgumentError(
+        "Qwen3 MoE offload session model must be a GPTModel",
+    ))
+    _qwen3_validate_moe_semantics(model)
+
+    context = session.context_tokens
+    context > 0 || throw(ArgumentError(
+        "Qwen3 MoE offload session context_tokens must be positive",
+    ))
+    context == model.max_seq_len || throw(DimensionMismatch(
+        "Qwen3 MoE offload session context does not match model.max_seq_len",
+    ))
+    0 < session.prefill_chunk_tokens <= context || throw(ArgumentError(
+        "Qwen3 MoE offload session prefill_chunk_tokens must be in " *
+        "1:context_tokens",
+    ))
+    0 <= session.position <= context || throw(ArgumentError(
+        "Qwen3 MoE offload session position must be in 0:context_tokens",
+    ))
+    length(session.resident_blocks) == model.num_layers ||
+        throw(DimensionMismatch(
+            "Qwen3 MoE offload resident layer count does not match model.num_layers",
+        ))
+    length(session.caches) == model.num_layers || throw(DimensionMismatch(
+        "Qwen3 MoE offload cache layer count does not match model.num_layers",
+    ))
+
+    expected_cache_shape = (
+        model.head_dim,
+        model.num_kv_heads,
+        context,
+        1,
+    )
+    cache_device = nothing
+    seen_storage = IdDict{Any,Nothing}()
+    for (layer_index, layer) in enumerate(session.caches)
+        layer isa BF16AStaticLayerCache || throw(ArgumentError(
+            "Qwen3 MoE offload cache layer $layer_index must use " *
+            "BF16AStaticLayerCache storage",
+        ))
+        keys = layer.keys
+        values = layer.values
+        keys isa AbstractArray && values isa AbstractArray ||
+            throw(ArgumentError(
+                "Qwen3 MoE offload cache keys and values must be arrays",
+            ))
+        _validate_layer_kv_arrays(keys, values)
+        size(keys) == expected_cache_shape || throw(DimensionMismatch(
+            "Qwen3 MoE offload cache layer $layer_index does not match " *
+            "the model/session geometry",
+        ))
+        eltype(keys) === BFloat16 || throw(ArgumentError(
+            "Qwen3 MoE offload cache storage must use BFloat16",
+        ))
+        key_device = get_device(keys)
+        get_device(values) == key_device || throw(ArgumentError(
+            "Qwen3 MoE offload cache keys and values must use the same device",
+        ))
+        if cache_device === nothing
+            cache_device = key_device
+        else
+            key_device == cache_device || throw(ArgumentError(
+                "Qwen3 MoE offload cache layers must use the same device",
+            ))
+        end
+        for storage in (keys, values)
+            haskey(seen_storage, storage) && throw(ArgumentError(
+                "Qwen3 MoE offload cache layers must use distinct storage",
+            ))
+            seen_storage[storage] = nothing
+        end
+    end
+
+    session.final_scale isa AbstractArray || throw(ArgumentError(
+        "Qwen3 MoE offload final scale must be an array",
+    ))
+    size(session.final_scale) == (model.d_model, 1, 1) ||
+        throw(DimensionMismatch(
+            "Qwen3 MoE offload final scale does not match model.d_model",
+        ))
+    eltype(session.final_scale) === BFloat16 || throw(ArgumentError(
+        "Qwen3 MoE offload final scale must use BFloat16",
+    ))
+    get_device(session.final_scale) == cache_device || throw(ArgumentError(
+        "Qwen3 MoE offload cache and resident tensors must use the same device",
+    ))
+
+    session.logits_weight isa AbstractArray || throw(ArgumentError(
+        "Qwen3 MoE offload logits weight must be an array",
+    ))
+    size(session.logits_weight) == (model.vocab_size, model.d_model) ||
+        throw(DimensionMismatch(
+            "Qwen3 MoE offload logits weight does not match the model geometry",
+        ))
+    eltype(session.logits_weight) === BFloat16 || throw(ArgumentError(
+        "Qwen3 MoE offload logits weight must use BFloat16",
+    ))
+    get_device(session.logits_weight) == cache_device || throw(ArgumentError(
+        "Qwen3 MoE offload logits weight must use the session device",
+    ))
+
+    for (name, table) in (
+        ("cos", session.cos_table),
+        ("sin", session.sin_table),
+    )
+        table isa AbstractArray || throw(ArgumentError(
+            "Qwen3 MoE offload $name RoPE table must be an array",
+        ))
+        size(table) == (model.head_dim ÷ 2, context) ||
+            throw(DimensionMismatch(
+                "Qwen3 MoE offload $name RoPE table does not match " *
+                "the model/session window",
+            ))
+        eltype(table) === BFloat16 || throw(ArgumentError(
+            "Qwen3 MoE offload $name RoPE table must use BFloat16",
+        ))
+        get_device(table) == cache_device || throw(ArgumentError(
+            "Qwen3 MoE offload $name RoPE table must use the session device",
+        ))
+    end
+    return nothing
 end
 
 struct _Qwen3MoEExpertCacheEntry
@@ -1720,7 +1858,8 @@ function load_hf_qwen3_moe_offload_session(
         model,
     )
 
-    return HFQwen3MoEOffloadSession(
+    session = HFQwen3MoEOffloadSession(
+        _HF_QWEN3_MOE_OFFLOAD_SESSION_VALIDATED,
         model,
         config,
         reader,
@@ -1780,12 +1919,15 @@ function load_hf_qwen3_moe_offload_session(
         0,
         0,
     )
+    _qwen3_moe_validate_offload_session(session)
+    return session
 end
 
 """Reset the logical prefix while retaining resident tensors and static KV buffers."""
 function reset_hf_qwen3_moe_offload_session!(
     session::HFQwen3MoEOffloadSession,
 )
+    _qwen3_moe_validate_offload_session(session)
     session.position = 0
     _qwen3_moe_reset_expert_traffic!(session)
     return session
@@ -1803,6 +1945,7 @@ function prefill_hf_qwen3_moe_offload!(
     session::HFQwen3MoEOffloadSession,
     prompt_tokens,
 )
+    _qwen3_moe_validate_offload_session(session)
     tokens = vec(_strict_host_int_array(
         prompt_tokens,
         "Qwen3 MoE offload prompt token",
@@ -1863,6 +2006,7 @@ function decode_hf_qwen3_moe_offload!(
     session::HFQwen3MoEOffloadSession,
     token,
 )
+    _qwen3_moe_validate_offload_session(session)
     session.position > 0 || throw(ArgumentError(
         "prefill must run before Qwen3 MoE offload decode",
     ))

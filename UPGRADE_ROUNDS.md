@@ -472,6 +472,9 @@ Chapter 03 reproducible-training test.
 230. Bind Qwen3-VL image roles only to attended checkpoint image tokens so
      masked image-valued padding remains valid while masked visual positions
      are rejected before decoder compute.
+231. Seal Qwen3 MoE offload sessions behind validated model/window and
+     resident/cache geometry, BF16 dtype/device, and non-aliasing storage with
+     atomic consumer-side revalidation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
