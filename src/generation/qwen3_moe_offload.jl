@@ -169,6 +169,24 @@ struct _HFQwen3MoEOffloadSessionValidated end
 const _HF_QWEN3_MOE_OFFLOAD_SESSION_VALIDATED =
     _HFQwen3MoEOffloadSessionValidated()
 
+struct _HFQwen3MoEOffloadStorageContract
+    caches
+    cache_layers::Tuple
+    resident_blocks
+    resident_layers::Tuple
+    final_scale
+    logits_weight
+    cos_table
+    sin_table
+
+    function _HFQwen3MoEOffloadStorageContract(
+        ::_HFQwen3MoEOffloadSessionValidated,
+        fields...,
+    )
+        return new(fields...)
+    end
+end
+
 mutable struct HFQwen3MoEOffloadSession
     model
     config
@@ -228,6 +246,7 @@ mutable struct HFQwen3MoEOffloadSession
     expert_read_tasks::Int
     expert_parallel_read_layers::Int
     expert_pinned_bytes_uploaded::Int
+    storage_contract::Union{Nothing,_HFQwen3MoEOffloadStorageContract}
 
     function HFQwen3MoEOffloadSession(
         ::_HFQwen3MoEOffloadSessionValidated,
@@ -235,6 +254,86 @@ mutable struct HFQwen3MoEOffloadSession
     )
         return new(fields...)
     end
+end
+
+function _qwen3_moe_record_session_storage!(
+    storages::Vector{Tuple{String,Any}},
+    label::AbstractString,
+    storage::AbstractArray,
+)
+    resolved_label = String(label)
+    for (existing_label, existing) in storages
+        Base.mightalias(storage, existing) && throw(ArgumentError(
+            "Qwen3 MoE offload session $resolved_label and $existing_label " *
+            "must use non-overlapping storage",
+        ))
+    end
+    push!(storages, (resolved_label, storage))
+    return nothing
+end
+
+function _qwen3_moe_record_session_tree!(storages, label, value::AbstractArray)
+    _qwen3_moe_record_session_storage!(storages, label, value)
+    return nothing
+end
+
+function _qwen3_moe_record_session_tree!(storages, label, value::NamedTuple)
+    for name in keys(value)
+        _qwen3_moe_record_session_tree!(
+            storages,
+            "$label.$name",
+            getproperty(value, name),
+        )
+    end
+    return nothing
+end
+
+function _qwen3_moe_record_session_tree!(storages, label, value::Tuple)
+    for (index, child) in enumerate(value)
+        _qwen3_moe_record_session_tree!(storages, "$label[$index]", child)
+    end
+    return nothing
+end
+
+_qwen3_moe_record_session_tree!(storages, label, value) = nothing
+
+function _qwen3_moe_storage_contract_matches(
+    session::HFQwen3MoEOffloadSession,
+    contract::_HFQwen3MoEOffloadStorageContract,
+)
+    session.caches === contract.caches || return false
+    session.resident_blocks === contract.resident_blocks || return false
+    session.final_scale === contract.final_scale || return false
+    session.logits_weight === contract.logits_weight || return false
+    session.cos_table === contract.cos_table || return false
+    session.sin_table === contract.sin_table || return false
+    length(session.caches) == length(contract.cache_layers) || return false
+    length(session.resident_blocks) == length(contract.resident_layers) ||
+        return false
+    for index in eachindex(session.caches)
+        session.caches[index] === contract.cache_layers[index] || return false
+    end
+    for index in eachindex(session.resident_blocks)
+        session.resident_blocks[index] === contract.resident_layers[index] ||
+            return false
+    end
+    return true
+end
+
+function _qwen3_moe_capture_storage_contract(
+    session::HFQwen3MoEOffloadSession,
+)
+    return _HFQwen3MoEOffloadStorageContract(
+        _HF_QWEN3_MOE_OFFLOAD_SESSION_VALIDATED,
+        session.caches,
+        Tuple(session.caches),
+        session.resident_blocks,
+        Tuple(session.resident_blocks),
+        session.final_scale,
+        session.logits_weight,
+        session.cos_table,
+        session.sin_table,
+    )
 end
 
 function _qwen3_moe_validate_offload_session(
@@ -275,7 +374,10 @@ function _qwen3_moe_validate_offload_session(
         1,
     )
     cache_device = nothing
-    seen_storage = IdDict{Any,Nothing}()
+    contract = session.storage_contract
+    storage_sources_changed = contract === nothing ||
+        !_qwen3_moe_storage_contract_matches(session, contract)
+    session_storages = storage_sources_changed ? Tuple{String,Any}[] : nothing
     for (layer_index, layer) in enumerate(session.caches)
         layer isa BF16AStaticLayerCache || throw(ArgumentError(
             "Qwen3 MoE offload cache layer $layer_index must use " *
@@ -306,11 +408,14 @@ function _qwen3_moe_validate_offload_session(
                 "Qwen3 MoE offload cache layers must use the same device",
             ))
         end
-        for storage in (keys, values)
-            haskey(seen_storage, storage) && throw(ArgumentError(
-                "Qwen3 MoE offload cache layers must use distinct storage",
-            ))
-            seen_storage[storage] = nothing
+        if storage_sources_changed
+            for (kind, storage) in (("key", keys), ("value", values))
+                _qwen3_moe_record_session_storage!(
+                    session_storages,
+                    "cache layer $layer_index $kind storage",
+                    storage,
+                )
+            end
         end
     end
 
@@ -327,6 +432,13 @@ function _qwen3_moe_validate_offload_session(
     get_device(session.final_scale) == cache_device || throw(ArgumentError(
         "Qwen3 MoE offload cache and resident tensors must use the same device",
     ))
+    if storage_sources_changed
+        _qwen3_moe_record_session_storage!(
+            session_storages,
+            "final scale",
+            session.final_scale,
+        )
+    end
 
     session.logits_weight isa AbstractArray || throw(ArgumentError(
         "Qwen3 MoE offload logits weight must be an array",
@@ -341,6 +453,13 @@ function _qwen3_moe_validate_offload_session(
     get_device(session.logits_weight) == cache_device || throw(ArgumentError(
         "Qwen3 MoE offload logits weight must use the session device",
     ))
+    if storage_sources_changed
+        _qwen3_moe_record_session_storage!(
+            session_storages,
+            "logits weight",
+            session.logits_weight,
+        )
+    end
 
     for (name, table) in (
         ("cos", session.cos_table),
@@ -360,6 +479,23 @@ function _qwen3_moe_validate_offload_session(
         get_device(table) == cache_device || throw(ArgumentError(
             "Qwen3 MoE offload $name RoPE table must use the session device",
         ))
+        if storage_sources_changed
+            _qwen3_moe_record_session_storage!(
+                session_storages,
+                "$name RoPE table",
+                table,
+            )
+        end
+    end
+    if storage_sources_changed
+        for (layer_index, block) in enumerate(session.resident_blocks)
+            _qwen3_moe_record_session_tree!(
+                session_storages,
+                "resident layer $layer_index",
+                block,
+            )
+        end
+        session.storage_contract = _qwen3_moe_capture_storage_contract(session)
     end
     return nothing
 end
@@ -1922,6 +2058,7 @@ function load_hf_qwen3_moe_offload_session(
         0,
         0,
         0,
+        nothing,
     )
     _qwen3_moe_validate_offload_session(session)
     return session

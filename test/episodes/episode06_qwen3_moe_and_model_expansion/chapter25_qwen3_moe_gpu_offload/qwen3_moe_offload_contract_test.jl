@@ -47,6 +47,12 @@ function _qwen3_offload_atomic_failure(thunk, session)
     )
 end
 
+function _qwen3_offload_with_q_weight(block, weight)
+    q_proj = merge(block.attn.q_proj, (; weight))
+    attn = merge(block.attn, (; q_proj))
+    return merge(block, (; attn))
+end
+
 @testset "Qwen3 MoE session options fail before checkpoint I/O" begin
     mktempdir() do directory
         too_large = big(typemax(Int)) + 1
@@ -361,6 +367,13 @@ end
         fieldcount(typeof(session)),
     )
     @test_throws MethodError HFQwen3MoEOffloadSession(raw_fields...)
+    initial_storage_contract = getfield(session, :storage_contract)
+    @test initial_storage_contract !== nothing
+    contract_fields = ntuple(
+        index -> getfield(initial_storage_contract, index),
+        fieldcount(typeof(initial_storage_contract)),
+    )
+    @test_throws MethodError typeof(initial_storage_contract)(contract_fields...)
 
     prefill = prefill_hf_qwen3_moe_offload!(session, Int128[2, 3])
     @test prefill.position == 2
@@ -505,17 +518,224 @@ end
     @test rejected_alias.unchanged
 
     valid_second_cache = session.caches[2]
-    session.caches[2] = valid_first_cache
+    cache_shape = size(valid_first_cache.keys)
+    cache_elements = length(valid_first_cache.keys)
+    shared_cache_storage = zeros(BFloat16, 3 * cache_elements + 1)
+    session.caches[1] = LifeAI.BF16AStaticLayerCache(
+        reshape(view(shared_cache_storage, 1:cache_elements), cache_shape),
+        reshape(view(
+            shared_cache_storage,
+            (cache_elements + 2):(2 * cache_elements + 1),
+        ), cache_shape),
+    )
+    session.caches[2] = LifeAI.BF16AStaticLayerCache(
+        reshape(view(
+            shared_cache_storage,
+            2:(cache_elements + 1),
+        ), cache_shape),
+        reshape(view(
+            shared_cache_storage,
+            (2 * cache_elements + 2):(3 * cache_elements + 1),
+        ), cache_shape),
+    )
     rejected_cross_layer_alias = _qwen3_offload_atomic_failure(session) do
         prefill_hf_qwen3_moe_offload!(session, [2])
     end
     @test rejected_cross_layer_alias.failure isa ArgumentError
     @test occursin(
-        "cache layers must use distinct storage",
+        "must use non-overlapping storage",
         sprint(showerror, rejected_cross_layer_alias.failure),
     )
     @test rejected_cross_layer_alias.unchanged
+    session.caches[1] = valid_first_cache
     session.caches[2] = valid_second_cache
+
+    valid_cos = session.cos_table
+    valid_sin = session.sin_table
+    rope_shape = size(valid_cos)
+    rope_elements = length(valid_cos)
+    shared_rope_storage = zeros(BFloat16, rope_elements + 1)
+    session.cos_table = reshape(
+        view(shared_rope_storage, 1:rope_elements),
+        rope_shape,
+    )
+    session.sin_table = reshape(
+        view(shared_rope_storage, 2:(rope_elements + 1)),
+        rope_shape,
+    )
+    contract_before_alias = getfield(session, :storage_contract)
+    for operation in (
+        () -> reset_hf_qwen3_moe_offload_session!(session),
+        () -> prefill_hf_qwen3_moe_offload!(session, [2]),
+    )
+        rejected_rope_alias = _qwen3_offload_atomic_failure(operation, session)
+        @test rejected_rope_alias.failure isa ArgumentError
+        @test occursin(
+            "must use non-overlapping storage",
+            sprint(showerror, rejected_rope_alias.failure),
+        )
+        @test rejected_rope_alias.unchanged
+        @test getfield(session, :storage_contract) === contract_before_alias
+    end
+    session.cos_table = valid_cos
+    session.sin_table = valid_sin
+
+    rope_cache_storage = zeros(
+        BFloat16,
+        2 * cache_elements + 2 * rope_elements,
+    )
+    session.cos_table = reshape(
+        view(rope_cache_storage, 1:rope_elements),
+        rope_shape,
+    )
+    session.sin_table = reshape(view(
+        rope_cache_storage,
+        (2 * cache_elements + 1):(2 * cache_elements + rope_elements),
+    ), rope_shape)
+    session.caches[1] = LifeAI.BF16AStaticLayerCache(
+        reshape(view(rope_cache_storage, 1:cache_elements), cache_shape),
+        reshape(view(
+            rope_cache_storage,
+            (cache_elements + 1):(2 * cache_elements),
+        ), cache_shape),
+    )
+    rejected_rope_cache_alias = _qwen3_offload_atomic_failure(session) do
+        prefill_hf_qwen3_moe_offload!(session, [2])
+    end
+    @test rejected_rope_cache_alias.failure isa ArgumentError
+    @test occursin(
+        "must use non-overlapping storage",
+        sprint(showerror, rejected_rope_cache_alias.failure),
+    )
+    @test rejected_rope_cache_alias.unchanged
+    session.cos_table = valid_cos
+    session.sin_table = valid_sin
+    session.caches[1] = valid_first_cache
+
+    valid_first_block = session.resident_blocks[1]
+    valid_second_block = session.resident_blocks[2]
+    q_shape = size(valid_first_block.attn.q_proj.weight)
+    q_elements = length(valid_first_block.attn.q_proj.weight)
+    shared_resident_storage = zeros(BFloat16, q_elements + 1)
+    session.resident_blocks[1] = _qwen3_offload_with_q_weight(
+        valid_first_block,
+        reshape(view(shared_resident_storage, 1:q_elements), q_shape),
+    )
+    session.resident_blocks[2] = _qwen3_offload_with_q_weight(
+        valid_second_block,
+        reshape(view(shared_resident_storage, 2:(q_elements + 1)), q_shape),
+    )
+    rejected_resident_alias = _qwen3_offload_atomic_failure(session) do
+        reset_hf_qwen3_moe_offload_session!(session)
+    end
+    @test rejected_resident_alias.failure isa ArgumentError
+    @test occursin(
+        "must use non-overlapping storage",
+        sprint(showerror, rejected_resident_alias.failure),
+    )
+    @test rejected_resident_alias.unchanged
+    session.resident_blocks[1] = valid_first_block
+    session.resident_blocks[2] = valid_second_block
+
+    rope_resident_storage = zeros(BFloat16, q_elements + rope_elements)
+    session.cos_table = reshape(
+        view(rope_resident_storage, 1:rope_elements),
+        rope_shape,
+    )
+    session.sin_table = reshape(view(
+        rope_resident_storage,
+        (q_elements + 1):(q_elements + rope_elements),
+    ), rope_shape)
+    session.resident_blocks[1] = _qwen3_offload_with_q_weight(
+        valid_first_block,
+        reshape(view(rope_resident_storage, 1:q_elements), q_shape),
+    )
+    rejected_rope_resident_alias = _qwen3_offload_atomic_failure(session) do
+        prefill_hf_qwen3_moe_offload!(session, [2])
+    end
+    @test rejected_rope_resident_alias.failure isa ArgumentError
+    @test occursin(
+        "must use non-overlapping storage",
+        sprint(showerror, rejected_rope_resident_alias.failure),
+    )
+    @test rejected_rope_resident_alias.unchanged
+    session.cos_table = valid_cos
+    session.sin_table = valid_sin
+    session.resident_blocks[1] = valid_first_block
+
+    valid_final_scale = session.final_scale
+    valid_logits_weight = session.logits_weight
+    logits_shape = size(valid_logits_weight)
+    logits_elements = length(valid_logits_weight)
+    final_logits_storage = zeros(BFloat16, logits_elements)
+    session.final_scale = reshape(view(
+        final_logits_storage,
+        1:length(valid_final_scale),
+    ), size(valid_final_scale))
+    session.logits_weight = reshape(
+        view(final_logits_storage, 1:logits_elements),
+        logits_shape,
+    )
+    rejected_final_logits_alias = _qwen3_offload_atomic_failure(session) do
+        reset_hf_qwen3_moe_offload_session!(session)
+    end
+    @test rejected_final_logits_alias.failure isa ArgumentError
+    @test occursin(
+        "must use non-overlapping storage",
+        sprint(showerror, rejected_final_logits_alias.failure),
+    )
+    @test rejected_final_logits_alias.unchanged
+    session.final_scale = valid_final_scale
+    session.logits_weight = valid_logits_weight
+
+    disjoint_storage = zeros(
+        BFloat16,
+        2 * rope_elements + 2 * cache_elements,
+    )
+    disjoint_cos = reshape(
+        view(disjoint_storage, 1:rope_elements),
+        rope_shape,
+    )
+    disjoint_sin = reshape(view(
+        disjoint_storage,
+        (rope_elements + 1):(2 * rope_elements),
+    ), rope_shape)
+    disjoint_keys = reshape(view(
+        disjoint_storage,
+        (2 * rope_elements + 1):(2 * rope_elements + cache_elements),
+    ), cache_shape)
+    disjoint_values = reshape(view(
+        disjoint_storage,
+        (2 * rope_elements + cache_elements + 1):length(disjoint_storage),
+    ), cache_shape)
+    copyto!(disjoint_cos, valid_cos)
+    copyto!(disjoint_sin, valid_sin)
+    copyto!(disjoint_keys, valid_first_cache.keys)
+    copyto!(disjoint_values, valid_first_cache.values)
+    session.cos_table = disjoint_cos
+    session.sin_table = disjoint_sin
+    session.caches[1] = LifeAI.BF16AStaticLayerCache(
+        disjoint_keys,
+        disjoint_values,
+    )
+    contract_before_disjoint = getfield(session, :storage_contract)
+    disjoint_prefill = prefill_hf_qwen3_moe_offload!(session, [2])
+    @test disjoint_prefill.position == 1
+    recaptured_contract = getfield(session, :storage_contract)
+    @test recaptured_contract !== contract_before_disjoint
+    @test getfield(recaptured_contract, :cos_table) === disjoint_cos
+    @test getfield(recaptured_contract, :cache_layers)[1] === session.caches[1]
+    @test reset_hf_qwen3_moe_offload_session!(session).position == 0
+    @test getfield(session, :storage_contract) === recaptured_contract
+    session.cos_table = valid_cos
+    session.sin_table = valid_sin
+    session.caches[1] = valid_first_cache
+    contract_before_restore = getfield(session, :storage_contract)
+    @test reset_hf_qwen3_moe_offload_session!(session).position == 0
+    restored_contract = getfield(session, :storage_contract)
+    @test restored_contract !== contract_before_restore
+    @test reset_hf_qwen3_moe_offload_session!(session).position == 0
+    @test getfield(session, :storage_contract) === restored_contract
 
     rejected_dtype = _qwen3_offload_atomic_failure(session) do
         session.caches[1] = LifeAI.BF16AStaticLayerCache(
