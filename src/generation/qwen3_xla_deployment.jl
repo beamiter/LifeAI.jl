@@ -213,6 +213,27 @@ Reusable batch-1 XLA runtime with one packed parameter tree, one compiled
 64-token prefill executable, one compiled single-token decode executable and a
 fixed-capacity BF16 K/V cache.
 """
+struct _HFQwen3BF16XLASessionValidated end
+const _HF_QWEN3_BF16_XLA_SESSION_VALIDATED =
+    _HFQwen3BF16XLASessionValidated()
+
+struct _HFQwen3BF16XLASessionContract
+    model::Any
+    parameters::Any
+    tokenizer::Any
+    generation_config::Any
+    cos_table::Any
+    sin_table::Any
+    key_caches::Tuple
+    value_caches::Tuple
+    compiled_prefill::Any
+    compiled_decode::Any
+    strategy::Symbol
+    context_tokens::Int
+    prefill_chunk_tokens::Int
+    sample_top_k::Int
+end
+
 mutable struct HFQwen3BF16XLASession
     model::Any
     parameters::Any
@@ -230,6 +251,416 @@ mutable struct HFQwen3BF16XLASession
     sample_top_k::Int
     position::Int
     load_metrics::Any
+    contract::_HFQwen3BF16XLASessionContract
+
+    function HFQwen3BF16XLASession(
+        ::_HFQwen3BF16XLASessionValidated,
+        fields...,
+    )
+        return new(fields...)
+    end
+end
+
+function _qwen3_xla_session_model_integer(model, name::Symbol)
+    hasproperty(model, name) || throw(ArgumentError(
+        "Qwen3 XLA session model must expose a $(repr(name)) field",
+    ))
+    value = _strict_host_int(
+        getproperty(model, name),
+        "Qwen3 XLA session model $(String(name))",
+    )
+    value > 0 || throw(ArgumentError(
+        "Qwen3 XLA session model $(String(name)) must be positive",
+    ))
+    return value
+end
+
+function _qwen3_xla_session_metadata(
+    model,
+    strategy,
+    context_tokens,
+    prefill_chunk_tokens,
+    sample_top_k,
+    position,
+)
+    strategy isa Symbol || throw(ArgumentError(
+        "Qwen3 XLA session strategy must be a Symbol",
+    ))
+    strategy in (:greedy, :sample, :device_sample) || throw(ArgumentError(
+        "Qwen3 XLA session strategy must be :greedy, :sample, or :device_sample",
+    ))
+    context = _strict_host_int(context_tokens, "Qwen3 XLA session context_tokens")
+    chunk = _strict_host_int(
+        prefill_chunk_tokens,
+        "Qwen3 XLA session prefill_chunk_tokens",
+    )
+    compiled_top_k = _strict_host_int(
+        sample_top_k,
+        "Qwen3 XLA session sample_top_k",
+    )
+    cache_position = _strict_host_int(
+        position,
+        "Qwen3 XLA session position",
+    )
+    context > 0 || throw(ArgumentError(
+        "Qwen3 XLA session context_tokens must be positive",
+    ))
+    context <= typemax(Int32) || throw(ArgumentError(
+        "Qwen3 XLA session context_tokens must fit in Int32 device positions",
+    ))
+    0 < chunk <= context || throw(ArgumentError(
+        "Qwen3 XLA session prefill_chunk_tokens must be in 1:context_tokens",
+    ))
+    context % chunk == 0 || throw(ArgumentError(
+        "Qwen3 XLA session context_tokens must be divisible by prefill_chunk_tokens",
+    ))
+    0 <= cache_position <= context || throw(ArgumentError(
+        "Qwen3 XLA session position must be in 0:context_tokens",
+    ))
+
+    vocab_size = _qwen3_xla_session_model_integer(model, :vocab_size)
+    model_context = _qwen3_xla_session_model_integer(model, :max_seq_len)
+    _qwen3_xla_session_model_integer(model, :num_layers)
+    head_dim = _qwen3_xla_session_model_integer(model, :head_dim)
+    _qwen3_xla_session_model_integer(model, :num_kv_heads)
+    iseven(head_dim) || throw(ArgumentError(
+        "Qwen3 XLA session model head_dim must be even",
+    ))
+    if strategy === :device_sample
+        0 < compiled_top_k <= vocab_size || throw(ArgumentError(
+            "Qwen3 XLA session sample_top_k must be in 1:model.vocab_size " *
+            "for :device_sample",
+        ))
+    else
+        compiled_top_k == 0 || throw(ArgumentError(
+            "Qwen3 XLA session sample_top_k must be zero unless strategy " *
+            "is :device_sample",
+        ))
+    end
+    context == model_context || throw(DimensionMismatch(
+        "Qwen3 XLA session context_tokens must match model.max_seq_len",
+    ))
+    return (;
+        strategy,
+        context_tokens=context,
+        prefill_chunk_tokens=chunk,
+        sample_top_k=compiled_top_k,
+        position=cache_position,
+        vocab_size,
+    )
+end
+
+function _qwen3_xla_validate_session_sources(
+    tokenizer,
+    generation_config,
+    strategy::Symbol,
+    vocab_size::Int,
+)
+    hasproperty(tokenizer, :eos_ids) || throw(ArgumentError(
+        "Qwen3 XLA session tokenizer must expose an :eos_ids field",
+    ))
+    _qwen3_stop_token_set(tokenizer.eos_ids, vocab_size)
+    for name in (:temperature, :top_k, :top_p)
+        hasproperty(generation_config, name) || throw(ArgumentError(
+            "Qwen3 XLA session generation_config must expose a " *
+            "$(repr(name)) field",
+        ))
+    end
+    if strategy === :sample
+        _qwen3_session_sampling_options(
+            generation_config.temperature,
+            generation_config.top_k,
+            generation_config.top_p,
+        )
+    elseif strategy === :device_sample
+        _validate_device_sampling_options(;
+            temperature=generation_config.temperature,
+            top_k=generation_config.top_k,
+            top_p=generation_config.top_p,
+            vocab_size,
+        )
+    end
+    return nothing
+end
+
+function _qwen3_xla_session_array(
+    value,
+    shape::Tuple,
+    label::AbstractString,
+    device,
+)
+    value isa AbstractArray || throw(ArgumentError("$label must be an array"))
+    ndims(value) == length(shape) || throw(DimensionMismatch(
+        "$label must be $(length(shape))-dimensional",
+    ))
+    all(
+        dimension -> axes(value, dimension) == Base.OneTo(size(value, dimension)),
+        eachindex(shape),
+    ) || throw(ArgumentError("$label must use one-based axes"))
+    size(value) == shape || throw(DimensionMismatch(
+        "$label must have shape $shape; got $(size(value))",
+    ))
+    eltype(value) === BFloat16 || throw(ArgumentError(
+        "$label must contain BFloat16 values",
+    ))
+    get_device(value) == device || throw(ArgumentError(
+        "$label must use the Qwen3 XLA session device",
+    ))
+    return nothing
+end
+
+function _qwen3_xla_validate_session_storage(
+    model,
+    cos_table,
+    sin_table,
+    key_caches,
+    value_caches,
+    context_tokens::Int,
+)
+    key_caches isa Tuple || throw(ArgumentError(
+        "Qwen3 XLA session key_caches must be a tuple",
+    ))
+    value_caches isa Tuple || throw(ArgumentError(
+        "Qwen3 XLA session value_caches must be a tuple",
+    ))
+    isempty(key_caches) && throw(ArgumentError(
+        "Qwen3 XLA session cache tuples must not be empty",
+    ))
+    length(key_caches) == length(value_caches) || throw(DimensionMismatch(
+        "Qwen3 XLA session key/value cache tuple lengths must match",
+    ))
+    num_layers = _qwen3_xla_session_model_integer(model, :num_layers)
+    length(key_caches) == num_layers || throw(DimensionMismatch(
+        "Qwen3 XLA session cache layer count must match model.num_layers",
+    ))
+
+    first_keys = first(key_caches)
+    first_keys isa AbstractArray || throw(ArgumentError(
+        "Qwen3 XLA session cache storage must be arrays",
+    ))
+    ndims(first_keys) == 4 || throw(DimensionMismatch(
+        "Qwen3 XLA session cache storage must be four-dimensional",
+    ))
+    head_dim = _qwen3_xla_session_model_integer(model, :head_dim)
+    num_kv_heads = _qwen3_xla_session_model_integer(model, :num_kv_heads)
+    cache_shape = (head_dim, num_kv_heads, context_tokens, 1)
+    device = get_device(first_keys)
+    seen_storage = IdDict{Any,Nothing}()
+    for index in eachindex(key_caches)
+        for (kind, storage) in (
+            ("key", key_caches[index]),
+            ("value", value_caches[index]),
+        )
+            _qwen3_xla_session_array(
+                storage,
+                cache_shape,
+                "Qwen3 XLA session layer $index $kind cache",
+                device,
+            )
+            haskey(seen_storage, storage) && throw(ArgumentError(
+                "Qwen3 XLA session cache layers must use distinct storage",
+            ))
+            seen_storage[storage] = nothing
+        end
+    end
+
+    rope_shape = (head_dim ÷ 2, context_tokens)
+    _qwen3_xla_session_array(
+        cos_table,
+        rope_shape,
+        "Qwen3 XLA session cosine table",
+        device,
+    )
+    _qwen3_xla_session_array(
+        sin_table,
+        rope_shape,
+        "Qwen3 XLA session sine table",
+        device,
+    )
+    cos_table === sin_table && throw(ArgumentError(
+        "Qwen3 XLA session RoPE tables must use distinct storage",
+    ))
+    return nothing
+end
+
+function _qwen3_xla_session_contract(
+    model,
+    parameters,
+    tokenizer,
+    generation_config,
+    cos_table,
+    sin_table,
+    key_caches::Tuple,
+    value_caches::Tuple,
+    compiled_prefill,
+    compiled_decode,
+    metadata,
+)
+    return _HFQwen3BF16XLASessionContract(
+        model,
+        parameters,
+        tokenizer,
+        generation_config,
+        cos_table,
+        sin_table,
+        key_caches,
+        value_caches,
+        compiled_prefill,
+        compiled_decode,
+        metadata.strategy,
+        metadata.context_tokens,
+        metadata.prefill_chunk_tokens,
+        metadata.sample_top_k,
+    )
+end
+
+function _qwen3_xla_validate_session_contract(
+    session::HFQwen3BF16XLASession,
+)
+    contract = session.contract
+    for (name, current, original) in (
+        ("model", session.model, contract.model),
+        ("parameters", session.parameters, contract.parameters),
+        ("tokenizer", session.tokenizer, contract.tokenizer),
+        ("generation_config", session.generation_config, contract.generation_config),
+        ("cosine table", session.cos_table, contract.cos_table),
+        ("sine table", session.sin_table, contract.sin_table),
+        ("key cache tuple", session.key_caches, contract.key_caches),
+        ("value cache tuple", session.value_caches, contract.value_caches),
+        ("compiled prefill", session.compiled_prefill, contract.compiled_prefill),
+        ("compiled decode", session.compiled_decode, contract.compiled_decode),
+    )
+        current === original || throw(ArgumentError(
+            "Qwen3 XLA session $name changed after compilation",
+        ))
+    end
+    metadata = _qwen3_xla_session_metadata(
+        session.model,
+        session.strategy,
+        session.context_tokens,
+        session.prefill_chunk_tokens,
+        session.sample_top_k,
+        session.position,
+    )
+    for name in (
+        :strategy,
+        :context_tokens,
+        :prefill_chunk_tokens,
+        :sample_top_k,
+    )
+        getproperty(metadata, name) == getproperty(contract, name) ||
+            throw(ArgumentError(
+                "Qwen3 XLA session $(String(name)) changed after compilation",
+            ))
+    end
+    return metadata
+end
+
+function _qwen3_xla_validate_session(session::HFQwen3BF16XLASession)
+    metadata = _qwen3_xla_validate_session_contract(session)
+    _qwen3_xla_validate_session_sources(
+        session.tokenizer,
+        session.generation_config,
+        metadata.strategy,
+        metadata.vocab_size,
+    )
+    _qwen3_xla_validate_session_storage(
+        session.model,
+        session.cos_table,
+        session.sin_table,
+        session.key_caches,
+        session.value_caches,
+        session.context_tokens,
+    )
+    return nothing
+end
+
+"""
+    HFQwen3BF16XLASession(; ...)
+
+Construct a validated XLA session from an already compiled runtime. The keyword
+form keeps test doubles injectable without exposing the mutable struct's raw
+field constructor.
+"""
+function HFQwen3BF16XLASession(;
+    model,
+    parameters,
+    tokenizer,
+    generation_config,
+    cos_table,
+    sin_table,
+    key_caches,
+    value_caches,
+    compiled_prefill,
+    compiled_decode,
+    strategy=:greedy,
+    context_tokens,
+    prefill_chunk_tokens,
+    sample_top_k=0,
+    position=0,
+    load_metrics=nothing,
+)
+    metadata = _qwen3_xla_session_metadata(
+        model,
+        strategy,
+        context_tokens,
+        prefill_chunk_tokens,
+        sample_top_k,
+        position,
+    )
+    compiled_prefill === nothing && throw(ArgumentError(
+        "Qwen3 XLA session must provide compiled_prefill",
+    ))
+    compiled_decode === nothing && throw(ArgumentError(
+        "Qwen3 XLA session must provide compiled_decode",
+    ))
+    _qwen3_xla_validate_session_sources(
+        tokenizer,
+        generation_config,
+        metadata.strategy,
+        metadata.vocab_size,
+    )
+    _qwen3_xla_validate_session_storage(
+        model,
+        cos_table,
+        sin_table,
+        key_caches,
+        value_caches,
+        metadata.context_tokens,
+    )
+    contract = _qwen3_xla_session_contract(
+        model,
+        parameters,
+        tokenizer,
+        generation_config,
+        cos_table,
+        sin_table,
+        key_caches,
+        value_caches,
+        compiled_prefill,
+        compiled_decode,
+        metadata,
+    )
+    return HFQwen3BF16XLASession(
+        _HF_QWEN3_BF16_XLA_SESSION_VALIDATED,
+        model,
+        parameters,
+        tokenizer,
+        generation_config,
+        cos_table,
+        sin_table,
+        key_caches,
+        value_caches,
+        compiled_prefill,
+        compiled_decode,
+        metadata.strategy,
+        metadata.context_tokens,
+        metadata.prefill_chunk_tokens,
+        metadata.sample_top_k,
+        metadata.position,
+        load_metrics,
+        contract,
+    )
 end
 
 """
@@ -523,7 +954,37 @@ function load_hf_qwen3_bf16_xla_session(
         allocator_after_runtime_allocation,
         allocator_ready,
     )
-    return HFQwen3BF16XLASession(
+    metadata = _qwen3_xla_session_metadata(
+        model,
+        strategy,
+        context,
+        chunk,
+        top_k_static,
+        0,
+    )
+    _qwen3_xla_validate_session_storage(
+        model,
+        cos_table,
+        sin_table,
+        key_caches,
+        value_caches,
+        context,
+    )
+    contract = _qwen3_xla_session_contract(
+        model,
+        parameters,
+        tokenizer,
+        generation_config,
+        cos_table,
+        sin_table,
+        key_caches,
+        value_caches,
+        compiled_prefill,
+        compiled_decode,
+        metadata,
+    )
+    session = HFQwen3BF16XLASession(
+        _HF_QWEN3_BF16_XLA_SESSION_VALIDATED,
         model,
         parameters,
         tokenizer,
@@ -540,12 +1001,16 @@ function load_hf_qwen3_bf16_xla_session(
         top_k_static,
         0,
         load_metrics,
+        contract,
     )
+    _qwen3_xla_validate_session(session)
+    return session
 end
 
 function reset_hf_qwen3_bf16_xla_session!(
     session::HFQwen3BF16XLASession,
 )
+    _qwen3_xla_validate_session(session)
     session.position = 0
     return session
 end
@@ -581,6 +1046,7 @@ function generate_hf_qwen3_bf16_xla!(
     on_token=nothing,
     sample_uniforms=nothing,
 )
+    _qwen3_xla_validate_session(session)
     prompt_ids = vec(_strict_host_int_array(
         prompt_tokens,
         "Qwen3 XLA prompt token",
@@ -671,6 +1137,7 @@ function generate_hf_qwen3_bf16_xla!(
     prefill_uniform_state = session.strategy === :device_sample ?
         Reactant.to_rarray(Float32[draw_uniform(1)]) : nothing
     for first_index in 1:session.prefill_chunk_tokens:length(padded)
+        _qwen3_xla_validate_session_contract(session)
         last_index = first_index + session.prefill_chunk_tokens - 1
         token_state = Reactant.to_rarray(reshape(
             padded[first_index:last_index],
@@ -730,6 +1197,7 @@ function generate_hf_qwen3_bf16_xla!(
     decode_started = time_ns()
     while length(generated_ids) < plan.max_new_tokens &&
             !(last(generated_ids) in stops)
+        _qwen3_xla_validate_session_contract(session)
         step = length(generated_ids) + 1
         input_state = session.strategy === :sample ?
             Reactant.to_rarray([last(generated_ids)]) :

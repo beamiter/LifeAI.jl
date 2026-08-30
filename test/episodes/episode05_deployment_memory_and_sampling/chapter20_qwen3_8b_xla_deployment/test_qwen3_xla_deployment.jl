@@ -31,6 +31,70 @@ function _qwen3_xla_captured_error(thunk)
     error("expected Qwen3 XLA planning call to fail")
 end
 
+struct _Qwen3XLACallbackDouble{F}
+    callback::F
+end
+
+(double::_Qwen3XLACallbackDouble)(arguments...) =
+    double.callback(arguments...)
+
+function _qwen3_xla_session_double_fields(
+    compiled_prefill,
+    compiled_decode;
+    strategy=:greedy,
+    context_tokens=16,
+    prefill_chunk_tokens=8,
+    sample_top_k=strategy === :device_sample ? 5 : 0,
+    position=7,
+)
+    model = (;
+        vocab_size=16,
+        num_layers=2,
+        head_dim=2,
+        num_kv_heads=1,
+        max_seq_len=context_tokens,
+    )
+    cache_shape = (model.head_dim, model.num_kv_heads, context_tokens, 1)
+    key_caches = ntuple(_ -> zeros(BFloat16, cache_shape), model.num_layers)
+    value_caches = ntuple(_ -> zeros(BFloat16, cache_shape), model.num_layers)
+    return (;
+        model,
+        parameters=(; callback_double=true),
+        tokenizer=(; eos_ids=Int[]),
+        generation_config=(;
+            temperature=1.0f0,
+            top_k=1,
+            top_p=1.0f0,
+        ),
+        cos_table=zeros(BFloat16, model.head_dim ÷ 2, context_tokens),
+        sin_table=zeros(BFloat16, model.head_dim ÷ 2, context_tokens),
+        key_caches,
+        value_caches,
+        compiled_prefill,
+        compiled_decode,
+        strategy,
+        context_tokens,
+        prefill_chunk_tokens,
+        sample_top_k,
+        position,
+        load_metrics=(; callback_double=true),
+    )
+end
+
+function _qwen3_xla_session_double(
+    compiled_prefill,
+    compiled_decode;
+    options...,
+)
+    return HFQwen3BF16XLASession(;
+        _qwen3_xla_session_double_fields(
+            compiled_prefill,
+            compiled_decode;
+            options...,
+        )...,
+    )
+end
+
 @testset "exact XLA 4K window planning" begin
     plan = plan_qwen3_xla_window(3584, 512)
     @test plan.context_tokens == 4096
@@ -740,6 +804,150 @@ end
     end
 end
 
+@testset "XLA session construction is sealed behind a validated factory" begin
+    prefill = _Qwen3XLACallbackDouble() do _...
+        return Int[3], nothing
+    end
+    decode = _Qwen3XLACallbackDouble() do _...
+        return Int[4], nothing
+    end
+    fields = _qwen3_xla_session_double_fields(prefill, decode)
+    session = HFQwen3BF16XLASession(; fields...)
+    @test session.compiled_prefill === prefill
+    @test session.compiled_decode === decode
+    @test session.key_caches === fields.key_caches
+    @test session.value_caches === fields.value_caches
+    @test (
+        session.strategy,
+        session.context_tokens,
+        session.prefill_chunk_tokens,
+        session.sample_top_k,
+        session.position,
+    ) == (:greedy, 16, 8, 0, 7)
+    device_session = HFQwen3BF16XLASession(;
+        merge(fields, (strategy=:device_sample, sample_top_k=5))...,
+    )
+    @test device_session.strategy === :device_sample
+    @test device_session.sample_top_k == 5
+
+    raw_fields = ntuple(
+        index -> getfield(session, index),
+        fieldcount(typeof(session)),
+    )
+    @test _qwen3_xla_captured_error() do
+        HFQwen3BF16XLASession(raw_fields...)
+    end isa MethodError
+    @test _qwen3_xla_captured_error() do
+        Core.apply_type(HFQwen3BF16XLASession, typeof(session.model))
+    end isa TypeError
+
+    invalid_cases = (
+        (
+            override=(strategy=:invalid,),
+            message="strategy must be :greedy, :sample, or :device_sample",
+        ),
+        (
+            override=(context_tokens=0,),
+            message="context_tokens must be positive",
+        ),
+        (
+            override=(context_tokens=Int(typemax(Int32)) + 1,),
+            message="context_tokens must fit in Int32 device positions",
+        ),
+        (
+            override=(prefill_chunk_tokens=0,),
+            message="prefill_chunk_tokens must be in 1:context_tokens",
+        ),
+        (
+            override=(prefill_chunk_tokens=6,),
+            message="context_tokens must be divisible by prefill_chunk_tokens",
+        ),
+        (
+            override=(sample_top_k=1,),
+            message="sample_top_k must be zero unless strategy is :device_sample",
+        ),
+        (
+            override=(strategy=:device_sample, sample_top_k=0,),
+            message="sample_top_k must be in 1:model.vocab_size",
+        ),
+        (
+            override=(strategy=:device_sample, sample_top_k=17,),
+            message="sample_top_k must be in 1:model.vocab_size",
+        ),
+        (
+            override=(position=-1,),
+            message="position must be in 0:context_tokens",
+        ),
+        (
+            override=(position=17,),
+            message="position must be in 0:context_tokens",
+        ),
+        (
+            override=(model=(;
+                vocab_size=16,
+                num_layers=2,
+                head_dim=2,
+                num_kv_heads=1,
+            ),),
+            message="model must expose a :max_seq_len field",
+        ),
+        (
+            override=(model=merge(fields.model, (head_dim=1,)),),
+            message="model head_dim must be even",
+        ),
+        (
+            override=(tokenizer=(;),),
+            message="tokenizer must expose an :eos_ids field",
+        ),
+        (
+            override=(generation_config=(;
+                temperature=1.0f0,
+                top_k=1,
+            ),),
+            message="generation_config must expose a :top_p field",
+        ),
+        (
+            override=(key_caches=collect(fields.key_caches),),
+            message="key_caches must be a tuple",
+        ),
+        (
+            override=(value_caches=(first(fields.value_caches),),),
+            message="cache tuple lengths must match",
+        ),
+        (
+            override=(
+                key_caches=(first(fields.key_caches), first(fields.key_caches)),
+            ),
+            message="cache layers must use distinct storage",
+        ),
+        (
+            override=(
+                key_caches=(
+                    zeros(BFloat16, 2, 1, 8, 1),
+                    fields.key_caches[2],
+                ),
+            ),
+            message="must have shape",
+        ),
+        (
+            override=(
+                value_caches=(
+                    zeros(Float32, 2, 1, 16, 1),
+                    fields.value_caches[2],
+                ),
+            ),
+            message="must contain BFloat16 values",
+        ),
+    )
+    for case in invalid_cases
+        failure = _qwen3_xla_captured_error() do
+            HFQwen3BF16XLASession(; merge(fields, case.override)...)
+        end
+        @test failure isa Union{ArgumentError,DimensionMismatch}
+        @test occursin(case.message, sprint(showerror, failure))
+    end
+end
+
 @testset "XLA request validation precedes device execution" begin
     prefill_reached = Ref(false)
     decode_reached = Ref(false)
@@ -751,24 +959,7 @@ end
         decode_reached[] = true
         error("compiled decode must not run for invalid request metadata")
     end
-    session = HFQwen3BF16XLASession(
-        (; vocab_size=16),
-        nothing,
-        (; eos_ids=Int[]),
-        nothing,
-        nothing,
-        nothing,
-        nothing,
-        nothing,
-        compiled_prefill,
-        compiled_decode,
-        :greedy,
-        16,
-        8,
-        0,
-        7,
-        nothing,
-    )
+    session = _qwen3_xla_session_double(compiled_prefill, compiled_decode)
 
     too_large = big(typemax(Int)) + 1
     for invalid_prompt in (Bool[true, true], BigInt[2, too_large])
@@ -823,23 +1014,10 @@ end
     @test !prefill_reached[]
     @test !decode_reached[]
 
-    sampled_session = HFQwen3BF16XLASession(
-        (; vocab_size=16),
-        nothing,
-        (; eos_ids=Int[]),
-        (; temperature=0.7f0, top_k=5, top_p=0.8f0),
-        nothing,
-        nothing,
-        nothing,
-        nothing,
+    sampled_session = _qwen3_xla_session_double(
         compiled_prefill,
-        compiled_decode,
-        :sample,
-        16,
-        8,
-        0,
-        7,
-        nothing,
+        compiled_decode;
+        strategy=:sample,
     )
     invalid_sampling_options = (
         (; temperature=true, top_k=5, top_p=0.8),
@@ -868,6 +1046,99 @@ end
         @test !prefill_reached[]
         @test !decode_reached[]
     end
+end
+
+@testset "XLA session metadata mutations fail atomically" begin
+    mutation_cases = (
+        session -> (session.strategy = :invalid),
+        session -> (session.context_tokens = 8),
+        session -> (session.prefill_chunk_tokens = 4),
+        session -> (session.sample_top_k = 1),
+        session -> (session.position = 17),
+        session -> (session.key_caches = reverse(session.key_caches)),
+        session -> (session.value_caches = (
+            session.value_caches[1],
+            session.value_caches[1],
+        )),
+    )
+    for mutate! in mutation_cases
+        prefill_reached = Ref(false)
+        decode_reached = Ref(false)
+        compiled_prefill = function (_...)
+            prefill_reached[] = true
+            return Int[3], nothing
+        end
+        compiled_decode = function (_...)
+            decode_reached[] = true
+            return Int[4], nothing
+        end
+        session = _qwen3_xla_session_double(compiled_prefill, compiled_decode)
+        key_snapshot = map(copy, session.key_caches)
+        value_snapshot = map(copy, session.value_caches)
+        mutate!(session)
+        preserved_position = session.position
+        failure = _qwen3_xla_captured_error() do
+            generate_hf_qwen3_bf16_xla!(
+                session,
+                [2, 3];
+                max_new_tokens=1,
+                stop_token_ids=Int[],
+            )
+        end
+        @test failure isa Union{ArgumentError,DimensionMismatch}
+        @test session.position == preserved_position
+        @test !prefill_reached[]
+        @test !decode_reached[]
+        @test all(
+            session.key_caches[index] == key_snapshot[index]
+            for index in eachindex(key_snapshot)
+        )
+        @test all(
+            session.value_caches[index] == value_snapshot[index]
+            for index in eachindex(value_snapshot)
+        )
+    end
+
+    reset_prefill = _Qwen3XLACallbackDouble(_ -> error("must not prefill"))
+    reset_decode = _Qwen3XLACallbackDouble(_ -> error("must not decode"))
+    reset_session = _qwen3_xla_session_double(reset_prefill, reset_decode)
+    reset_session.strategy = :sample
+    reset_failure = _qwen3_xla_captured_error() do
+        LifeAI.reset_hf_qwen3_bf16_xla_session!(reset_session)
+    end
+    @test reset_failure isa ArgumentError
+    @test reset_session.position == 7
+
+    prefill_calls = Ref(0)
+    decode_calls = Ref(0)
+    compiled_prefill = _Qwen3XLACallbackDouble() do _...
+        prefill_calls[] += 1
+        return Int[3], nothing
+    end
+    compiled_decode = _Qwen3XLACallbackDouble() do _...
+        decode_calls[] += 1
+        return Int[4], nothing
+    end
+    callback_session = _qwen3_xla_session_double(
+        compiled_prefill,
+        compiled_decode;
+        context_tokens=4,
+        prefill_chunk_tokens=2,
+        position=4,
+    )
+    callback_failure = _qwen3_xla_captured_error() do
+        generate_hf_qwen3_bf16_xla!(
+            callback_session,
+            [2];
+            max_new_tokens=2,
+            stop_token_ids=Int[],
+            on_token=_ -> (callback_session.prefill_chunk_tokens = 1),
+        )
+    end
+    @test callback_failure isa ArgumentError
+    @test callback_session.position == 2
+    @test prefill_calls[] == 1
+    @test decode_calls[] == 0
 end
 
 @testset "XLA generated tokens cross a strict scalar host boundary" begin
@@ -905,23 +1176,12 @@ end
         decode_calls[] += 1
         return Int[4], nothing
     end
-    make_session() = HFQwen3BF16XLASession(
-        (; vocab_size=16),
-        nothing,
-        (; eos_ids=Int[]),
-        (; temperature=1.0f0, top_k=1, top_p=1.0f0),
-        nothing,
-        nothing,
-        nothing,
-        nothing,
+    make_session() = _qwen3_xla_session_double(
         compiled_prefill,
-        compiled_decode,
-        :greedy,
-        4,
-        2,
-        0,
-        7,
-        nothing,
+        compiled_decode;
+        context_tokens=4,
+        prefill_chunk_tokens=2,
+        position=4,
     )
 
     first_session = make_session()

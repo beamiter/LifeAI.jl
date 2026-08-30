@@ -481,6 +481,9 @@ Chapter 03 reproducible-training test.
 233. Seal reusable dense Qwen3 BF16 sessions behind validated embedding,
      tokenizer/config, RoPE/cache, window, source-identity, and immutable
      metadata contracts with atomic consumer-side revalidation.
+234. Seal compiled Qwen3 XLA sessions behind validated model geometry,
+     generation strategy, RoPE/cache storage, callback identity, and immutable
+     runtime contracts with atomic per-chunk revalidation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
