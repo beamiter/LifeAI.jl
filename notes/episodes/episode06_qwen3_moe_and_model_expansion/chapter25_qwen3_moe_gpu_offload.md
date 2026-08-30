@@ -54,6 +54,8 @@ Qwen3-30B-A3B session，而不把 61 GB BF16 权重树假装成能常驻 24 GB �
 - **expert 下限由路由宽度决定**：一个 token 必然选择 `experts_per_token` 个
   experts，因此容量规划器拒绝更小的 `max_active_experts`；官方 top-k=8 模型
   不再允许用 1 个 expert 的 payload 冒充可执行工作集下限。
+- **规划合同必须可执行**：当前 streamed offload session 只支持 batch 1，容量
+  规划器同步拒绝更大的 batch，而不是返回一个运行时无法兑现的假设性数字。
 - **路由编号必须重映射**：磁盘上的 global expert id 不能直接索引只包含
   active experts 的局部三维参数张量；session 在宿主读取极小的 top-k route
   table，排序 active ids 后构造 local ids，再把小表传回设备。

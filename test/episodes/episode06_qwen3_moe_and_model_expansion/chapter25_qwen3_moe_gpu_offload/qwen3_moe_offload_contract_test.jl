@@ -36,6 +36,12 @@ const QWEN3_MOE_TINY_OFFLOAD_FIXTURE = joinpath(
     @test plan.working_set_floor_bytes == 7_694_348_288
     @test plan.working_set_floor_bytes < 8 * 2^30
 
+    @test_throws ArgumentError qwen3_moe_offload_plan(
+        model,
+        40_960;
+        batch_size=2,
+    )
+
     routed_floor = qwen3_moe_offload_plan(
         model,
         40_960;

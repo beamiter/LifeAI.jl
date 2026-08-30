@@ -21,6 +21,7 @@ Estimate the irreducible BF16 device payload for a Qwen3 MoE offload session.
 The estimate includes resident attention/router/norm/LM-head parameters, a
 static KV cache and at most `max_active_experts` experts for one layer. The
 expert allowance cannot be smaller than the model's per-token routing width.
+Like the executable session, the planner currently accepts only batch size 1.
 It does not include allocator slack, attention scores or grouped-dispatch
 workspace.
 """
@@ -39,7 +40,9 @@ function qwen3_moe_offload_plan(
     0 < context <= model.max_seq_len || throw(ArgumentError(
         "context_tokens must be in 1:model.max_seq_len",
     ))
-    batch > 0 || throw(ArgumentError("batch_size must be positive"))
+    batch == 1 || throw(ArgumentError(
+        "Qwen3 MoE offload sessions currently require batch_size == 1",
+    ))
     model.experts_per_token <= active <= model.num_experts || throw(ArgumentError(
         "max_active_experts must be in " *
         "model.experts_per_token:model.num_experts",
