@@ -1244,6 +1244,81 @@ struct Qwen3VLRopeLayout{P,D,M,A}
     rope_deltas::D
     visual_mask::M
     attention_mask::A
+
+    function Qwen3VLRopeLayout(
+        position_ids,
+        rope_deltas,
+        visual_mask,
+        attention_mask,
+    )
+        position_ids isa AbstractArray || throw(ArgumentError(
+            "Qwen3-VL position_ids must be an array",
+        ))
+        ndims(position_ids) == 3 && size(position_ids, 1) == 3 ||
+            throw(DimensionMismatch(
+                "Qwen3-VL position_ids must have shape (3, sequence, batch)",
+            ))
+        eltype(position_ids) <: Integer && !(eltype(position_ids) <: Bool) ||
+            throw(ArgumentError(
+                "Qwen3-VL position_ids must be an integer array",
+            ))
+
+        rope_deltas isa AbstractArray || throw(ArgumentError(
+            "Qwen3-VL rope_deltas must be an array",
+        ))
+        ndims(rope_deltas) == 2 || throw(DimensionMismatch(
+            "Qwen3-VL rope_deltas must have shape (batch, 1)",
+        ))
+        eltype(rope_deltas) <: Integer && !(eltype(rope_deltas) <: Bool) ||
+            throw(ArgumentError(
+                "Qwen3-VL rope_delta must be an integer array",
+            ))
+
+        visual_mask isa AbstractArray || throw(ArgumentError(
+            "Qwen3-VL visual_mask must be an array",
+        ))
+        ndims(visual_mask) == 2 || throw(DimensionMismatch(
+            "Qwen3-VL visual_mask must have shape (sequence, batch)",
+        ))
+        eltype(visual_mask) <: Bool || throw(ArgumentError(
+            "Qwen3-VL visual_mask must contain Bool values",
+        ))
+
+        attention_mask isa AbstractArray || throw(ArgumentError(
+            "Qwen3-VL attention_mask must be an array",
+        ))
+        ndims(attention_mask) == 2 || throw(DimensionMismatch(
+            "Qwen3-VL attention_mask must have shape (sequence, batch)",
+        ))
+        eltype(attention_mask) <: Bool || throw(ArgumentError(
+            "Qwen3-VL attention_mask must contain Bool values",
+        ))
+
+        sequence_length, batch_size = size(visual_mask)
+        size(position_ids) == (3, sequence_length, batch_size) ||
+            throw(DimensionMismatch(
+                "Qwen3-VL position_ids must match the prompt masks",
+            ))
+        size(rope_deltas) == (batch_size, 1) || throw(DimensionMismatch(
+            "Qwen3-VL rope_deltas must have shape (batch, 1)",
+        ))
+        size(attention_mask) == (sequence_length, batch_size) ||
+            throw(DimensionMismatch(
+                "Qwen3-VL attention_mask must match visual_mask",
+            ))
+
+        return new{
+            typeof(position_ids),
+            typeof(rope_deltas),
+            typeof(visual_mask),
+            typeof(attention_mask),
+        }(
+            position_ids,
+            rope_deltas,
+            visual_mask,
+            attention_mask,
+        )
+    end
 end
 
 Qwen3VLRopeLayout(position_ids, rope_deltas, visual_mask) = Qwen3VLRopeLayout(

@@ -150,6 +150,50 @@ end
     @test all(isfinite, sine)
 end
 
+@testset "Chapter 44 — RoPE layout construction is strict" begin
+    positions = reshape(Int32[0, 1, 0, 1, 0, 1], 3, 2, 1)
+    deltas = reshape(Int16[0], 1, 1)
+    visual = falses(2, 1)
+    attention = trues(2, 1)
+    layout = Qwen3VLRopeLayout(positions, deltas, visual, attention)
+    @test layout.position_ids === positions
+    @test layout.rope_deltas === deltas
+    @test layout.visual_mask === visual
+    @test layout.attention_mask === attention
+
+    @test_throws ArgumentError Qwen3VLRopeLayout(1, 2, 3, 4)
+    @test_throws DimensionMismatch Qwen3VLRopeLayout(
+        zeros(Int, 3, 2),
+        deltas,
+        visual,
+        attention,
+    )
+    @test_throws DimensionMismatch Qwen3VLRopeLayout(
+        zeros(Int, 2, 2, 1),
+        deltas,
+        visual,
+        attention,
+    )
+    @test_throws DimensionMismatch Qwen3VLRopeLayout(
+        positions,
+        Int[0],
+        visual,
+        attention,
+    )
+    @test_throws DimensionMismatch Qwen3VLRopeLayout(
+        positions,
+        deltas,
+        falses(1, 1),
+        trues(1, 1),
+    )
+    @test_throws MethodError Qwen3VLRopeLayout{
+        typeof(positions),
+        typeof(deltas),
+        typeof(visual),
+        typeof(attention),
+    }(positions, deltas, visual, attention)
+end
+
 @testset "Chapter 44 — deterministic tiny Float32 decoder HF parity" begin
     reference = _ch44_hf_reference()
     @test String(reference.metadata.transformers) == "4.57.0"
@@ -440,7 +484,7 @@ end
     ))
     invalid_integer_layouts = (
         (
-            layout=Qwen3VLRopeLayout(
+            layout=() -> Qwen3VLRopeLayout(
                 Bool.(inputs.rope_layout.position_ids .> 0),
                 reshape(Int[-6], 1, 1),
                 inputs.rope_layout.visual_mask,
@@ -449,7 +493,7 @@ end
             message="Qwen3-VL position_ids must be an integer",
         ),
         (
-            layout=Qwen3VLRopeLayout(
+            layout=() -> Qwen3VLRopeLayout(
                 Float32.(inputs.rope_layout.position_ids),
                 inputs.rope_layout.rope_deltas,
                 inputs.rope_layout.visual_mask,
@@ -458,7 +502,7 @@ end
             message="Qwen3-VL position_ids must be an integer",
         ),
         (
-            layout=Qwen3VLRopeLayout(
+            layout=() -> Qwen3VLRopeLayout(
                 inputs.rope_layout.position_ids,
                 reshape(Bool[true], 1, 1),
                 inputs.rope_layout.visual_mask,
@@ -467,7 +511,7 @@ end
             message="Qwen3-VL rope_delta must be an integer",
         ),
         (
-            layout=Qwen3VLRopeLayout(
+            layout=() -> Qwen3VLRopeLayout(
                 inputs.rope_layout.position_ids,
                 reshape(Float64[-2.0], 1, 1),
                 inputs.rope_layout.visual_mask,
@@ -476,7 +520,7 @@ end
             message="Qwen3-VL rope_delta must be an integer",
         ),
         (
-            layout=Qwen3VLRopeLayout(
+            layout=() -> Qwen3VLRopeLayout(
                 inputs.rope_layout.position_ids,
                 reshape(BigInt[overflow_integer], 1, 1),
                 inputs.rope_layout.visual_mask,
@@ -487,7 +531,7 @@ end
     )
     for case in invalid_integer_layouts
         layout_error = try
-            call_prefill(case.layout)
+            call_prefill(case.layout())
             nothing
         catch caught
             caught

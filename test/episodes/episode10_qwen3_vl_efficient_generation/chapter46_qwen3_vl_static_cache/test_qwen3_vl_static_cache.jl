@@ -533,7 +533,7 @@ end
 
     invalid_integer_layouts = (
         (
-            layout=Qwen3VLRopeLayout(
+            layout=() -> Qwen3VLRopeLayout(
                 Bool.(inputs.rope_layout.position_ids .> 0),
                 reshape(Int[-6], 1, 1),
                 inputs.rope_layout.visual_mask,
@@ -542,7 +542,7 @@ end
             message="Qwen3-VL position_ids must be an integer",
         ),
         (
-            layout=Qwen3VLRopeLayout(
+            layout=() -> Qwen3VLRopeLayout(
                 Float64.(inputs.rope_layout.position_ids),
                 inputs.rope_layout.rope_deltas,
                 inputs.rope_layout.visual_mask,
@@ -551,7 +551,7 @@ end
             message="Qwen3-VL position_ids must be an integer",
         ),
         (
-            layout=Qwen3VLRopeLayout(
+            layout=() -> Qwen3VLRopeLayout(
                 inputs.rope_layout.position_ids,
                 reshape(Bool[true], 1, 1),
                 inputs.rope_layout.visual_mask,
@@ -560,7 +560,7 @@ end
             message="Qwen3-VL rope_delta must be an integer",
         ),
         (
-            layout=Qwen3VLRopeLayout(
+            layout=() -> Qwen3VLRopeLayout(
                 inputs.rope_layout.position_ids,
                 reshape(Float64[-2.0], 1, 1),
                 inputs.rope_layout.visual_mask,
@@ -569,7 +569,7 @@ end
             message="Qwen3-VL rope_delta must be an integer",
         ),
         (
-            layout=Qwen3VLRopeLayout(
+            layout=() -> Qwen3VLRopeLayout(
                 inputs.rope_layout.position_ids,
                 reshape(BigInt[overflow_integer], 1, 1),
                 inputs.rope_layout.visual_mask,
@@ -585,10 +585,11 @@ end
         )
         static_refs = _ch46_storage_refs(static_guard)
         layout_error = try
+            layout = case.layout()
             hf_qwen3_vl_text_prefill_static(
                 parameters,
                 inputs.input_ids,
-                case.layout;
+                layout;
                 vision_features=inputs.vision_features,
                 cache=static_guard,
             )
