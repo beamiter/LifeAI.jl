@@ -361,6 +361,29 @@ end
         repeat(reshape(Int[1, 0], 1, :), 3, 1)
     @test singleton.rope_deltas == reshape(Int[-1], 1, 1)
 
+    integer_mask = qwen3_vl_rope_layout(
+        Int[1, 11];
+        attention_mask=Int8[0, 1],
+    )
+    @test integer_mask.attention_mask == reshape(Bool[false, true], 2, 1)
+    for invalid_mask in (
+        Float64[0, 1],
+        ComplexF64[0, 1],
+        Any[missing, 1],
+        Int[0, 2],
+    )
+        failure = _ch44_layout_captured_error() do
+            qwen3_vl_rope_layout(
+                Int[1, 11];
+                attention_mask=invalid_mask,
+            )
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL attention_mask values must be Bool or " *
+            "integer zero/one"
+    end
+
     batch = repeat(reshape(Int[11, 12], 2, 1), 1, 2)
     @test_throws ArgumentError qwen3_vl_rope_layout(batch)
     @test_throws ArgumentError qwen3_vl_rope_layout(

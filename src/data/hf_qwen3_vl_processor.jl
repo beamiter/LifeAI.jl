@@ -1215,8 +1215,13 @@ function _qwen3_vl_attention_matrix(attention_mask, dimensions)
     size(normalized) == dimensions || throw(DimensionMismatch(
         "Qwen3-VL attention_mask must match input_ids",
     ))
-    all(value -> value in (false, true, 0, 1), normalized) ||
-        throw(ArgumentError("Qwen3-VL attention_mask values must be boolean"))
+    all(
+        value -> value isa Bool ||
+            (value isa Integer && (value == 0 || value == 1)),
+        normalized,
+    ) || throw(ArgumentError(
+        "Qwen3-VL attention_mask values must be Bool or integer zero/one",
+    ))
     return Bool.(normalized)
 end
 
