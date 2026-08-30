@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the ninety follow-up rounds implemented on top of the
+This ledger records the ninety-one follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -180,6 +180,9 @@ Chapter 03 reproducible-training test.
     byte counts before allocating the positional tables used by Qwen models.
 90. Normalize every RoPE application start position and prove cache bounds
     without overflow before indexing its positional tables.
+91. Require exact four-dimensional one-based RoPE tensors, two-dimensional
+    one-based caches, and internally consistent RoPE storage before reshape,
+    device transfer, slicing, or inbounds mutation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

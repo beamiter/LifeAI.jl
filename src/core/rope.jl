@@ -150,6 +150,45 @@ function _rope_position_bounds(
     return start, stop
 end
 
+function _rope_tensor_shape(x, label::AbstractString)
+    ndims(x) == 4 || throw(DimensionMismatch(
+        "$label must have shape (head_dim, num_heads, seq_len, batch)",
+    ))
+    Base.require_one_based_indexing(x)
+    return size(x)
+end
+
+function _rope_cache_shape(cache, label::AbstractString)
+    ndims(cache) == 2 || throw(DimensionMismatch(
+        "$label must be a (half_head_dim, max_seq_len) matrix",
+    ))
+    Base.require_one_based_indexing(cache)
+    return size(cache)
+end
+
+function _validate_rope_storage(rope::RoPE)
+    rope.head_dim > 0 && iseven(rope.head_dim) || throw(ArgumentError(
+        "RoPE storage requires a positive even head_dim",
+    ))
+    rope.max_seq_len > 0 || throw(ArgumentError(
+        "RoPE storage requires a positive max_seq_len",
+    ))
+    _validate_rope_style(rope.style)
+
+    half_dim = rope.head_dim ÷ 2
+    length(rope.inv_freq) == half_dim || throw(ArgumentError(
+        "RoPE frequency storage does not match head_dim",
+    ))
+    expected_cache_shape = (half_dim, rope.max_seq_len)
+    size(rope.cos_cache) == expected_cache_shape || throw(ArgumentError(
+        "RoPE cosine cache storage does not match its declared dimensions",
+    ))
+    size(rope.sin_cache) == expected_cache_shape || throw(ArgumentError(
+        "RoPE sine cache storage does not match its declared dimensions",
+    ))
+    return nothing
+end
+
 """
     apply_rope!(y, x, rope; start_pos=1)
 
@@ -178,11 +217,13 @@ function apply_rope!(
     rope::RoPE;
     start_pos=1,
 )
-    D, H, T, B = size(x)
+    D, H, T, B = _rope_tensor_shape(x, "`x`")
+    _rope_tensor_shape(y, "`y`")
 
     @assert size(y) == size(x) "`y` and `x` must have the same shape"
     @assert D == rope.head_dim "`x` head_dim does not match rope.head_dim"
     @assert iseven(D) "`head_dim` must be even for RoPE"
+    _validate_rope_storage(rope)
     resolved_start, _ = _rope_position_bounds(
         start_pos,
         T,
@@ -226,8 +267,11 @@ function apply_rope(
     start_pos=1,
     rope_style::Symbol=:interleaved,
 )
-    D, H, T, B = size(x)
+    D, H, T, B = _rope_tensor_shape(x, "`x`")
+    _rope_cache_shape(cos_cache, "`cos_cache`")
+    _rope_cache_shape(sin_cache, "`sin_cache`")
 
+    D > 0 || throw(ArgumentError("`head_dim` must be positive for RoPE"))
     @assert iseven(D) "`head_dim` must be even for RoPE"
     @assert size(cos_cache) == size(sin_cache) "RoPE cache shapes must match"
     @assert size(cos_cache, 1) == D ÷ 2 "RoPE cache head_dim does not match input"
@@ -276,7 +320,9 @@ function apply_rope(
     rope::RoPE;
     start_pos=1,
 )
+    _rope_tensor_shape(x, "`x`")
     @assert size(x, 1) == rope.head_dim "`x` head_dim does not match rope.head_dim"
+    _validate_rope_storage(rope)
     resolved_start, _ = _rope_position_bounds(
         start_pos,
         size(x, 3),
@@ -303,11 +349,13 @@ function apply_rope_threaded!(
     rope::RoPE;
     start_pos=1,
 )
-    D, H, T, B = size(x)
+    D, H, T, B = _rope_tensor_shape(x, "`x`")
+    _rope_tensor_shape(y, "`y`")
 
     @assert size(y) == size(x)
     @assert D == rope.head_dim
     @assert iseven(D)
+    _validate_rope_storage(rope)
     resolved_start, _ = _rope_position_bounds(
         start_pos,
         T,

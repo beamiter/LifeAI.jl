@@ -2,6 +2,41 @@ using Test
 using Random
 using LifeAI: RoPE, apply_rope, apply_rope!, apply_rope_threaded!
 
+struct _Chapter01OffsetArray{T,N,A<:AbstractArray{T,N}} <: AbstractArray{T,N}
+    parent::A
+    offsets::NTuple{N,Int}
+end
+
+Base.size(array::_Chapter01OffsetArray) = size(array.parent)
+Base.axes(array::_Chapter01OffsetArray{T,N}) where {T,N} = ntuple(N) do dimension
+    parent_axis = axes(array.parent, dimension)
+    offset = array.offsets[dimension]
+    (first(parent_axis) + offset):(last(parent_axis) + offset)
+end
+Base.IndexStyle(::Type{<:_Chapter01OffsetArray}) = IndexCartesian()
+function Base.getindex(
+    array::_Chapter01OffsetArray{T,N},
+    indices::Vararg{Int,N},
+) where {T,N}
+    parent_indices = ntuple(
+        dimension -> indices[dimension] - array.offsets[dimension],
+        N,
+    )
+    return getindex(array.parent, parent_indices...)
+end
+function Base.setindex!(
+    array::_Chapter01OffsetArray{T,N},
+    value,
+    indices::Vararg{Int,N},
+) where {T,N}
+    parent_indices = ntuple(
+        dimension -> indices[dimension] - array.offsets[dimension],
+        N,
+    )
+    setindex!(array.parent, value, parent_indices...)
+    return value
+end
+
 @testset "RoPE" begin
     D = 8
     H = 2
@@ -140,6 +175,97 @@ using LifeAI: RoPE, apply_rope, apply_rope!, apply_rope_threaded!
     )
         @test_throws AssertionError operation()
     end
+
+    x_3d = reshape(copy(x), D, H, :)
+    x_5d = reshape(copy(x), D, H, T, B, 1)
+    for invalid_x in (x_3d, x_5d)
+        for operation in (
+            () -> apply_rope(invalid_x, rope),
+            () -> apply_rope(
+                invalid_x,
+                rope.cos_cache,
+                rope.sin_cache,
+            ),
+            () -> apply_rope!(similar(invalid_x), invalid_x, rope),
+            () -> apply_rope_threaded!(
+                similar(invalid_x),
+                invalid_x,
+                rope,
+            ),
+        )
+            @test_throws DimensionMismatch operation()
+        end
+    end
+
+    cache_vector = vec(rope.cos_cache)
+    cache_3d = reshape(rope.cos_cache, size(rope.cos_cache)..., 1)
+    @test_throws DimensionMismatch apply_rope(
+        x,
+        cache_vector,
+        cache_vector,
+    )
+    @test_throws DimensionMismatch apply_rope(
+        x,
+        rope.cos_cache,
+        cache_vector,
+    )
+    @test_throws DimensionMismatch apply_rope(x, cache_3d, cache_3d)
+    @test_throws DimensionMismatch apply_rope(
+        x,
+        rope.cos_cache,
+        cache_3d,
+    )
+    empty_head = zeros(Float32, 0, H, T, B)
+    empty_cache = zeros(Float32, 0, 16)
+    @test_throws ArgumentError apply_rope(
+        empty_head,
+        empty_cache,
+        empty_cache,
+    )
+
+    offset_x = _Chapter01OffsetArray(x, (1, 0, 0, 0))
+    offset_y = _Chapter01OffsetArray(similar(x), (1, 0, 0, 0))
+    offset_cache = _Chapter01OffsetArray(rope.cos_cache, (1, 0))
+    @test_throws ArgumentError apply_rope(offset_x, rope)
+    @test_throws ArgumentError apply_rope(
+        offset_x,
+        rope.cos_cache,
+        rope.sin_cache,
+    )
+    @test_throws ArgumentError apply_rope!(similar(x), offset_x, rope)
+    @test_throws ArgumentError apply_rope_threaded!(similar(x), offset_x, rope)
+    @test_throws ArgumentError apply_rope!(offset_y, x, rope)
+    @test_throws ArgumentError apply_rope_threaded!(offset_y, x, rope)
+    @test_throws ArgumentError apply_rope(x, offset_cache, offset_cache)
+    @test_throws ArgumentError apply_rope(
+        x,
+        rope.cos_cache,
+        offset_cache,
+    )
+
+    y_3d = reshape(similar(x), D, H, :)
+    y_5d = reshape(similar(x), D, H, T, B, 1)
+    for invalid_y in (y_3d, y_5d)
+        @test_throws DimensionMismatch apply_rope!(invalid_y, x, rope)
+        @test_throws DimensionMismatch apply_rope_threaded!(invalid_y, x, rope)
+    end
+
+    malformed_rope = RoPE(
+        D,
+        16,
+        10000.0f0,
+        :interleaved,
+        ones(Float32, D ÷ 2),
+        zeros(Float32, 1, 1),
+        zeros(Float32, 1, 1),
+    )
+    @test_throws ArgumentError apply_rope(x, malformed_rope)
+    @test_throws ArgumentError apply_rope!(similar(x), x, malformed_rope)
+    @test_throws ArgumentError apply_rope_threaded!(
+        similar(x),
+        x,
+        malformed_rope,
+    )
 
     # 构造参数在任何大表分配之前严格规范到宿主表示。
     for invalid_head_dim in (true, 0, big(typemax(Int)) + 1)
