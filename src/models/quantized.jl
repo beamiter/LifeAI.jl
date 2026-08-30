@@ -263,33 +263,36 @@ function _validate_quantization_plan_layers(
     return plan
 end
 
+function _activation_moment_float32(value, label::AbstractString)
+    value isa Real && !(value isa Bool) || throw(ArgumentError(
+        "$label must contain real numbers other than Bool",
+    ))
+    isfinite(value) && value >= 0 || throw(ArgumentError(
+        "$label must be finite and non-negative",
+    ))
+    resolved = try
+        Float32(value)
+    catch error
+        error isa InterruptException && rethrow()
+        throw(ArgumentError(
+            "$label must be finite and non-negative at Float32 precision",
+        ))
+    end
+    isfinite(resolved) && resolved >= 0.0f0 || throw(ArgumentError(
+        "$label must be finite and non-negative at Float32 precision",
+    ))
+    return resolved
+end
+
 function _validated_activation_moment(values, target)
     values isa AbstractVector || throw(ArgumentError(
         "activation second moment for $target must be a vector",
     ))
-    moment = map(collect(values)) do value
-        value isa Real && !(value isa Bool) || throw(ArgumentError(
-            "activation second moment for $target must contain real numbers other than Bool",
-        ))
-        isfinite(value) && value >= 0 || throw(ArgumentError(
-            "activation second moment for $target must be finite and non-negative",
-        ))
-        return try
-            Float32(value)
-        catch error
-            error isa InterruptException && rethrow()
-            throw(ArgumentError(
-                "activation second moment for $target must be finite and non-negative at Float32 precision",
-            ))
-        end
-    end
+    label = "activation second moment for $target"
+    moment = map(value -> _activation_moment_float32(value, label), collect(values))
     isempty(moment) && throw(ArgumentError(
         "activation second moment for $target must not be empty",
     ))
-    all(value -> isfinite(value) && value >= 0.0f0, moment) ||
-        throw(ArgumentError(
-            "activation second moment for $target must be finite and non-negative at Float32 precision",
-        ))
     any(>(0.0f0), moment) || throw(ArgumentError(
         "activation second moment for $target must contain positive mass",
     ))
@@ -691,11 +694,10 @@ function _grouped_activation_second_moment(
     length(values) == in_dim || throw(DimensionMismatch(
         "activation second moment has length $(length(values)); expected $in_dim",
     ))
-    moment = Float32.(collect(values))
-    all(value -> isfinite(value) && value >= 0.0f0, moment) ||
-        throw(ArgumentError(
-            "activation second moment must be finite and non-negative",
-        ))
+    moment = map(
+        value -> _activation_moment_float32(value, "activation second moment"),
+        collect(values),
+    )
     groups = in_dim ÷ group
     grouped = reshape(moment, group, groups)
     for group_index in 1:groups

@@ -245,6 +245,29 @@ end
             sum(weights .* abs2.(baseline_dequant[row, columns] .- source))
     end
 
+    normalized_moment = LifeAI._grouped_activation_second_moment(
+        Any[1, fill(1 // 2, 15)...],
+        16,
+        16,
+    )
+    @test eltype(normalized_moment) === Float32
+    @test normalized_moment[:, 1] == Float32[1; fill(0.5f0, 15)]
+    for invalid in (true, 0.5 + 0im, "0.5", nothing)
+        values = Any[invalid, ones(Float32, 15)...]
+        @test _activation_calibration_argument_error_message() do
+            LifeAI._grouped_activation_second_moment(values, 16, 16)
+        end ==
+              "activation second moment must contain real numbers other than Bool"
+    end
+    @test _activation_calibration_argument_error_message() do
+        LifeAI._grouped_activation_second_moment(
+            Any[big(10)^1000, ones(Float32, 15)...],
+            16,
+            16,
+        )
+    end ==
+          "activation second moment must be finite and non-negative at Float32 precision"
+
     @test_throws ArgumentError LifeAI._quantize_int4_group(
         weight;
         group=16,

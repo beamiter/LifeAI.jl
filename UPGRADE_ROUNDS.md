@@ -265,6 +265,8 @@ Chapter 03 reproducible-training test.
      precision, rejecting Bool, complex, invalid containers, and rounding leaks.
 132. Route every Qwen3 activation calibration construction and lookup through
      strict count, layer, source, and second-moment validation.
+133. Strictly normalize activation moments at the Qwen3 INT4 quantization
+     consumer boundary instead of coercing Bool or leaking conversion errors.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
