@@ -343,6 +343,10 @@ layout，但将 prompt-sized input embeddings/final hidden 置为 `nothing`。�
 既有调用兼容，CPU full/light 与 CUDA static-light verifier 都以 logits/cache parity
 作为门禁。
 
+static capacity 在高层 raw preflight 与低层 token API 都使用严格宿主整数转换；Bool
+和越界 `BigInt` 不会泄漏为 `InexactError`，而且 intrinsic context 上限与
+prompt-dependent capacity 下界分别在 vision 前完成检查。
+
 ## 一个真实 Julia API 踩坑：keyword 不能参与 dispatch
 
 初版集成曾尝试保留同名 prefill API，只用 keyword 参数类型区分 cache：

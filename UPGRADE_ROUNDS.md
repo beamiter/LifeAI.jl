@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the forty-five follow-up rounds implemented on top of the
+This ledger records the forty-six follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -87,6 +87,9 @@ Chapter 03 reproducible-training test.
 45. Harden dense, MoE, and VL Hugging Face scalar config contracts: reject
     Boolean integers/numerics, checked-convert host integers, preserve valid narrow
     integer overrides, and require positive norm/RoPE values at Float32 precision.
+46. Preflight raw Qwen3-VL generation options before image/vision compute, then
+    validate prompt-dependent context and static-capacity bounds before device
+    transfer; normalize explicit capacities without leaking integer overflow.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

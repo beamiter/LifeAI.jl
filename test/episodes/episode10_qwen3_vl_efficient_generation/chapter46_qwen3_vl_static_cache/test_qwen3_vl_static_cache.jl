@@ -674,6 +674,17 @@ end
         cache=:dynamic,
         static_capacity=8,
     )
+    for invalid_capacity in (true, big(typemax(Int)) + 1)
+        @test_throws ArgumentError generate_hf_qwen3_vl_tokens(
+            parameters,
+            inputs.input_ids,
+            inputs.rope_layout;
+            vision_features=inputs.vision_features,
+            max_new_tokens=1,
+            cache=:static,
+            static_capacity=invalid_capacity,
+        )
+    end
     @test_throws ArgumentError generate_hf_qwen3_vl_tokens(
         parameters,
         inputs.input_ids,

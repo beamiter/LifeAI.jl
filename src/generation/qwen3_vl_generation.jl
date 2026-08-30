@@ -18,6 +18,45 @@ function _qwen3_vl_generation_stop_ids(parameters, stop_token_ids)
     return stops
 end
 
+function _qwen3_vl_generation_preflight(
+    text_parameters,
+    stop_token_ids,
+    max_new_tokens::Int,
+    cache::Symbol,
+    static_capacity,
+    decode_errors::Symbol,
+)
+    max_new_tokens >= 0 || throw(ArgumentError(
+        "max_new_tokens must be non-negative",
+    ))
+    decode_errors in (:strict, :replace) || throw(ArgumentError(
+        "decode_errors must be :strict or :replace",
+    ))
+
+    normalized_capacity = if cache === :dynamic
+        static_capacity === nothing || throw(ArgumentError(
+            "static_capacity is only valid when cache=:static",
+        ))
+        nothing
+    elseif cache === :static
+        if static_capacity === nothing
+            nothing
+        else
+            capacity = _strict_host_int(static_capacity, "static_capacity")
+            1 <= capacity <= text_parameters.spec.max_position_embeddings ||
+                throw(ArgumentError(
+                    "static_capacity must be within max_position_embeddings",
+                ))
+            capacity
+        end
+    else
+        throw(ArgumentError("Qwen3-VL cache must be :dynamic or :static"))
+    end
+
+    stops = _qwen3_vl_generation_stop_ids(text_parameters, stop_token_ids)
+    return (; stops, static_capacity=normalized_capacity)
+end
+
 function _qwen3_vl_generation_limits(
     spec::Qwen3VLTextSpec,
     prompt_length::Int,
@@ -42,6 +81,27 @@ function _qwen3_vl_generation_limits(
     return processed
 end
 
+function _qwen3_vl_generation_prompt_preflight(
+    text_parameters,
+    prompt_ids,
+    max_new_tokens::Int,
+    static_capacity,
+)
+    required_capacity = _qwen3_vl_generation_limits(
+        text_parameters.spec,
+        length(prompt_ids),
+        max_new_tokens,
+    )
+    all(id -> 1 <= id <= text_parameters.spec.vocab_size, prompt_ids) || throw(
+        ArgumentError("Qwen3-VL input_ids contain an out-of-vocabulary id"),
+    )
+    static_capacity === nothing || static_capacity >= required_capacity ||
+        throw(ArgumentError(
+            "static_capacity is smaller than the processed generation context",
+        ))
+    return required_capacity
+end
+
 function _qwen3_vl_generation_cache(
     text_parameters,
     required_capacity::Int,
@@ -57,10 +117,7 @@ function _qwen3_vl_generation_cache(
         capacity = if static_capacity === nothing
             required_capacity
         else
-            static_capacity isa Integer && !(static_capacity isa Bool) || throw(
-                ArgumentError("static_capacity must be an integer"),
-            )
-            Int(static_capacity)
+            _strict_host_int(static_capacity, "static_capacity")
         end
         capacity >= required_capacity || throw(ArgumentError(
             "static_capacity is smaller than the processed generation context",
@@ -372,6 +429,17 @@ function generate_hf_qwen3_vl(
             "Qwen3-VL vision and text parameters must reside on the same device",
         ))
 
+    resolved_stops = stop_token_ids === nothing ?
+        tokenizer.eos_ids : stop_token_ids
+    preflight = _qwen3_vl_generation_preflight(
+        text_parameters,
+        resolved_stops,
+        max_new_tokens,
+        cache,
+        static_capacity,
+        decode_errors,
+    )
+
     message_list = collect(Any, messages)
     image = _qwen3_vl_generation_image(message_list)
     processed = _qwen3_vl_generation_process_image(image, processor_spec)
@@ -388,6 +456,12 @@ function generate_hf_qwen3_vl(
         spec=processor_spec,
     )
     prompt_ids = encode(tokenizer, expanded_prompt; add_special_tokens=false)
+    _qwen3_vl_generation_prompt_preflight(
+        text_parameters,
+        prompt_ids,
+        max_new_tokens,
+        preflight.static_capacity,
+    )
     rope_layout = qwen3_vl_rope_layout(
         prompt_ids,
         processed.grid_thw;
@@ -405,18 +479,16 @@ function generate_hf_qwen3_vl(
         vision_parameters,
         vision_input,
     )
-    resolved_stops = stop_token_ids === nothing ?
-        tokenizer.eos_ids : stop_token_ids
     generated = generate_hf_qwen3_vl_tokens(
         text_parameters,
         prompt_ids,
         rope_layout;
         vision_features,
         max_new_tokens,
-        stop_token_ids=resolved_stops,
+        stop_token_ids=preflight.stops,
         capture_logits,
         cache,
-        static_capacity,
+        static_capacity=preflight.static_capacity,
         capture_prefill_states,
     )
     completion = decode(

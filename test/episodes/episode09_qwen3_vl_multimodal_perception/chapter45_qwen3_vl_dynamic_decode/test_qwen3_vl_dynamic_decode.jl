@@ -2,12 +2,24 @@ using Base64: base64decode
 using JSON3
 using SHA: sha256
 using Test
+import LifeAI
 using LifeAI: Qwen3VLRopeLayout,
     Qwen3VLTextSpec,
+    generate_hf_qwen3_vl,
     generate_hf_qwen3_vl_tokens,
     hf_qwen3_vl_text_decode_step,
     hf_qwen3_vl_text_prefill_cached,
-    init_qwen3_vl_kv_cache
+    init_qwen3_vl_kv_cache,
+    load_hf_qwen3_vl_tokenizer
+
+isdefined(@__MODULE__, :qwen3_tokenizer_fixture_payloads) || include(joinpath(
+    @__DIR__,
+    "..",
+    "..",
+    "..",
+    "support",
+    "qwen3_tokenizer_fixture.jl",
+))
 
 const _CH45_TINY_TEXT_SPEC = Qwen3VLTextSpec(
     32,             # vocab_size
@@ -31,6 +43,31 @@ function _ch45_tiny_values(count::Int, offset::Int; scale=0.02f0)
         scale * sin(0.173f0 * Float32(offset + index))
         for index in 1:count
     ]
+end
+
+function _ch45_vl_generation_tokenizer()
+    payloads = qwen3_tokenizer_fixture_payloads()
+    delete!(payloads.tokenizer["model"], "ignore_merges")
+    payloads.tokenizer["model"]["merges"] = [
+        join(String.(pair), " ") for pair in payloads.tokenizer["model"]["merges"]
+    ]
+    payloads.generation_config["repetition_penalty"] = 1.0
+    return mktempdir() do directory
+        write_qwen3_tokenizer_fixture(directory; payloads)
+        load_hf_qwen3_vl_tokenizer(
+            directory;
+            revision="qwen3-vl-preflight-test",
+        )
+    end
+end
+
+function _ch45_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected the test call to fail")
 end
 
 # Mathematical matrix emitted by the exporter's row-major
@@ -539,4 +576,131 @@ end
         only(boundary.generated_ids),
         boundary.cache,
     )
+end
+
+@testset "Chapter 45 — raw generation options fail before image compute" begin
+    tokenizer = _ch45_vl_generation_tokenizer()
+    text_parameters = (;
+        spec=_CH45_TINY_TEXT_SPEC,
+        embedding=zeros(Float32, 1, 1),
+    )
+    vision_parameters = (;
+        spec=(; out_hidden_size=_CH45_TINY_TEXT_SPEC.hidden_size),
+        patch_weight=zeros(Float32, 1, 1),
+    )
+    poison_messages = [(
+        role="user",
+        content=Any[
+            (type="image", image=42),
+            (type="text", text="Describe."),
+        ],
+    )]
+
+    normalized = LifeAI._qwen3_vl_generation_preflight(
+        text_parameters,
+        Int32[8],
+        3,
+        :static,
+        big(10),
+        :replace,
+    )
+    @test normalized.stops == Set([8])
+    @test normalized.static_capacity === 10
+    @test LifeAI._qwen3_vl_generation_prompt_preflight(
+        text_parameters,
+        collect(1:8),
+        3,
+        10,
+    ) == 10
+    @test_throws ArgumentError LifeAI._qwen3_vl_generation_prompt_preflight(
+        text_parameters,
+        collect(1:8),
+        3,
+        9,
+    )
+    @test_throws ArgumentError LifeAI._qwen3_vl_generation_prompt_preflight(
+        text_parameters,
+        Int[_CH45_TINY_TEXT_SPEC.vocab_size + 1],
+        0,
+        nothing,
+    )
+    @test_throws ArgumentError LifeAI._qwen3_vl_generation_preflight(
+        text_parameters,
+        Int[],
+        0,
+        :static,
+        true,
+        :replace,
+    )
+    @test_throws ArgumentError LifeAI._qwen3_vl_generation_preflight(
+        text_parameters,
+        Int[],
+        0,
+        :static,
+        big(typemax(Int)) + 1,
+        :replace,
+    )
+
+    cases = (
+        (
+            needle="max_new_tokens",
+            options=(; max_new_tokens=-1, stop_token_ids=Int[]),
+        ),
+        (
+            needle="cache",
+            options=(; max_new_tokens=0, stop_token_ids=Int[], cache=:bad),
+        ),
+        (
+            needle="stop token",
+            options=(;
+                max_new_tokens=0,
+                stop_token_ids=Int[_CH45_TINY_TEXT_SPEC.vocab_size + 1],
+            ),
+        ),
+        (
+            needle="decode_errors",
+            options=(;
+                max_new_tokens=0,
+                stop_token_ids=Int[],
+                decode_errors=:bad,
+            ),
+        ),
+        (
+            needle="static_capacity",
+            options=(;
+                max_new_tokens=0,
+                stop_token_ids=Int[],
+                cache=:dynamic,
+                static_capacity=8,
+            ),
+        ),
+    )
+    for case in cases
+        failure = _ch45_captured_error() do
+            generate_hf_qwen3_vl(
+                vision_parameters,
+                text_parameters,
+                tokenizer,
+                poison_messages;
+                case.options...,
+            )
+        end
+        @test failure isa ArgumentError
+        message = sprint(showerror, failure)
+        @test occursin(case.needle, message)
+        @test !occursin("image payload", message)
+    end
+
+    image_failure = _ch45_captured_error() do
+        generate_hf_qwen3_vl(
+            vision_parameters,
+            text_parameters,
+            tokenizer,
+            poison_messages;
+            max_new_tokens=0,
+            stop_token_ids=Int[],
+        )
+    end
+    @test image_failure isa ArgumentError
+    @test occursin("image payload", sprint(showerror, image_failure))
 end

@@ -225,6 +225,12 @@ tokens `64`。官方与 LifeAI 的生成结果为：
 wrapper 与手工 cached-prefill/decode loop 的 ids、text、prompt、placeholder expansion、
 最终 cache position 和 `rope_delta` 全部一致。
 
+高层 raw API 在读取/resize 图像、更不可能进入 vision tower 之前，先验证
+`max_new_tokens`、stop ids、decode error policy、cache mode 与 static capacity 的类型和
+内在上限。tokenize 后又在 pixel device transfer 前验证 prompt+generation context、
+词表边界和显式 capacity 下界；低层 token API 保留自身校验。离线 poison-image
+回归钉死错误优先级，非法廉价选项不会再先支付完整 vision compute。
+
 ## RTX 4090 D Float32 strict 结果
 
 `scripts/verify_qwen3_vl_decode_cuda.jl` 在 `CUDA.allowscalar(false)` 下重新执行 raw
