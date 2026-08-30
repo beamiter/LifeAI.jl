@@ -202,49 +202,61 @@ function _qwen3_vl_vision_reference_sha256(compute_dtype)
 end
 
 function _qwen3_vl_text_parameter_count(text::Qwen3VLTextSpec)
-    query_dim = text.num_attention_heads * text.head_dim
-    kv_dim = text.num_key_value_heads * text.head_dim
-    embedding = text.vocab_size * text.hidden_size
-    attention = 2 * query_dim * text.hidden_size +
-        2 * kv_dim * text.hidden_size +
-        2 * text.head_dim
-    mlp = 3 * text.hidden_size * text.intermediate_size
-    norms = 2 * text.hidden_size
+    hidden_size = BigInt(text.hidden_size)
+    query_dim = BigInt(text.num_attention_heads) * text.head_dim
+    kv_dim = BigInt(text.num_key_value_heads) * text.head_dim
+    embedding = BigInt(text.vocab_size) * hidden_size
+    attention = 2 * query_dim * hidden_size +
+        2 * kv_dim * hidden_size +
+        2 * BigInt(text.head_dim)
+    mlp = 3 * hidden_size * text.intermediate_size
+    norms = 2 * hidden_size
     lm_head = text.tie_word_embeddings ? 0 : embedding
-    return embedding +
+    count = embedding +
         text.num_hidden_layers * (attention + mlp + norms) +
-        text.hidden_size +
+        hidden_size +
         lm_head
+    return _qwen3_parameter_count_int(count, "Qwen3-VL text parameter count")
 end
 
 function _qwen3_vl_vision_parameter_count(vision::Qwen3VLVisionSpec)
-    patch = vision.hidden_size * vision.in_channels *
-        vision.temporal_patch_size * vision.patch_size^2 + vision.hidden_size
-    positions = vision.num_position_embeddings * vision.hidden_size
-    block = 4 * vision.hidden_size +
-        3 * vision.hidden_size^2 + 3 * vision.hidden_size +
-        vision.hidden_size^2 + vision.hidden_size +
-        2 * vision.hidden_size * vision.intermediate_size +
-        vision.intermediate_size + vision.hidden_size
-    merged_size = vision.hidden_size * vision.spatial_merge_size^2
-    merger = 2 * vision.hidden_size +
-        vision.intermediate_size * merged_size + vision.intermediate_size +
-        vision.out_hidden_size * vision.intermediate_size +
-        vision.out_hidden_size
+    hidden_size = BigInt(vision.hidden_size)
+    intermediate_size = BigInt(vision.intermediate_size)
+    out_hidden_size = BigInt(vision.out_hidden_size)
+    patch_size = BigInt(vision.patch_size)
+    merge_size = BigInt(vision.spatial_merge_size)
+    patch = hidden_size * vision.in_channels *
+        vision.temporal_patch_size * patch_size^2 + hidden_size
+    positions = BigInt(vision.num_position_embeddings) * hidden_size
+    block = 4 * hidden_size +
+        3 * hidden_size^2 + 3 * hidden_size +
+        hidden_size^2 + hidden_size +
+        2 * hidden_size * intermediate_size +
+        intermediate_size + hidden_size
+    merged_size = hidden_size * merge_size^2
+    merger = 2 * hidden_size +
+        intermediate_size * merged_size + intermediate_size +
+        out_hidden_size * intermediate_size +
+        out_hidden_size
     deep_merger = 2 * merged_size +
-        vision.intermediate_size * merged_size + vision.intermediate_size +
-        vision.out_hidden_size * vision.intermediate_size +
-        vision.out_hidden_size
-    return patch + positions + vision.depth * block + merger +
+        intermediate_size * merged_size + intermediate_size +
+        out_hidden_size * intermediate_size +
+        out_hidden_size
+    count = patch + positions + vision.depth * block + merger +
         length(vision.deepstack_visual_indexes) * deep_merger
+    return _qwen3_parameter_count_int(count, "Qwen3-VL vision parameter count")
 end
 
 """Return the exact scalar count implied by the frozen multimodal checkpoint."""
 function qwen3_vl_parameter_count(
     spec::Qwen3VLCheckpointSpec=qwen3_vl_checkpoint_spec(),
 )
-    count = _qwen3_vl_text_parameter_count(spec.text) +
-        _qwen3_vl_vision_parameter_count(spec.vision)
+    text_count = _qwen3_vl_text_parameter_count(spec.text)
+    vision_count = _qwen3_vl_vision_parameter_count(spec.vision)
+    count = _qwen3_parameter_count_int(
+        BigInt(text_count) + vision_count,
+        "Qwen3-VL parameter count",
+    )
     count == spec.parameter_count || throw(ArgumentError(
         "Qwen3-VL specification parameter count is internally inconsistent: " *
         "expected $(spec.parameter_count), computed $count",

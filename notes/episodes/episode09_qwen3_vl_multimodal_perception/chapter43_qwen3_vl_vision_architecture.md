@@ -83,6 +83,9 @@ width 接口，未知字段或 shape 漂移直接拒绝。
 通用规格的参数量公式与 tensor-shape 合同也保持一致：若 text tower 使用独立
 LM head，`qwen3_vl_parameter_count` 会额外计入完整 vocabulary projection；
 不会出现 shape 表含 `lm_head.weight` 而总参数量漏算的情况。
+text、vision 两个 tower 及其总和都以任意精度中间值计算，并在各自公开的宿主
+整数边界检查；patch 与 spatial-merge 尺寸也会先提升再平方，极端 metadata
+不会从中间表达式回绕成貌似可信的参数量。
 
 ## processor 与输入边界
 

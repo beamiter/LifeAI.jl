@@ -3,8 +3,11 @@ using SHA: sha256
 using Test
 using LifeAI: Qwen3VLCheckpointSpec,
     Qwen3VLTextSpec,
+    Qwen3VLVisionSpec,
+    _qwen3_vl_text_parameter_count,
     load_hf_qwen3_vl_config,
     _qwen3_vl_vision_reference_sha256,
+    _qwen3_vl_vision_parameter_count,
     load_hf_qwen3_vl_processor_config,
     qwen3_vl_checkpoint_spec,
     qwen3_vl_expected_tensor_shapes,
@@ -85,6 +88,8 @@ end
     @test spec.parameter_count == 2_127_532_032
     @test spec.tensor_bytes == 4_255_064_064
     @test qwen3_vl_parameter_count(spec) == spec.parameter_count
+    @test _qwen3_vl_text_parameter_count(spec.text) == 1_720_574_976
+    @test _qwen3_vl_vision_parameter_count(spec.vision) == 406_957_056
     shapes = qwen3_vl_expected_tensor_shapes(spec)
     @test length(shapes) == spec.tensor_count
     @test sum(prod(shape) for shape in values(shapes)) == spec.parameter_count
@@ -116,6 +121,93 @@ end
     @test qwen3_vl_parameter_count(untied_spec) == 2_438_696_960
     @test sum(prod(shape) for shape in values(untied_shapes)) ==
         qwen3_vl_parameter_count(untied_spec)
+
+    text_overflow = Qwen3VLTextSpec(
+        typemax(Int),
+        2,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1.0e-6,
+        1.0e4,
+        1,
+        true,
+        (1, 1, 1),
+        true,
+        "silu",
+    )
+    @test_throws ArgumentError _qwen3_vl_text_parameter_count(text_overflow)
+
+    vision_overflow = Qwen3VLVisionSpec(
+        1,
+        typemax(Int),
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        (0, 0, 0),
+        "gelu",
+    )
+    @test_throws ArgumentError _qwen3_vl_vision_parameter_count(vision_overflow)
+
+    half = typemax(Int) ÷ 2
+    half_text = Qwen3VLTextSpec(
+        half,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        1.0e-6,
+        1.0e4,
+        1,
+        true,
+        (1, 0, 0),
+        true,
+        "silu",
+    )
+    half_vision = Qwen3VLVisionSpec(
+        3,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        half,
+        (0, 1, 2),
+        "gelu",
+    )
+    @test _qwen3_vl_text_parameter_count(half_text) == half + 18
+    @test _qwen3_vl_vision_parameter_count(half_vision) == half + 74
+    total_overflow_spec = Qwen3VLCheckpointSpec(
+        :overflow,
+        "overflow",
+        "overflow",
+        "overflow",
+        (),
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        half_text,
+        half_vision,
+    )
+    @test_throws ArgumentError qwen3_vl_parameter_count(total_overflow_spec)
 
     @test spec.text.mrope_interleaved
     @test spec.text.mrope_section == (24, 20, 20)
