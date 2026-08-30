@@ -411,6 +411,8 @@ Chapter 03 reproducible-training test.
      control chain while retaining each nested required-field diagnostic.
 205. Preflight Qwen3-VL vision pixel and patch-weight device agreement before
      entering backend matrix multiplication without moving either operand.
+206. Snapshot Qwen3 tool-call parse calls, arguments, and invalid evidence so
+     retained constructor aliases cannot rewrite validity verdicts.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

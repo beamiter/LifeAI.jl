@@ -6,6 +6,7 @@ using LifeAI:
     AgentToolResult,
     OrderedJSONObject,
     Qwen3ToolCall,
+    Qwen3ToolCallParse,
     ToolRegistry,
     agent_tool_call_validity,
     default_agent_tools,
@@ -157,6 +158,85 @@ end
     for (arguments, message) in invalid_direct_calls
         failure = try
             Qwen3ToolCall(arguments...)
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
+    end
+
+    source_call = Qwen3ToolCall(
+        "add_integers",
+        OrderedJSONObject(["a" => 1, "b" => 2]),
+        "{\"name\":\"add_integers\"}",
+    )
+    source_calls = [source_call]
+    snapshotted_calls = Qwen3ToolCallParse(source_calls, ())
+    @test length(snapshotted_calls.calls) == 1
+    @test snapshotted_calls.calls[1].arguments !== source_call.arguments
+    empty!(source_calls)
+    pop!(source_call.arguments.entries)
+    @test length(snapshotted_calls.calls) == 1
+    @test snapshotted_calls.calls[1].arguments["b"] == 2
+    @test agent_tool_call_validity(registry, snapshotted_calls) === :valid
+
+    source_invalid = [(raw="bad", reason="invalid JSON")]
+    snapshotted_invalid = Qwen3ToolCallParse((), source_invalid)
+    empty!(source_invalid)
+    @test length(snapshotted_invalid.invalid) == 1
+    @test agent_tool_call_validity(registry, snapshotted_invalid) === :invalid
+
+    invalid_source = "xraw reason"
+    normalized_invalid = Qwen3ToolCallParse((), [(
+        raw=SubString(invalid_source, 1, 4),
+        reason=SubString(invalid_source, 6, 11),
+    )])
+    @test only(normalized_invalid.invalid).raw == "xraw"
+    @test only(normalized_invalid.invalid).raw isa String
+    @test only(normalized_invalid.invalid).reason == "reason"
+    @test only(normalized_invalid.invalid).reason isa String
+    empty_raw = Qwen3ToolCallParse((), [(raw="", reason="empty payload")])
+    @test only(empty_raw.invalid).raw == ""
+    @test agent_tool_call_validity(registry, empty_raw) === :invalid
+
+    invalid_parse_results = (
+        (
+            (nothing, ()),
+            "Qwen3 tool-call parse calls must be iterable",
+        ),
+        (
+            ((1,), ()),
+            "Qwen3 tool-call parse calls must contain Qwen3ToolCall values",
+        ),
+        (
+            ((), nothing),
+            "Qwen3 tool-call parse invalid blocks must be iterable",
+        ),
+        (
+            ((), [(raw="bad", why="unknown")]),
+            "Qwen3 tool-call parse invalid blocks must have exactly raw and reason fields",
+        ),
+        (
+            ((), [(raw="bad", reason="bad", code=1)]),
+            "Qwen3 tool-call parse invalid blocks must have exactly raw and reason fields",
+        ),
+        (
+            ((), [(raw=1, reason="bad")]),
+            "Qwen3 tool-call parse invalid raw must be a string",
+        ),
+        (
+            ((), [(raw="bad", reason=1)]),
+            "Qwen3 tool-call parse invalid reason must be a string",
+        ),
+        (
+            ((), [(raw="bad", reason="")]),
+            "Qwen3 tool-call parse invalid reason must not be empty",
+        ),
+    )
+    for (arguments, message) in invalid_parse_results
+        failure = try
+            Qwen3ToolCallParse(arguments...)
             nothing
         catch caught
             caught

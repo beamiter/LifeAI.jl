@@ -154,6 +154,51 @@ end
 struct Qwen3ToolCallParse
     calls::Vector{Qwen3ToolCall}
     invalid::Vector{NamedTuple{(:raw, :reason),Tuple{String,String}}}
+
+    function Qwen3ToolCallParse(calls, invalid)
+        applicable(iterate, calls) || throw(ArgumentError(
+            "Qwen3 tool-call parse calls must be iterable",
+        ))
+        normalized_calls = Qwen3ToolCall[]
+        for call in calls
+            call isa Qwen3ToolCall || throw(ArgumentError(
+                "Qwen3 tool-call parse calls must contain Qwen3ToolCall values",
+            ))
+            push!(normalized_calls, Qwen3ToolCall(
+                call.name,
+                call.arguments,
+                call.raw,
+            ))
+        end
+
+        applicable(iterate, invalid) || throw(ArgumentError(
+            "Qwen3 tool-call parse invalid blocks must be iterable",
+        ))
+        normalized_invalid = NamedTuple{
+            (:raw, :reason),
+            Tuple{String,String},
+        }[]
+        for block in invalid
+            block isa NamedTuple && keys(block) == (:raw, :reason) ||
+                throw(ArgumentError(
+                    "Qwen3 tool-call parse invalid blocks must have exactly raw and reason fields",
+                ))
+            block.raw isa AbstractString || throw(ArgumentError(
+                "Qwen3 tool-call parse invalid raw must be a string",
+            ))
+            block.reason isa AbstractString || throw(ArgumentError(
+                "Qwen3 tool-call parse invalid reason must be a string",
+            ))
+            isempty(block.reason) && throw(ArgumentError(
+                "Qwen3 tool-call parse invalid reason must not be empty",
+            ))
+            push!(normalized_invalid, (
+                raw=String(block.raw),
+                reason=String(block.reason),
+            ))
+        end
+        return new(normalized_calls, normalized_invalid)
+    end
 end
 
 const _QWEN3_TOOL_CALL_OPEN = "<tool_call>"
