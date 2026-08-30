@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the seventy-two follow-up rounds implemented on top of the
+This ledger records the seventy-three follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -143,6 +143,8 @@ Chapter 03 reproducible-training test.
     model execution or session-position mutation.
 72. Check MultiHeadAttention query/KV dimensions and complete projection/QK
     parameter totals before Qwen model layer construction.
+73. Compute estimated and realized Qwen3 quantized tensor bytes with exact
+    intermediates, including nested-tree aggregation and public-range checks.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -6,6 +6,7 @@ using LifeAI:
     Int4GroupWeight,
     Int8ChannelWeight,
     LinearQuantizationSpec,
+    Qwen3DenseSpec,
     QuantizationPlan,
     estimate_qwen3_quantized_bytes,
     load_hf_qwen3_model,
@@ -85,6 +86,43 @@ const _QWEN3_CALIBRATED_QUANTIZATION_ASSETS_PATH = joinpath(
     )
     @test legacy.packed == explicit.packed
     @test legacy.scale == explicit.scale
+end
+
+@testset "quantized byte accounting rejects host overflow" begin
+    maximum_count = typemax(Int)
+    overflow_spec = Qwen3DenseSpec(
+        :overflow,
+        "overflow",
+        "overflow",
+        "overflow",
+        1,
+        1,
+        1,
+        1,
+        maximum_count,
+        1,
+        maximum_count,
+        1.0f-6,
+        1.0f4,
+        1,
+        true,
+    )
+    bf16_plan = QuantizationPlan(
+        default=LinearQuantizationSpec(:bf16),
+    )
+    @test_throws ArgumentError estimate_qwen3_quantized_bytes(
+        overflow_spec,
+        bf16_plan,
+    )
+
+    single_length = 2 * (maximum_count ÷ sizeof(Int)) + 3
+    @test_throws ArgumentError quantized_parameter_bytes(
+        Base.OneTo(single_length),
+    )
+    aggregate_leaf = Base.OneTo(maximum_count ÷ sizeof(Int))
+    @test_throws ArgumentError quantized_parameter_bytes(
+        (aggregate_leaf, aggregate_leaf, aggregate_leaf),
+    )
 end
 
 @testset "quantization plan validation and precedence" begin

@@ -1070,8 +1070,30 @@ function quantize_bf16_parameters(
     )
 end
 
-_tensor_storage_bytes(array::AbstractArray) =
-    Int(length(array)) * Int(sizeof(eltype(array)))
+function _quantized_byte_count_int(count::BigInt, label::AbstractString)
+    0 <= count <= typemax(Int) || throw(ArgumentError(
+        "$label exceeds the host integer range",
+    ))
+    return Int(count)
+end
+
+function _tensor_storage_bytes(array::AbstractArray)
+    return _quantized_byte_count_int(
+        BigInt(length(array)) * sizeof(eltype(array)),
+        "quantized tensor storage byte count",
+    )
+end
+
+function _quantized_byte_sum(values)
+    count = BigInt(0)
+    for value in values
+        count += quantized_parameter_bytes(value)
+    end
+    return _quantized_byte_count_int(
+        count,
+        "quantized parameter tree byte count",
+    )
+end
 
 """
     quantized_parameter_bytes(parameters)
@@ -1085,15 +1107,15 @@ quantized_parameter_bytes(::Nothing) = 0
 quantized_parameter_bytes(::Number) = 0
 quantized_parameter_bytes(array::AbstractArray) = _tensor_storage_bytes(array)
 quantized_parameter_bytes(weight::Int8ChannelWeight) =
-    _tensor_storage_bytes(weight.q) + _tensor_storage_bytes(weight.scale)
+    _quantized_byte_sum((weight.q, weight.scale))
 quantized_parameter_bytes(weight::Int4GroupWeight) =
-    _tensor_storage_bytes(weight.packed) + _tensor_storage_bytes(weight.scale)
+    _quantized_byte_sum((weight.packed, weight.scale))
 quantized_parameter_bytes(values::NamedTuple) =
-    sum(quantized_parameter_bytes, Base.values(values); init=0)
+    _quantized_byte_sum(Base.values(values))
 quantized_parameter_bytes(values::Tuple) =
-    sum(quantized_parameter_bytes, values; init=0)
+    _quantized_byte_sum(values)
 quantized_parameter_bytes(values::AbstractDict) =
-    sum(quantized_parameter_bytes, Base.values(values); init=0)
+    _quantized_byte_sum(Base.values(values))
 
 function _linear_quantized_bytes(
     out_dim::Integer,
@@ -1103,10 +1125,12 @@ function _linear_quantized_bytes(
     out_dim > 0 && in_dim > 0 || throw(ArgumentError(
         "linear dimensions must be positive",
     ))
-    if spec.scheme === :bf16
-        return 2 * Int(out_dim) * Int(in_dim)
+    output = BigInt(out_dim)
+    input = BigInt(in_dim)
+    bytes = if spec.scheme === :bf16
+        2 * output * input
     elseif spec.scheme === :int8
-        return Int(out_dim) * Int(in_dim) + 4 * Int(out_dim)
+        output * input + 4 * output
     elseif spec.scheme === :int4
         iseven(in_dim) || throw(ArgumentError(
             "INT4 input dimension $in_dim must be even for nibble packing",
@@ -1114,10 +1138,11 @@ function _linear_quantized_bytes(
         in_dim % spec.group == 0 || throw(ArgumentError(
             "INT4 input dimension $in_dim is not divisible by group $(spec.group)",
         ))
-        return Int(out_dim) * (Int(in_dim) ÷ 2) +
-            4 * Int(out_dim) * (Int(in_dim) ÷ spec.group)
+        output * (input ÷ 2) + 4 * output * (input ÷ spec.group)
+    else
+        throw(ArgumentError("unsupported quantization scheme $(repr(spec.scheme))"))
     end
-    throw(ArgumentError("unsupported quantization scheme $(repr(spec.scheme))"))
+    return _quantized_byte_count_int(bytes, "quantized linear tensor byte count")
 end
 
 function _estimate_qwen3_quantized_bytes(
@@ -1131,15 +1156,15 @@ function _estimate_qwen3_quantized_bytes(
     tie_embeddings::Bool,
     plan::QuantizationPlan,
 )
-    q_dim = Int(num_heads) * Int(head_dim)
-    kv_dim = Int(num_kv_heads) * Int(head_dim)
+    q_dim = BigInt(num_heads) * head_dim
+    kv_dim = BigInt(num_kv_heads) * head_dim
 
     # BF16 token embedding, final norm, and per-block input/post-attention
     # norms plus Q/K norm scales.
-    bytes = 2 * Int(vocab_size) * Int(d_model)
-    bytes += 2 * Int(d_model)
-    bytes += Int(num_layers) * 2 * (
-        2 * Int(d_model) + 2 * Int(head_dim)
+    bytes = 2 * BigInt(vocab_size) * d_model
+    bytes += 2 * BigInt(d_model)
+    bytes += BigInt(num_layers) * 2 * (
+        2 * BigInt(d_model) + 2 * BigInt(head_dim)
     )
 
     for layer in 1:Int(num_layers)
@@ -1186,7 +1211,10 @@ function _estimate_qwen3_quantized_bytes(
             quantization_spec(plan, :lm_head),
         )
     end
-    return bytes
+    return _quantized_byte_count_int(
+        bytes,
+        "Qwen3 quantized parameter byte estimate",
+    )
 end
 
 """

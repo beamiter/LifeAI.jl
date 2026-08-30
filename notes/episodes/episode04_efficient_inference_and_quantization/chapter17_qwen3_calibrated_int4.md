@@ -51,6 +51,8 @@
   LM head 与 tied embedding 行为有专项测试。
 - `quantized_parameter_bytes` 与 `estimate_qwen3_quantized_bytes`：
   分别统计已构造参数树和不加载权重时的 dense topology 预算。
+  单 tensor、嵌套参数树与静态 topology 都以任意精度计算中间字节数并在公开
+  `Int` 边界收窄，不会把超大 shape 或多个合法 leaf 的总和回绕成小预算。
 - Chapter 17 离线 fixture：outlier 权重、层级/投影 override、streamed vs
   in-memory、一致性、预算估算和错误输入 fail-closed。
 - 真实模型验证脚本扩展：输出量化计划、calibration、tensor bytes、
