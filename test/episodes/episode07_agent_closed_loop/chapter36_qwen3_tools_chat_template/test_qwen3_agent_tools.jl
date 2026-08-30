@@ -222,6 +222,38 @@ end
             call("<tool_call>\n{\"name\": \"list_directory\", \"arguments\": {\"path\": \"../\"}}\n</tool_call>"),
         ).ok
     end
+
+    for (value, message) in (
+        (true, "default_max_bytes must be an integer"),
+        (1.0, "default_max_bytes must be an integer"),
+        (
+            big(typemax(Int)) + 1,
+            "default_max_bytes is outside the host integer range",
+        ),
+        (0, "default_max_bytes must be in 1:1048576"),
+        (-1, "default_max_bytes must be in 1:1048576"),
+        (1_048_577, "default_max_bytes must be in 1:1048576"),
+    )
+        failure = try
+            LifeAI.read_text_file_tool(
+                LIFEAI_REPO_ROOT;
+                default_max_bytes=value,
+            )
+            nothing
+        catch error
+            error
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
+    end
+    @test LifeAI.read_text_file_tool(
+        LIFEAI_REPO_ROOT;
+        default_max_bytes=Int32(1),
+    ) isa AgentTool
+    @test LifeAI.read_text_file_tool(
+        LIFEAI_REPO_ROOT;
+        default_max_bytes=1_048_576,
+    ) isa AgentTool
 end
 
 @testset "Chapter 36 — assistant content recovered from a generation" begin

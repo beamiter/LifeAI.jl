@@ -424,10 +424,13 @@ gigabyte of prompt."""
 const _AGENT_READ_BYTE_CEILING = 1 << 20
 
 """Read a bounded UTF-8 prefix of a file inside a frozen root."""
-function read_text_file_tool(root::AbstractString; default_max_bytes::Integer=512)
+function read_text_file_tool(root::AbstractString; default_max_bytes=512)
     resolved_root = _normalize_sandbox_root(root)
     isdir(resolved_root) || throw(ArgumentError("tool root is not a directory: $resolved_root"))
-    limit_default = Int(default_max_bytes)
+    limit_default = _strict_host_int(default_max_bytes, "default_max_bytes")
+    0 < limit_default <= _AGENT_READ_BYTE_CEILING || throw(ArgumentError(
+        "default_max_bytes must be in 1:$(_AGENT_READ_BYTE_CEILING)",
+    ))
     return AgentTool(;
         name="read_text_file",
         description="Read the beginning of a UTF-8 text file inside the frozen sandbox root.",

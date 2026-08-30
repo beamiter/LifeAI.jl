@@ -349,6 +349,8 @@ Chapter 03 reproducible-training test.
      oversized JSON integers and unsigned values report stable argument failures.
 174. Check Qwen3 integer-tool addition for host overflow so boundary operands
      cannot silently wrap into a plausible but incorrect tool response.
+175. Validate Qwen3 file-tool default byte limits eagerly as strict host integers
+     within the same bounded range enforced for model-supplied requests.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
