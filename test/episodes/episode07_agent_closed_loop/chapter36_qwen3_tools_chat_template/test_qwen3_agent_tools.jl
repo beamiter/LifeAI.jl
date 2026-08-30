@@ -315,6 +315,95 @@ end
     @test occursin("missing required argument", something(outcome.error, ""))
 end
 
+@testset "Chapter 36 — archived loop tool-call contracts" begin
+    coercion_source = ["direction"]
+    archived = LifeAI.AgentLoopToolCall(
+        SubString("move!", 1, 4),
+        SubString("{\"direction\":\"left\"}!", 1, 20),
+        true,
+        SubString("moved!", 1, 5),
+        nothing,
+        coercion_source,
+    )
+    @test archived.name == "move"
+    @test archived.name isa String
+    @test archived.arguments_json == "{\"direction\":\"left\"}"
+    @test archived.arguments_json isa String
+    @test archived.output == "moved"
+    @test archived.output isa String
+    @test archived.coerced_arguments == ["direction"]
+    @test archived.coerced_arguments !== coercion_source
+    push!(coercion_source, "late")
+    @test archived.coerced_arguments == ["direction"]
+
+    # Rendering failures are deliberately archived as sentinels rather than JSON.
+    error_source = "failure!"
+    sentinel = LifeAI.AgentLoopToolCall(
+        "move",
+        "<unrenderable: probe>",
+        false,
+        "partial output",
+        SubString(error_source, 1, 7),
+        (),
+    )
+    @test !sentinel.ok
+    @test sentinel.error == "failure"
+    @test sentinel.error isa String
+
+    invalid_records = (
+        (
+            ("", "{}", true, "ran", nothing, ()),
+            "agent loop tool call name must not be empty",
+        ),
+        (
+            (42, "{}", true, "ran", nothing, ()),
+            "agent loop tool call name must be a string",
+        ),
+        (
+            ("move", 42, true, "ran", nothing, ()),
+            "agent loop tool call arguments_json must be a string",
+        ),
+        (
+            ("move", "{}", 1, "ran", nothing, ()),
+            "agent tool result ok must be Bool",
+        ),
+        (
+            ("move", "{}", true, "ran", "failure", ()),
+            "agent tool result success and error state are inconsistent",
+        ),
+        (
+            ("move", "{}", false, "", nothing, ()),
+            "agent tool result success and error state are inconsistent",
+        ),
+        (
+            ("move", "{}", true, 1, nothing, ()),
+            "agent tool result output must be a string",
+        ),
+        (
+            ("move", "{}", false, "", 42, ()),
+            "agent tool result error must be a string or nothing",
+        ),
+        (
+            ("move", "{}", true, "ran", nothing, nothing),
+            "agent tool result coerced_arguments must be iterable",
+        ),
+        (
+            ("move", "{}", true, "ran", nothing, Any["direction", 1]),
+            "agent tool result coerced arguments must be strings",
+        ),
+    )
+    for (arguments, message) in invalid_records
+        failure = try
+            LifeAI.AgentLoopToolCall(arguments...)
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
+    end
+end
+
 @testset "Chapter 36 — builtin tool handlers" begin
     registry = default_agent_tools(LIFEAI_REPO_ROOT)
     call(text) = only(parse_qwen3_tool_calls(text).calls)

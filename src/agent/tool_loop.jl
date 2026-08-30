@@ -15,6 +15,34 @@ struct AgentLoopToolCall
     output::String
     error::Union{Nothing,String}
     coerced_arguments::Vector{String}
+
+    function AgentLoopToolCall(
+        name,
+        arguments_json,
+        ok,
+        output,
+        error,
+        coerced_arguments,
+    )
+        name isa AbstractString || throw(ArgumentError(
+            "agent loop tool call name must be a string",
+        ))
+        isempty(name) && throw(ArgumentError(
+            "agent loop tool call name must not be empty",
+        ))
+        arguments_json isa AbstractString || throw(ArgumentError(
+            "agent loop tool call arguments_json must be a string",
+        ))
+        outcome = AgentToolResult(ok, output, error, coerced_arguments)
+        return new(
+            String(name),
+            String(arguments_json),
+            outcome.ok,
+            outcome.output,
+            outcome.error,
+            outcome.coerced_arguments,
+        )
+    end
 end
 
 """One model turn: the prompt it saw, what it produced and what that triggered."""

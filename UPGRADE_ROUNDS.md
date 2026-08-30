@@ -419,6 +419,8 @@ Chapter 03 reproducible-training test.
      residency before patch projection, blocks, or mergers begin computing.
 209. Reject unknown Qwen3 tokenizer-config root fields across generation,
      embedding, and vision-language profiles with deterministic diagnostics.
+210. Bind archived Qwen3 loop tool calls to coherent result states and snapshot
+     coercion evidence so raw construction cannot falsify replay history.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

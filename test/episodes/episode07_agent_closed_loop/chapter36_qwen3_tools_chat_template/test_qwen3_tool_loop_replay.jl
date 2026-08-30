@@ -29,6 +29,22 @@ end
     steps = [JSON3.read(line) for line in eachline(trace_path) if !isempty(strip(line))]
     @test !isempty(steps)
 
+    archived_calls = LifeAI.AgentLoopToolCall[]
+    for step in steps, call in step.tool_calls
+        push!(archived_calls, LifeAI.AgentLoopToolCall(
+            call.name,
+            call.arguments,
+            call.ok,
+            call.output,
+            call.error,
+            call.coerced_arguments,
+        ))
+    end
+    @test length(archived_calls) == 18
+    @test all(call -> call.ok == (call.error === nothing), archived_calls)
+    @test any(call -> call.ok, archived_calls)
+    @test any(call -> !call.ok, archived_calls)
+
     tools = qwen3_tool_specs(default_agent_tools(LIFEAI_REPO_ROOT))
     system_prompt = String(task_set.system)
 
