@@ -403,6 +403,8 @@ Chapter 03 reproducible-training test.
      and decoder mirror while preserving profile-specific required-field errors.
 201. Bind Qwen3 tool outcomes to coherent success/error states and snapshot
      coercion evidence against aliases retained by tool handlers.
+202. Bind Qwen3-VL dynamic cache tuples to coherent lazy or populated layer
+     storage, shared geometry/dtype/device, and non-aliasing decode snapshots.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -3,8 +3,10 @@ using JSON3
 using SHA: sha256
 using Test
 import LifeAI
+import MLDataDevices
 using LifeAI: Qwen3VLRopeLayout,
     Qwen3VLTextSpec,
+    LayerKVCache,
     generate_hf_qwen3_vl,
     generate_hf_qwen3_vl_tokens,
     hf_qwen3_vl_text_decode_step,
@@ -84,6 +86,20 @@ struct _CH45VisionComputePoison end
 function Base.getproperty(::_CH45VisionComputePoison, ::Symbol)
     error("vision compute was touched")
 end
+
+struct _Ch45ForeignDevice <: MLDataDevices.AbstractDevice end
+
+struct _Ch45ForeignDeviceArray{T,N,A<:AbstractArray{T,N}} <:
+       AbstractArray{T,N}
+    data::A
+end
+
+Base.size(values::_Ch45ForeignDeviceArray) = size(values.data)
+Base.axes(values::_Ch45ForeignDeviceArray) = axes(values.data)
+Base.IndexStyle(::Type{<:_Ch45ForeignDeviceArray}) = IndexCartesian()
+Base.getindex(values::_Ch45ForeignDeviceArray, indices...) =
+    getindex(values.data, indices...)
+MLDataDevices.get_device(::_Ch45ForeignDeviceArray) = _Ch45ForeignDevice()
 
 # Mathematical matrix emitted by the exporter's row-major
 # `tiny_values((rows, columns), offset)` construction.
@@ -264,6 +280,202 @@ end
         false,
         true,
         true,
+    )
+end
+
+@testset "Chapter 45 — dynamic cache layer collection is strict" begin
+    make_layer(shape=(8, 1, 2, 1), dtype=Float32) = begin
+        keys = zeros(dtype, shape)
+        values = similar(keys)
+        fill!(values, one(dtype))
+        LayerKVCache(keys, values)
+    end
+
+    empty_layers = (LayerKVCache(), LayerKVCache())
+    empty_cache = LifeAI.Qwen3VLKVCache(empty_layers, 0, 0, 1)
+    @test empty_cache.layers === empty_layers
+    @test isempty(empty_cache)
+
+    first_layer = make_layer()
+    second_layer = make_layer()
+    layers = (first_layer, second_layer)
+    cache = LifeAI.Qwen3VLKVCache(layers, 2, -1, 1)
+    @test cache.layers === layers
+    @test cache.layers[1] === first_layer
+    @test cache.layers[2] === second_layer
+    @test cache.layers[1].keys !== cache.layers[2].keys
+
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+        LayerKVCache[LayerKVCache()],
+        0,
+        0,
+        1,
+    )
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache((1,), 0, 0, 1)
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+        (LayerKVCache(first_layer.keys, nothing),),
+        2,
+        0,
+        1,
+    )
+    @test_throws DimensionMismatch LifeAI.Qwen3VLKVCache(
+        (first_layer,),
+        0,
+        0,
+        1,
+    )
+    @test_throws DimensionMismatch LifeAI.Qwen3VLKVCache(
+        (LayerKVCache(),),
+        2,
+        0,
+        1,
+    )
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+        (LayerKVCache(1, 2),),
+        2,
+        0,
+        1,
+    )
+    @test_throws DimensionMismatch LifeAI.Qwen3VLKVCache(
+        (LayerKVCache(
+            zeros(Float32, 8, 1, 2),
+            zeros(Float32, 8, 1, 2),
+        ),),
+        2,
+        0,
+        1,
+    )
+    @test_throws DimensionMismatch LifeAI.Qwen3VLKVCache(
+        (LayerKVCache(
+            zeros(Float32, 8, 1, 2, 1),
+            zeros(Float32, 7, 1, 2, 1),
+        ),),
+        2,
+        0,
+        1,
+    )
+    @test_throws DimensionMismatch LifeAI.Qwen3VLKVCache(
+        (make_layer((8, 1, 3, 1)),),
+        2,
+        0,
+        1,
+    )
+    @test_throws DimensionMismatch LifeAI.Qwen3VLKVCache(
+        (make_layer((8, 1, 2, 2)),),
+        2,
+        0,
+        1,
+    )
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+        (make_layer((0, 1, 2, 1)),),
+        2,
+        0,
+        1,
+    )
+    @test_throws DimensionMismatch LifeAI.Qwen3VLKVCache(
+        (first_layer, make_layer((7, 1, 2, 1))),
+        2,
+        0,
+        1,
+    )
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+        (make_layer((8, 1, 2, 1), Float64),),
+        2,
+        0,
+        1,
+    )
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+        (LayerKVCache(
+            zeros(Float32, 8, 1, 2, 1),
+            zeros(Core.BFloat16, 8, 1, 2, 1),
+        ),),
+        2,
+        0,
+        1,
+    )
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+        (first_layer, make_layer((8, 1, 2, 1), Core.BFloat16)),
+        2,
+        0,
+        1,
+    )
+
+    foreign_layer = LayerKVCache(
+        _Ch45ForeignDeviceArray(zeros(Float32, 8, 1, 2, 1)),
+        _Ch45ForeignDeviceArray(ones(Float32, 8, 1, 2, 1)),
+    )
+    foreign_cache = LifeAI.Qwen3VLKVCache((foreign_layer,), 2, 0, 1)
+    @test foreign_cache.layers[1] === foreign_layer
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+        (LayerKVCache(
+            first_layer.keys,
+            _Ch45ForeignDeviceArray(ones(Float32, 8, 1, 2, 1)),
+        ),),
+        2,
+        0,
+        1,
+    )
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+        (first_layer, foreign_layer),
+        2,
+        0,
+        1,
+    )
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+        (LayerKVCache(first_layer.keys, first_layer.keys),),
+        2,
+        0,
+        1,
+    )
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+        (first_layer, first_layer),
+        2,
+        0,
+        1,
+    )
+    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+        (
+            first_layer,
+            LayerKVCache(first_layer.values, first_layer.keys),
+        ),
+        2,
+        0,
+        1,
+    )
+
+    parameters = _ch45_tiny_text_parameters()
+    wrong_shape_cache = LifeAI.Qwen3VLKVCache(
+        ntuple(_ -> make_layer((7, 1, 2, 1)), 4),
+        2,
+        0,
+        1,
+    )
+    @test_throws DimensionMismatch LifeAI._validate_qwen3_vl_kv_cache(
+        parameters,
+        wrong_shape_cache,
+    )
+    wrong_dtype_cache = LifeAI.Qwen3VLKVCache(
+        ntuple(_ -> make_layer((8, 1, 2, 1), Core.BFloat16), 4),
+        2,
+        0,
+        1,
+    )
+    @test_throws ArgumentError LifeAI._validate_qwen3_vl_kv_cache(
+        parameters,
+        wrong_dtype_cache,
+    )
+    wrong_device_cache = LifeAI.Qwen3VLKVCache(
+        ntuple(_ -> LayerKVCache(
+            _Ch45ForeignDeviceArray(zeros(Float32, 8, 1, 2, 1)),
+            _Ch45ForeignDeviceArray(ones(Float32, 8, 1, 2, 1)),
+        ), 4),
+        2,
+        0,
+        1,
+    )
+    @test_throws ArgumentError LifeAI._validate_qwen3_vl_kv_cache(
+        parameters,
+        wrong_device_cache,
     )
 end
 
@@ -572,6 +784,8 @@ end
         _ch45_hf_hidden(reference, "decode.0.logits") atol=1.0f-6 rtol=1.0f-6
     _ch45_assert_cache_matches(reference, cache9, "decode.0", 9)
     for layer in 1:4
+        @test cache9.layers[layer].keys !== cache8.layers[layer].keys
+        @test cache9.layers[layer].values !== cache8.layers[layer].values
         @test cache8.layers[layer].keys == prefill_keys[layer]
         @test cache8.layers[layer].values == prefill_values[layer]
         @test cache9.layers[layer].keys[:, :, 1:8, :] == prefill_keys[layer]

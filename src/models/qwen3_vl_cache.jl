@@ -1,5 +1,92 @@
 using MLDataDevices: get_device
 
+"""Validate Qwen3-VL dynamic layer storage without reading or copying tensors."""
+function _validate_qwen3_vl_dynamic_cache_layers(
+    layers,
+    position::Int,
+    batch_size::Int,
+)
+    layers isa Tuple || throw(ArgumentError(
+        "Qwen3-VL dynamic cache layers must be a tuple",
+    ))
+    isempty(layers) && return nothing
+
+    expected_shape = nothing
+    expected_dtype = nothing
+    expected_device = nothing
+    seen_storage = IdDict{Any,Nothing}()
+    for (layer_index, layer) in enumerate(layers)
+        layer isa LayerKVCache || throw(ArgumentError(
+            "Qwen3-VL dynamic cache layer $layer_index must be LayerKVCache storage",
+        ))
+        keys = layer.keys
+        values = layer.values
+        (keys === nothing) == (values === nothing) || throw(ArgumentError(
+            "Qwen3-VL dynamic cache layer $layer_index must contain both keys and values",
+        ))
+        if position == 0
+            keys === nothing || throw(DimensionMismatch(
+                "empty Qwen3-VL dynamic cache contains layer storage",
+            ))
+            continue
+        end
+        keys === nothing && throw(DimensionMismatch(
+            "populated Qwen3-VL dynamic cache is missing layer $layer_index storage",
+        ))
+        keys isa AbstractArray && values isa AbstractArray || throw(ArgumentError(
+            "Qwen3-VL dynamic cache keys and values must be arrays",
+        ))
+        ndims(keys) == 4 && ndims(values) == 4 || throw(DimensionMismatch(
+            "Qwen3-VL dynamic cache keys and values must be four-dimensional",
+        ))
+        size(keys) == size(values) || throw(DimensionMismatch(
+            "Qwen3-VL dynamic cache key and value shapes must match",
+        ))
+        all(dimension -> dimension > 0, size(keys)) || throw(ArgumentError(
+            "Qwen3-VL dynamic cache dimensions must be positive",
+        ))
+        size(keys, 3) == position || throw(DimensionMismatch(
+            "Qwen3-VL dynamic cache token dimension must match position",
+        ))
+        size(keys, 4) == batch_size || throw(DimensionMismatch(
+            "Qwen3-VL dynamic cache batch dimension must match batch_size",
+        ))
+        dtype = eltype(keys)
+        dtype in (Float32, BFloat16) || throw(ArgumentError(
+            "Qwen3-VL dynamic cache storage must contain Float32 or BFloat16 values",
+        ))
+        eltype(values) == dtype || throw(ArgumentError(
+            "Qwen3-VL dynamic cache key and value dtypes must match",
+        ))
+        device = get_device(keys)
+        get_device(values) == device || throw(ArgumentError(
+            "Qwen3-VL dynamic cache keys and values must use the same device",
+        ))
+        if expected_shape === nothing
+            expected_shape = size(keys)
+            expected_dtype = dtype
+            expected_device = device
+        else
+            size(keys) == expected_shape || throw(DimensionMismatch(
+                "Qwen3-VL dynamic cache layer shapes must match",
+            ))
+            dtype == expected_dtype || throw(ArgumentError(
+                "Qwen3-VL dynamic cache layer dtypes must match",
+            ))
+            device == expected_device || throw(ArgumentError(
+                "Qwen3-VL dynamic cache layer devices must match",
+            ))
+        end
+        for storage in (keys, values)
+            haskey(seen_storage, storage) && throw(ArgumentError(
+                "Qwen3-VL dynamic cache layers must use distinct storage",
+            ))
+            seen_storage[storage] = nothing
+        end
+    end
+    return nothing
+end
+
 """
     Qwen3VLKVCache(layers, position, rope_delta, batch_size)
 
@@ -43,6 +130,11 @@ struct Qwen3VLKVCache{C}
             throw(ArgumentError(
                 "an empty Qwen3-VL KV cache must have rope_delta == 0",
             ))
+        _validate_qwen3_vl_dynamic_cache_layers(
+            layers,
+            resolved_position,
+            resolved_batch,
+        )
         return new{typeof(layers)}(
             layers,
             resolved_position,
@@ -106,6 +198,11 @@ function _validate_qwen3_vl_kv_cache(parameters, cache::Qwen3VLKVCache)
     cache.position == 0 && cache.rope_delta != 0 && throw(ArgumentError(
         "an empty Qwen3-VL KV cache must have rope_delta == 0",
     ))
+    _validate_qwen3_vl_dynamic_cache_layers(
+        cache.layers,
+        cache.position,
+        cache.batch_size,
+    )
 
     expected_shape = (
         spec.head_dim,
@@ -114,6 +211,10 @@ function _validate_qwen3_vl_kv_cache(parameters, cache::Qwen3VLKVCache)
         cache.batch_size,
     )
     parameter_dtype = eltype(parameters.embedding)
+    parameter_dtype in (Float32, BFloat16) || throw(ArgumentError(
+        "Qwen3-VL dynamic cache supports Float32 or BFloat16 parameters",
+    ))
+    parameter_device = get_device(parameters.embedding)
     for (layer, layer_cache) in enumerate(cache.layers)
         (layer_cache.keys === nothing) == (layer_cache.values === nothing) ||
             throw(ArgumentError(
@@ -139,6 +240,12 @@ function _validate_qwen3_vl_kv_cache(parameters, cache::Qwen3VLKVCache)
         ))
         eltype(layer_cache.values) == parameter_dtype || throw(ArgumentError(
             "Qwen3-VL cached values do not match the text parameter dtype",
+        ))
+        get_device(layer_cache.keys) == parameter_device || throw(ArgumentError(
+            "Qwen3-VL cached keys do not match the text parameter device",
+        ))
+        get_device(layer_cache.values) == parameter_device || throw(ArgumentError(
+            "Qwen3-VL cached values do not match the text parameter device",
         ))
     end
     return nothing
