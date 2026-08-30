@@ -14,6 +14,13 @@ isdefined(@__MODULE__, :repository_test_asset) ||
 
 const _QWEN3_RESIDENT_SERVICE_MODEL = "Qwen/Qwen3-8B"
 
+struct _Qwen3ResidentServiceCallable{F}
+    callback::F
+end
+
+(callable::_Qwen3ResidentServiceCallable)(arguments...) =
+    callable.callback(arguments...)
+
 function _qwen3_resident_service_fake_service(;
     delay_seconds=0.0,
     max_body_bytes=1024^2,
@@ -222,6 +229,129 @@ function _qwen3_resident_service_capture_failure(f)
         return error
     end
     return nothing
+end
+
+@testset "service construction is sealed behind validated preflight" begin
+    session = Ref(:injectable_session_double)
+    load_calls = Ref(0)
+    loader = _Qwen3ResidentServiceCallable() do
+        load_calls[] += 1
+        session
+    end
+    generator = _Qwen3ResidentServiceCallable() do _, _, _, _
+        nothing
+    end
+    prompt_encoder = _Qwen3ResidentServiceCallable() do _, _
+        Int[7]
+    end
+    token_decoder = _Qwen3ResidentServiceCallable() do _, _
+        UInt8[]
+    end
+    service = Qwen3XLAHTTPService(;
+        loader,
+        generator,
+        prompt_encoder,
+        token_decoder,
+        model_id=_QWEN3_RESIDENT_SERVICE_MODEL,
+        context_tokens=64,
+        prefill_chunk_tokens=8,
+        max_new_tokens=16,
+        max_body_bytes=1024,
+    )
+
+    @test load_calls[] == 1
+    @test service.session === session
+    @test service.generator === generator
+    @test service.prompt_encoder === prompt_encoder
+    @test service.token_decoder === token_decoder
+    @test service.model_id == _QWEN3_RESIDENT_SERVICE_MODEL
+    @test (
+        service.context_tokens,
+        service.prefill_chunk_tokens,
+        service.max_new_tokens,
+        service.max_body_bytes,
+    ) == (64, 8, 16, 1024)
+    @test isfinite(service.load_seconds)
+    @test service.load_seconds >= 0.0
+    @test service.load_count == 1
+    @test service.generation_lock isa ReentrantLock
+    @test service.metrics_lock isa ReentrantLock
+    @test service.generation_lock !== service.metrics_lock
+    @test _qwen3_resident_service_request_metrics(service) ==
+        (0, 0, 0, 0, 0, 0)
+
+    raw_fields = ntuple(
+        index -> getfield(service, index),
+        fieldcount(Qwen3XLAHTTPService),
+    )
+    raw_failure = _qwen3_resident_service_capture_failure() do
+        Qwen3XLAHTTPService(raw_fields...)
+    end
+    @test raw_failure isa MethodError
+
+    parametric_failure = _qwen3_resident_service_capture_failure() do
+        Core.apply_type(Qwen3XLAHTTPService, typeof(session))
+    end
+    @test parametric_failure isa TypeError
+
+    defaults = (
+        model_id=_QWEN3_RESIDENT_SERVICE_MODEL,
+        context_tokens=64,
+        prefill_chunk_tokens=8,
+        max_new_tokens=16,
+        max_body_bytes=1024,
+    )
+    invalid_preflights = (
+        (
+            override=(model_id="",),
+            message="model_id must not be empty",
+        ),
+        (
+            override=(context_tokens=0,),
+            message="context_tokens must be positive",
+        ),
+        (
+            override=(prefill_chunk_tokens=0,),
+            message="prefill_chunk_tokens must be in 1:context_tokens",
+        ),
+        (
+            override=(context_tokens=63,),
+            message="context_tokens must be divisible by prefill_chunk_tokens",
+        ),
+        (
+            override=(max_new_tokens=64,),
+            message="max_new_tokens must be in 1:(context_tokens - 1)",
+        ),
+        (
+            override=(max_body_bytes=0,),
+            message="max_body_bytes must be positive",
+        ),
+    )
+    for preflight in invalid_preflights
+        rejected_load_calls = Ref(0)
+        options = merge(defaults, preflight.override)
+        failure = _qwen3_resident_service_capture_failure() do
+            Qwen3XLAHTTPService(;
+                loader=() -> begin
+                    rejected_load_calls[] += 1
+                    :unexpected_session
+                end,
+                options...,
+            )
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: $(preflight.message)"
+        @test rejected_load_calls[] == 0
+    end
+
+    lock(service.metrics_lock) do
+        service.request_count += 1
+        service.completed_request_count += 1
+        service.max_active_request_count = 1
+    end
+    @test _qwen3_resident_service_request_metrics(service) ==
+        (1, 1, 0, 0, 0, 1)
 end
 
 @testset "service loads once and serves Ollama-compatible JSON" begin

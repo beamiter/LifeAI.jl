@@ -11,6 +11,9 @@ end
 Base.showerror(io::IO, error::Qwen3XLAServiceError) =
     print(io, error.message)
 
+struct _Qwen3XLAHTTPServiceValidated end
+const _QWEN3_XLA_HTTP_SERVICE_VALIDATED = _Qwen3XLAHTTPServiceValidated()
+
 """
     Qwen3XLAHTTPService
 
@@ -46,6 +49,51 @@ mutable struct Qwen3XLAHTTPService
     queued_request_count::Int
     active_request_count::Int
     max_active_request_count::Int
+
+    function Qwen3XLAHTTPService(
+        ::_Qwen3XLAHTTPServiceValidated,
+        session,
+        generator,
+        prompt_encoder,
+        token_decoder,
+        model_id::String,
+        context_tokens::Int,
+        prefill_chunk_tokens::Int,
+        max_new_tokens::Int,
+        max_body_bytes::Int,
+        load_seconds::Float64,
+        load_count::Int,
+        generation_lock::ReentrantLock,
+        metrics_lock::ReentrantLock,
+        request_count::Int,
+        completed_request_count::Int,
+        failed_request_count::Int,
+        queued_request_count::Int,
+        active_request_count::Int,
+        max_active_request_count::Int,
+    )
+        return new(
+            session,
+            generator,
+            prompt_encoder,
+            token_decoder,
+            model_id,
+            context_tokens,
+            prefill_chunk_tokens,
+            max_new_tokens,
+            max_body_bytes,
+            load_seconds,
+            load_count,
+            generation_lock,
+            metrics_lock,
+            request_count,
+            completed_request_count,
+            failed_request_count,
+            queued_request_count,
+            active_request_count,
+            max_active_request_count,
+        )
+    end
 end
 
 function _qwen3_xla_service_prompt_encoder(session, prompt)
@@ -89,11 +137,12 @@ function Qwen3XLAHTTPService(;
     max_new_tokens::Integer=512,
     max_body_bytes::Integer=1024^2,
 )
+    model = String(model_id)
     context = _strict_host_int(context_tokens, "context_tokens")
     chunk = _strict_host_int(prefill_chunk_tokens, "prefill_chunk_tokens")
     output = _strict_host_int(max_new_tokens, "max_new_tokens")
     body_limit = _strict_host_int(max_body_bytes, "max_body_bytes")
-    !isempty(model_id) || throw(ArgumentError("model_id must not be empty"))
+    !isempty(model) || throw(ArgumentError("model_id must not be empty"))
     context > 0 || throw(ArgumentError("context_tokens must be positive"))
     context <= typemax(Int32) || throw(ArgumentError(
         "context_tokens must fit in Int32 device positions",
@@ -113,11 +162,12 @@ function Qwen3XLAHTTPService(;
     session = loader()
     load_seconds = (time_ns() - started) / 1.0e9
     return Qwen3XLAHTTPService(
+        _QWEN3_XLA_HTTP_SERVICE_VALIDATED,
         session,
         generator,
         prompt_encoder,
         token_decoder,
-        String(model_id),
+        model,
         context,
         chunk,
         output,
