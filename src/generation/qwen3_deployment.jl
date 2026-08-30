@@ -675,7 +675,7 @@ function generate_hf_qwen3_bf16!(
     on_prefill_chunk=nothing,
 )
     prompt_ids = _qwen3_session_token_vector(session, prompt_tokens)
-    requested = Int(max_new_tokens)
+    requested = _strict_host_int(max_new_tokens, "max_new_tokens")
     requested >= 0 || throw(ArgumentError("max_new_tokens must be non-negative"))
     requested <= session.context_tokens || throw(ArgumentError(
         "requested output exceeds session context_tokens",

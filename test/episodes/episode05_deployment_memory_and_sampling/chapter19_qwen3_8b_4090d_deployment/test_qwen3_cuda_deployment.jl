@@ -504,11 +504,20 @@ end
             )
             @test session.position == preserved_position
         end
+        for invalid_output in (true, too_large)
+            @test_throws ArgumentError generate_hf_qwen3_bf16!(
+                session,
+                tokens;
+                max_new_tokens=invalid_output,
+                stop_token_ids=Int[],
+            )
+            @test session.position == preserved_position
+        end
 
         zero = generate_hf_qwen3_bf16!(
             session,
             tokens;
-            max_new_tokens=0,
+            max_new_tokens=Int128(0),
         )
         @test isempty(zero.generated_ids)
         @test session.position == 0

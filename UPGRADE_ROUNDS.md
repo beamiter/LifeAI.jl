@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the seventy-four follow-up rounds implemented on top of the
+This ledger records the seventy-five follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -147,6 +147,8 @@ Chapter 03 reproducible-training test.
     intermediates, including nested-tree aggregation and public-range checks.
 74. Strictly normalize dense and XLA Qwen3 generation stop-id sets before
     zero-output resets, prefill, compiled execution, or session mutation.
+75. Strictly normalize dense Qwen3 generation output lengths before context
+    arithmetic, zero-output reset, or prefill execution.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

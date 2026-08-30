@@ -85,6 +85,8 @@ session 的 prompt token 向量也在 reset/cache 写入前走同一合同，非
 合法 Int8/Int32/Int128/BigInt prompt 统一为 `Vector{Int}`。
 dense 与 XLA generation 共用严格 stop-id 集合构造，Bool/越界/词表外 id 都在
 零输出 reset、prefill 或 compiled execution 前拒绝。
+dense generation 的 `max_new_tokens` 也在预算运算前严格归一，合法宽整数保持
+支持，Bool 与宿主范围外请求不会改变 session。
 
 ## 已实现
 
