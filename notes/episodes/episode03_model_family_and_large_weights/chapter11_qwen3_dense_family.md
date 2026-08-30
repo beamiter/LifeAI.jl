@@ -47,6 +47,9 @@
   config checksum。
 - 参数量公式使用任意精度中间值并在公开 `Int` 返回边界统一检查；畸形超宽
   metadata 不会先发生机器整数回绕再伪装成可信的小参数量。
+- `GPTModel` 在创建 embedding 或递归构造 blocks 前，以 BigInt 公式
+  预检整模型参数量；`Lux.parameterlength(model)` 复用同一纯算术路径，
+  不再为了计数而初始化巨大 token embedding。
 - `load_hf_qwen3_config` 自动识别官方尺寸，并返回 `qwen3_variant` 与
   `source_max_seq_len`；传入 `variant` 时，shape、RoPE 或 norm 语义不完全
   匹配立即失败。
@@ -112,7 +115,7 @@
 
 ### 2026-07-23：验证与 Close
 
-- Chapter 11 专项 `91 / 91` 通过：family contract 80 项，untied + 宽 attention
+- Chapter 11 专项 `98 / 98` 通过：family contract 87 项，untied + 宽 attention
   权重/cache 路径 11 项。
 - 默认全套 `4284 / 4284` 通过；Chapter 06—10 的结构、HF adapter、tokenizer、
   sampling 和 GPT-2 回归均未受 QK-Norm 参数统计修复影响。

@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the eighty-five follow-up rounds implemented on top of the
+This ledger records the eighty-six follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -170,6 +170,8 @@ Chapter 03 reproducible-training test.
     the reusable K/V cache, including Float32 representability checks.
 85. Reuse strict sampled-option preflight in Qwen3 XLA host sampling before any
     compiled cache mutation or session-position reset.
+86. Preflight complete GPTModel parameter counts with exact arithmetic and
+    count every Qwen topology without initializing parameter arrays.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

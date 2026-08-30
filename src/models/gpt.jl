@@ -70,6 +70,69 @@ and use the cache's absolute decode position.
     normalize_routing::Bool
 end
 
+function _gpt_parameter_count_int(
+    vocab_size::Int,
+    d_model::Int,
+    num_heads::Int,
+    num_kv_heads::Int,
+    num_layers::Int,
+    head_dim::Int,
+    mlp_hidden_dim::Int,
+    max_seq_len::Int;
+    use_bias::Bool,
+    lm_head_bias::Bool,
+    position_embedding_type::Symbol,
+    use_qk_norm::Bool,
+    norm_type::Symbol,
+    mlp_type::Symbol,
+    tie_embeddings::Bool,
+    num_experts::Int,
+)
+    vocab = BigInt(vocab_size)
+    model_width = BigInt(d_model)
+    hidden_width = BigInt(mlp_hidden_dim)
+    query_width = BigInt(num_heads) * head_dim
+    kv_width = BigInt(num_kv_heads) * head_dim
+
+    attention = 2 * model_width * query_width +
+        2 * model_width * kv_width
+    use_bias && (attention += query_width + 2 * kv_width + model_width)
+    use_qk_norm && (attention += 2 * BigInt(head_dim))
+
+    mlp = if mlp_type === :swiglu
+        count = 3 * model_width * hidden_width
+        use_bias && (count += 2 * hidden_width + model_width)
+        count
+    elseif mlp_type === :qwen3_moe
+        experts = BigInt(num_experts)
+        experts * model_width +
+            3 * experts * model_width * hidden_width
+    else
+        count = 2 * model_width * hidden_width
+        use_bias && (count += hidden_width + model_width)
+        count
+    end
+
+    block_norms = norm_type === :rmsnorm ?
+        2 * model_width : 4 * model_width
+    embedding = vocab * model_width
+    position_embedding = position_embedding_type === :learned_absolute ?
+        BigInt(max_seq_len) * model_width : BigInt(0)
+    final_norm = norm_type === :rmsnorm ? model_width : 2 * model_width
+    head = tie_embeddings ?
+        (lm_head_bias ? vocab : BigInt(0)) :
+        embedding + (lm_head_bias ? vocab : BigInt(0))
+    count = embedding +
+        position_embedding +
+        BigInt(num_layers) * (attention + mlp + block_norms) +
+        final_norm +
+        head
+    0 < count <= typemax(Int) || throw(ArgumentError(
+        "GPTModel parameter count exceeds the host integer range",
+    ))
+    return Int(count)
+end
+
 function GPTModel(
     vocab_size::Int,
     d_model::Int,
@@ -134,6 +197,42 @@ function GPTModel(
         mlp_type,
         mlp_ratio,
         mlp_hidden_dim,
+    )
+
+    if mlp_type === :qwen3_moe
+        num_experts > 0 || throw(ArgumentError(
+            "Qwen3 MoE requires num_experts > 0",
+        ))
+        1 <= experts_per_token <= num_experts || throw(ArgumentError(
+            "Qwen3 MoE experts_per_token must be in 1:num_experts",
+        ))
+        use_bias && throw(ArgumentError("Qwen3 MoE experts are bias-free"))
+    else
+        num_experts == 0 || throw(ArgumentError(
+            "num_experts is only valid with mlp_type=:qwen3_moe",
+        ))
+        experts_per_token == 0 || throw(ArgumentError(
+            "experts_per_token is only valid with mlp_type=:qwen3_moe",
+        ))
+    end
+
+    _gpt_parameter_count_int(
+        vocab_size,
+        d_model,
+        num_heads,
+        num_kv_heads,
+        num_layers,
+        resolved_head_dim,
+        resolved_mlp_hidden_dim,
+        max_seq_len;
+        use_bias,
+        lm_head_bias,
+        position_embedding_type,
+        use_qk_norm,
+        norm_type,
+        mlp_type,
+        tie_embeddings,
+        num_experts,
     )
 
     token_embedding = Embedding(vocab_size => d_model)
@@ -318,13 +417,24 @@ function LuxCore.initialstates(rng::AbstractRNG, model::GPTModel)
 end
 
 function LuxCore.parameterlength(model::GPTModel)
-    count = LuxCore.parameterlength(model.token_embedding) +
-        LuxCore.parameterlength(model.blocks) +
-        LuxCore.parameterlength(model.final_norm) +
-        LuxCore.parameterlength(model.lm_head)
-    model.position_embedding_type === :learned_absolute &&
-        (count += LuxCore.parameterlength(model.position_embedding))
-    return count
+    return _gpt_parameter_count_int(
+        model.vocab_size,
+        model.d_model,
+        model.num_heads,
+        model.num_kv_heads,
+        model.num_layers,
+        model.head_dim,
+        model.mlp_hidden_dim,
+        model.max_seq_len;
+        use_bias=model.use_bias,
+        lm_head_bias=model.lm_head_bias,
+        position_embedding_type=model.position_embedding_type,
+        use_qk_norm=model.use_qk_norm,
+        norm_type=model.norm_type,
+        mlp_type=model.mlp_type,
+        tie_embeddings=model.tie_embeddings,
+        num_experts=model.num_experts,
+    )
 end
 
 function _add_position_embedding(model::GPTModel, x, ps, start_pos)

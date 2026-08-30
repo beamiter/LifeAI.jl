@@ -22,6 +22,15 @@ const _QWEN3_FAMILY_SPECS_PATH = joinpath(
     "specs.json",
 )
 
+function _qwen3_family_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected Qwen3 family call to fail")
+end
+
 function _qwen3_family_values(shape, seed)
     values = Float32[
         Float32(mod(index + seed, 19) - 9) / 64.0f0
@@ -103,6 +112,49 @@ end
         true,
     )
     @test_throws ArgumentError qwen3_dense_parameter_count(overflow_spec)
+
+    overflow_models = (
+        () -> GPTModel(
+            typemax(Int),
+            2,
+            1,
+            1;
+            mlp_hidden_dim=2,
+            use_rope=false,
+            position_embedding_type=:none,
+            max_seq_len=1,
+            tie_embeddings=true,
+        ),
+        () -> GPTModel(
+            2,
+            2,
+            1,
+            1;
+            mlp_hidden_dim=typemax(Int),
+            mlp_type=:swiglu,
+            use_rope=false,
+            position_embedding_type=:none,
+            max_seq_len=1,
+            tie_embeddings=true,
+        ),
+        () -> GPTModel(
+            2,
+            2,
+            1,
+            typemax(Int);
+            mlp_hidden_dim=2,
+            use_rope=false,
+            position_embedding_type=:none,
+            max_seq_len=1,
+            tie_embeddings=true,
+        ),
+    )
+    for build in overflow_models
+        failure = _qwen3_family_captured_error(build)
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: GPTModel parameter count exceeds the host integer range"
+    end
 
     mktempdir() do directory
         for (index, entry) in enumerate(entries)
