@@ -13,6 +13,7 @@ using LifeAI:
     load_hf_qwen3_moe_config,
     load_hf_qwen3_moe_model,
     load_hf_qwen3_moe_parameters,
+    qwen3_moe_parameter_count,
     stream_hf_qwen3_moe_forward,
     verify_qwen3_moe_checkpoint
 
@@ -178,6 +179,47 @@ end
     mktempdir() do directory
         config_path = joinpath(directory, "config.json")
         too_large = big(typemax(Int)) + 1
+
+        huge_vocabulary = typemax(Int) ÷ 4
+        wrapped_tensor_bytes = typemin(Int) + 34
+        overflow_spec = Qwen3MoECheckpointSpec(
+            :bf16_byte_overflow,
+            "test/overflow",
+            "test-revision",
+            "config-sha256",
+            "index-sha256",
+            0,
+            wrapped_tensor_bytes,
+            0,
+            huge_vocabulary,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            1,
+            1,
+            typemax(Int),
+            (),
+        )
+        overflow_count = qwen3_moe_parameter_count(overflow_spec)
+        @test overflow_count > typemax(Int) ÷ 2
+        @test 2 * BigInt(overflow_count) == BigInt(typemax(Int)) + 35
+        @test overflow_count * 2 == wrapped_tensor_bytes
+        byte_failure = _qwen3_moe_weight_loading_captured_error() do
+            verify_qwen3_moe_checkpoint(
+                directory;
+                spec=overflow_spec,
+                verify_shard_checksums=false,
+            )
+        end
+        @test byte_failure isa ArgumentError
+        @test sprint(showerror, byte_failure) ==
+            "ArgumentError: Qwen3 MoE BF16 tensor byte count " *
+            "exceeds the host integer range"
+
         for (value, message) in (
             true => "max_seq_len must be an integer",
             0 => "max_seq_len must be positive",

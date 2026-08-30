@@ -201,6 +201,8 @@ Chapter 03 reproducible-training test.
     requests before input validation, vision compute, or decoder work.
 100. Preflight Qwen3 text generation output/prompt budgets before chat or raw
      input work, with strict host integers and checked context subtraction.
+101. Compute Qwen3 MoE BF16 checkpoint bytes exactly before configuration I/O
+     or model/RoPE construction, rejecting host-range overflow.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

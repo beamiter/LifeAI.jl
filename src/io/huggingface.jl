@@ -1315,6 +1315,13 @@ function verify_qwen3_moe_checkpoint(
     isdir(model_dir) || throw(ArgumentError(
         "model directory does not exist: $model_dir",
     ))
+    expected_tensor_bytes = _qwen3_parameter_count_int(
+        2 * BigInt(qwen3_moe_parameter_count(spec)),
+        "Qwen3 MoE BF16 tensor byte count",
+    )
+    expected_tensor_bytes == spec.tensor_bytes || throw(ArgumentError(
+        "frozen Qwen3 MoE parameter count does not match BF16 tensor bytes",
+    ))
     config_path = joinpath(model_dir, "config.json")
     index_path = joinpath(model_dir, "model.safetensors.index.json")
     isfile(config_path) || throw(ArgumentError(
@@ -1337,9 +1344,6 @@ function verify_qwen3_moe_checkpoint(
         "config does not match the frozen $(spec.variant) architecture",
     ))
     model = GPTModel(config)
-    qwen3_moe_parameter_count(spec) * 2 == spec.tensor_bytes || throw(ArgumentError(
-        "frozen Qwen3 MoE parameter count does not match BF16 tensor bytes",
-    ))
 
     index_sha256 = _qwen3_moe_sha256_file(index_path)
     index_sha256 == spec.index_sha256 || throw(ArgumentError(
