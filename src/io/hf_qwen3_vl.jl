@@ -644,6 +644,16 @@ function _qwen3_vl_add_shape!(shapes, name::String, shape::Tuple)
     return shapes
 end
 
+function _qwen3_vl_shape_dimension(count::BigInt, label::AbstractString)
+    dimension = _qwen3_parameter_count_int(count, label)
+    dimension > 0 || throw(ArgumentError("$label must be positive"))
+    return dimension
+end
+
+function _qwen3_vl_shape_parameter_count(shape::Tuple, name::AbstractString)
+    return _checked_element_count(Int[shape...], name)
+end
+
 """
     qwen3_vl_expected_tensor_shapes([spec])
 
@@ -662,8 +672,14 @@ function qwen3_vl_expected_tensor_shapes(
         "$text_prefix.embed_tokens.weight",
         (text.vocab_size, text.hidden_size),
     )
-    query_dim = text.num_attention_heads * text.head_dim
-    kv_dim = text.num_key_value_heads * text.head_dim
+    query_dim = _qwen3_vl_shape_dimension(
+        BigInt(text.num_attention_heads) * text.head_dim,
+        "Qwen3-VL query dimension",
+    )
+    kv_dim = _qwen3_vl_shape_dimension(
+        BigInt(text.num_key_value_heads) * text.head_dim,
+        "Qwen3-VL key/value dimension",
+    )
     for layer in 0:(text.num_hidden_layers - 1)
         prefix = "$text_prefix.layers.$layer"
         _qwen3_vl_add_shape!(
@@ -726,6 +742,10 @@ function qwen3_vl_expected_tensor_shapes(
 
     vision = spec.vision
     vision_prefix = "model.visual"
+    qkv_dim = _qwen3_vl_shape_dimension(
+        3 * BigInt(vision.hidden_size),
+        "Qwen3-VL vision QKV dimension",
+    )
     _qwen3_vl_add_shape!(
         shapes,
         "$vision_prefix.patch_embed.proj.weight",
@@ -759,12 +779,12 @@ function qwen3_vl_expected_tensor_shapes(
         _qwen3_vl_add_shape!(
             shapes,
             "$prefix.attn.qkv.weight",
-            (3 * vision.hidden_size, vision.hidden_size),
+            (qkv_dim, vision.hidden_size),
         )
         _qwen3_vl_add_shape!(
             shapes,
             "$prefix.attn.qkv.bias",
-            (3 * vision.hidden_size,),
+            (qkv_dim,),
         )
         _qwen3_vl_add_shape!(
             shapes,
@@ -798,7 +818,10 @@ function qwen3_vl_expected_tensor_shapes(
         )
     end
 
-    merged_size = vision.hidden_size * vision.spatial_merge_size^2
+    merged_size = _qwen3_vl_shape_dimension(
+        BigInt(vision.hidden_size) * BigInt(vision.spatial_merge_size)^2,
+        "Qwen3-VL merged vision dimension",
+    )
     merger_prefix = "$vision_prefix.merger"
     for parameter in ("weight", "bias")
         _qwen3_vl_add_shape!(
@@ -863,7 +886,14 @@ function qwen3_vl_expected_tensor_shapes(
         "Qwen3-VL tensor oracle has $(length(shapes)) tensors; " *
         "expected $(spec.tensor_count)",
     )
-    parameters = sum(prod(shape) for shape in values(shapes))
+    parameters = BigInt(0)
+    for (name, shape) in pairs(shapes)
+        parameters += _qwen3_vl_shape_parameter_count(shape, name)
+    end
+    parameters = _qwen3_parameter_count_int(
+        parameters,
+        "Qwen3-VL tensor oracle parameter count",
+    )
     parameters == spec.parameter_count || error(
         "Qwen3-VL tensor oracle has $parameters parameters; " *
         "expected $(spec.parameter_count)",
@@ -942,7 +972,7 @@ function verify_qwen3_vl_checkpoint(
     ))
 
     payload_bytes = 0
-    parameter_count = 0
+    parameter_count = BigInt(0)
     weight_path = abspath(joinpath(model_dir, "model.safetensors"))
     for name in keys(expected)
         location = reader.locations[name]
@@ -958,7 +988,7 @@ function verify_qwen3_vl_checkpoint(
             "Qwen3-VL tensor `$name` has shape $actual_shape; expected " *
             "$expected_shape",
         ))
-        tensor_parameters = prod(expected_shape)
+        tensor_parameters = _qwen3_vl_shape_parameter_count(expected_shape, name)
         tensor_bytes = location.data_stop - location.data_start
         tensor_bytes == 2 * tensor_parameters || throw(ArgumentError(
             "Qwen3-VL tensor `$name` payload is inconsistent with BF16 shape",
@@ -966,15 +996,19 @@ function verify_qwen3_vl_checkpoint(
         parameter_count += tensor_parameters
         payload_bytes += tensor_bytes
     end
-    parameter_count == spec.parameter_count || throw(ArgumentError(
+    resolved_parameter_count = _qwen3_parameter_count_int(
+        parameter_count,
+        "Qwen3-VL safetensors parameter count",
+    )
+    resolved_parameter_count == spec.parameter_count || throw(ArgumentError(
         "Qwen3-VL safetensors parameter count mismatch: expected " *
-        "$(spec.parameter_count), got $parameter_count",
+        "$(spec.parameter_count), got $resolved_parameter_count",
     ))
     payload_bytes == spec.tensor_bytes || throw(ArgumentError(
         "Qwen3-VL safetensors payload mismatch: expected " *
         "$(spec.tensor_bytes) bytes, got $payload_bytes",
     ))
-    qwen3_vl_parameter_count(spec) == parameter_count || error(
+    qwen3_vl_parameter_count(spec) == resolved_parameter_count || error(
         "Qwen3-VL architecture, tensor oracle, and payload disagree",
     )
 
@@ -986,7 +1020,7 @@ function verify_qwen3_vl_checkpoint(
         hf_revision=spec.hf_revision,
         assets=Tuple(verified_assets),
         tensor_count=length(reader.locations),
-        parameter_count,
+        parameter_count=resolved_parameter_count,
         tensor_bytes=payload_bytes,
         config,
         source=abspath(model_dir),

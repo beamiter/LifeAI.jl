@@ -86,6 +86,9 @@ LM head，`qwen3_vl_parameter_count` 会额外计入完整 vocabulary projection
 text、vision 两个 tower 及其总和都以任意精度中间值计算，并在各自公开的宿主
 整数边界检查；patch 与 spatial-merge 尺寸也会先提升再平方，极端 metadata
 不会从中间表达式回绕成貌似可信的参数量。
+tensor-shape oracle 同样以任意精度推导 attention/QKV/merge 维度，以 checked
+乘法计算每个 shape 的元素数，并用任意精度累加全表；验证器复用同一套逐张量
+计数合同，避免合法正维度或总量在宿主整数上回绕后碰巧匹配冻结 metadata。
 
 ## processor 与输入边界
 

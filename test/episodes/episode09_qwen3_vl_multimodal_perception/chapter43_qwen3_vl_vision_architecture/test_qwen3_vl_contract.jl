@@ -209,6 +209,159 @@ end
     )
     @test_throws ArgumentError qwen3_vl_parameter_count(total_overflow_spec)
 
+    maximum_dimension = typemax(Int)
+    tiny_vision = Qwen3VLVisionSpec(
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        (0, 0, 0),
+        "gelu",
+    )
+    derived_dimension_text = Qwen3VLTextSpec(
+        1,
+        1,
+        1,
+        1,
+        maximum_dimension,
+        1,
+        maximum_dimension,
+        1.0e-6,
+        1.0e4,
+        1,
+        true,
+        (1, 1, 1),
+        true,
+        "silu",
+    )
+    derived_dimension_spec = Qwen3VLCheckpointSpec(
+        :overflow,
+        "overflow",
+        "overflow",
+        "overflow",
+        (),
+        40,
+        0,
+        32,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        derived_dimension_text,
+        tiny_vision,
+    )
+    @test_throws ArgumentError qwen3_vl_expected_tensor_shapes(
+        derived_dimension_spec,
+    )
+
+    product_text = Qwen3VLTextSpec(
+        1,
+        1,
+        1,
+        0,
+        1,
+        1,
+        2,
+        1.0e-6,
+        1.0e4,
+        1,
+        true,
+        (1, 0, 0),
+        true,
+        "silu",
+    )
+    product_vision = Qwen3VLVisionSpec(
+        3,
+        1,
+        1,
+        1,
+        maximum_dimension,
+        1,
+        maximum_dimension,
+        1,
+        1,
+        1,
+        (0, 1, 2),
+        "gelu",
+    )
+    product_spec = Qwen3VLCheckpointSpec(
+        :overflow,
+        "overflow",
+        "overflow",
+        "overflow",
+        (),
+        65,
+        0,
+        77,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        product_text,
+        product_vision,
+    )
+    @test_throws ArgumentError qwen3_vl_expected_tensor_shapes(product_spec)
+
+    aggregate_text = Qwen3VLTextSpec(
+        maximum_dimension,
+        1,
+        1,
+        0,
+        1,
+        1,
+        2,
+        1.0e-6,
+        1.0e4,
+        1,
+        true,
+        (1, 0, 0),
+        false,
+        "silu",
+    )
+    aggregate_vision = Qwen3VLVisionSpec(
+        3,
+        1,
+        1,
+        1,
+        maximum_dimension,
+        1,
+        1,
+        1,
+        1,
+        maximum_dimension,
+        (0, 1, 2),
+        "gelu",
+    )
+    aggregate_spec = Qwen3VLCheckpointSpec(
+        :overflow,
+        "overflow",
+        "overflow",
+        "overflow",
+        (),
+        66,
+        0,
+        70,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        aggregate_text,
+        aggregate_vision,
+    )
+    @test_throws ArgumentError qwen3_vl_expected_tensor_shapes(aggregate_spec)
+
     @test spec.text.mrope_interleaved
     @test spec.text.mrope_section == (24, 20, 20)
     @test sum(spec.text.mrope_section) == spec.text.head_dim ÷ 2
