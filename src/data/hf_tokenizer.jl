@@ -30,6 +30,63 @@ struct HFQwen3GenerationConfig
     top_k::Int
     top_p::Float32
     transformers_version::String
+
+    function HFQwen3GenerationConfig(
+        bos_id,
+        eos_ids,
+        pad_id,
+        do_sample,
+        temperature,
+        top_k,
+        top_p,
+        transformers_version,
+    )
+        resolved_bos_id = _hf_strict_host_int(bos_id, "bos_id")
+        resolved_bos_id > 0 || throw(ArgumentError("bos_id must be positive"))
+        resolved_pad_id = _hf_strict_host_int(pad_id, "pad_id")
+        resolved_pad_id > 0 || throw(ArgumentError("pad_id must be positive"))
+        eos_ids isa AbstractVector && !isempty(eos_ids) || throw(ArgumentError(
+            "eos_ids must be a non-empty vector",
+        ))
+        resolved_eos_ids = Int[
+            _hf_strict_host_int(eos_id, "eos_ids[$index]")
+            for (index, eos_id) in enumerate(collect(eos_ids))
+        ]
+        all(>(0), resolved_eos_ids) || throw(ArgumentError(
+            "eos_ids must contain only positive token ids",
+        ))
+        length(unique(resolved_eos_ids)) == length(resolved_eos_ids) ||
+            throw(ArgumentError("eos_ids must not contain duplicates"))
+        do_sample isa Bool || throw(ArgumentError("do_sample must be Bool"))
+        temperature isa Real && !(temperature isa Bool) || throw(ArgumentError(
+            "temperature must be a finite positive number",
+        ))
+        resolved_temperature = Float32(temperature)
+        isfinite(resolved_temperature) && resolved_temperature > 0 ||
+            throw(ArgumentError("temperature must be a finite positive number"))
+        resolved_top_k = _hf_strict_host_int(top_k, "top_k")
+        resolved_top_k > 0 || throw(ArgumentError("top_k must be positive"))
+        top_p isa Real && !(top_p isa Bool) || throw(ArgumentError(
+            "top_p must be in (0, 1]",
+        ))
+        resolved_top_p = Float32(top_p)
+        isfinite(resolved_top_p) && 0 < resolved_top_p <= 1 ||
+            throw(ArgumentError("top_p must be in (0, 1]"))
+        transformers_version isa AbstractString &&
+            !isempty(transformers_version) || throw(ArgumentError(
+                "transformers_version must be a non-empty string",
+            ))
+        return new(
+            resolved_bos_id,
+            resolved_eos_ids,
+            resolved_pad_id,
+            do_sample,
+            resolved_temperature,
+            resolved_top_k,
+            resolved_top_p,
+            String(transformers_version),
+        )
+    end
 end
 
 """A strict, imported HuggingFace Qwen3 byte-level BPE tokenizer."""

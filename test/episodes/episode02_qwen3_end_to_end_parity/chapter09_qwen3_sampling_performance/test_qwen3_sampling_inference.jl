@@ -5,6 +5,7 @@ using JSON3
 import LifeAI
 using LifeAI:
     GPTModel,
+    HFQwen3GenerationConfig,
     RoPE,
     apply_rope,
     generate_hf_text,
@@ -77,6 +78,71 @@ else
 end
 
 @testset "Qwen3 generation config contract" begin
+    source_eos_ids = Int32[261, 259]
+    direct = HFQwen3GenerationConfig(
+        Int32(259),
+        source_eos_ids,
+        big(259),
+        true,
+        Float64(0.6),
+        Int128(20),
+        Float64(0.95),
+        SubString("v4.51.0", 2),
+    )
+    @test direct.bos_id === 259
+    @test direct.eos_ids == [261, 259]
+    @test direct.eos_ids isa Vector{Int}
+    @test direct.pad_id === 259
+    @test direct.do_sample === true
+    @test direct.temperature === 0.6f0
+    @test direct.top_k === 20
+    @test direct.top_p === 0.95f0
+    @test direct.transformers_version == "4.51.0"
+    source_eos_ids[1] = 1
+    @test direct.eos_ids == [261, 259]
+
+    too_large = big(typemax(Int)) + 1
+    huge_real = big(10)^1_000
+    valid_fields = (259, [261, 259], 259, true, 0.6, 20, 0.95, "4.51.0")
+    for field in (1, 3), invalid_id in (true, 1.0, 0, -1, too_large)
+        invalid = Base.setindex(valid_fields, invalid_id, field)
+        @test_throws ArgumentError HFQwen3GenerationConfig(invalid...)
+    end
+    for invalid_eos in (
+        (),
+        Int[],
+        reshape([261, 259], 1, :),
+        [261, 261],
+        Any[261, true],
+        Any[261, 1.0],
+        Any[261, 0],
+        Any[261, -1],
+        Any[261, too_large],
+    )
+        invalid = Base.setindex(valid_fields, invalid_eos, 2)
+        @test_throws ArgumentError HFQwen3GenerationConfig(invalid...)
+    end
+    for invalid_do_sample in (0, 1, :yes, nothing)
+        invalid = Base.setindex(valid_fields, invalid_do_sample, 4)
+        @test_throws ArgumentError HFQwen3GenerationConfig(invalid...)
+    end
+    for invalid_temperature in (true, 0, -1, NaN, Inf, huge_real)
+        invalid = Base.setindex(valid_fields, invalid_temperature, 5)
+        @test_throws ArgumentError HFQwen3GenerationConfig(invalid...)
+    end
+    for invalid_top_k in (true, 1.0, 0, -1, too_large)
+        invalid = Base.setindex(valid_fields, invalid_top_k, 6)
+        @test_throws ArgumentError HFQwen3GenerationConfig(invalid...)
+    end
+    for invalid_top_p in (true, 0, -1, 1.1, NaN, Inf)
+        invalid = Base.setindex(valid_fields, invalid_top_p, 7)
+        @test_throws ArgumentError HFQwen3GenerationConfig(invalid...)
+    end
+    for invalid_version in ("", :version, nothing)
+        invalid = Base.setindex(valid_fields, invalid_version, 8)
+        @test_throws ArgumentError HFQwen3GenerationConfig(invalid...)
+    end
+
     mktempdir() do directory
         tokenizer = load_hf_qwen3_tokenizer(write_qwen3_tokenizer_fixture(directory))
         config = hf_generation_config(tokenizer)
