@@ -251,6 +251,8 @@ Chapter 03 reproducible-training test.
      geometry and finite channel statistics with positive standard deviations.
 125. Safely convert zero-based Qwen3 tokenizer vocabulary, added-token, and
      embedding sentinel ids without Bool coercion or one-based overflow.
+126. Strictly validate every Qwen3 embedding template type id as an integer,
+     preventing Boolean equality from masquerading as numeric zero.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

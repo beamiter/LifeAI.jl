@@ -424,6 +424,56 @@ end
         @test_throws ArgumentError load_hf_qwen3_embedding_tokenizer(directory)
     end
 
+    type_id_mutations = (
+        payloads -> (
+            payloads.tokenizer["post_processor"]["processors"][2]["single"][1][
+                "Sequence"
+            ]["type_id"] = false
+        ),
+        payloads -> (
+            payloads.tokenizer["post_processor"]["processors"][2]["single"][2][
+                "SpecialToken"
+            ]["type_id"] = false
+        ),
+        payloads -> (
+            payloads.tokenizer["post_processor"]["processors"][2]["pair"][1][
+                "Sequence"
+            ]["type_id"] = false
+        ),
+        payloads -> (
+            payloads.tokenizer["post_processor"]["processors"][2]["pair"][2][
+                "Sequence"
+            ]["type_id"] = false
+        ),
+        payloads -> (
+            payloads.tokenizer["post_processor"]["processors"][2]["pair"][3][
+                "SpecialToken"
+            ]["type_id"] = false
+        ),
+    )
+    for mutate! in type_id_mutations
+        mktempdir() do directory
+            payloads = _embedding_tokenizer_payloads()
+            mutate!(payloads)
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            @test _embedding_argument_error_message() do
+                load_hf_qwen3_embedding_tokenizer(directory)
+            end == "`type_id` must be an integer"
+        end
+    end
+
+    mktempdir() do directory
+        payloads = _embedding_tokenizer_payloads()
+        payloads.tokenizer["post_processor"]["processors"][2]["single"][1][
+            "Sequence"
+        ]["type_id"] = 1
+        write_qwen3_tokenizer_fixture(directory; payloads)
+        @test _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_tokenizer(directory)
+        end ==
+              "unsupported `type_id=1` in tokenizer.json embedding post_processor single[1]; expected 0"
+    end
+
     for (value, message) in (
         (true, "max_new_tokens must be an integer"),
         (1.5, "max_new_tokens must be an integer"),

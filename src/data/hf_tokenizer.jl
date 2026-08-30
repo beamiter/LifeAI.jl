@@ -122,6 +122,20 @@ function _hf_exact_value(object, name::AbstractString, expected, label::Abstract
     return value
 end
 
+function _hf_exact_integer(
+    object,
+    name::AbstractString,
+    expected::Int,
+    label::AbstractString,
+)
+    raw_value = _hf_required(object, name, label)
+    value = _hf_strict_host_int(raw_value, "`$name`")
+    value == expected || throw(ArgumentError(
+        "unsupported `$name=$(repr(raw_value))` in $label; expected $expected",
+    ))
+    return value
+end
+
 """
     hf_byte_unicode_alphabet()
 
@@ -169,7 +183,7 @@ function _hf_template_sequence_entry(entry, expected::AbstractString, label)
         "$label Sequence must be an object",
     ))
     _hf_exact_value(sequence, "id", String(expected), label)
-    _hf_exact_value(sequence, "type_id", 0, label)
+    _hf_exact_integer(sequence, "type_id", 0, label)
     return nothing
 end
 
@@ -183,7 +197,7 @@ function _hf_template_special_entry(entry, label)
         "$label SpecialToken must be an object",
     ))
     _hf_exact_value(special, "id", "<|endoftext|>", label)
-    _hf_exact_value(special, "type_id", 0, label)
+    _hf_exact_integer(special, "type_id", 0, label)
     return nothing
 end
 
