@@ -333,6 +333,8 @@ Chapter 03 reproducible-training test.
      consistent counts and detach their per-expert vector from caller aliases.
 166. Rank Qwen3 MoE candidates by Float32 logits and flush subnormal routing
      probabilities so CPU, CUDA, and XLA agree on extreme finite inputs.
+167. Reject offset-indexed Qwen3 router logits at both host and device API
+     boundaries before backend-specific bounds or broadcast failures can leak.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -1,6 +1,19 @@
 using Test
 using NNlib: softmax
-using LifeAI: Qwen3SparseMoE, qwen3_topk_routing
+using LifeAI: Qwen3SparseMoE, qwen3_device_topk_routing, qwen3_topk_routing
+
+struct _Qwen3OffsetRouter{T,A<:AbstractMatrix{T}} <: AbstractMatrix{T}
+    parent::A
+end
+
+Base.size(router::_Qwen3OffsetRouter) = size(router.parent)
+Base.axes(router::_Qwen3OffsetRouter) = (
+    0:(size(router, 1) - 1),
+    axes(router.parent, 2),
+)
+Base.IndexStyle(::Type{<:_Qwen3OffsetRouter}) = IndexCartesian()
+Base.getindex(router::_Qwen3OffsetRouter, row::Int, column::Int) =
+    router.parent[row + 1, column]
 
 @testset "Qwen3 MoE top-k router selection and normalization" begin
     logits = Float32[
@@ -37,6 +50,13 @@ using LifeAI: Qwen3SparseMoE, qwen3_topk_routing
     end
     @test_throws ArgumentError Qwen3SparseMoE(4, 3, 0, 1)
     @test_throws ArgumentError Qwen3SparseMoE(4, 3, 4, 5)
+end
+
+@testset "Qwen3 routers reject offset-indexed logits consistently" begin
+    logits = _Qwen3OffsetRouter(reshape(Float32[4, 3, 2, 1], :, 1))
+    for router in (qwen3_topk_routing, qwen3_device_topk_routing)
+        @test_throws ArgumentError router(logits, 2)
+    end
 end
 
 @testset "Qwen3 host router controls are strict host values" begin

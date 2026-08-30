@@ -141,6 +141,7 @@ function qwen3_topk_routing(
     experts_per_token;
     normalize=true,
 )
+    Base.require_one_based_indexing(router_logits)
     num_experts, num_tokens = size(router_logits)
     experts_per_token = _qwen3_routing_controls(
         num_experts,
@@ -189,6 +190,7 @@ function qwen3_device_topk_routing(
     experts_per_token;
     normalize=true,
 )
+    Base.require_one_based_indexing(router_logits)
     num_experts, num_tokens = size(router_logits)
     experts_per_token = _qwen3_routing_controls(
         num_experts,
