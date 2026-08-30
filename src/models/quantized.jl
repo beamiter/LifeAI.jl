@@ -263,6 +263,39 @@ function _validate_quantization_plan_layers(
     return plan
 end
 
+function _validated_activation_moment(values, target)
+    values isa AbstractVector || throw(ArgumentError(
+        "activation second moment for $target must be a vector",
+    ))
+    moment = map(collect(values)) do value
+        value isa Real && !(value isa Bool) || throw(ArgumentError(
+            "activation second moment for $target must contain real numbers other than Bool",
+        ))
+        isfinite(value) && value >= 0 || throw(ArgumentError(
+            "activation second moment for $target must be finite and non-negative",
+        ))
+        return try
+            Float32(value)
+        catch error
+            error isa InterruptException && rethrow()
+            throw(ArgumentError(
+                "activation second moment for $target must be finite and non-negative at Float32 precision",
+            ))
+        end
+    end
+    isempty(moment) && throw(ArgumentError(
+        "activation second moment for $target must not be empty",
+    ))
+    all(value -> isfinite(value) && value >= 0.0f0, moment) ||
+        throw(ArgumentError(
+            "activation second moment for $target must be finite and non-negative at Float32 precision",
+        ))
+    any(>(0.0f0), moment) || throw(ArgumentError(
+        "activation second moment for $target must contain positive mass",
+    ))
+    return moment
+end
+
 """
     ActivationCalibration(
         layer_moments;
@@ -285,67 +318,84 @@ struct ActivationCalibration
     token_count::Int
     num_layers::Int
     source::String
-end
 
-function _validated_activation_moment(values, target)
-    values isa AbstractVector || throw(ArgumentError(
-        "activation second moment for $target must be a vector",
-    ))
-    moment = Float32.(collect(values))
-    isempty(moment) && throw(ArgumentError(
-        "activation second moment for $target must not be empty",
-    ))
-    all(value -> isfinite(value) && value >= 0.0f0, moment) ||
-        throw(ArgumentError(
-            "activation second moment for $target must be finite and non-negative",
+    function ActivationCalibration(
+        layer_moments,
+        lm_head_moment,
+        token_count,
+        num_layers,
+        source,
+    )
+        resolved_token_count = _strict_host_int(
+            token_count,
+            "activation calibration token_count",
+        )
+        resolved_token_count > 0 || throw(ArgumentError(
+            "activation calibration token_count must be positive",
         ))
-    any(>(0.0f0), moment) || throw(ArgumentError(
-        "activation second moment for $target must contain positive mass",
-    ))
-    return moment
+        resolved_num_layers = _strict_host_int(
+            num_layers,
+            "activation calibration num_layers",
+        )
+        resolved_num_layers > 0 || throw(ArgumentError(
+            "activation calibration num_layers must be positive",
+        ))
+        source isa AbstractString || throw(ArgumentError(
+            "activation calibration source must be a string",
+        ))
+        layer_moments isa AbstractDict || throw(ArgumentError(
+            "activation calibration layer_moments must be a dictionary",
+        ))
+
+        moments = Dict{Tuple{Int,Symbol},Vector{Float32}}()
+        for (target, values) in pairs(layer_moments)
+            target isa Tuple && length(target) == 2 || throw(ArgumentError(
+                "activation calibration keys must be `(layer, projection)` tuples",
+            ))
+            layer, projection = target
+            resolved_layer = _strict_host_int(
+                layer,
+                "activation calibration layer",
+            )
+            1 <= resolved_layer <= resolved_num_layers || throw(ArgumentError(
+                "activation calibration layer must be in 1:$resolved_num_layers",
+            ))
+            projection isa Symbol &&
+                projection in _QWEN3_QUANTIZATION_TARGETS &&
+                projection !== :lm_head || throw(ArgumentError(
+                    "unsupported activation calibration projection $(repr(projection))",
+                ))
+            key = (resolved_layer, projection)
+            haskey(moments, key) && throw(ArgumentError(
+                "duplicate activation calibration target $key",
+            ))
+            moments[key] = _validated_activation_moment(values, key)
+        end
+        head_moment = lm_head_moment === nothing ?
+            nothing : _validated_activation_moment(lm_head_moment, :lm_head)
+        return new(
+            moments,
+            head_moment,
+            resolved_token_count,
+            resolved_num_layers,
+            String(source),
+        )
+    end
 end
 
 function ActivationCalibration(
     layer_moments;
     lm_head_moment=nothing,
-    token_count::Integer,
-    num_layers::Integer,
-    source::AbstractString="",
+    token_count,
+    num_layers,
+    source="",
 )
-    token_count > 0 || throw(ArgumentError(
-        "activation calibration token_count must be positive",
-    ))
-    num_layers > 0 || throw(ArgumentError(
-        "activation calibration num_layers must be positive",
-    ))
-    moments = Dict{Tuple{Int,Symbol},Vector{Float32}}()
-    for (target, values) in pairs(layer_moments)
-        target isa Tuple && length(target) == 2 || throw(ArgumentError(
-            "activation calibration keys must be `(layer, projection)` tuples",
-        ))
-        layer, projection = target
-        layer isa Integer && 1 <= layer <= num_layers || throw(ArgumentError(
-            "activation calibration layer must be in 1:$num_layers",
-        ))
-        projection isa Symbol &&
-            projection in _QWEN3_QUANTIZATION_TARGETS &&
-            projection !== :lm_head || throw(ArgumentError(
-                "unsupported activation calibration projection $(repr(projection))",
-            ))
-        key = (Int(layer), projection)
-        haskey(moments, key) && throw(ArgumentError(
-            "duplicate activation calibration target $key",
-        ))
-        moments[key] = _validated_activation_moment(values, key)
-    end
-    head_moment = lm_head_moment === nothing ?
-        nothing : _validated_activation_moment(lm_head_moment, :lm_head)
     return ActivationCalibration(
-        moments,
-        head_moment,
-        Int(token_count),
-        Int(num_layers),
-        String(source),
+        layer_moments,
+        lm_head_moment,
+        token_count,
+        num_layers,
+        source,
     )
 end
 
@@ -358,7 +408,7 @@ Resolve one calibration vector. Transformer projections require a one-based
 function activation_second_moment(
     calibration::ActivationCalibration,
     projection::Symbol;
-    layer::Union{Nothing,Integer}=nothing,
+    layer=nothing,
 )
     projection in _QWEN3_QUANTIZATION_TARGETS || throw(ArgumentError(
         "unsupported activation calibration projection $(repr(projection))",
@@ -372,11 +422,11 @@ function activation_second_moment(
         ))
         return calibration.lm_head_moment
     end
-    layer isa Integer && 1 <= layer <= calibration.num_layers ||
-        throw(ArgumentError(
-            "activation calibration layer must be in 1:$(calibration.num_layers)",
-        ))
-    target = (Int(layer), projection)
+    resolved_layer = _strict_host_int(layer, "activation calibration layer")
+    1 <= resolved_layer <= calibration.num_layers || throw(ArgumentError(
+        "activation calibration layer must be in 1:$(calibration.num_layers)",
+    ))
+    target = (resolved_layer, projection)
     haskey(calibration.layer_moments, target) || throw(ArgumentError(
         "activation calibration is missing target $target",
     ))

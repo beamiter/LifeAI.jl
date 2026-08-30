@@ -40,6 +40,16 @@ function _qwen3_activation_quantization_weighted_error(weight, quantized, moment
     )
 end
 
+function _activation_calibration_argument_error_message(f)
+    try
+        f()
+    catch exception
+        exception isa ArgumentError || rethrow()
+        return exception.msg
+    end
+    return nothing
+end
+
 @testset "Qwen3-14B activation calibration asset contract" begin
     assets = JSON3.read(read(_QWEN3_ACTIVATION_QUANTIZATION_ASSETS_PATH, String))
     for (filename, expected) in pairs(assets["plan_sha256"])
@@ -285,6 +295,116 @@ end
         ones(Float32, 8)
     @test activation_second_moment(calibration, :lm_head) ==
         fill(2.0f0, 8)
+
+    wide = ActivationCalibration(
+        Dict((Int128(1), :q_proj) => ones(Float64, 8));
+        token_count=Int128(12),
+        num_layers=big(1),
+        source=SubString("xwide", 2),
+    )
+    @test wide.token_count === 12
+    @test wide.num_layers === 1
+    @test wide.source === "wide"
+    @test only(keys(wide.layer_moments))[1] === 1
+    @test eltype(wide.layer_moments[(1, :q_proj)]) === Float32
+    @test activation_second_moment(wide, :q_proj; layer=Int128(1)) ==
+        ones(Float32, 8)
+
+    too_large = big(typemax(Int)) + 1
+    for (value, message) in (
+        (true, "activation calibration token_count must be an integer"),
+        (1.0, "activation calibration token_count must be an integer"),
+        (
+            too_large,
+            "activation calibration token_count is outside the host integer range",
+        ),
+    )
+        @test _activation_calibration_argument_error_message() do
+            ActivationCalibration(moments; token_count=value, num_layers=1)
+        end == message
+    end
+    for (value, message) in (
+        (true, "activation calibration num_layers must be an integer"),
+        (1.0, "activation calibration num_layers must be an integer"),
+        (
+            too_large,
+            "activation calibration num_layers is outside the host integer range",
+        ),
+    )
+        @test _activation_calibration_argument_error_message() do
+            ActivationCalibration(moments; token_count=1, num_layers=value)
+        end == message
+    end
+    for (value, message) in (
+        (true, "activation calibration layer must be an integer"),
+        (1.0, "activation calibration layer must be an integer"),
+        (
+            too_large,
+            "activation calibration layer is outside the host integer range",
+        ),
+    )
+        @test _activation_calibration_argument_error_message() do
+            ActivationCalibration(
+                Dict((value, :q_proj) => ones(Float32, 8));
+                token_count=1,
+                num_layers=1,
+            )
+        end == message
+        @test _activation_calibration_argument_error_message() do
+            activation_second_moment(calibration, :q_proj; layer=value)
+        end == message
+    end
+
+    @test _activation_calibration_argument_error_message() do
+        ActivationCalibration(moments; token_count=1, num_layers=1, source=:bad)
+    end == "activation calibration source must be a string"
+    @test _activation_calibration_argument_error_message() do
+        ActivationCalibration(nothing; token_count=1, num_layers=1)
+    end == "activation calibration layer_moments must be a dictionary"
+    for values in (
+        Any[1.0f0, true],
+        Any[1.0f0, 0.5 + 0im],
+        Any[1.0f0, "0.5"],
+    )
+        @test _activation_calibration_argument_error_message() do
+            ActivationCalibration(
+                Dict((1, :q_proj) => values);
+                token_count=1,
+                num_layers=1,
+            )
+        end ==
+              "activation second moment for (1, :q_proj) must contain real numbers other than Bool"
+    end
+    @test _activation_calibration_argument_error_message() do
+        ActivationCalibration(
+            Dict((1, :q_proj) => Any[1.0f0, big(10)^1000]);
+            token_count=1,
+            num_layers=1,
+        )
+    end ==
+          "activation second moment for (1, :q_proj) must be finite and non-negative at Float32 precision"
+
+    @test _activation_calibration_argument_error_message() do
+        ActivationCalibration(
+            Dict{Tuple{Int,Symbol},Vector{Float32}}(),
+            nothing,
+            0,
+            1,
+            "",
+        )
+    end == "activation calibration token_count must be positive"
+    @test _activation_calibration_argument_error_message() do
+        ActivationCalibration(
+            Dict{Tuple{Int,Symbol},Vector{Float32}}(
+                (1, :q_proj) => Float32[1, NaN],
+            ),
+            nothing,
+            1,
+            1,
+            "",
+        )
+    end ==
+          "activation second moment for (1, :q_proj) must be finite and non-negative"
     @test_throws ArgumentError activation_second_moment(
         calibration,
         :up_proj;
