@@ -4,6 +4,7 @@ using JSON3
 using SHA: sha256
 using LifeAI:
     HFQwen3BF16XLASession,
+    Qwen3XLAWindowPlan,
     generate_hf_qwen3_bf16_xla!,
     load_hf_qwen3_bf16_xla_session,
     load_hf_qwen3_compact_bundle,
@@ -64,6 +65,58 @@ end
     )
     @test normalized == padded
 
+    direct = Qwen3XLAWindowPlan(
+        big(64),
+        Int32(17),
+        Int128(4),
+        Int16(16),
+    )
+    @test direct == padded
+    @test all(
+        getfield(direct, field) isa Int
+        for field in fieldnames(typeof(direct))
+    )
+    compatible = Qwen3XLAWindowPlan(
+        Int32(64),
+        Int16(17),
+        big(4),
+        UInt8(16),
+        Int128(32),
+        UInt8(15),
+        Int32(21),
+        big(35),
+    )
+    @test compatible == padded
+
+    canonical_fields = (64, 17, 4, 16, 32, 15, 21, 35)
+    for field in 5:8
+        inconsistent = Base.setindex(
+            canonical_fields,
+            canonical_fields[field] + 1,
+            field,
+        )
+        @test_throws ArgumentError Qwen3XLAWindowPlan(inconsistent...)
+    end
+
+    too_large = big(typemax(Int)) + 1
+    for field in 1:4, invalid_value in (true, 1.0, too_large)
+        invalid = Base.setindex(canonical_fields[1:4], invalid_value, field)
+        @test_throws ArgumentError Qwen3XLAWindowPlan(invalid...)
+    end
+    for field in 5:8, invalid_value in (true, 1.0, too_large)
+        invalid = Base.setindex(canonical_fields, invalid_value, field)
+        @test_throws ArgumentError Qwen3XLAWindowPlan(invalid...)
+    end
+    @test Qwen3XLAWindowPlan(typemax(Int32), 1, 1, 1).context_tokens ==
+        typemax(Int32)
+    @test_throws ArgumentError Qwen3XLAWindowPlan(
+        Int(typemax(Int32)) + 1,
+        1,
+        1,
+        1,
+    )
+    @test Qwen3XLAWindowPlan(5, 1, 1, 2).prompt_bucket_tokens == 2
+
     small = plan_qwen3_xla_window(
         1,
         1;
@@ -77,7 +130,6 @@ end
     )
     @test wide_prompt == [3, 2]
     @test eltype(wide_prompt) === Int
-    too_large = big(typemax(Int)) + 1
     @test_throws ArgumentError qwen3_xla_pad_prompt(Bool[true], small)
     @test_throws ArgumentError qwen3_xla_pad_prompt(
         [2],

@@ -3,11 +3,13 @@ using Random: AbstractRNG, default_rng
 using Reactant
 
 """
-    Qwen3XLAWindowPlan
+    Qwen3XLAWindowPlan(
+        context_tokens, prompt_tokens, max_new_tokens, chunk_tokens)
 
 Host-side request plan for the fixed-shape XLA prefill path. Prompts are
 left-padded to a multiple of `chunk_tokens`; padding cache slots are excluded
-through a per-request key-position vector.
+through a per-request key-position vector. Bucket, padding, sequence, and cache
+sizes are derived by the constructor and cannot be supplied inconsistently.
 """
 struct Qwen3XLAWindowPlan
     context_tokens::Int
@@ -18,6 +20,91 @@ struct Qwen3XLAWindowPlan
     left_padding_tokens::Int
     sequence_tokens::Int
     cache_tokens::Int
+
+    function Qwen3XLAWindowPlan(
+        context_tokens,
+        prompt_tokens,
+        max_new_tokens,
+        chunk_tokens,
+    )
+        context = _strict_host_int(context_tokens, "context_tokens")
+        prompt = _strict_host_int(prompt_tokens, "prompt_tokens")
+        output = _strict_host_int(max_new_tokens, "max_new_tokens")
+        chunk = _strict_host_int(chunk_tokens, "chunk_tokens")
+        context > 0 || throw(ArgumentError("context_tokens must be positive"))
+        context <= typemax(Int32) || throw(ArgumentError(
+            "context_tokens must fit in Int32 device positions",
+        ))
+        prompt > 0 || throw(ArgumentError("prompt_tokens must be positive"))
+        output > 0 || throw(ArgumentError("max_new_tokens must be positive"))
+        0 < chunk <= context || throw(ArgumentError(
+            "chunk_tokens must be in 1:context_tokens",
+        ))
+        output <= context || throw(ArgumentError(
+            "max_new_tokens exceeds context_tokens",
+        ))
+        prompt <= context - output || throw(ArgumentError(
+            "prompt plus requested output exceeds context_tokens",
+        ))
+
+        bucket = try
+            Base.Checked.checked_mul(cld(prompt, chunk), chunk)
+        catch error
+            error isa OverflowError || rethrow()
+            throw(ArgumentError(
+                "padded XLA prompt bucket exceeds the host integer range",
+            ))
+        end
+        bucket <= context - output || throw(ArgumentError(
+            "padded XLA prompt bucket plus requested output exceeds " *
+            "context_tokens",
+        ))
+        return new(
+            context,
+            prompt,
+            output,
+            chunk,
+            bucket,
+            bucket - prompt,
+            prompt + output,
+            bucket + output - 1,
+        )
+    end
+end
+
+function Qwen3XLAWindowPlan(
+    context_tokens,
+    prompt_tokens,
+    max_new_tokens,
+    chunk_tokens,
+    prompt_bucket_tokens,
+    left_padding_tokens,
+    sequence_tokens,
+    cache_tokens,
+)
+    plan = Qwen3XLAWindowPlan(
+        context_tokens,
+        prompt_tokens,
+        max_new_tokens,
+        chunk_tokens,
+    )
+    bucket = _strict_host_int(prompt_bucket_tokens, "prompt_bucket_tokens")
+    padding = _strict_host_int(left_padding_tokens, "left_padding_tokens")
+    sequence = _strict_host_int(sequence_tokens, "sequence_tokens")
+    cache = _strict_host_int(cache_tokens, "cache_tokens")
+    bucket == plan.prompt_bucket_tokens || throw(ArgumentError(
+        "prompt_bucket_tokens is inconsistent with prompt_tokens and chunk_tokens",
+    ))
+    padding == plan.left_padding_tokens || throw(ArgumentError(
+        "left_padding_tokens is inconsistent with prompt_bucket_tokens",
+    ))
+    sequence == plan.sequence_tokens || throw(ArgumentError(
+        "sequence_tokens is inconsistent with prompt_tokens and max_new_tokens",
+    ))
+    cache == plan.cache_tokens || throw(ArgumentError(
+        "cache_tokens is inconsistent with the padded prompt and requested output",
+    ))
+    return plan
 end
 
 """
@@ -31,53 +118,16 @@ Validate the exact logical and physical context budget without overflow.
 the final selected token does not need to be written back to K/V.
 """
 function plan_qwen3_xla_window(
-    prompt_tokens::Integer,
-    max_new_tokens::Integer;
-    context_tokens::Integer=4096,
-    chunk_tokens::Integer=64,
+    prompt_tokens,
+    max_new_tokens;
+    context_tokens=4096,
+    chunk_tokens=64,
 )
-    context = _strict_host_int(context_tokens, "context_tokens")
-    prompt = _strict_host_int(prompt_tokens, "prompt_tokens")
-    output = _strict_host_int(max_new_tokens, "max_new_tokens")
-    chunk = _strict_host_int(chunk_tokens, "chunk_tokens")
-    context > 0 || throw(ArgumentError("context_tokens must be positive"))
-    context <= typemax(Int32) || throw(ArgumentError(
-        "context_tokens must fit in Int32 device positions",
-    ))
-    prompt > 0 || throw(ArgumentError("prompt_tokens must be positive"))
-    output > 0 || throw(ArgumentError("max_new_tokens must be positive"))
-    0 < chunk <= context || throw(ArgumentError(
-        "chunk_tokens must be in 1:context_tokens",
-    ))
-    output <= context || throw(ArgumentError(
-        "max_new_tokens exceeds context_tokens",
-    ))
-    prompt <= context - output || throw(ArgumentError(
-        "prompt plus requested output exceeds context_tokens",
-    ))
-
-    bucket = try
-        Base.Checked.checked_mul(cld(prompt, chunk), chunk)
-    catch error
-        error isa OverflowError || rethrow()
-        throw(ArgumentError(
-            "padded XLA prompt bucket exceeds the host integer range",
-        ))
-    end
-    bucket <= context - output || throw(ArgumentError(
-        "padded XLA prompt bucket plus requested output exceeds " *
-        "context_tokens",
-    ))
-    padding = bucket - prompt
     return Qwen3XLAWindowPlan(
-        context,
-        prompt,
-        output,
-        chunk,
-        bucket,
-        padding,
-        prompt + output,
-        bucket + output - 1,
+        context_tokens,
+        prompt_tokens,
+        max_new_tokens,
+        chunk_tokens,
     )
 end
 

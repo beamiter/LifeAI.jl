@@ -335,6 +335,8 @@ Chapter 03 reproducible-training test.
      probabilities so CPU, CUDA, and XLA agree on extreme finite inputs.
 167. Reject offset-indexed Qwen3 router logits at both host and device API
      boundaries before backend-specific bounds or broadcast failures can leak.
+168. Derive every Qwen3 XLA window size inside its sole inner constructor and
+     validate legacy full-field construction against the canonical formulas.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
