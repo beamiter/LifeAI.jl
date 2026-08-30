@@ -184,6 +184,19 @@ end
     @test_throws ArgumentError quantized_parameter_bytes(
         (aggregate_leaf, aggregate_leaf, aggregate_leaf),
     )
+    @test quantized_parameter_bytes(Bool[true, false]) == 2
+    @test quantized_parameter_bytes(ComplexF32[1 + 2im]) == 8
+    for values in (
+        BigInt[1, big(2)^1000],
+        Complex{BigInt}[1 + 2im],
+        Any[1, 2],
+        ["a", "b"],
+    )
+        @test _quantization_argument_error_message() do
+            quantized_parameter_bytes(values)
+        end ==
+              "quantized tensor storage requires a fixed-size isbits element type"
+    end
 end
 
 @testset "quantization plan validation and precedence" begin

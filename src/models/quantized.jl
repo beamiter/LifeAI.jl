@@ -1202,6 +1202,9 @@ function _quantized_byte_count_int(count::BigInt, label::AbstractString)
 end
 
 function _tensor_storage_bytes(array::AbstractArray)
+    isbitstype(eltype(array)) || throw(ArgumentError(
+        "quantized tensor storage requires a fixed-size isbits element type",
+    ))
     return _quantized_byte_count_int(
         BigInt(length(array)) * sizeof(eltype(array)),
         "quantized tensor storage byte count",
