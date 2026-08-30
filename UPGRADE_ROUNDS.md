@@ -313,6 +313,8 @@ Chapter 03 reproducible-training test.
      non-container grid payloads before iteration can leak method errors.
 156. Restrict Qwen3 embedding masks to Bool or integer zero/one entries rather
      than accepting numerically equal floats, complex values, or missing data.
+157. Seal Qwen3-VL dynamic cache construction behind strict host integers and
+     local position, batch, and empty-cache RoPE invariants.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

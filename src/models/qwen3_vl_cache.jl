@@ -19,6 +19,37 @@ struct Qwen3VLKVCache{C}
     position::Int
     rope_delta::Int
     batch_size::Int
+
+    function Qwen3VLKVCache(layers, position, rope_delta, batch_size)
+        resolved_position = _strict_host_int(
+            position,
+            "Qwen3-VL KV cache position",
+        )
+        resolved_rope_delta = _strict_host_int(
+            rope_delta,
+            "Qwen3-VL KV cache rope_delta",
+        )
+        resolved_batch = _strict_host_int(
+            batch_size,
+            "Qwen3-VL KV cache batch_size",
+        )
+        resolved_position >= 0 || throw(ArgumentError(
+            "Qwen3-VL KV cache position must be non-negative",
+        ))
+        resolved_batch == 1 || throw(ArgumentError(
+            "Qwen3-VL dynamic generation currently supports batch size one",
+        ))
+        resolved_position == 0 && resolved_rope_delta != 0 &&
+            throw(ArgumentError(
+                "an empty Qwen3-VL KV cache must have rope_delta == 0",
+            ))
+        return new{typeof(layers)}(
+            layers,
+            resolved_position,
+            resolved_rope_delta,
+            resolved_batch,
+        )
+    end
 end
 
 Base.length(cache::Qwen3VLKVCache) = cache.position

@@ -201,6 +201,72 @@ function _ch45_assert_cache_matches(reference, cache, phase::String, tokens::Int
     end
 end
 
+@testset "Chapter 45 — dynamic cache constructor is strict" begin
+    layers = ()
+    cache = LifeAI.Qwen3VLKVCache(
+        layers,
+        Int32(2),
+        Int16(-1),
+        UInt8(1),
+    )
+    @test cache.layers === layers
+    @test cache.position === 2
+    @test cache.rope_delta === -1
+    @test cache.batch_size === 1
+    @test length(cache) == 2
+    @test !isempty(cache)
+
+    too_large = big(typemax(Int)) + 1
+    for (position, rope_delta, batch_size, message) in (
+        (true, 0, 1, "Qwen3-VL KV cache position must be an integer"),
+        (0, true, 1, "Qwen3-VL KV cache rope_delta must be an integer"),
+        (0, 0, true, "Qwen3-VL KV cache batch_size must be an integer"),
+        (
+            too_large,
+            0,
+            1,
+            "Qwen3-VL KV cache position is outside the host integer range",
+        ),
+        (
+            0,
+            too_large,
+            1,
+            "Qwen3-VL KV cache rope_delta is outside the host integer range",
+        ),
+        (
+            0,
+            0,
+            too_large,
+            "Qwen3-VL KV cache batch_size is outside the host integer range",
+        ),
+        (-1, 0, 1, "Qwen3-VL KV cache position must be non-negative"),
+        (
+            0,
+            0,
+            2,
+            "Qwen3-VL dynamic generation currently supports batch size one",
+        ),
+        (
+            0,
+            1,
+            1,
+            "an empty Qwen3-VL KV cache must have rope_delta == 0",
+        ),
+    )
+        failure = _ch45_captured_error() do
+            LifeAI.Qwen3VLKVCache(layers, position, rope_delta, batch_size)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
+    end
+    @test_throws MethodError LifeAI.Qwen3VLKVCache{Tuple{}}(
+        (),
+        false,
+        true,
+        true,
+    )
+end
+
 @testset "Chapter 45 — frozen HF DynamicCache fixture contract" begin
     reference = _ch45_reference()
     metadata = reference.metadata
