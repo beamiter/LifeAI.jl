@@ -827,6 +827,59 @@ function build_agent_memory_index(
     return build_agent_memory_index(store, embedded.embeddings)
 end
 
+function _agent_memory_hit_values(
+    rank,
+    id,
+    sequence,
+    text,
+    score,
+    metadata,
+)
+    rank_value = _strict_host_int(rank, "memory hit rank")
+    rank_value > 0 || throw(ArgumentError("memory hit rank must be positive"))
+    id isa AbstractString || throw(ArgumentError("memory hit id must be a string"))
+    id_value = _agent_memory_id(String(id))
+    sequence_value = _strict_host_int(sequence, "memory hit sequence")
+    sequence_value > 0 || throw(ArgumentError(
+        "memory hit sequence must be positive",
+    ))
+    text isa AbstractString || throw(ArgumentError(
+        "memory hit text must be a string",
+    ))
+    text_value = String(text)
+    isempty(strip(text_value)) && throw(ArgumentError(
+        "memory hit text must not be empty",
+    ))
+    ncodeunits(text_value) <= MAX_AGENT_MEMORY_TEXT_BYTES || throw(ArgumentError(
+        "memory hit text exceeds the $MAX_AGENT_MEMORY_TEXT_BYTES byte limit",
+    ))
+    score isa Real && !(score isa Bool) || throw(ArgumentError(
+        "memory hit score must be a real number",
+    ))
+    score_value = try
+        Float32(score)
+    catch error
+        error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
+            rethrow()
+        throw(ArgumentError("memory hit score is outside the Float32 range"))
+    end
+    isfinite(score_value) || throw(ArgumentError(
+        "memory hit score must be finite",
+    ))
+    metadata isa AbstractDict || throw(ArgumentError(
+        "memory hit metadata must be a mapping",
+    ))
+    metadata_value = _agent_memory_metadata(metadata)
+    return (
+        rank_value,
+        id_value,
+        sequence_value,
+        text_value,
+        score_value,
+        metadata_value,
+    )
+end
+
 """One exact-search result, retaining the persistent memory ID and sequence."""
 struct AgentMemoryHit
     rank::Int
@@ -835,6 +888,18 @@ struct AgentMemoryHit
     text::String
     score::Float32
     metadata::Dict{String,String}
+
+    function AgentMemoryHit(rank, id, sequence, text, score, metadata)
+        values = _agent_memory_hit_values(
+            rank,
+            id,
+            sequence,
+            text,
+            score,
+            metadata,
+        )
+        return new(values...)
+    end
 end
 
 function retrieve_agent_memory(
@@ -889,6 +954,57 @@ struct AgentMemoryContext
     hits::Vector{AgentMemoryHit}
     rendered::String
     rendered_sha256::String
+
+    function AgentMemoryContext(
+        query,
+        query_sha256,
+        store_sha256,
+        hits,
+        rendered,
+        rendered_sha256,
+    )
+        query isa AbstractString || throw(ArgumentError(
+            "memory context query must be a string",
+        ))
+        query_sha256 isa AbstractString || throw(ArgumentError(
+            "memory context query_sha256 must be a string",
+        ))
+        store_sha256 isa AbstractString || throw(ArgumentError(
+            "memory context store_sha256 must be a string",
+        ))
+        hits isa AbstractVector || throw(ArgumentError(
+            "memory context hits must be a vector",
+        ))
+        hit_values = AgentMemoryHit[]
+        for hit in hits
+            hit isa AgentMemoryHit || throw(ArgumentError(
+                "memory context hits must contain AgentMemoryHit values",
+            ))
+            push!(hit_values, AgentMemoryHit(
+                hit.rank,
+                hit.id,
+                hit.sequence,
+                hit.text,
+                hit.score,
+                hit.metadata,
+            ))
+        end
+        rendered isa AbstractString || throw(ArgumentError(
+            "memory context rendered must be a string",
+        ))
+        rendered_sha256 isa AbstractString || throw(ArgumentError(
+            "memory context rendered_sha256 must be a string",
+        ))
+        context = new(
+            String(query),
+            String(query_sha256),
+            String(store_sha256),
+            hit_values,
+            String(rendered),
+            String(rendered_sha256),
+        )
+        return validate_agent_memory_context(context)
+    end
 end
 
 """
@@ -910,6 +1026,19 @@ function validate_agent_memory_context(
     isempty(context.hits) && throw(ArgumentError(
         "memory context must contain at least one hit",
     ))
+    for hit in context.hits
+        # Context hit vectors and hit metadata remain intentionally public.
+        # Recheck the complete hit contract at every consumption boundary so
+        # an in-place metadata edit cannot bypass the constructor snapshot.
+        _agent_memory_hit_values(
+            hit.rank,
+            hit.id,
+            hit.sequence,
+            hit.text,
+            hit.score,
+            hit.metadata,
+        )
+    end
     [hit.rank for hit in context.hits] == collect(1:length(context.hits)) ||
         throw(ArgumentError("memory context hit ranks are not contiguous"))
     length(unique(hit.id for hit in context.hits)) == length(context.hits) ||

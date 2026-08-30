@@ -665,25 +665,38 @@ end
         @test occursin(context.rendered, only(trace.agent.steps).prompt)
         @test agent_environment_trace_payload(trace).memory.ids == [event_id]
 
-        forged_context = AgentMemoryContext(
-            context.query,
-            "0"^64,
-            context.store_sha256,
-            context.hits,
-            context.rendered,
-            context.rendered_sha256,
-        )
-        @test_throws ArgumentError validate_agent_memory_context(forged_context)
+        forged_failure = try
+            AgentMemoryContext(
+                context.query,
+                "0"^64,
+                context.store_sha256,
+                context.hits,
+                context.rendered,
+                context.rendered_sha256,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test forged_failure isa ArgumentError
+        @test sprint(showerror, forged_failure) ==
+              "ArgumentError: memory context query digest mismatch"
+
+        # The constructor owns its input evidence, while consumers still
+        # revalidate the public context vector against in-place mutation.
+        saved_hit = pop!(context.hits)
         untouched = GridWorldEnvironment(task.spec)
         @test_throws ArgumentError run_qwen3_environment_loop(
             session,
             untouched;
             feedback=:none,
             system=gridworld_memory_system_prompt(),
-            memory_context=forged_context,
+            memory_context=context,
             max_steps=1,
             max_new_tokens=1,
         )
         @test untouched.actions == 0
+        push!(context.hits, saved_hit)
+        @test validate_agent_memory_context(context) === context
     end
 end

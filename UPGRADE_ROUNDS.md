@@ -437,6 +437,9 @@ Chapter 03 reproducible-training test.
      profiles before ambiguous last-value semantics can reach validation.
 218. Reject duplicate fields throughout fixed-schema Qwen3 tokenizer objects
      while preserving dynamic-map and tagged-wrapper diagnostics.
+219. Seal Qwen3 memory hits and retrieval contexts behind strict scalar
+     invariants, canonical digests, and owned hit/metadata snapshots while
+     retaining consumer-side revalidation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -371,6 +371,299 @@ end
     end
 end
 
+@testset "Chapter 39 — retrieval evidence constructors are sealed" begin
+    function _chapter39_argument_error(thunk, message)
+        failure = try
+            thunk()
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
+    end
+
+    metadata_source = Dict("kind" => "fact")
+    id_source = "xfact-1"
+    text_source = "xRemember this."
+    hit = AgentMemoryHit(
+        Int32(1),
+        SubString(id_source, 2),
+        UInt8(7),
+        SubString(text_source, 2),
+        -0.25,
+        metadata_source,
+    )
+    @test length(methods(AgentMemoryHit)) == 1
+    @test hit.rank === 1
+    @test hit.id == "fact-1"
+    @test hit.sequence === 7
+    @test hit.text == "Remember this."
+    @test hit.score === -0.25f0
+    @test hit.metadata == metadata_source
+    @test hit.metadata !== metadata_source
+    metadata_source["kind"] = "forged"
+    @test hit.metadata == Dict("kind" => "fact")
+
+    valid_hit = () -> AgentMemoryHit(
+        1,
+        "fact-1",
+        1,
+        "Remember this.",
+        0.5f0,
+        Dict{String,String}(),
+    )
+    hit_failures = (
+        (
+            () -> AgentMemoryHit(true, "fact-1", 1, "text", 0.0, Dict()),
+            "memory hit rank must be an integer",
+        ),
+        (
+            () -> AgentMemoryHit(-1, "fact-1", 1, "text", 0.0, Dict()),
+            "memory hit rank must be positive",
+        ),
+        (
+            () -> AgentMemoryHit(1, "fact-1", false, "text", 0.0, Dict()),
+            "memory hit sequence must be an integer",
+        ),
+        (
+            () -> AgentMemoryHit(1, "fact-1", 0, "text", 0.0, Dict()),
+            "memory hit sequence must be positive",
+        ),
+        (
+            () -> AgentMemoryHit(1, "fact-1", 1, "text", true, Dict()),
+            "memory hit score must be a real number",
+        ),
+        (
+            () -> AgentMemoryHit(1, "fact-1", 1, "text", NaN, Dict()),
+            "memory hit score must be finite",
+        ),
+        (
+            () -> AgentMemoryHit(1, "fact-1", 1, "text", Inf, Dict()),
+            "memory hit score must be finite",
+        ),
+        (
+            () -> AgentMemoryHit(1, "fact-1", 1, "text", -Inf, Dict()),
+            "memory hit score must be finite",
+        ),
+        (
+            () -> AgentMemoryHit(1, "fact-1", 1, "text", 0.0, (kind="fact",)),
+            "memory hit metadata must be a mapping",
+        ),
+        (
+            () -> AgentMemoryHit(1, "fact-1", 1, " ", 0.0, Dict()),
+            "memory hit text must not be empty",
+        ),
+    )
+    for (thunk, message) in hit_failures
+        _chapter39_argument_error(thunk, message)
+    end
+    _chapter39_argument_error(
+        () -> AgentMemoryHit(
+            typemax(UInt),
+            "fact-1",
+            1,
+            "text",
+            0.0,
+            Dict(),
+        ),
+        "memory hit rank is outside the host integer range",
+    )
+    _chapter39_argument_error(
+        () -> AgentMemoryHit(
+            1,
+            "fact-1",
+            1,
+            "text",
+            big(2)^1000,
+            Dict(),
+        ),
+        "memory hit score must be finite",
+    )
+    @test_throws ArgumentError AgentMemoryHit(1, "bad id", 1, "text", 0.0, Dict())
+    @test_throws ArgumentError AgentMemoryHit(
+        1,
+        "fact-1",
+        1,
+        "x"^(LifeAI.MAX_AGENT_MEMORY_TEXT_BYTES + 1),
+        0.0,
+        Dict(),
+    )
+    @test_throws ArgumentError AgentMemoryHit(
+        1,
+        "fact-1",
+        1,
+        "text",
+        0.0,
+        Dict("" => "invalid"),
+    )
+    @test valid_hit().score === 0.5f0
+
+    query = "query"
+    query_sha256 = LifeAI._sha256_hex(query)
+    store_sha256 = "f"^64
+    canonical = render_agent_memory_context(AgentMemoryHit[hit])
+    rendered_sha256 = LifeAI._sha256_hex(canonical)
+    input_hits = Any[hit]
+    digest_source = query_sha256 * "x"
+    store_digest_source = store_sha256 * "x"
+    rendered_source = canonical * "x"
+    rendered_digest_source = rendered_sha256 * "x"
+    context = AgentMemoryContext(
+        SubString("xquery", 2),
+        SubString(digest_source, 1, 64),
+        SubString(store_digest_source, 1, 64),
+        input_hits,
+        SubString(rendered_source, 1, ncodeunits(canonical)),
+        SubString(rendered_digest_source, 1, 64),
+    )
+    @test length(methods(AgentMemoryContext)) == 1
+    @test context.query == query
+    @test context.query isa String
+    @test length(context.hits) == 1
+    @test only(context.hits).rank == hit.rank
+    @test only(context.hits).id == hit.id
+    @test only(context.hits).sequence == hit.sequence
+    @test only(context.hits).text == hit.text
+    @test only(context.hits).score == hit.score
+    @test context.hits !== input_hits
+    @test only(context.hits).metadata == hit.metadata
+    @test only(context.hits).metadata !== hit.metadata
+    hit.metadata["kind"] = "held alias was changed"
+    empty!(input_hits)
+    @test only(context.hits).metadata == Dict("kind" => "fact")
+
+    forged_rendered = "# forged memory"
+    context_failures = (
+        (
+            () -> AgentMemoryContext(
+                query,
+                "0"^64,
+                store_sha256,
+                context.hits,
+                canonical,
+                rendered_sha256,
+            ),
+            "memory context query digest mismatch",
+        ),
+        (
+            () -> AgentMemoryContext(
+                query,
+                query_sha256,
+                "F"^64,
+                context.hits,
+                canonical,
+                rendered_sha256,
+            ),
+            "memory context store digest must be lowercase SHA256",
+        ),
+        (
+            () -> AgentMemoryContext(
+                query,
+                query_sha256,
+                store_sha256,
+                context.hits,
+                forged_rendered,
+                LifeAI._sha256_hex(forged_rendered),
+            ),
+            "memory context rendered bytes do not match its hits",
+        ),
+        (
+            () -> AgentMemoryContext(
+                query,
+                query_sha256,
+                store_sha256,
+                context.hits,
+                canonical,
+                "0"^64,
+            ),
+            "memory context rendered digest mismatch",
+        ),
+        (
+            () -> AgentMemoryContext(
+                query,
+                query_sha256,
+                store_sha256,
+                (),
+                canonical,
+                rendered_sha256,
+            ),
+            "memory context hits must be a vector",
+        ),
+        (
+            () -> AgentMemoryContext(
+                query,
+                query_sha256,
+                store_sha256,
+                Any["not a hit"],
+                canonical,
+                rendered_sha256,
+            ),
+            "memory context hits must contain AgentMemoryHit values",
+        ),
+    )
+    for (thunk, message) in context_failures
+        _chapter39_argument_error(thunk, message)
+    end
+
+    rank_two = AgentMemoryHit(2, "fact-2", 2, "Second.", 0.0, Dict())
+    rank_two_rendered = render_agent_memory_context(AgentMemoryHit[rank_two])
+    _chapter39_argument_error(
+        () -> AgentMemoryContext(
+            query,
+            query_sha256,
+            store_sha256,
+            AgentMemoryHit[rank_two],
+            rank_two_rendered,
+            LifeAI._sha256_hex(rank_two_rendered),
+        ),
+        "memory context hit ranks are not contiguous",
+    )
+    duplicate = AgentMemoryHit(2, hit.id, 2, "Duplicate.", 0.0, Dict())
+    duplicates = AgentMemoryHit[hit, duplicate]
+    duplicates_rendered = render_agent_memory_context(duplicates)
+    _chapter39_argument_error(
+        () -> AgentMemoryContext(
+            query,
+            query_sha256,
+            store_sha256,
+            duplicates,
+            duplicates_rendered,
+            LifeAI._sha256_hex(duplicates_rendered),
+        ),
+        "memory context contains duplicate hit IDs",
+    )
+
+    builder_metadata = Dict("source" => "builder")
+    builder_hit = AgentMemoryHit(1, "builder-1", 1, "Built.", 0.0, builder_metadata)
+    builder_hits = AgentMemoryHit[builder_hit]
+    built = agent_memory_context(query, builder_hits; store_sha256)
+    @test built.hits !== builder_hits
+    @test only(built.hits).metadata !== builder_hit.metadata
+    builder_hit.metadata["source"] = "forged"
+    empty!(builder_hits)
+    @test only(built.hits).metadata == Dict("source" => "builder")
+    @test validate_agent_memory_context(built) === built
+
+    only(built.hits).metadata[""] = "invalid"
+    _chapter39_argument_error(
+        () -> validate_agent_memory_context(built),
+        "memory metadata keys must not be empty",
+    )
+    delete!(only(built.hits).metadata, "")
+    saved_hit = pop!(built.hits)
+    _chapter39_argument_error(
+        () -> validate_agent_memory_context(built),
+        "memory context must contain at least one hit",
+    )
+    _chapter39_argument_error(
+        () -> _agent_initial_messages(query; memory_context=built),
+        "memory context must contain at least one hit",
+    )
+    push!(built.hits, saved_hit)
+    @test validate_agent_memory_context(built) === built
+end
+
 @testset "Chapter 39 — exact index and frozen retrieval context" begin
     mktempdir() do directory
         store = load_agent_memory_store(joinpath(directory, "memory.jsonl"); create=true)
