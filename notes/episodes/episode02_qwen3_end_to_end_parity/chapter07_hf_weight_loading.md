@@ -15,6 +15,9 @@
 1. **参照模型**：以 HuggingFace `Qwen/Qwen3-0.6B` dense 模型为真实权重验收对象；结构字段与参数名以 [`../../qwen3_hf_config_mapping.md`](../../qwen3_hf_config_mapping.md) 为输入契约。
 2. **计算精度**：读取官方 BF16 权重后转换为 Float32；数值对齐以相同 BF16 权重、Float32 计算的 HuggingFace reference 为基准，不把 BF16 与 Float32 计算差异混入架构判断。
 3. **Tokenizer 边界**：本 Chapter 只接受固定 token-id fixture。HF 0-based token id 在进入 LifeAI embedding 前显式转换为 1-based；`tokenizer.json`、regex pre-tokenization、byte↔unicode 与 special-token 文本语义属于 Chapter 08。
+
+该转换只接受非 Bool、宿主可表示的整数 token/vocabulary 元数据，并在加一前拒绝
+`typemax(Int)`；合法的窄整数与任意精度整数会保留输入 shape、统一输出 `Int`。
 4. **下载边界**：默认测试不联网、不下载真实模型。真实 Qwen3-0.6B 对齐通过显式环境变量与本地模型目录 opt-in；小型合成 safetensors 与 reference fixture 纳入默认测试。
 5. **兼容策略**：现有 RoPE interleaved 配对保持默认；Qwen3 使用新增的 `rope_style=:rotate_half`。旧 constructor、checkpoint、full forward、dynamic/static KV Cache 与 XLA 路径不得静默改变。
 6. **格式范围**：支持 safetensors 中本阶段需要的 BF16/F32 张量、严格 header/offset/shape 校验、单文件模型；若目录提供 `model.safetensors.index.json`，加载器应支持按索引读取分片。拒绝 pickle 权重。

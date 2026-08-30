@@ -552,6 +552,20 @@ end
         @test hf_token_ids([0, 4, 12]; vocab_size=13) == [1, 5, 13]
         @test_throws ArgumentError hf_token_ids([-1])
         @test_throws ArgumentError hf_token_ids([13]; vocab_size=13)
+        too_large = big(typemax(Int)) + 1
+        @test_throws ArgumentError hf_token_ids(Bool[true])
+        @test_throws ArgumentError hf_token_ids([0]; vocab_size=true)
+        @test_throws ArgumentError hf_token_ids(BigInt[too_large])
+        @test_throws ArgumentError hf_token_ids([0]; vocab_size=too_large)
+        @test_throws ArgumentError hf_token_ids([typemax(Int)])
+        for integer_type in (Int8, Int32, Int128, BigInt)
+            converted = hf_token_ids(
+                reshape(integer_type.([0, 2]), 1, 2);
+                vocab_size=integer_type(3),
+            )
+            @test converted == reshape([1, 3], 1, 2)
+            @test eltype(converted) === Int
+        end
         tokens = reshape(hf_token_ids([0, 4, 12]; vocab_size=13), :, 1)
         trace = hf_qwen3_forward_trace(
             loaded.model,

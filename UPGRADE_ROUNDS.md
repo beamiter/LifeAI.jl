@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the sixty-six follow-up rounds implemented on top of the
+This ledger records the sixty-seven follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -131,6 +131,8 @@ Chapter 03 reproducible-training test.
     rejecting byte counts that overflow even when their parameter totals fit.
 66. Preflight frozen Qwen3-VL context requests before config reads or the
     checkpoint verifier hashes its multi-gigabyte asset set.
+67. Strictly normalize HuggingFace token and vocabulary integers before the
+    zero-to-one-based conversion, rejecting Boolean, overflow, and add-one wrap.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

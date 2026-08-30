@@ -1644,15 +1644,21 @@ Convert HuggingFace's 0-based token ids to LifeAI's public 1-based token ids.
 The array shape is preserved.
 """
 function hf_token_ids(ids::AbstractArray{T}; vocab_size=nothing) where {T<:Integer}
-    all(id -> id >= 0, ids) || throw(ArgumentError("HuggingFace token ids must be non-negative"))
+    values = _strict_host_int_array(ids, "HuggingFace token id")
+    all(id -> id >= 0, values) || throw(ArgumentError(
+        "HuggingFace token ids must be non-negative",
+    ))
+    all(id -> id < typemax(Int), values) || throw(ArgumentError(
+        "HuggingFace token id cannot be incremented within the host integer range",
+    ))
     if vocab_size !== nothing
-        resolved_vocab_size = Int(vocab_size)
+        resolved_vocab_size = _strict_host_int(vocab_size, "vocab_size")
         resolved_vocab_size > 0 || throw(ArgumentError("vocab_size must be positive"))
-        all(id -> id < resolved_vocab_size, ids) || throw(ArgumentError(
+        all(id -> id < resolved_vocab_size, values) || throw(ArgumentError(
             "HuggingFace token id is outside 0:$(resolved_vocab_size - 1)",
         ))
     end
-    return Int.(ids) .+ 1
+    return values .+ 1
 end
 
 """
