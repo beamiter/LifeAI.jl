@@ -170,6 +170,54 @@ mutable struct Qwen3VLStaticKVCache{C}
     rope_delta::Int
     batch_size::Int
     capacity::Int
+
+    function Qwen3VLStaticKVCache(
+        layers,
+        position,
+        rope_delta,
+        batch_size,
+        capacity,
+    )
+        resolved_position = _strict_host_int(
+            position,
+            "Qwen3-VL static cache position",
+        )
+        resolved_rope_delta = _strict_host_int(
+            rope_delta,
+            "Qwen3-VL static cache rope_delta",
+        )
+        resolved_batch = _strict_host_int(
+            batch_size,
+            "Qwen3-VL static cache batch_size",
+        )
+        resolved_capacity = _strict_host_int(
+            capacity,
+            "Qwen3-VL static cache capacity",
+        )
+        resolved_capacity > 0 || throw(ArgumentError(
+            "Qwen3-VL static cache capacity must be positive",
+        ))
+        resolved_position >= 0 || throw(ArgumentError(
+            "Qwen3-VL static cache position must be non-negative",
+        ))
+        resolved_position <= resolved_capacity || throw(ArgumentError(
+            "Qwen3-VL static cache position must not exceed capacity",
+        ))
+        resolved_batch == 1 || throw(ArgumentError(
+            "Qwen3-VL static generation currently supports batch size one",
+        ))
+        resolved_position == 0 && resolved_rope_delta != 0 &&
+            throw(ArgumentError(
+                "an empty Qwen3-VL static cache must have rope_delta == 0",
+            ))
+        return new{typeof(layers)}(
+            layers,
+            resolved_position,
+            resolved_rope_delta,
+            resolved_batch,
+            resolved_capacity,
+        )
+    end
 end
 
 Base.length(cache::Qwen3VLStaticKVCache) = cache.position

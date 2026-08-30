@@ -315,6 +315,8 @@ Chapter 03 reproducible-training test.
      than accepting numerically equal floats, complex values, or missing data.
 157. Seal Qwen3-VL dynamic cache construction behind strict host integers and
      local position, batch, and empty-cache RoPE invariants.
+158. Enforce host-safe Qwen3-VL static cache capacity, position, batch, and
+     empty-state invariants through its sole inferred inner constructor.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

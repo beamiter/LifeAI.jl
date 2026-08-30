@@ -62,6 +62,15 @@ function _ch46_bad_cache_spec(;
     )
 end
 
+function _ch46_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected the test call to fail")
+end
+
 function _ch46_tiny_values(count::Int, offset::Int; scale=0.02f0)
     return Float32[
         scale * sin(0.173f0 * Float32(offset + index))
@@ -213,6 +222,103 @@ function _ch46_assert_prefix(reference, cache, phase::String, tokens::Int)
         @test view(actual.values, :, :, 1:tokens, :) ≈
             expected_value atol=1.0f-6 rtol=1.0f-6
     end
+end
+
+@testset "Chapter 46 — static cache constructor is strict" begin
+    layers = ()
+    cache = Qwen3VLStaticKVCache(
+        layers,
+        Int32(2),
+        Int16(-1),
+        UInt8(1),
+        Int128(4),
+    )
+    @test cache.layers === layers
+    @test cache.position === 2
+    @test cache.rope_delta === -1
+    @test cache.batch_size === 1
+    @test cache.capacity === 4
+    @test length(cache) == 2
+    @test !isempty(cache)
+
+    too_large = big(typemax(Int)) + 1
+    for (position, rope_delta, batch_size, capacity, message) in (
+        (true, 0, 1, 4, "Qwen3-VL static cache position must be an integer"),
+        (0, true, 1, 4, "Qwen3-VL static cache rope_delta must be an integer"),
+        (0, 0, true, 4, "Qwen3-VL static cache batch_size must be an integer"),
+        (0, 0, 1, true, "Qwen3-VL static cache capacity must be an integer"),
+        (
+            too_large,
+            0,
+            1,
+            4,
+            "Qwen3-VL static cache position is outside the host integer range",
+        ),
+        (
+            0,
+            too_large,
+            1,
+            4,
+            "Qwen3-VL static cache rope_delta is outside the host integer range",
+        ),
+        (
+            0,
+            0,
+            too_large,
+            4,
+            "Qwen3-VL static cache batch_size is outside the host integer range",
+        ),
+        (
+            0,
+            0,
+            1,
+            too_large,
+            "Qwen3-VL static cache capacity is outside the host integer range",
+        ),
+        (0, 0, 1, 0, "Qwen3-VL static cache capacity must be positive"),
+        (0, 0, 1, -1, "Qwen3-VL static cache capacity must be positive"),
+        (-1, 0, 1, 4, "Qwen3-VL static cache position must be non-negative"),
+        (
+            5,
+            0,
+            1,
+            4,
+            "Qwen3-VL static cache position must not exceed capacity",
+        ),
+        (
+            0,
+            0,
+            2,
+            4,
+            "Qwen3-VL static generation currently supports batch size one",
+        ),
+        (
+            0,
+            1,
+            1,
+            4,
+            "an empty Qwen3-VL static cache must have rope_delta == 0",
+        ),
+    )
+        failure = _ch46_captured_error() do
+            Qwen3VLStaticKVCache(
+                layers,
+                position,
+                rope_delta,
+                batch_size,
+                capacity,
+            )
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
+    end
+    @test_throws MethodError Qwen3VLStaticKVCache{Tuple{}}(
+        (),
+        false,
+        true,
+        true,
+        false,
+    )
 end
 
 @testset "Chapter 46 — static cache allocation and error contract" begin
