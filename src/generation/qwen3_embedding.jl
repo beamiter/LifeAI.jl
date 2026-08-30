@@ -23,7 +23,24 @@ function qwen3_embedding_query(
 end
 
 function _qwen3_embedding_text_list(texts)
-    values = texts isa AbstractString ? [String(texts)] : String.(collect(texts))
+    if texts isa AbstractString
+        values = [String(texts)]
+    else
+        raw_values = try
+            collect(texts)
+        catch error
+            error isa InterruptException && rethrow()
+            error isa MethodError || rethrow()
+            throw(ArgumentError(
+                "embedding input must be a string or iterable of strings",
+            ))
+        end
+        all(value -> value isa AbstractString, raw_values) ||
+            throw(ArgumentError(
+                "embedding texts must contain only strings",
+            ))
+        values = String.(raw_values)
+    end
     isempty(values) && throw(ArgumentError(
         "embedding input must contain at least one text",
     ))

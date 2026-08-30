@@ -109,6 +109,36 @@ function _embedding_tokenizer_fixture(directory)
     )
 end
 
+@testset "Qwen3 embedding text inputs are strict" begin
+    text = SubString("xhello", 2)
+    @test LifeAI._qwen3_embedding_text_list(text) == ["hello"]
+    @test LifeAI._qwen3_embedding_text_list((text, "world")) ==
+        ["hello", "world"]
+    @test LifeAI._qwen3_embedding_text_list(
+        (value for value in (text, "world")),
+    ) == ["hello", "world"]
+
+    for invalid in (
+        Any["ok", 1],
+        (nothing,),
+        Char['a', 'b'],
+        Dict("key" => "value"),
+    )
+        @test _embedding_argument_error_message() do
+            LifeAI._qwen3_embedding_text_list(invalid)
+        end == "embedding texts must contain only strings"
+    end
+    @test _embedding_argument_error_message() do
+        LifeAI._qwen3_embedding_text_list(1)
+    end == "embedding texts must contain only strings"
+    @test _embedding_argument_error_message() do
+        LifeAI._qwen3_embedding_text_list(String[])
+    end == "embedding input must contain at least one text"
+    @test _embedding_argument_error_message() do
+        LifeAI._qwen3_embedding_text_list([""])
+    end == "embedding texts must not be empty"
+end
+
 @testset "Qwen3 embedding specifications are strict" begin
     strings = ntuple(_ -> SubString("xvalue", 2), 10)
     valid = (
