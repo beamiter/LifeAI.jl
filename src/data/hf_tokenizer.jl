@@ -18,6 +18,57 @@ struct HFAddedToken
     rstrip::Bool
     normalized::Bool
     special::Bool
+
+    function HFAddedToken(
+        id,
+        content,
+        single_word,
+        lstrip,
+        rstrip,
+        normalized,
+        special,
+    )
+        resolved_id = _hf_strict_host_int(id, "added token id")
+        resolved_id > 0 || throw(ArgumentError(
+            "added token id must be positive",
+        ))
+        content isa AbstractString || throw(ArgumentError(
+            "added token content must be a string",
+        ))
+        resolved_content = String(content)
+        isempty(resolved_content) && throw(ArgumentError(
+            "added token content must not be empty",
+        ))
+        single_word isa Bool || throw(ArgumentError(
+            "added token single_word must be Bool",
+        ))
+        lstrip isa Bool || throw(ArgumentError(
+            "added token lstrip must be Bool",
+        ))
+        rstrip isa Bool || throw(ArgumentError(
+            "added token rstrip must be Bool",
+        ))
+        normalized isa Bool || throw(ArgumentError(
+            "added token normalized must be Bool",
+        ))
+        special isa Bool || throw(ArgumentError(
+            "added token special must be Bool",
+        ))
+        !single_word && !lstrip && !rstrip && !normalized ||
+            throw(ArgumentError(
+                "Week 08 only supports Qwen3 added tokens with " *
+                "single_word/lstrip/rstrip/normalized=false",
+            ))
+        return new(
+            resolved_id,
+            resolved_content,
+            single_word,
+            lstrip,
+            rstrip,
+            normalized,
+            special,
+        )
+    end
 end
 
 """Validated sampling and stop-token settings from Qwen3 `generation_config.json`."""
@@ -544,10 +595,6 @@ function _hf_parse_added_tokens(tokenizer_json, model_vocabulary_size::Int, voca
             _hf_required_bool(raw_token, "normalized", "tokenizer.json added token"),
             _hf_required_bool(raw_token, "special", "tokenizer.json added token"),
         )
-        !token.single_word && !token.lstrip && !token.rstrip && !token.normalized ||
-            throw(ArgumentError(
-                "Week 08 only supports Qwen3 added tokens with single_word/lstrip/rstrip/normalized=false",
-            ))
         push!(added_tokens, token)
         push!(seen_contents, content_string)
     end

@@ -4,6 +4,7 @@ using Lux
 using JSON3
 using LifeAI:
     GPTModel,
+    HFAddedToken,
     HFQwen3Tokenizer,
     TrainerGPT,
     apply_qwen3_chat_template,
@@ -29,6 +30,71 @@ using LifeAI:
 
 isdefined(@__MODULE__, :qwen3_tokenizer_fixture_payloads) ||
     include(joinpath(@__DIR__, "..", "..", "..", "support", "qwen3_tokenizer_fixture.jl"))
+
+@testset "Qwen3 added token construction is strict" begin
+    source = "token"
+    token = HFAddedToken(
+        Int32(259),
+        SubString(source, 1, 5),
+        false,
+        false,
+        false,
+        false,
+        true,
+    )
+    @test token.id === 259
+    @test token.content == "token"
+    @test token.content isa String
+    @test token.special
+
+    oversized = big(typemax(Int)) + 1
+    base = (1, "x", false, false, false, false, false)
+    invalid_values = (
+        (Base.setindex(base, true, 1), "added token id must be an integer"),
+        (Base.setindex(base, 1.0, 1), "added token id must be an integer"),
+        (
+            Base.setindex(base, oversized, 1),
+            "added token id is outside the host integer range",
+        ),
+        (Base.setindex(base, 0, 1), "added token id must be positive"),
+        (
+            Base.setindex(base, 42, 2),
+            "added token content must be a string",
+        ),
+        (
+            Base.setindex(base, "", 2),
+            "added token content must not be empty",
+        ),
+    )
+    for (arguments, message) in invalid_values
+        failure = try
+            HFAddedToken(arguments...)
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
+    end
+
+    flag_names = ("single_word", "lstrip", "rstrip", "normalized", "special")
+    for (offset, flag_name) in enumerate(flag_names)
+        arguments = Base.setindex(base, 1, offset + 2)
+        failure = try
+            HFAddedToken(arguments...)
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: added token $flag_name must be Bool"
+    end
+    for position in 3:6
+        arguments = Base.setindex(base, true, position)
+        @test_throws ArgumentError HFAddedToken(arguments...)
+    end
+end
 
 @testset "Qwen3 byte alphabet and imported BPE" begin
     alphabet = hf_byte_unicode_alphabet()

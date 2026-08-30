@@ -381,6 +381,8 @@ Chapter 03 reproducible-training test.
      layer metadata while preserving device arrays and intentional aliases.
 190. Seal imported Qwen3 tokenizer construction behind the validated JSON-loader
      path so converting field constructors cannot forge inconsistent vocabularies.
+191. Seal Qwen3 added-token construction behind positive host ids, non-empty
+     content, literal flags, and the supported byte-BPE behavior subset.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
