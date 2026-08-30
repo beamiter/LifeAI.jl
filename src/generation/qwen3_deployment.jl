@@ -984,6 +984,14 @@ function _qwen3_session_token_vector(session, tokens)
     return values
 end
 
+function _qwen3_session_callback_preflight(callback, label::AbstractString)
+    callback === nothing && return nothing
+    applicable(callback, 1) || throw(ArgumentError(
+        "$label must accept one integer argument",
+    ))
+    return callback
+end
+
 """
     prefill_hf_qwen3_bf16!(session, prompt_tokens)
 
@@ -1001,6 +1009,7 @@ function prefill_hf_qwen3_bf16!(
     length(tokens) <= session.context_tokens || throw(ArgumentError(
         "prompt exceeds the session context_tokens limit",
     ))
+    _qwen3_session_callback_preflight(on_chunk, "on_chunk")
     reset_hf_qwen3_bf16_session!(session)
     logits = nothing
     for first_index in 1:session.prefill_chunk_tokens:length(tokens)
@@ -1204,6 +1213,12 @@ function generate_hf_qwen3_bf16!(
             trace=(),
         )
     end
+
+    _qwen3_session_callback_preflight(on_token, "on_token")
+    _qwen3_session_callback_preflight(
+        on_prefill_chunk,
+        "on_prefill_chunk",
+    )
 
     prefill_started = time_ns()
     logits = prefill_hf_qwen3_bf16!(

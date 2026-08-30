@@ -742,6 +742,59 @@ end
             ),
         )
         @test generation_prefill_positions == [3, 5]
+
+        callback_preflight_state = _qwen3_dense_session_state(session)
+        chunk_callback_failure = _qwen3_deployment_captured_error() do
+            prefill_hf_qwen3_bf16!(
+                session,
+                tokens;
+                on_chunk=42,
+            )
+        end
+        @test chunk_callback_failure isa ArgumentError
+        @test sprint(showerror, chunk_callback_failure) ==
+            "ArgumentError: on_chunk must accept one integer argument"
+        @test isequal(
+            _qwen3_dense_session_state(session),
+            callback_preflight_state,
+        )
+
+        token_callback_failure = _qwen3_deployment_captured_error() do
+            generate_hf_qwen3_bf16!(
+                session,
+                tokens;
+                max_new_tokens=1,
+                strategy=:greedy,
+                stop_token_ids=Int[],
+                on_token=42,
+            )
+        end
+        @test token_callback_failure isa ArgumentError
+        @test sprint(showerror, token_callback_failure) ==
+            "ArgumentError: on_token must accept one integer argument"
+        @test isequal(
+            _qwen3_dense_session_state(session),
+            callback_preflight_state,
+        )
+
+        prefill_callback_failure = _qwen3_deployment_captured_error() do
+            generate_hf_qwen3_bf16!(
+                session,
+                tokens;
+                max_new_tokens=1,
+                strategy=:greedy,
+                stop_token_ids=Int[],
+                on_prefill_chunk=42,
+            )
+        end
+        @test prefill_callback_failure isa ArgumentError
+        @test sprint(showerror, prefill_callback_failure) ==
+            "ArgumentError: on_prefill_chunk must accept one integer argument"
+        @test isequal(
+            _qwen3_dense_session_state(session),
+            callback_preflight_state,
+        )
+
         @test_throws ArgumentError generate_hf_qwen3_bf16!(
             session,
             tokens;
@@ -885,6 +938,8 @@ end
             session,
             tokens;
             max_new_tokens=Int128(0),
+            on_token=42,
+            on_prefill_chunk=42,
         )
         @test isempty(zero.generated_ids)
         @test session.position == 0
