@@ -70,6 +70,12 @@ function _ch45_captured_error(thunk)
     error("expected the test call to fail")
 end
 
+struct _CH45VisionComputePoison end
+
+function Base.getproperty(::_CH45VisionComputePoison, ::Symbol)
+    error("vision compute was touched")
+end
+
 # Mathematical matrix emitted by the exporter's row-major
 # `tiny_values((rows, columns), offset)` construction.
 function _ch45_tiny_hf_matrix(rows::Int, columns::Int, offset::Int; scale=0.02f0)
@@ -579,6 +585,22 @@ end
 end
 
 @testset "Chapter 45 — raw generation options fail before image compute" begin
+    poison = _CH45VisionComputePoison()
+    @test LifeAI._qwen3_vl_generation_vision_features(
+        poison,
+        poison,
+        0,
+    ) === nothing
+    vision_failure = _ch45_captured_error() do
+        LifeAI._qwen3_vl_generation_vision_features(
+            poison,
+            poison,
+            1,
+        )
+    end
+    @test vision_failure isa ErrorException
+    @test occursin("vision compute was touched", sprint(showerror, vision_failure))
+
     tokenizer = _ch45_vl_generation_tokenizer()
     text_parameters = (;
         spec=_CH45_TINY_TEXT_SPEC,

@@ -385,6 +385,26 @@ function _qwen3_vl_generation_process_image(image, processor_spec)
     ))
 end
 
+function _qwen3_vl_generation_vision_features(
+    vision_parameters,
+    processed,
+    max_new_tokens::Int,
+)
+    max_new_tokens == 0 && return nothing
+    vision_dtype = eltype(vision_parameters.patch_weight)
+    to_device = _bf16a_device_mover(vision_parameters.patch_weight)
+    pixels = to_device(vision_dtype.(processed.pixel_values))
+    vision_input = Qwen3VLVisionInput(
+        pixels,
+        processed.grid_thw;
+        spec=vision_parameters.spec,
+    )
+    return hf_qwen3_vl_vision_forward(
+        vision_parameters,
+        vision_input,
+    )
+end
+
 """
     generate_hf_qwen3_vl(vision_parameters, text_parameters, tokenizer,
                          messages; max_new_tokens=32, ...)
@@ -468,16 +488,10 @@ function generate_hf_qwen3_vl(
         checkpoint=text_parameters.checkpoint,
     )
 
-    to_device = _bf16a_device_mover(vision_parameters.patch_weight)
-    pixels = to_device(vision_dtype.(processed.pixel_values))
-    vision_input = Qwen3VLVisionInput(
-        pixels,
-        processed.grid_thw;
-        spec=vision_parameters.spec,
-    )
-    vision_features = hf_qwen3_vl_vision_forward(
+    vision_features = _qwen3_vl_generation_vision_features(
         vision_parameters,
-        vision_input,
+        processed,
+        max_new_tokens,
     )
     generated = generate_hf_qwen3_vl_tokens(
         text_parameters,

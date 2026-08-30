@@ -199,6 +199,9 @@ generation 的轻量分支还把这一策略下推到 cached prefill：不为诊
 embedding，并在 `logits_to_keep=1` 时只截取最后一个 block output token 做 final
 RMSNorm。低层 API 新增 `capture_input_embeddings` / `capture_final_hidden`，默认均为
 `true`，所以直接调用者仍获得完整状态；长 generation benchmark 显式使用轻量模式。
+高层 raw API 在 `max_new_tokens=0` 时仍完成 image geometry、prompt、token 与
+mRoPE 返回合同，但不再上传 pixel tensor 或执行 vision tower；零输出请求不会做
+对结果无贡献的 accelerator vision forward。
 
 `generate_hf_qwen3_vl` 再把高层 raw boundary 串起来：
 
