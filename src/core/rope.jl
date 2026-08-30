@@ -26,19 +26,64 @@ struct RoPE
     sin_cache::Matrix{Float32}
 end
 
+function _rope_positive_host_int(value, label::AbstractString)
+    value isa Integer && !(value isa Bool) || throw(ArgumentError(
+        "`$label` must be an integer",
+    ))
+    resolved = try
+        Int(value)
+    catch error
+        error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
+            rethrow()
+        throw(ArgumentError("`$label` is outside the host integer range"))
+    end
+    resolved > 0 || throw(ArgumentError("`$label` must be positive"))
+    return resolved
+end
+
+function _rope_positive_float32(value, label::AbstractString)
+    value isa Real && !(value isa Bool) || throw(ArgumentError(
+        "`$label` must be a real number",
+    ))
+    resolved = try
+        Float32(value)
+    catch error
+        error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
+            rethrow()
+        throw(ArgumentError("`$label` is not representable as Float32"))
+    end
+    isfinite(resolved) && resolved > 0 || throw(ArgumentError(
+        "`$label` must be positive and finite at Float32 precision",
+    ))
+    return resolved
+end
+
+function _preflight_rope_cache_size(head_dim::Int, max_seq_len::Int)
+    half_dim = BigInt(head_dim ÷ 2)
+    elements = half_dim + 2 * half_dim * BigInt(max_seq_len)
+    bytes = elements * sizeof(Float32)
+    bytes <= typemax(Int) || throw(ArgumentError(
+        "RoPE cache byte count exceeds the host integer range",
+    ))
+    return nothing
+end
+
 function RoPE(
-    head_dim::Int;
-    max_seq_len::Int=2048,
-    theta::Real=10000.0,
+    head_dim;
+    max_seq_len=2048,
+    theta=10000.0,
     style::Symbol=:interleaved,
 )
-    @assert iseven(head_dim) "`head_dim` must be even for RoPE"
-    @assert max_seq_len > 0 "`max_seq_len` must be positive"
-    @assert theta > 0 "`theta` must be positive"
+    resolved_head_dim = _rope_positive_host_int(head_dim, "head_dim")
+    resolved_max_seq_len = _rope_positive_host_int(max_seq_len, "max_seq_len")
+    iseven(resolved_head_dim) || throw(ArgumentError(
+        "`head_dim` must be even for RoPE",
+    ))
+    theta32 = _rope_positive_float32(theta, "theta")
     _validate_rope_style(style)
+    _preflight_rope_cache_size(resolved_head_dim, resolved_max_seq_len)
 
-    theta32 = Float32(theta)
-    half_dim = head_dim ÷ 2
+    half_dim = resolved_head_dim ÷ 2
 
     inv_freq = Vector{Float32}(undef, half_dim)
 
@@ -47,13 +92,19 @@ function RoPE(
         # pair = 2 -> dim index 2
         # pair = 3 -> dim index 4
         dim_index = 2 * (pair - 1)
-        inv_freq[pair] = inv(theta32 ^ (Float32(dim_index) / Float32(head_dim)))
+        frequency = inv(
+            theta32 ^ (Float32(dim_index) / Float32(resolved_head_dim)),
+        )
+        isfinite(frequency) || throw(ArgumentError(
+            "theta produces non-finite RoPE frequencies at Float32 precision",
+        ))
+        inv_freq[pair] = frequency
     end
 
-    cos_cache = Matrix{Float32}(undef, half_dim, max_seq_len)
-    sin_cache = Matrix{Float32}(undef, half_dim, max_seq_len)
+    cos_cache = Matrix{Float32}(undef, half_dim, resolved_max_seq_len)
+    sin_cache = Matrix{Float32}(undef, half_dim, resolved_max_seq_len)
 
-    @inbounds for pos_idx in 1:max_seq_len
+    @inbounds for pos_idx in 1:resolved_max_seq_len
         pos = Float32(pos_idx - 1)
 
         for pair in 1:half_dim
@@ -64,8 +115,8 @@ function RoPE(
     end
 
     return RoPE(
-        head_dim,
-        max_seq_len,
+        resolved_head_dim,
+        resolved_max_seq_len,
         theta32,
         style,
         inv_freq,

@@ -17,7 +17,9 @@
 - Implemented `MultiHeadAttention` with Q/K/V projections, head reshape, causal masking, head merge, and output projection.
 - Implemented `RoPE` with precomputed `cos_cache` / `sin_cache`.
 - Integrated RoPE into `MultiHeadAttention`, applying rotation only to Q/K and leaving V unchanged.
-- Added RoPE tests covering shape, finite values, position-0 identity, pairwise norm preservation, `start_pos`, invalid odd `head_dim`, and mismatched dimensions.
+- Added RoPE tests covering shape, finite values, position-0 identity, pairwise
+  norm preservation, `start_pos`, invalid constructor dimensions/theta/allocation
+  sizes, cross-width integer normalization, and mismatched dimensions.
 - Implemented a minimal GPT-style `TransformerBlock` in `src/core/transformer.jl`.
 
 ## TransformerBlock Design
