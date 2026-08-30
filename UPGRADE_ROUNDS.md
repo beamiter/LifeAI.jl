@@ -397,6 +397,8 @@ Chapter 03 reproducible-training test.
      device while rejecting cross-layer storage reuse at construct and use time.
 198. Bind Qwen3 tool-call values to non-empty names and snapshotted ordered JSON
      arguments so direct construction cannot bypass parser fail-closed behavior.
+199. Reject unknown Qwen3 tokenizer root pipeline fields across generation,
+     embedding, and vision-language profiles with deterministic diagnostics.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

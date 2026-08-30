@@ -457,6 +457,21 @@ function _hf_validate_embedding_post_processor(post_processor)
 end
 
 function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
+    _hf_reject_unknown_fields(
+        tokenizer_json,
+        (
+            "version",
+            "truncation",
+            "padding",
+            "added_tokens",
+            "normalizer",
+            "pre_tokenizer",
+            "post_processor",
+            "decoder",
+            "model",
+        ),
+        "tokenizer.json",
+    )
     _hf_exact_value(tokenizer_json, "version", "1.0", "tokenizer.json")
     _hf_exact_value(tokenizer_json, "truncation", nothing, "tokenizer.json")
     _hf_exact_value(tokenizer_json, "padding", nothing, "tokenizer.json")
