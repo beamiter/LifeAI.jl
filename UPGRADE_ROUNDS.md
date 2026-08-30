@@ -269,6 +269,8 @@ Chapter 03 reproducible-training test.
      consumer boundary instead of coercing Bool or leaking conversion errors.
 134. Strictly validate optional Qwen3 asset-manifest model and revision strings
      while retaining normalized AbstractString compatibility.
+135. Validate Qwen3 INT4 group positivity before modulo or reshape arithmetic,
+     replacing zero-group DivideError leaks with stable argument failures.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -688,6 +688,9 @@ function _grouped_activation_second_moment(
     in_dim::Int,
     group::Int,
 )
+    group > 0 || throw(ArgumentError(
+        "activation second moment group must be positive",
+    ))
     values isa AbstractVector || throw(ArgumentError(
         "activation-aware INT4 calibration requires a second-moment vector",
     ))
@@ -715,20 +718,19 @@ function _quantize_int4_group(
     clip_ratios=_DEFAULT_INT4_MSE_CLIP_RATIOS,
     activation_second_moment=nothing,
 )
-    out_dim, in_dim = size(weight)
-    in_dim % group == 0 || throw(ArgumentError(
-        "input dimension $in_dim is not divisible by group $group",
-    ))
-    iseven(group) || throw(ArgumentError("group size must be even"))
     spec = LinearQuantizationSpec(
         :int4;
         group,
         calibration,
         clip_ratios,
     )
+    out_dim, in_dim = size(weight)
+    in_dim % spec.group == 0 || throw(ArgumentError(
+        "input dimension $in_dim is not divisible by group $(spec.group)",
+    ))
     w = Float32.(weight)
-    groups = in_dim ÷ group
-    grouped = reshape(w, out_dim, group, groups)
+    groups = in_dim ÷ spec.group
+    grouped = reshape(w, out_dim, spec.group, groups)
     grouped_activation_moment = if spec.calibration === :activation_mse
         activation_second_moment === nothing && throw(ArgumentError(
             "activation-aware INT4 calibration requires activation statistics",
@@ -736,7 +738,7 @@ function _quantize_int4_group(
         _grouped_activation_second_moment(
             activation_second_moment,
             in_dim,
-            group,
+            spec.group,
         )
     else
         activation_second_moment === nothing || throw(ArgumentError(

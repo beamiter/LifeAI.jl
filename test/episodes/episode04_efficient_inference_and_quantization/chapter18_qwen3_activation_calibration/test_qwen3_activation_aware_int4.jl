@@ -267,6 +267,12 @@ end
         )
     end ==
           "activation second moment must be finite and non-negative at Float32 precision"
+    @test _activation_calibration_argument_error_message() do
+        LifeAI._grouped_activation_second_moment(ones(Float32, 16), 16, 0)
+    end == "activation second moment group must be positive"
+    @test _activation_calibration_argument_error_message() do
+        LifeAI._quantize_int4_group(weight; group=0)
+    end == "quantization group must be positive"
 
     @test_throws ArgumentError LifeAI._quantize_int4_group(
         weight;
