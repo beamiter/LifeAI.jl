@@ -217,6 +217,13 @@ struct _HFQwen3BF16XLASessionValidated end
 const _HF_QWEN3_BF16_XLA_SESSION_VALIDATED =
     _HFQwen3BF16XLASessionValidated()
 
+struct _HFQwen3BF16XLASourceSignature
+    eos_ids::Tuple
+    temperature::Float32
+    top_k::Int
+    top_p::Float32
+end
+
 struct _HFQwen3BF16XLASessionContract
     model::Any
     parameters::Any
@@ -232,6 +239,7 @@ struct _HFQwen3BF16XLASessionContract
     context_tokens::Int
     prefill_chunk_tokens::Int
     sample_top_k::Int
+    source_signature::_HFQwen3BF16XLASourceSignature
 end
 
 mutable struct HFQwen3BF16XLASession
@@ -350,7 +358,7 @@ function _qwen3_xla_session_metadata(
     )
 end
 
-function _qwen3_xla_validate_session_sources(
+function _qwen3_xla_session_source_signature(
     tokenizer,
     generation_config,
     strategy::Symbol,
@@ -359,28 +367,36 @@ function _qwen3_xla_validate_session_sources(
     hasproperty(tokenizer, :eos_ids) || throw(ArgumentError(
         "Qwen3 XLA session tokenizer must expose an :eos_ids field",
     ))
-    _qwen3_stop_token_set(tokenizer.eos_ids, vocab_size)
+    eos_ids = Tuple(vec(_strict_host_int_array(
+        tokenizer.eos_ids,
+        "Qwen3 XLA session tokenizer EOS token",
+    )))
+    _qwen3_stop_token_set(eos_ids, vocab_size)
     for name in (:temperature, :top_k, :top_p)
         hasproperty(generation_config, name) || throw(ArgumentError(
             "Qwen3 XLA session generation_config must expose a " *
             "$(repr(name)) field",
         ))
     end
-    if strategy === :sample
-        _qwen3_session_sampling_options(
-            generation_config.temperature,
-            generation_config.top_k,
-            generation_config.top_p,
-        )
-    elseif strategy === :device_sample
+    options = _qwen3_session_sampling_options(
+        generation_config.temperature,
+        generation_config.top_k,
+        generation_config.top_p,
+    )
+    if strategy === :device_sample
         _validate_device_sampling_options(;
-            temperature=generation_config.temperature,
-            top_k=generation_config.top_k,
-            top_p=generation_config.top_p,
+            temperature=options.temperature,
+            top_k=options.top_k,
+            top_p=options.top_p,
             vocab_size,
         )
     end
-    return nothing
+    return _HFQwen3BF16XLASourceSignature(
+        eos_ids,
+        options.temperature,
+        options.top_k,
+        options.top_p,
+    )
 end
 
 function _qwen3_xla_session_array(
@@ -495,6 +511,7 @@ function _qwen3_xla_session_contract(
     compiled_prefill,
     compiled_decode,
     metadata,
+    source_signature,
 )
     return _HFQwen3BF16XLASessionContract(
         model,
@@ -511,6 +528,7 @@ function _qwen3_xla_session_contract(
         metadata.context_tokens,
         metadata.prefill_chunk_tokens,
         metadata.sample_top_k,
+        source_signature,
     )
 end
 
@@ -553,17 +571,26 @@ function _qwen3_xla_validate_session_contract(
                 "Qwen3 XLA session $(String(name)) changed after compilation",
             ))
     end
-    return metadata
-end
-
-function _qwen3_xla_validate_session(session::HFQwen3BF16XLASession)
-    metadata = _qwen3_xla_validate_session_contract(session)
-    _qwen3_xla_validate_session_sources(
+    source_signature = _qwen3_xla_session_source_signature(
         session.tokenizer,
         session.generation_config,
         metadata.strategy,
         metadata.vocab_size,
     )
+    expected_signature = contract.source_signature
+    source_signature.eos_ids == expected_signature.eos_ids &&
+        isequal(source_signature.temperature, expected_signature.temperature) &&
+        source_signature.top_k == expected_signature.top_k &&
+        isequal(source_signature.top_p, expected_signature.top_p) ||
+        throw(ArgumentError(
+            "Qwen3 XLA session tokenizer or generation metadata changed " *
+            "after compilation",
+        ))
+    return metadata
+end
+
+function _qwen3_xla_validate_session(session::HFQwen3BF16XLASession)
+    _qwen3_xla_validate_session_contract(session)
     _qwen3_xla_validate_session_storage(
         session.model,
         session.cos_table,
@@ -614,7 +641,7 @@ function HFQwen3BF16XLASession(;
     compiled_decode === nothing && throw(ArgumentError(
         "Qwen3 XLA session must provide compiled_decode",
     ))
-    _qwen3_xla_validate_session_sources(
+    source_signature = _qwen3_xla_session_source_signature(
         tokenizer,
         generation_config,
         metadata.strategy,
@@ -640,6 +667,7 @@ function HFQwen3BF16XLASession(;
         compiled_prefill,
         compiled_decode,
         metadata,
+        source_signature,
     )
     return HFQwen3BF16XLASession(
         _HF_QWEN3_BF16_XLA_SESSION_VALIDATED,
@@ -962,6 +990,12 @@ function load_hf_qwen3_bf16_xla_session(
         top_k_static,
         0,
     )
+    source_signature = _qwen3_xla_session_source_signature(
+        tokenizer,
+        generation_config,
+        metadata.strategy,
+        metadata.vocab_size,
+    )
     _qwen3_xla_validate_session_storage(
         model,
         cos_table,
@@ -982,6 +1016,7 @@ function load_hf_qwen3_bf16_xla_session(
         compiled_prefill,
         compiled_decode,
         metadata,
+        source_signature,
     )
     session = HFQwen3BF16XLASession(
         _HF_QWEN3_BF16_XLA_SESSION_VALIDATED,

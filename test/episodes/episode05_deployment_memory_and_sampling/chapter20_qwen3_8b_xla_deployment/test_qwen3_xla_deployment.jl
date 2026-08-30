@@ -38,6 +38,16 @@ end
 (double::_Qwen3XLACallbackDouble)(arguments...) =
     double.callback(arguments...)
 
+mutable struct _Qwen3XLATokenizerDouble
+    eos_ids::Vector{Int}
+end
+
+mutable struct _Qwen3XLAGenerationConfigDouble
+    temperature::Float32
+    top_k::Int
+    top_p::Float32
+end
+
 function _qwen3_xla_session_double_fields(
     compiled_prefill,
     compiled_decode;
@@ -60,12 +70,8 @@ function _qwen3_xla_session_double_fields(
     return (;
         model,
         parameters=(; callback_double=true),
-        tokenizer=(; eos_ids=Int[]),
-        generation_config=(;
-            temperature=1.0f0,
-            top_k=1,
-            top_p=1.0f0,
-        ),
+        tokenizer=_Qwen3XLATokenizerDouble([15, 16]),
+        generation_config=_Qwen3XLAGenerationConfigDouble(1.0f0, 1, 1.0f0),
         cos_table=zeros(BFloat16, model.head_dim ÷ 2, context_tokens),
         sin_table=zeros(BFloat16, model.head_dim ÷ 2, context_tokens),
         key_caches,
@@ -1060,6 +1066,10 @@ end
             session.value_caches[1],
             session.value_caches[1],
         )),
+        session -> (session.tokenizer.eos_ids[1] = 14),
+        session -> (session.generation_config.temperature = 0.5f0),
+        session -> (session.generation_config.top_k = 2),
+        session -> (session.generation_config.top_p = 0.9f0),
     )
     for mutate! in mutation_cases
         prefill_reached = Ref(false)
@@ -1082,7 +1092,6 @@ end
                 session,
                 [2, 3];
                 max_new_tokens=1,
-                stop_token_ids=Int[],
             )
         end
         @test failure isa Union{ArgumentError,DimensionMismatch}
@@ -1102,43 +1111,71 @@ end
     reset_prefill = _Qwen3XLACallbackDouble(_ -> error("must not prefill"))
     reset_decode = _Qwen3XLACallbackDouble(_ -> error("must not decode"))
     reset_session = _qwen3_xla_session_double(reset_prefill, reset_decode)
-    reset_session.strategy = :sample
+    reset_session.tokenizer.eos_ids[1] = 14
     reset_failure = _qwen3_xla_captured_error() do
         LifeAI.reset_hf_qwen3_bf16_xla_session!(reset_session)
     end
     @test reset_failure isa ArgumentError
+    @test occursin(
+        "tokenizer or generation metadata changed after compilation",
+        sprint(showerror, reset_failure),
+    )
     @test reset_session.position == 7
 
-    prefill_calls = Ref(0)
-    decode_calls = Ref(0)
-    compiled_prefill = _Qwen3XLACallbackDouble() do _...
-        prefill_calls[] += 1
-        return Int[3], nothing
-    end
-    compiled_decode = _Qwen3XLACallbackDouble() do _...
-        decode_calls[] += 1
-        return Int[4], nothing
-    end
-    callback_session = _qwen3_xla_session_double(
-        compiled_prefill,
-        compiled_decode;
-        context_tokens=4,
-        prefill_chunk_tokens=2,
-        position=4,
+    callback_mutations = (
+        (source=false, mutate=session -> (session.prefill_chunk_tokens = 1)),
+        (source=true, mutate=session -> (
+            session.generation_config.top_p = 0.9f0
+        )),
     )
-    callback_failure = _qwen3_xla_captured_error() do
-        generate_hf_qwen3_bf16_xla!(
-            callback_session,
-            [2];
-            max_new_tokens=2,
-            stop_token_ids=Int[],
-            on_token=_ -> (callback_session.prefill_chunk_tokens = 1),
+    for case in callback_mutations
+        prefill_calls = Ref(0)
+        decode_calls = Ref(0)
+        compiled_prefill = _Qwen3XLACallbackDouble() do _...
+            prefill_calls[] += 1
+            return Int[3], nothing
+        end
+        compiled_decode = _Qwen3XLACallbackDouble() do _...
+            decode_calls[] += 1
+            return Int[4], nothing
+        end
+        callback_session = _qwen3_xla_session_double(
+            compiled_prefill,
+            compiled_decode;
+            context_tokens=4,
+            prefill_chunk_tokens=2,
+            position=4,
+        )
+        key_snapshot = map(copy, callback_session.key_caches)
+        value_snapshot = map(copy, callback_session.value_caches)
+        callback_failure = _qwen3_xla_captured_error() do
+            generate_hf_qwen3_bf16_xla!(
+                callback_session,
+                [2];
+                max_new_tokens=2,
+                stop_token_ids=Int[],
+                on_token=_ -> case.mutate(callback_session),
+            )
+        end
+        @test callback_failure isa ArgumentError
+        if case.source
+            @test occursin(
+                "tokenizer or generation metadata changed after compilation",
+                sprint(showerror, callback_failure),
+            )
+        end
+        @test callback_session.position == 2
+        @test prefill_calls[] == 1
+        @test decode_calls[] == 0
+        @test all(
+            callback_session.key_caches[index] == key_snapshot[index]
+            for index in eachindex(key_snapshot)
+        )
+        @test all(
+            callback_session.value_caches[index] == value_snapshot[index]
+            for index in eachindex(value_snapshot)
         )
     end
-    @test callback_failure isa ArgumentError
-    @test callback_session.position == 2
-    @test prefill_calls[] == 1
-    @test decode_calls[] == 0
 end
 
 @testset "XLA generated tokens cross a strict scalar host boundary" begin
