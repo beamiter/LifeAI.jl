@@ -343,6 +343,8 @@ Chapter 03 reproducible-training test.
      stored Float32 domain so precision rounding cannot admit out-of-range data.
 171. Canonicalize duplicate Qwen3 JSON keys with CPython last-value semantics
      while preserving first insertion position across parsing and rendering.
+172. Parse stringified Qwen3 text and VL tool arguments as JSON objects before
+     canonical Python-style rendering, closing malformed and duplicate-key bypasses.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

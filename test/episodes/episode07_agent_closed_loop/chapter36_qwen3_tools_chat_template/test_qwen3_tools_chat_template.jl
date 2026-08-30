@@ -148,6 +148,37 @@ end
     end
 end
 
+@testset "Chapter 36 — stringified tool arguments are canonical JSON objects" begin
+    template = read(joinpath(CHAPTER36_FIXTURES, "official_chat_template.jinja"), String)
+    mktempdir() do directory
+        tokenizer = chapter36_official_template_tokenizer(directory, template)
+        call(arguments) = [(
+            role="assistant",
+            content="",
+            tool_calls=[(; name="add", arguments)],
+        )]
+
+        @test apply_qwen3_chat_template(
+            tokenizer,
+            call("{ \"a\": 1, \"b\": 2, \"a\": 3 }");
+            add_generation_prompt=false,
+        ) == "<|im_start|>assistant\n" *
+             "<tool_call>\n{\"name\": \"add\", \"arguments\": {\"a\": 3, \"b\": 2}}\n" *
+             "</tool_call><|im_end|>\n"
+
+        @test_throws ArgumentError apply_qwen3_chat_template(
+            tokenizer,
+            call("not JSON");
+            add_generation_prompt=false,
+        )
+        @test_throws ArgumentError apply_qwen3_chat_template(
+            tokenizer,
+            call("[1, 2]");
+            add_generation_prompt=false,
+        )
+    end
+end
+
 @testset "Chapter 36 — CPython-compatible JSON rendering" begin
     render = LifeAI._python_json_text
     @test render((; a=1, b="x")) == "{\"a\": 1, \"b\": \"x\"}"

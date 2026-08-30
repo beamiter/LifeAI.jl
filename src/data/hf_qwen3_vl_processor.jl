@@ -1153,8 +1153,7 @@ function _qwen3_vl_render_chat_template(
                 (position > 1 || _qwen3_vl_content_truthy(raw)) && print(output, "\n")
                 name, arguments = _qwen3_tool_call_fields(call)
                 print(output, "<tool_call>\n{\"name\": \"", name, "\", \"arguments\": ")
-                arguments isa AbstractString ? print(output, arguments) :
-                    _python_json(output, arguments)
+                _python_json(output, _qwen3_tool_call_arguments(arguments))
                 print(output, "}\n</tool_call>")
             end
             print(output, "<|im_end|>\n")

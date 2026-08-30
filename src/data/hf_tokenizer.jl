@@ -1724,6 +1724,23 @@ function _qwen3_tool_call_fields(call)
     return String(name), arguments
 end
 
+function _qwen3_tool_call_arguments(arguments)
+    arguments isa AbstractString || return arguments
+    parsed = try
+        parse_qwen3_json(arguments)
+    catch error
+        error isa ArgumentError || rethrow()
+        throw(ArgumentError(
+            "tool call string `arguments` must contain valid JSON: " *
+            sprint(showerror, error),
+        ))
+    end
+    parsed isa OrderedJSONObject || throw(ArgumentError(
+        "tool call string `arguments` must contain a JSON object",
+    ))
+    return parsed
+end
+
 const _QWEN3_TOOL_HEADER = "# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>"
 const _QWEN3_TOOL_FOOTER = "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n"
 
@@ -1802,11 +1819,7 @@ function apply_qwen3_chat_template(
                 (position > 1 || !isempty(content)) && print(output, "\n")
                 name, arguments = _qwen3_tool_call_fields(call)
                 print(output, "<tool_call>\n{\"name\": \"", name, "\", \"arguments\": ")
-                if arguments isa AbstractString
-                    print(output, arguments)
-                else
-                    _python_json(output, arguments)
-                end
+                _python_json(output, _qwen3_tool_call_arguments(arguments))
                 print(output, "}\n</tool_call>")
             end
             print(output, "<|im_end|>\n")

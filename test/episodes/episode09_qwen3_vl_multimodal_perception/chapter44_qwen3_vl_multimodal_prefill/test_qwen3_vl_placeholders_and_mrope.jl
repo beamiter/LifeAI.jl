@@ -141,6 +141,30 @@ end
     ])
 end
 
+@testset "Chapter 44 — stringified tool arguments are canonical JSON objects" begin
+    call(arguments) = [(
+        role="assistant",
+        content="",
+        tool_calls=[(; name="add", arguments)],
+    )]
+
+    @test apply_qwen3_vl_chat_template(
+        call("{ \"a\": 1, \"b\": 2, \"a\": 3 }");
+        add_generation_prompt=false,
+    ) == "<|im_start|>assistant\n" *
+         "<tool_call>\n{\"name\": \"add\", \"arguments\": {\"a\": 3, \"b\": 2}}\n" *
+         "</tool_call><|im_end|>\n"
+
+    @test_throws ArgumentError apply_qwen3_vl_chat_template(
+        call("not JSON");
+        add_generation_prompt=false,
+    )
+    @test_throws ArgumentError apply_qwen3_vl_chat_template(
+        call("[1, 2]");
+        add_generation_prompt=false,
+    )
+end
+
 @testset "Chapter 44 — per-image placeholder expansion" begin
     image_pad = "<|image_pad|>"
     prompt = "A$(image_pad)B$(image_pad)C"
