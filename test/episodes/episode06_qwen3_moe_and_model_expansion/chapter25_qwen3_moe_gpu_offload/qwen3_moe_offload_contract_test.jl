@@ -36,6 +36,16 @@ const QWEN3_MOE_TINY_OFFLOAD_FIXTURE = joinpath(
     @test plan.working_set_floor_bytes == 7_694_348_288
     @test plan.working_set_floor_bytes < 8 * 2^30
 
+    routed_floor = qwen3_moe_offload_plan(
+        model,
+        40_960;
+        max_active_experts=model.experts_per_token,
+    )
+    @test model.experts_per_token == 8
+    @test routed_floor.max_active_experts == 8
+    @test routed_floor.active_expert_layer_bytes == 75_497_472
+    @test routed_floor.working_set_floor_bytes == 6_561_886_208
+
     routes = Int32[5 2 8; 2 5 2]
     remapped = LifeAI._qwen3_local_expert_routes(routes, 8)
     @test remapped.active_experts == [2, 5, 8]
@@ -47,6 +57,11 @@ const QWEN3_MOE_TINY_OFFLOAD_FIXTURE = joinpath(
         model,
         40_960;
         max_active_experts=129,
+    )
+    @test_throws ArgumentError qwen3_moe_offload_plan(
+        model,
+        40_960;
+        max_active_experts=model.experts_per_token - 1,
     )
 
     overflow_width = isqrt(typemax(Int)) + 1

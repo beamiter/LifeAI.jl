@@ -19,8 +19,10 @@ _qwen3_moe_tree_bytes(x) = 0
 
 Estimate the irreducible BF16 device payload for a Qwen3 MoE offload session.
 The estimate includes resident attention/router/norm/LM-head parameters, a
-static KV cache and at most `max_active_experts` experts for one layer. It does
-not include allocator slack, attention scores or grouped-dispatch workspace.
+static KV cache and at most `max_active_experts` experts for one layer. The
+expert allowance cannot be smaller than the model's per-token routing width.
+It does not include allocator slack, attention scores or grouped-dispatch
+workspace.
 """
 function qwen3_moe_offload_plan(
     model::GPTModel,
@@ -38,8 +40,9 @@ function qwen3_moe_offload_plan(
         "context_tokens must be in 1:model.max_seq_len",
     ))
     batch > 0 || throw(ArgumentError("batch_size must be positive"))
-    1 <= active <= model.num_experts || throw(ArgumentError(
-        "max_active_experts must be in 1:model.num_experts",
+    model.experts_per_token <= active <= model.num_experts || throw(ArgumentError(
+        "max_active_experts must be in " *
+        "model.experts_per_token:model.num_experts",
     ))
     bytes > 0 || throw(ArgumentError("dtype_bytes must be positive"))
 
