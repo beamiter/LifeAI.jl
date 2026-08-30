@@ -79,6 +79,8 @@ revision `78448d793a7eb2f7a987a1da76d464384aa1becd`。ModelScope 的移动分支
 `false/true`；整数及 mRoPE section 的宿主范围转换同样 fail closed。config
 还严格检查 mRoPE、DeepStack indexes、special ids、tied head 和 text/vision
 width 接口，未知字段或 shape 漂移直接拒绝。
+请求的 runtime context 会在读取 config 前按冻结的 `262,144` 上限规范化，完整
+checkpoint verifier 也在检查或哈希 4.25 GB 资产前执行同一预检。
 
 通用规格的参数量公式与 tensor-shape 合同也保持一致：若 text tower 使用独立
 LM head，`qwen3_vl_parameter_count` 会额外计入完整 vocabulary projection；

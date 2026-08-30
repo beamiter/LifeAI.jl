@@ -12,7 +12,8 @@ using LifeAI: Qwen3VLCheckpointSpec,
     qwen3_vl_checkpoint_spec,
     qwen3_vl_expected_tensor_shapes,
     qwen3_vl_parameter_count,
-    qwen3_vl_processor_spec
+    qwen3_vl_processor_spec,
+    verify_qwen3_vl_checkpoint
 
 const _CH43_VL_FIXTURES = joinpath(@__DIR__, "fixtures")
 const _CH43_VL_CONFIG = joinpath(_CH43_VL_FIXTURES, "config.json")
@@ -42,6 +43,15 @@ function _ch43_load_mutated_processor(mutator)
         close(io)
         load_hf_qwen3_vl_processor_config(path)
     end
+end
+
+function _ch43_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected Qwen3-VL call to fail")
 end
 
 @testset "Qwen3-VL frozen checkpoint and tensor contract" begin
@@ -427,6 +437,58 @@ end
     @test _qwen3_vl_vision_reference_sha256(:bfloat16) ==
         "ecd904b8a110169c73c9814d23d43eabcc5a2593d0a746bbbda8bb9c308b36b8"
     @test_throws ArgumentError _qwen3_vl_vision_reference_sha256("float16")
+end
+
+@testset "Qwen3-VL context requests fail before checkpoint I/O" begin
+    mktempdir() do directory
+        config_path = joinpath(directory, "config.json")
+        too_large = big(typemax(Int)) + 1
+        for (value, message) in (
+            true => "max_seq_len must be an integer",
+            0 => "max_seq_len must be positive",
+            too_large => "max_seq_len is outside the host integer range",
+            262_145 => "max_seq_len must be in 1:262144; got 262145",
+        )
+            for request in (
+                () -> load_hf_qwen3_vl_config(
+                    config_path;
+                    max_seq_len=value,
+                ),
+                () -> verify_qwen3_vl_checkpoint(
+                    directory;
+                    max_seq_len=value,
+                ),
+            )
+                failure = _ch43_captured_error(request)
+                @test failure isa ArgumentError
+                @test sprint(showerror, failure) == "ArgumentError: $message"
+            end
+        end
+
+        config_io_failure = _ch43_captured_error() do
+            load_hf_qwen3_vl_config(
+                config_path;
+                max_seq_len=Int32(4_096),
+            )
+        end
+        @test config_io_failure isa ArgumentError
+        @test occursin(
+            "JSON file does not exist",
+            sprint(showerror, config_io_failure),
+        )
+
+        asset_io_failure = _ch43_captured_error() do
+            verify_qwen3_vl_checkpoint(
+                directory;
+                max_seq_len=big(4_096),
+            )
+        end
+        @test asset_io_failure isa ArgumentError
+        @test occursin(
+            "required Qwen3-VL asset does not exist",
+            sprint(showerror, asset_io_failure),
+        )
+    end
 end
 
 @testset "Qwen3-VL strict nested config" begin

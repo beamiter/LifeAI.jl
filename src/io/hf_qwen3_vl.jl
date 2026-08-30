@@ -407,6 +407,16 @@ const _QWEN3_VL_VISION_FIELDS = (
     "temporal_patch_size",
 )
 
+function _qwen3_vl_requested_max_seq_len(value)
+    requested = _qwen3_requested_max_seq_len(value)
+    requested === nothing && return nothing
+    maximum = qwen3_vl_checkpoint_spec().text.max_position_embeddings
+    requested <= maximum || throw(ArgumentError(
+        "max_seq_len must be in 1:$maximum; got $requested",
+    ))
+    return requested
+end
+
 """
     load_hf_qwen3_vl_config(path; max_seq_len=nothing)
 
@@ -420,6 +430,7 @@ function load_hf_qwen3_vl_config(
     path::AbstractString;
     max_seq_len=nothing,
 )
+    requested_max_seq_len = _qwen3_vl_requested_max_seq_len(max_seq_len)
     spec = qwen3_vl_checkpoint_spec()
     config = _json_object(path)
     _qwen3_vl_exact_keys(config, _QWEN3_VL_ROOT_FIELDS, path)
@@ -607,16 +618,8 @@ function load_hf_qwen3_vl_config(
             "spatial merger input must equal vision intermediate_size",
         ))
 
-    resolved_max_seq_len = if max_seq_len === nothing
-        text_spec.max_position_embeddings
-    else
-        _strict_host_int(max_seq_len, "max_seq_len")
-    end
-    1 <= resolved_max_seq_len <= text_spec.max_position_embeddings ||
-        throw(ArgumentError(
-            "max_seq_len must be in 1:$(text_spec.max_position_embeddings); " *
-            "got $resolved_max_seq_len",
-        ))
+    resolved_max_seq_len = requested_max_seq_len === nothing ?
+        text_spec.max_position_embeddings : requested_max_seq_len
 
     return (;
         variant=spec.variant,
@@ -932,6 +935,7 @@ function verify_qwen3_vl_checkpoint(
     model_dir::AbstractString;
     max_seq_len=nothing,
 )
+    requested_max_seq_len = _qwen3_vl_requested_max_seq_len(max_seq_len)
     isdir(model_dir) || throw(ArgumentError(
         "Qwen3-VL model directory does not exist: $model_dir",
     ))
@@ -967,7 +971,7 @@ function verify_qwen3_vl_checkpoint(
 
     config = load_hf_qwen3_vl_config(
         joinpath(model_dir, "config.json");
-        max_seq_len,
+        max_seq_len=requested_max_seq_len,
     )
     expected = qwen3_vl_expected_tensor_shapes(spec)
     reader = open_safetensors_reader(joinpath(model_dir, "model.safetensors"))
