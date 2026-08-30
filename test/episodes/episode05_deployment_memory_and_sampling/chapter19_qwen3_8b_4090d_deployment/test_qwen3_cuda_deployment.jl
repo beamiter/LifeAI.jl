@@ -494,6 +494,47 @@ end
         @test sampled.generated_ids == sampled_repeat.generated_ids
         @test callback_ids == sampled.generated_ids
 
+        preserved_sampling_position = session.position
+        invalid_sampling_options = (
+            (; temperature=true, top_k=5, top_p=0.8),
+            (;
+                temperature=big(floatmax(Float32)) * 2,
+                top_k=5,
+                top_p=0.8,
+            ),
+            (; temperature=0.7, top_k=true, top_p=0.8),
+            (; temperature=0.7, top_k=too_large, top_p=0.8),
+            (; temperature=0.7, top_k=5, top_p=true),
+            (; temperature=0.7, top_k=5, top_p=big"1e-1000"),
+        )
+        for options in invalid_sampling_options
+            @test_throws ArgumentError generate_hf_qwen3_bf16!(
+                session,
+                tokens;
+                max_new_tokens=4,
+                strategy=:sample,
+                options...,
+                stop_token_ids=Int[],
+            )
+            @test session.position == preserved_sampling_position
+        end
+
+        wide_sample = generate_hf_qwen3_bf16!(
+            session,
+            tokens;
+            max_new_tokens=1,
+            strategy=:sample,
+            temperature=Float64(0.7),
+            top_k=Int128(5),
+            top_p=Float64(0.8),
+            rng=Xoshiro(91),
+            stop_token_ids=Int[],
+        )
+        @test length(wide_sample.generated_ids) == 1
+        @test only(wide_sample.trace).temperature isa Float32
+        @test only(wide_sample.trace).top_k === 5
+        @test only(wide_sample.trace).top_p isa Float32
+
         preserved_position = session.position
         for invalid_stops in (Bool[true], BigInt[too_large])
             @test_throws ArgumentError generate_hf_qwen3_bf16!(

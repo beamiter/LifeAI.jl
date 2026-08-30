@@ -106,6 +106,9 @@ dense generation 的 `max_new_tokens` 也在预算运算前严格归一，合法
 - 64-token 分块 prefill，把一次性平方级 attention workspace 限定在
   `chunk × current_prefix`，同时保持因果语义。
 - EOS 提前停止、greedy 与 temperature/top-k/top-p sampling。
+- sampled session 在 prefill 前严格规范化 temperature/top-k/top-p；
+  Boolean、宿主整数溢出或 Float32 精度下溢出/上溢都不会改写
+  可复用 KV cache 的 position。
 - chat template、thinking 开关和多轮 history；超预算时保留 system 与
   最新请求，按最老 user/assistant turn pair 裁剪。
 - 单 prompt / 交互 CLI：
@@ -134,7 +137,7 @@ context 与等待时间。
 
 ### 离线
 
-- Chapter 19 专项：`80 / 80`。
+- Chapter 19 专项：`160 / 160`。
 - 默认完整套件：`5,275 / 5,275`。
 - 分块 prefill 的末位置 logits、下一 token decode logits、4-step greedy
   与既有 BF16 accel 路径逐值相同。

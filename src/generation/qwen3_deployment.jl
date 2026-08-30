@@ -632,6 +632,40 @@ function _qwen3_session_strategy(
         (session.generation_config.do_sample ? :sample : :greedy) : strategy
 end
 
+function _qwen3_session_sampling_options(temperature, top_k, top_p)
+    temperature isa Real && !(temperature isa Bool) || throw(ArgumentError(
+        "temperature must be a real number other than Bool",
+    ))
+    isfinite(temperature) && temperature > 0 || throw(ArgumentError(
+        "temperature must be finite and positive",
+    ))
+    resolved_temperature = Float32(temperature)
+    isfinite(resolved_temperature) && resolved_temperature > 0 ||
+        throw(ArgumentError(
+            "temperature must remain finite and positive at Float32 " *
+            "sampling precision",
+        ))
+
+    resolved_top_k = _strict_host_int(top_k, "top_k")
+    resolved_top_k > 0 || throw(ArgumentError("top_k must be positive"))
+
+    top_p isa Real && !(top_p isa Bool) || throw(ArgumentError(
+        "top_p must be a real number other than Bool",
+    ))
+    isfinite(top_p) && 0 < top_p <= 1 || throw(ArgumentError(
+        "top_p must be finite and in (0, 1]",
+    ))
+    resolved_top_p = Float32(top_p)
+    isfinite(resolved_top_p) && resolved_top_p > 0 || throw(ArgumentError(
+        "top_p must remain finite and positive at Float32 sampling precision",
+    ))
+    return (;
+        temperature=resolved_temperature,
+        top_k=resolved_top_k,
+        top_p=resolved_top_p,
+    )
+end
+
 function _qwen3_session_choice(
     logits,
     host,
@@ -689,17 +723,14 @@ function generate_hf_qwen3_bf16!(
     resolved_top_k = top_k === nothing ? session.generation_config.top_k : top_k
     resolved_top_p = top_p === nothing ? session.generation_config.top_p : top_p
     if resolved_strategy === :sample
-        resolved_temperature isa Real && isfinite(resolved_temperature) &&
-            resolved_temperature > 0 || throw(ArgumentError(
-                "temperature must be finite and positive",
-            ))
-        resolved_top_k isa Integer && resolved_top_k > 0 || throw(ArgumentError(
-            "top_k must be positive",
-        ))
-        resolved_top_p isa Real && isfinite(resolved_top_p) &&
-            0 < resolved_top_p <= 1 || throw(ArgumentError(
-                "top_p must be finite and in (0, 1]",
-            ))
+        options = _qwen3_session_sampling_options(
+            resolved_temperature,
+            resolved_top_k,
+            resolved_top_p,
+        )
+        resolved_temperature = options.temperature
+        resolved_top_k = options.top_k
+        resolved_top_p = options.top_p
     end
     raw_stop_token_ids = stop_token_ids === nothing ?
         session.tokenizer.eos_ids : stop_token_ids
