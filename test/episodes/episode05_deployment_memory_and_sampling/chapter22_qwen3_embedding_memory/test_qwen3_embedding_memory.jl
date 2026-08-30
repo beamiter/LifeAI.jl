@@ -439,6 +439,30 @@ end
             end == message
         end
     end
+
+    for (value, message) in (
+        (true, "embedding <|endoftext|> id must be an integer"),
+        (
+            big(typemax(Int)) + 1,
+            "embedding <|endoftext|> id must be an integer",
+        ),
+        (
+            typemax(Int),
+            "embedding <|endoftext|> id is outside the one-based token id range",
+        ),
+        (-1, "embedding <|endoftext|> id must be non-negative"),
+    )
+        mktempdir() do directory
+            payloads = _embedding_tokenizer_payloads()
+            payloads.tokenizer["post_processor"]["processors"][2][
+                "special_tokens"
+            ]["<|endoftext|>"]["ids"] = Any[value]
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            @test _embedding_argument_error_message() do
+                load_hf_qwen3_embedding_tokenizer(directory)
+            end == message
+        end
+    end
 end
 
 @testset "last-token pooling, MRL, and cosine retrieval" begin

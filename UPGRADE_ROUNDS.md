@@ -249,6 +249,8 @@ Chapter 03 reproducible-training test.
      provenance strings and every positive architecture dimension.
 124. Strictly construct Qwen3-VL processor specifications, normalizing image
      geometry and finite channel statistics with positive standard deviations.
+125. Safely convert zero-based Qwen3 tokenizer vocabulary, added-token, and
+     embedding sentinel ids without Bool coercion or one-based overflow.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

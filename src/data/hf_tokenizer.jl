@@ -76,6 +76,28 @@ function _hf_required(object, name::AbstractString, label::AbstractString)
     return object[name]
 end
 
+function _hf_strict_host_int(value, label::AbstractString)
+    value isa Integer && !(value isa Bool) || throw(ArgumentError(
+        "$label must be an integer",
+    ))
+    typemin(Int) <= value <= typemax(Int) || throw(ArgumentError(
+        "$label is outside the host integer range",
+    ))
+    return Int(value)
+end
+
+function _hf_zero_based_token_id(value, label::AbstractString)
+    id = _hf_strict_host_int(value, label)
+    id >= 0 || throw(ArgumentError("$label must be non-negative"))
+    id < typemax(Int) || throw(ArgumentError(
+        "$label is outside the one-based token id range",
+    ))
+    return id
+end
+
+_hf_one_based_token_id(value, label::AbstractString) =
+    _hf_zero_based_token_id(value, label) + 1
+
 function _hf_exact_bool(object, name::AbstractString, expected::Bool, label::AbstractString)
     value = _hf_required(object, name, label)
     value isa Bool || throw(ArgumentError("`$name` must be boolean in $label"))
@@ -209,7 +231,7 @@ function _hf_validate_embedding_post_processor(post_processor)
     ))
     _hf_exact_value(endoftext, "id", "<|endoftext|>", label)
     ids = _hf_required(endoftext, "ids", label)
-    ids isa JSON3.Array && length(ids) == 1 && ids[1] isa Integer ||
+    ids isa JSON3.Array && length(ids) == 1 ||
         throw(ArgumentError(
             "embedding <|endoftext|> must define exactly one integer id",
         ))
@@ -218,7 +240,7 @@ function _hf_validate_embedding_post_processor(post_processor)
         throw(ArgumentError(
             "embedding template token payload must be <|endoftext|>",
         ))
-    return Int(ids[1]) + 1
+    return _hf_one_based_token_id(ids[1], "embedding <|endoftext|> id")
 end
 
 function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
@@ -296,9 +318,7 @@ function _hf_parse_model(tokenizer_json, char_to_byte, profile::Symbol)
         token = String(raw_token)
         isempty(token) && throw(ArgumentError("BPE token must not be empty"))
         raw_id = raw_vocabulary[raw_token]
-        raw_id isa Integer || throw(ArgumentError("BPE token id must be an integer"))
-        id = Int(raw_id)
-        id >= 0 || throw(ArgumentError("BPE token ids must be non-negative"))
+        id = _hf_zero_based_token_id(raw_id, "BPE token id")
         id in seen_ids && throw(ArgumentError("duplicate BPE token id $id"))
         vocabulary[token] = id + 1
         push!(seen_ids, id)
@@ -352,9 +372,9 @@ function _hf_parse_added_tokens(tokenizer_json, model_vocabulary_size::Int, voca
     for (offset, raw_token) in enumerate(raw_added)
         raw_token isa JSON3.Object || throw(ArgumentError("added token must be an object"))
         raw_id = _hf_required(raw_token, "id", "tokenizer.json added token")
-        raw_id isa Integer || throw(ArgumentError("added token id must be an integer"))
+        id = _hf_zero_based_token_id(raw_id, "added token id")
         expected_id = model_vocabulary_size + offset - 1
-        Int(raw_id) == expected_id || throw(ArgumentError(
+        id == expected_id || throw(ArgumentError(
             "added token ids must be contiguous after the BPE vocabulary; expected $expected_id",
         ))
         content = _hf_required(raw_token, "content", "tokenizer.json added token")
@@ -466,16 +486,6 @@ function _hf_validate_tokenizer_config(
         "additional_special_tokens conflicts with tokenizer added tokens",
     ))
     return bos_id, eos_id, pad_id, model_max_length, String(chat_template)
-end
-
-function _hf_strict_host_int(value, label::AbstractString)
-    value isa Integer && !(value isa Bool) || throw(ArgumentError(
-        "$label must be an integer",
-    ))
-    typemin(Int) <= value <= typemax(Int) || throw(ArgumentError(
-        "$label is outside the host integer range",
-    ))
-    return Int(value)
 end
 
 function _hf_generation_id(value, total_vocabulary::Int, name::AbstractString)

@@ -167,6 +167,66 @@ end
         end
     end
 
+    set_bpe_token_id! = function(payloads, value)
+        vocabulary = payloads.tokenizer["model"]["vocab"]
+        widened = Dict{String,Any}(
+            String(token) => id for (token, id) in pairs(vocabulary)
+        )
+        widened["!"] = value
+        payloads.tokenizer["model"]["vocab"] = widened
+        return payloads
+    end
+    token_id_mutations = (
+        (
+            payloads -> set_bpe_token_id!(payloads, true),
+            "BPE token id must be an integer",
+        ),
+        (
+            payloads -> set_bpe_token_id!(payloads, big(typemax(Int)) + 1),
+            "BPE token id must be an integer",
+        ),
+        (
+            payloads -> set_bpe_token_id!(payloads, typemax(Int)),
+            "BPE token id is outside the one-based token id range",
+        ),
+        (
+            payloads -> (payloads.tokenizer["added_tokens"][1]["id"] = true),
+            "added token id must be an integer",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer["added_tokens"][1]["id"] = typemax(Int)
+            ),
+            "added token id is outside the one-based token id range",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer["added_tokens"][1]["id"] =
+                    big(typemax(Int)) + 1
+            ),
+            "added token id must be an integer",
+        ),
+        (
+            payloads -> (payloads.tokenizer["added_tokens"][1]["id"] = -1),
+            "added token id must be non-negative",
+        ),
+    )
+    for (mutate!, message) in token_id_mutations
+        mktempdir() do directory
+            payloads = qwen3_tokenizer_fixture_payloads()
+            mutate!(payloads)
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            failure = try
+                load_hf_qwen3_tokenizer(directory)
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+    end
+
     generation_mutations = (
         (
             payloads -> (payloads.tokenizer_config["model_max_length"] = true),
