@@ -78,7 +78,8 @@ Qwen3-8B 是 36 层、8 个 KV heads、head dim 128，即每 token 144 KiB：
 
 这些值不包含 CUDA allocator、attention/GEMM workspace 和权重。公共
 `qwen3_kv_cache_bytes` 只报告可精确计算的逻辑 KV bytes，硬件验收另记
-实际 free/used VRAM。
+实际 free/used VRAM。所有外部整数与模型维度都先严格归一为宿主 `Int`：
+可表示的窄整数和大整数保持支持，Bool、越界整数及 byte 乘积溢出统一拒绝。
 
 ## 已实现
 

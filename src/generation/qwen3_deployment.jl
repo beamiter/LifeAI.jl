@@ -341,23 +341,21 @@ function qwen3_kv_cache_bytes(
     batch_size::Integer=1,
     dtype_bytes::Integer=2,
 )
-    context_tokens >= 0 || throw(ArgumentError("context_tokens must be non-negative"))
-    batch_size > 0 || throw(ArgumentError("batch_size must be positive"))
-    dtype_bytes > 0 || throw(ArgumentError("dtype_bytes must be positive"))
-    factors = try
-        (
-            Int(model_or_spec.num_layers),
-            2,
-            Int(model_or_spec.head_dim),
-            Int(model_or_spec.num_kv_heads),
-            Int(context_tokens),
-            Int(batch_size),
-            Int(dtype_bytes),
-        )
-    catch err
-        err isa InexactError || rethrow()
-        throw(ArgumentError("KV cache dimensions do not fit in Int"))
-    end
+    context = _strict_host_int(context_tokens, "context_tokens")
+    batch = _strict_host_int(batch_size, "batch_size")
+    element_bytes = _strict_host_int(dtype_bytes, "dtype_bytes")
+    context >= 0 || throw(ArgumentError("context_tokens must be non-negative"))
+    batch > 0 || throw(ArgumentError("batch_size must be positive"))
+    element_bytes > 0 || throw(ArgumentError("dtype_bytes must be positive"))
+    factors = (
+        _strict_host_int(model_or_spec.num_layers, "model num_layers"),
+        2,
+        _strict_host_int(model_or_spec.head_dim, "model head_dim"),
+        _strict_host_int(model_or_spec.num_kv_heads, "model num_kv_heads"),
+        context,
+        batch,
+        element_bytes,
+    )
     bytes = 1
     try
         for factor in factors

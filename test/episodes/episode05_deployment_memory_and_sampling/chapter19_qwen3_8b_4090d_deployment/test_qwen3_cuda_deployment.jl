@@ -94,8 +94,57 @@ end
     @test qwen3_kv_cache_bytes(qwen8, 0) == 0
     @test qwen3_kv_cache_bytes(qwen8, 16; batch_size=2, dtype_bytes=4) ==
         4 * qwen3_kv_cache_bytes(qwen8, 16)
+    narrow_bytes = qwen3_kv_cache_bytes(
+        qwen8,
+        Int32(16);
+        batch_size=Int128(2),
+        dtype_bytes=big(4),
+    )
+    @test narrow_bytes isa Int
+    @test narrow_bytes == qwen3_kv_cache_bytes(
+        qwen8,
+        16;
+        batch_size=2,
+        dtype_bytes=4,
+    )
     @test_throws ArgumentError qwen3_kv_cache_bytes(qwen8, -1)
     @test_throws ArgumentError qwen3_kv_cache_bytes(qwen8, typemax(Int))
+    too_large = big(typemax(Int)) + 1
+    for invalid_context in (true, too_large)
+        @test_throws ArgumentError qwen3_kv_cache_bytes(qwen8, invalid_context)
+    end
+    for invalid_batch in (true, too_large)
+        @test_throws ArgumentError qwen3_kv_cache_bytes(
+            qwen8,
+            16;
+            batch_size=invalid_batch,
+        )
+    end
+    for invalid_dtype in (true, too_large)
+        @test_throws ArgumentError qwen3_kv_cache_bytes(
+            qwen8,
+            16;
+            dtype_bytes=invalid_dtype,
+        )
+    end
+    @test_throws ArgumentError qwen3_kv_cache_bytes(
+        (; num_layers=true, head_dim=128, num_kv_heads=8),
+        16,
+    )
+    @test_throws ArgumentError qwen3_kv_cache_bytes(
+        (; num_layers=36, head_dim=too_large, num_kv_heads=8),
+        16,
+    )
+    @test_throws ArgumentError qwen3_kv_cache_bytes(
+        qwen8,
+        16;
+        batch_size=typemax(Int),
+    )
+    @test_throws ArgumentError qwen3_kv_cache_bytes(
+        qwen8,
+        16;
+        dtype_bytes=typemax(Int),
+    )
 
     mktempdir() do directory
         object = JSON3.read(read(_QWEN3_CUDA_DEPLOYMENT_PROFILE_PATH, String), Dict{String,Any})
