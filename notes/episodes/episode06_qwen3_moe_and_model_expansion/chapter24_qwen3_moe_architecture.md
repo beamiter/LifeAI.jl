@@ -119,6 +119,9 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - 将 CUDA 专用实现放入 `LifeAICUDAExt` package extension：普通 `using LifeAI` 不加载或初始化 CUDA；调用方显式加载 CUDA 后，`CuArray` 自动 dispatch 到专用方法，CPU/XLA 仍使用主模块内的 portable fallback。
 - 三个 kernel 分别直接从原始 `(hidden, d_model, experts)` 权重按 route expert index 计算 SwiGLU hidden、down projection 和 top-k combine，不再 gather/复制每条 route 的 gate/up/down 矩阵。旧实现保留为 `qwen3_route_major_expert_dispatch` benchmark oracle。
 - CUDA 专项扩展为 `9 / 9`：indexed vs dense、indexed vs route-major、inactive `NaN` expert 隔离，以及精确 workspace byte contract 全部通过；max-abs 对 dense oracle ≤ `6.56e-7`。
+- `Qwen3SparseMoE` parameter count 与 indexed workspace byte 现在对每一步乘加使用
+  checked arithmetic；极端但类型合法的维度不再环绕成负数，而是在任何分配前以
+  `ArgumentError` 拒绝。
 - 128 experts/top-8 下，单-token 临时空间从 `0.75 MiB` 降到 `6.50 KiB`，64-token 从 `48 MiB` 降到 `416 KiB`，两组都是 `118.15×` 缩减。
 - RTX 4090 D 最终重跑的 15 次同进程 steady 对照：单-token indexed `0.365 ms` vs route-major `0.481 ms`（`1.32×`），64-token indexed `0.377 ms` vs route-major `0.592 ms`（`1.57×`）。64-token 相对单线程 CPU sparse 为 `4.06×`；单-token 仍只有 CPU 的 `0.198×`，说明下一瓶颈已从权重物化转为小 kernel launch 与标量 dot-product 效率。
 - 原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cuda_4090d_indexed_kernels.json`。该文件 schema 2 也记录 bucketed 对照：小型 `128→64` 的单/64-token bucketed 分别为 `0.416 / 0.449 ms`，均慢于 indexed；这三个直接索引 kernel 是低 workspace baseline，尚未使用 grouped GEMM 或 tensor cores。

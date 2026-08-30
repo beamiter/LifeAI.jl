@@ -284,10 +284,23 @@ end
 
 LuxCore.initialstates(::AbstractRNG, ::Qwen3SparseMoE) = (;)
 
+function _qwen3_moe_checked_size(compute::F, label::AbstractString) where {F}
+    return try
+        compute()
+    catch error
+        error isa OverflowError || rethrow()
+        throw(ArgumentError("$label exceeds the host integer range"))
+    end
+end
+
 function LuxCore.parameterlength(moe::Qwen3SparseMoE)
-    router = moe.num_experts * moe.d_model
-    experts = moe.num_experts * 3 * moe.d_model * moe.hidden_dim
-    return router + experts
+    return _qwen3_moe_checked_size("Qwen3SparseMoE parameter count") do
+        router = Base.Checked.checked_mul(moe.num_experts, moe.d_model)
+        matrix = Base.Checked.checked_mul(moe.d_model, moe.hidden_dim)
+        per_expert = Base.Checked.checked_mul(3, matrix)
+        experts = Base.Checked.checked_mul(moe.num_experts, per_expert)
+        Base.Checked.checked_add(router, experts)
+    end
 end
 
 """Execution counts reported by [`qwen3_sparse_expert_dispatch`](@ref)."""
@@ -569,12 +582,15 @@ function qwen3_cuda_indexed_workspace_bytes(
     all(>(0), (d_model, hidden_dim, num_tokens, experts_per_token)) ||
         throw(ArgumentError("CUDA indexed workspace dimensions must be positive"))
     element_bytes > 0 || throw(ArgumentError("element_bytes must be positive"))
-    pair_count = num_tokens * experts_per_token
-    return (
-        hidden_dim * pair_count +
-        d_model * pair_count +
-        d_model * num_tokens
-    ) * element_bytes
+    return _qwen3_moe_checked_size("CUDA indexed workspace byte count") do
+        pair_count = Base.Checked.checked_mul(num_tokens, experts_per_token)
+        hidden_routes = Base.Checked.checked_mul(hidden_dim, pair_count)
+        model_routes = Base.Checked.checked_mul(d_model, pair_count)
+        output = Base.Checked.checked_mul(d_model, num_tokens)
+        routes = Base.Checked.checked_add(hidden_routes, model_routes)
+        elements = Base.Checked.checked_add(routes, output)
+        Base.Checked.checked_mul(elements, element_bytes)
+    end
 end
 
 """

@@ -2,7 +2,7 @@ using Test
 using Lux
 using NNlib: softmax, swish
 using Random: Xoshiro
-using LifeAI: Qwen3SparseMoE
+using LifeAI: Qwen3SparseMoE, qwen3_cuda_indexed_workspace_bytes
 
 function _qwen3_moe_manual_forward(layer, x, parameters)
     tokens = reshape(x, layer.d_model, :)
@@ -27,6 +27,40 @@ function _qwen3_moe_manual_forward(layer, x, parameters)
         end
     end
     return reshape(output, size(x))
+end
+
+
+@testset "Qwen3 MoE size calculations reject Int overflow" begin
+    @test Lux.parameterlength(Qwen3SparseMoE(4, 3, 4, 2)) == 160
+    @test_throws ArgumentError Lux.parameterlength(
+        Qwen3SparseMoE(typemax(Int), 1, 1, 1),
+    )
+
+    add_overflow_experts = typemax(Int) ÷ 4 + 1
+    @test_throws ArgumentError Lux.parameterlength(
+        Qwen3SparseMoE(1, 1, add_overflow_experts, 1),
+    )
+
+    @test qwen3_cuda_indexed_workspace_bytes(128, 64, 64, 8) == 425_984
+    @test_throws ArgumentError qwen3_cuda_indexed_workspace_bytes(
+        typemax(Int),
+        1,
+        2,
+        2,
+    )
+    @test_throws ArgumentError qwen3_cuda_indexed_workspace_bytes(
+        1,
+        1,
+        typemax(Int),
+        2,
+    )
+    @test_throws ArgumentError qwen3_cuda_indexed_workspace_bytes(
+        1,
+        1,
+        1,
+        1;
+        element_bytes=typemax(Int),
+    )
 end
 
 @testset "Qwen3 MoE selected expert mixture output" begin
