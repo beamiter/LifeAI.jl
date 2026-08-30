@@ -1467,11 +1467,17 @@ function verify_qwen3_moe_checkpoint(
     metadata isa JSON3.Object || throw(ArgumentError(
         "safetensors index `metadata` must be an object: $index_path",
     ))
-    total_size = _json_required(metadata, "total_size", index_path)
-    total_size isa Integer && Int(total_size) == spec.tensor_bytes ||
-        throw(ArgumentError(
-            "Qwen3 MoE index tensor byte count does not match frozen contract",
-        ))
+    raw_total_size = _json_required(metadata, "total_size", index_path)
+    total_size = _strict_host_int(
+        raw_total_size,
+        "Qwen3 MoE index metadata.total_size",
+    )
+    total_size >= 0 || throw(ArgumentError(
+        "Qwen3 MoE index metadata.total_size must be non-negative",
+    ))
+    total_size == spec.tensor_bytes || throw(ArgumentError(
+        "Qwen3 MoE index tensor byte count does not match frozen contract",
+    ))
     weight_map = _json_required(index, "weight_map", index_path)
     weight_map isa JSON3.Object || throw(ArgumentError(
         "safetensors index `weight_map` must be an object: $index_path",
@@ -1528,7 +1534,7 @@ function verify_qwen3_moe_checkpoint(
         config_sha256,
         index_sha256,
         tensor_count=length(weight_map),
-        tensor_bytes=Int(total_size),
+        tensor_bytes=total_size,
         shard_payload_bytes=expected_shard_payload_bytes,
         shard_checksums_verified=verify_shard_checksums,
         shards=Tuple(verified_shards),

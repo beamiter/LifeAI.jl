@@ -217,6 +217,8 @@ Chapter 03 reproducible-training test.
      host overflow or frozen-contract mismatches before checkpoint file I/O.
 108. Derive Qwen3 MoE index tensor counts exactly from layers and experts,
      rejecting overflow or inconsistent frozen metadata before checkpoint I/O.
+109. Strictly normalize Qwen3 MoE index `metadata.total_size`, rejecting invalid
+     JSON values and reusing the checked host integer in verification reports.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

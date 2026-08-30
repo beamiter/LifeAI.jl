@@ -175,6 +175,31 @@ function _qwen3_moe_weight_loading_captured_error(thunk)
     error("expected Qwen3 MoE loading call to fail")
 end
 
+function _qwen3_moe_test_with_index_hash(spec, index_sha256)
+    return Qwen3MoECheckpointSpec(
+        spec.variant,
+        spec.model_id,
+        spec.revision,
+        spec.config_sha256,
+        index_sha256,
+        spec.index_tensor_count,
+        spec.tensor_bytes,
+        spec.shard_payload_bytes,
+        spec.vocab_size,
+        spec.d_model,
+        spec.dense_mlp_hidden_dim,
+        spec.moe_hidden_dim,
+        spec.num_layers,
+        spec.num_heads,
+        spec.num_kv_heads,
+        spec.head_dim,
+        spec.num_experts,
+        spec.experts_per_token,
+        spec.max_position_embeddings,
+        spec.shards,
+    )
+end
+
 @testset "Qwen3 MoE shard specifications are strict" begin
     filename = SubString("xmodel.safetensors", 2)
     digest = SubString("x012345", 2)
@@ -440,6 +465,37 @@ end
         @test asset_report.shard_checksums_verified
         @test asset_report.tensor_count == length(tensors)
         @test asset_report.tensor_bytes == tensor_bytes
+
+        original_index = read(index_path)
+        for (total_size, message) in (
+            (true, "must be an integer"),
+            (1.5, "must be an integer"),
+            (-1, "must be non-negative"),
+            (1.0e300, "must be an integer"),
+        )
+            write(
+                index_path,
+                JSON3.write(Dict(
+                    "metadata" => Dict("total_size" => total_size),
+                    "weight_map" => weight_map,
+                )),
+            )
+            invalid_spec = _qwen3_moe_test_with_index_hash(
+                test_spec,
+                bytes2hex(sha256(read(index_path))),
+            )
+            failure = _qwen3_moe_weight_loading_captured_error() do
+                verify_qwen3_moe_checkpoint(
+                    directory;
+                    spec=invalid_spec,
+                    verify_shard_checksums=false,
+                )
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) ==
+                "ArgumentError: Qwen3 MoE index metadata.total_size $message"
+        end
+        write(index_path, original_index)
 
         loaded = load_hf_qwen3_moe_model(directory; max_seq_len=16)
         tokens = reshape(hf_token_ids([0, 4, 7]; vocab_size=model.vocab_size), :, 1)
