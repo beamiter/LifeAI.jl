@@ -409,6 +409,8 @@ Chapter 03 reproducible-training test.
      preserving the exact NFC and required-type contracts.
 204. Reject unknown fields in the Qwen3 Sequence, Split, and Regex pre-tokenizer
      control chain while retaining each nested required-field diagnostic.
+205. Preflight Qwen3-VL vision pixel and patch-weight device agreement before
+     entering backend matrix multiplication without moving either operand.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

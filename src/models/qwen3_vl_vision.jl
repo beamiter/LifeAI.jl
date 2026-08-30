@@ -1,5 +1,6 @@
 using BFloat16s: BFloat16
 using LinearAlgebra: mul!
+using MLDataDevices: get_device
 using NNlib: gather
 using SpecialFunctions: erf
 
@@ -864,6 +865,10 @@ function hf_qwen3_vl_vision_forward(
     eltype(validated.pixel_values) == eltype(parameters.patch_weight) ||
         throw(ArgumentError(
             "Qwen3-VL pixel_values dtype must match loaded vision weights",
+        ))
+    get_device(validated.pixel_values) == get_device(parameters.patch_weight) ||
+        throw(ArgumentError(
+            "Qwen3-VL pixel_values device must match loaded vision weights",
         ))
 
     x = _qwen3_vl_linear(

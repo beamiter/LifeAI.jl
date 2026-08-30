@@ -2,6 +2,7 @@ using BFloat16s: BFloat16
 using LinearAlgebra: I
 using Test
 import LifeAI
+import MLDataDevices
 using LifeAI: Qwen3VLVisionFeatures,
     Qwen3VLVisionInput,
     Qwen3VLVisionSpec,
@@ -21,6 +22,20 @@ const _CH43_TINY_VISION_SPEC = Qwen3VLVisionSpec(
     (0, 1, 2),      # exercise all three DeepStack mergers
     "gelu_pytorch_tanh",
 )
+
+struct _Ch43ForeignDevice <: MLDataDevices.AbstractDevice end
+
+struct _Ch43ForeignDeviceMatrix{T,A<:AbstractMatrix{T}} <:
+       AbstractMatrix{T}
+    data::A
+end
+
+Base.size(values::_Ch43ForeignDeviceMatrix) = size(values.data)
+Base.axes(values::_Ch43ForeignDeviceMatrix) = axes(values.data)
+Base.IndexStyle(::Type{<:_Ch43ForeignDeviceMatrix}) = IndexCartesian()
+Base.getindex(values::_Ch43ForeignDeviceMatrix, indices...) =
+    getindex(values.data, indices...)
+MLDataDevices.get_device(::_Ch43ForeignDeviceMatrix) = _Ch43ForeignDevice()
 
 function _ch43_values(::Type{T}, dimensions::Tuple, offset::Int; scale=0.02f0) where {T}
     values = Float32[
@@ -319,6 +334,27 @@ end
         _ch43_tiny_parameters(Float32),
         _ch43_tiny_input(BFloat16),
     )
+
+    host_input = _ch43_tiny_input(Float32)
+    foreign_pixels = _Ch43ForeignDeviceMatrix(host_input.pixel_values)
+    foreign_input = Qwen3VLVisionInput(
+        foreign_pixels,
+        host_input.grid_thw;
+        spec=_CH43_TINY_VISION_SPEC,
+    )
+    @test foreign_input.pixel_values === foreign_pixels
+    device_error = try
+        hf_qwen3_vl_vision_forward(
+            _ch43_tiny_parameters(Float32),
+            foreign_input,
+        )
+        nothing
+    catch caught
+        caught
+    end
+    @test device_error isa ArgumentError
+    @test sprint(showerror, device_error) ==
+        "ArgumentError: Qwen3-VL pixel_values device must match loaded vision weights"
 end
 
 const _CH43_BIAS_VISION_SPEC = Qwen3VLVisionSpec(
