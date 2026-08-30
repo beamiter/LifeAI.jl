@@ -1052,14 +1052,59 @@ end
     @test owned_memory.embeddings !== embedding_source
     @test owned_memory.metadata == metadata_source
     @test owned_memory.metadata !== metadata_source
-    @test owned_memory.metadata[1] === retained_metadata
+    @test owned_memory.metadata[1] == retained_metadata
+    @test owned_memory.metadata[1] !== retained_metadata
     text_source[1] = "rewritten"
-    fill!(embedding_source, 0.0f0)
+    fill!(embedding_source, NaN32)
+    retained_metadata["axis"] = "rewritten"
     empty!(metadata_source)
     @test owned_memory.texts == ["x-axis", "diagonal", "y-axis"]
     @test owned_memory.embeddings == embedding_snapshot
     @test length(owned_memory.metadata) == 3
-    @test owned_memory.metadata[1] === retained_metadata
+    @test owned_memory.metadata[1] == Dict("axis" => "x")
+
+    # Public collection properties are snapshots. Mutating either a returned
+    # container or nested metadata must not rewrite subsequent retrievals.
+    exposed_texts = owned_memory.texts
+    exposed_embeddings = owned_memory.embeddings
+    exposed_metadata = owned_memory.metadata
+    exposed_texts[1] = "public rewrite"
+    exposed_embeddings[:, 1] .= Inf32
+    exposed_metadata[1]["axis"] = "public rewrite"
+    owned_memory.texts[2] = "temporary rewrite"
+    owned_memory.embeddings[:, 2] .= NaN32
+    owned_memory.metadata[1]["axis"] = "temporary rewrite"
+    @test owned_memory.texts == ["x-axis", "diagonal", "y-axis"]
+    @test owned_memory.embeddings == embedding_snapshot
+    @test owned_memory.metadata[1] == Dict("axis" => "x")
+    owned_results = retrieve_qwen3_semantic_memory(
+        owned_memory,
+        Float32[1, 0];
+        top_k=1,
+    )
+    @test only(owned_results).index == 1
+    @test isfinite(only(owned_results).score)
+    @test only(owned_results).metadata == Dict("axis" => "x")
+    only(owned_results).metadata["axis"] = "result rewrite"
+    @test only(retrieve_qwen3_semantic_memory(
+        owned_memory,
+        Float32[1, 0];
+        top_k=1,
+    )).metadata == Dict("axis" => "x")
+
+    stable_snapshot = owned_memory.embeddings
+    for nonfinite_query in (
+        Float32[NaN, 0],
+        Float32[Inf, 0],
+        Float32[-Inf, 0],
+    )
+        @test_throws ArgumentError retrieve_qwen3_semantic_memory(
+            owned_memory,
+            nonfinite_query;
+            top_k=1,
+        )
+        @test owned_memory.embeddings == stable_snapshot
+    end
 
     text_buffer = "document!"
     normalized_memory = Qwen3SemanticMemory(
@@ -1072,6 +1117,24 @@ end
     @test normalized_memory.embeddings isa Matrix{Float32}
     @test normalized_memory.metadata == Any[:metadata]
     @test length(methods(Qwen3SemanticMemory)) == 2
+
+    library_values = reshape(
+        Float32.(mod.(1:(256 * 512), 31) .+ 1),
+        256,
+        512,
+    )
+    large_memory = Qwen3SemanticMemory(
+        ["document-$index" for index in 1:512],
+        library_values,
+    )
+    large_query = ones(Float32, 256)
+    retrieve_qwen3_semantic_memory(large_memory, large_query; top_k=1)
+    hot_path_allocations = @allocated retrieve_qwen3_semantic_memory(
+        large_memory,
+        large_query;
+        top_k=1,
+    )
+    @test hot_path_allocations < sizeof(Float32) * length(library_values)
 
     for (top_k, message) in (
         (true, "top_k must be an integer"),
@@ -1102,6 +1165,15 @@ end
         ["zero"],
         zeros(Float32, 2, 1),
     )
+    for nonfinite in (NaN32, Inf32, -Inf32)
+        invalid_embeddings = reshape(Float32[nonfinite, 1], 2, 1)
+        invalid_snapshot = copy(invalid_embeddings)
+        @test_throws ArgumentError Qwen3SemanticMemory(
+            ["nonfinite"],
+            invalid_embeddings,
+        )
+        @test isequal(invalid_embeddings, invalid_snapshot)
+    end
     @test _embedding_argument_error_message() do
         Qwen3SemanticMemory(["document"], Float32[1, 2], Any[nothing])
     end == "semantic memory embeddings must be a matrix"

@@ -502,6 +502,9 @@ Chapter 03 reproducible-training test.
 240. Bind Qwen3-VL checkpoint token roles to distinct zero-based ids inside the
      text vocabulary and require the vision merger output width to match the
      language tower before loading or tensor-shape derivation.
+241. Give Qwen3 semantic memories defensive ownership of texts, normalized
+     embeddings, and nested metadata while keeping retrieval on the sealed
+     matrix and copying only returned metadata instead of the whole library.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

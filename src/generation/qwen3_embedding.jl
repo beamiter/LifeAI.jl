@@ -348,7 +348,7 @@ struct Qwen3SemanticMemory
         embeddings isa AbstractMatrix || throw(ArgumentError(
             "semantic memory embeddings must be a matrix",
         ))
-        metadata_values = if metadata === nothing
+        raw_metadata = if metadata === nothing
             Any[nothing for _ in text_values]
         else
             applicable(iterate, metadata) || throw(ArgumentError(
@@ -363,16 +363,26 @@ struct Qwen3SemanticMemory
         size(embeddings, 2) == length(text_values) || throw(DimensionMismatch(
             "embedding column count must match document count",
         ))
-        length(metadata_values) == length(text_values) || throw(DimensionMismatch(
+        length(raw_metadata) == length(text_values) || throw(DimensionMismatch(
             "metadata length must match document count",
         ))
         normalized = _qwen3_normalized_columns(embeddings)
+        metadata_values = deepcopy(raw_metadata)
         return new(text_values, normalized, metadata_values)
     end
 end
 
 Qwen3SemanticMemory(texts, embeddings) =
     Qwen3SemanticMemory(texts, embeddings, nothing)
+
+# Public properties are defensive snapshots. Retrieval uses `getfield` below,
+# so protecting ownership does not copy the embedding library on the hot path.
+function Base.getproperty(memory::Qwen3SemanticMemory, name::Symbol)
+    name === :texts && return copy(getfield(memory, :texts))
+    name === :embeddings && return copy(getfield(memory, :embeddings))
+    name === :metadata && return deepcopy(getfield(memory, :metadata))
+    return getfield(memory, name)
+end
 
 """
     build_qwen3_semantic_memory(bundle, documents; metadata=nothing, kwargs...)
@@ -409,14 +419,21 @@ function retrieve_qwen3_semantic_memory(
     top_k::Integer=5,
 )
     query = reshape(Float32.(collect(query_embedding)), :, 1)
-    size(query, 1) == size(memory.embeddings, 1) || throw(DimensionMismatch(
+    embeddings = getfield(memory, :embeddings)
+    texts = getfield(memory, :texts)
+    metadata = getfield(memory, :metadata)
+    size(query, 1) == size(embeddings, 1) || throw(DimensionMismatch(
         "query embedding dimension does not match semantic memory",
     ))
     resolved_top_k = _strict_host_int(top_k, "top_k")
-    1 <= resolved_top_k <= length(memory.texts) || throw(ArgumentError(
-        "top_k must be in 1:$(length(memory.texts))",
+    1 <= resolved_top_k <= length(texts) || throw(ArgumentError(
+        "top_k must be in 1:$(length(texts))",
     ))
-    scores = vec(qwen3_embedding_similarity(query, memory.embeddings))
+    query_values = _qwen3_normalized_columns(query)
+    scores = vec(transpose(query_values) * embeddings)
+    all(isfinite, scores) || throw(ArgumentError(
+        "semantic memory similarity scores must be finite",
+    ))
     order = sortperm(
         eachindex(scores);
         by=index -> (-scores[index], index),
@@ -425,9 +442,9 @@ function retrieve_qwen3_semantic_memory(
         (;
             rank,
             index,
-            text=memory.texts[index],
+            text=texts[index],
             score=scores[index],
-            metadata=memory.metadata[index],
+            metadata=deepcopy(metadata[index]),
         )
         for (rank, index) in enumerate(order[1:resolved_top_k])
     ]
@@ -442,14 +459,16 @@ function search_qwen3_semantic_memory(
     max_length::Integer=bundle.model.max_seq_len,
 )
     resolved_top_k = _strict_host_int(top_k, "top_k")
-    1 <= resolved_top_k <= length(memory.texts) || throw(ArgumentError(
-        "top_k must be in 1:$(length(memory.texts))",
+    texts = getfield(memory, :texts)
+    embeddings = getfield(memory, :embeddings)
+    1 <= resolved_top_k <= length(texts) || throw(ArgumentError(
+        "top_k must be in 1:$(length(texts))",
     ))
     formatted = qwen3_embedding_query(query; instruction)
     embedded = embed_texts(
         bundle,
         [formatted];
-        dimension=size(memory.embeddings, 1),
+        dimension=size(embeddings, 1),
         max_length,
         padding_side=:left,
     )
