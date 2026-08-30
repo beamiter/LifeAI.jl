@@ -22,6 +22,9 @@
   dimensions/theta/allocation sizes, exact 4D/2D ranks and one-based axes,
   cross-width integer normalization, and mismatched dimensions.
 - Implemented a minimal GPT-style `TransformerBlock` in `src/core/transformer.jl`.
+- Transformer MLP widths now reject Boolean/non-finite inputs, resolve integer
+  and rational ratios with exact arithmetic, and preflight the full attention +
+  MLP + normalization parameter count before layer construction.
 
 ## TransformerBlock Design
 

@@ -167,9 +167,80 @@ end
 @testset "TransformerBlock constructor checks" begin
     @test_throws AssertionError TransformerBlock(0, 4)
     @test_throws AssertionError TransformerBlock(32, 0)
-    @test_throws AssertionError TransformerBlock(32, 4; mlp_ratio=0)
-    @test_throws AssertionError TransformerBlock(32, 4; mlp_hidden_dim=0)
+    @test_throws ArgumentError TransformerBlock(32, 4; mlp_ratio=0)
+    @test_throws ArgumentError TransformerBlock(32, 4; mlp_hidden_dim=0)
 
     # RoPE rotates pairs of dimensions, so each head dimension must be even.
     @test_throws AssertionError TransformerBlock(30, 6; use_rope=true)
+
+    wide_hidden = TransformerBlock(
+        4,
+        1;
+        mlp_hidden_dim=Int128(8),
+    )
+    wide_ratio = TransformerBlock(4, 1; mlp_ratio=big(3))
+    rational_ratio = TransformerBlock(4, 1; mlp_ratio=5 // 2)
+    @test wide_hidden.mlp_hidden_dim === 8
+    @test wide_ratio.mlp_hidden_dim === 12
+    @test rational_ratio.mlp_hidden_dim === 10
+
+    for invalid_ratio in (true, 0, NaN, Inf)
+        error = try
+            TransformerBlock(4, 1; mlp_ratio=invalid_ratio)
+            nothing
+        catch caught
+            caught
+        end
+        @test error isa ArgumentError
+        @test occursin("mlp_ratio", sprint(showerror, error))
+    end
+
+    for invalid_hidden in (true, 0, big(typemax(Int)) + 1)
+        error = try
+            TransformerBlock(4, 1; mlp_hidden_dim=invalid_hidden)
+            nothing
+        catch caught
+            caught
+        end
+        @test error isa ArgumentError
+        @test occursin("mlp_hidden_dim", sprint(showerror, error))
+    end
+
+    wrapped_ratio = typemax(Int) ÷ 2 + 2
+    @test_throws ArgumentError TransformerBlock(
+        4,
+        1;
+        mlp_ratio=wrapped_ratio,
+    )
+    @test_throws ArgumentError TransformerBlock(
+        2,
+        1;
+        mlp_hidden_dim=typemax(Int),
+    )
+    @test_throws ArgumentError TransformerBlock(
+        1,
+        1;
+        head_dim=typemax(Int) ÷ 6,
+        mlp_hidden_dim=typemax(Int) ÷ 5,
+        use_rope=false,
+    )
+
+    gelu_block = TransformerBlock(4, 1; mlp_hidden_dim=8)
+    swiglu_block = TransformerBlock(
+        4,
+        1;
+        mlp_hidden_dim=8,
+        mlp_type=:swiglu,
+    )
+    moe_block = TransformerBlock(
+        4,
+        1;
+        mlp_hidden_dim=8,
+        mlp_type=:qwen3_moe,
+        num_experts=3,
+        experts_per_token=2,
+    )
+    @test Lux.parameterlength(gelu_block) == 144
+    @test Lux.parameterlength(swiglu_block) == 176
+    @test Lux.parameterlength(moe_block) == 380
 end

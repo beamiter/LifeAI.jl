@@ -80,6 +80,54 @@ function _validate_mlp_type(mlp_type::Symbol)
     return mlp_type
 end
 
+function _transformer_positive_host_int(value, label::AbstractString)
+    value isa Integer && !(value isa Bool) || throw(ArgumentError(
+        "`$label` must be an integer",
+    ))
+    resolved = try
+        Int(value)
+    catch error
+        error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
+            rethrow()
+        throw(ArgumentError("`$label` is outside the host integer range"))
+    end
+    resolved > 0 || throw(ArgumentError("`$label` must be positive"))
+    return resolved
+end
+
+function _validate_mlp_ratio(mlp_ratio)
+    mlp_ratio isa Real && !(mlp_ratio isa Bool) &&
+        isfinite(mlp_ratio) && mlp_ratio > 0 || throw(ArgumentError(
+            "`mlp_ratio` must be a finite positive real number",
+        ))
+    return mlp_ratio
+end
+
+function _transformer_mlp_width(d_model::Int, ratio::Real)
+    count = if ratio isa Integer
+        BigInt(d_model) * BigInt(ratio)
+    elseif ratio isa Rational
+        exact_ratio = BigInt(numerator(ratio)) // BigInt(denominator(ratio))
+        round(BigInt, BigInt(d_model) * exact_ratio)
+    elseif ratio isa AbstractFloat
+        product = d_model * ratio
+        isfinite(product) || throw(ArgumentError(
+            "`mlp_ratio` produces a non-finite MLP width",
+        ))
+        round(BigInt, product)
+    else
+        product = BigFloat(d_model) * BigFloat(ratio)
+        isfinite(product) || throw(ArgumentError(
+            "`mlp_ratio` produces a non-finite MLP width",
+        ))
+        round(BigInt, product)
+    end
+    0 < count <= typemax(Int) || throw(ArgumentError(
+        "`mlp_hidden_dim` is outside the host integer range",
+    ))
+    return Int(count)
+end
+
 function _resolve_mlp_hidden_dim(
     d_model::Int,
     mlp_type::Symbol,
@@ -88,24 +136,73 @@ function _resolve_mlp_hidden_dim(
 )
     _validate_mlp_type(mlp_type)
 
-    if mlp_ratio !== nothing
-        @assert mlp_ratio > 0 "`mlp_ratio` must be positive"
-    end
+    mlp_ratio === nothing || _validate_mlp_ratio(mlp_ratio)
 
     if mlp_hidden_dim !== nothing
-        resolved = Int(mlp_hidden_dim)
-        @assert resolved > 0 "`mlp_hidden_dim` must be positive"
-        return resolved
+        return _transformer_positive_host_int(
+            mlp_hidden_dim,
+            "mlp_hidden_dim",
+        )
     end
 
     ratio = if mlp_ratio === nothing
-        mlp_type in (:gelu, :gelu_new) ? 4 : 8 / 3
+        mlp_type in (:gelu, :gelu_new) ? 4 : 8 // 3
     else
         mlp_ratio
     end
-    resolved = Int(round(d_model * ratio))
-    @assert resolved > 0 "`mlp_hidden_dim` must be positive"
-    return resolved
+    return _transformer_mlp_width(d_model, ratio)
+end
+
+function _transformer_block_parameter_count_int(
+    d_model::Int,
+    num_heads::Int,
+    num_kv_heads::Int,
+    head_dim::Int,
+    mlp_hidden_dim::Int;
+    use_bias::Bool,
+    use_qk_norm::Bool,
+    norm_type::Symbol,
+    mlp_type::Symbol,
+    num_experts::Int,
+)
+    query_dim = _attention_dimension_int(
+        BigInt(num_heads) * head_dim,
+        "TransformerBlock query dimension",
+    )
+    kv_dim = _attention_dimension_int(
+        BigInt(num_kv_heads) * head_dim,
+        "TransformerBlock key/value dimension",
+    )
+    attention = BigInt(_attention_parameter_count_int(
+        d_model,
+        query_dim,
+        kv_dim,
+        head_dim,
+        use_bias,
+        use_qk_norm,
+    ))
+
+    model_width = BigInt(d_model)
+    hidden_width = BigInt(mlp_hidden_dim)
+    mlp = if mlp_type === :swiglu
+        count = 3 * model_width * hidden_width
+        use_bias && (count += 2 * hidden_width + model_width)
+        count
+    elseif mlp_type === :qwen3_moe
+        experts = BigInt(num_experts)
+        experts * model_width +
+            3 * experts * model_width * hidden_width
+    else
+        count = 2 * model_width * hidden_width
+        use_bias && (count += hidden_width + model_width)
+        count
+    end
+    norms = norm_type === :rmsnorm ? 2 * model_width : 4 * model_width
+    total = attention + mlp + norms
+    0 < total <= typemax(Int) || throw(ArgumentError(
+        "TransformerBlock parameter count exceeds the host integer range",
+    ))
+    return Int(total)
 end
 
 function _make_norm(
@@ -177,6 +274,8 @@ function TransformerBlock(
 )
     @assert d_model > 0 "`d_model` must be positive"
     @assert num_heads > 0 "`num_heads` must be positive"
+    @assert num_kv_heads > 0 "`num_kv_heads` must be positive"
+    @assert num_heads % num_kv_heads == 0 "`num_heads` must be divisible by `num_kv_heads`"
     @assert norm_epsilon > 0 "`norm_epsilon` must be positive"
     _validate_norm_type(norm_type)
     _validate_mlp_type(mlp_type)
@@ -195,11 +294,29 @@ function TransformerBlock(
         ))
     end
 
+    resolved_head_dim = if head_dim === nothing
+        @assert d_model % num_heads == 0 "`d_model` must be divisible by `num_heads`"
+        d_model ÷ num_heads
+    else
+        _attention_positive_host_int(head_dim, "head_dim")
+    end
     resolved_mlp_hidden_dim = _resolve_mlp_hidden_dim(
         d_model,
         mlp_type,
         mlp_ratio,
         mlp_hidden_dim,
+    )
+    _transformer_block_parameter_count_int(
+        d_model,
+        num_heads,
+        num_kv_heads,
+        resolved_head_dim,
+        resolved_mlp_hidden_dim;
+        use_bias,
+        use_qk_norm,
+        norm_type,
+        mlp_type,
+        num_experts,
     )
 
     # GPT-style pre-norm: normalize each token independently over the model
@@ -211,7 +328,7 @@ function TransformerBlock(
         d_model,
         num_heads;
         num_kv_heads,
-        head_dim,
+        head_dim=resolved_head_dim,
         use_bias,
         is_causal,
         use_rope,
