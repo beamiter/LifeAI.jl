@@ -137,6 +137,10 @@ struct Qwen3MoECheckpointSpec
         all(shard -> shard isa Qwen3MoEShardSpec, shards) || throw(ArgumentError(
             "Qwen3 MoE checkpoint shards must contain Qwen3MoEShardSpec values",
         ))
+        length(Set(shard.filename for shard in shards)) == length(shards) ||
+            throw(ArgumentError(
+                "Qwen3 MoE checkpoint shard filenames must be unique",
+            ))
         prefix = "Qwen3 MoE checkpoint"
         return new(
             variant,

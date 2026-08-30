@@ -134,6 +134,14 @@ end
             ((; filename="model", bytes=0, sha256="hash"),),
             "shards must contain Qwen3MoEShardSpec values",
         ),
+        (
+            20,
+            (
+                Qwen3MoEShardSpec("duplicate", 1, "first"),
+                Qwen3MoEShardSpec("duplicate", 2, "second"),
+            ),
+            "shard filenames must be unique",
+        ),
     )
         failure = _qwen3_moe_contract_captured_error() do
             Qwen3MoECheckpointSpec(Base.setindex(valid, value, index)...)
