@@ -79,3 +79,11 @@ function _validate_generation_ids(tokens, vocab_size::Int)
         throw(ArgumentError("token id is outside 1:$vocab_size"))
     return nothing
 end
+
+function _qwen3_stop_token_set(values, vocab_size::Int)
+    ids = vec(_strict_host_int_array(values, "Qwen3 stop token id"))
+    all(id -> 1 <= id <= vocab_size, ids) || throw(ArgumentError(
+        "stop token id is outside the model vocabulary",
+    ))
+    return Set(ids)
+end

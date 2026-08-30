@@ -579,6 +579,21 @@ end
         @test !decode_reached[]
     end
 
+    for invalid_stops in (Bool[true], BigInt[too_large])
+        failure = _qwen3_xla_captured_error() do
+            generate_hf_qwen3_bf16_xla!(
+                session,
+                [2, 3];
+                max_new_tokens=1,
+                stop_token_ids=invalid_stops,
+            )
+        end
+        @test failure isa ArgumentError
+        @test session.position == 7
+        @test !prefill_reached[]
+        @test !decode_reached[]
+    end
+
     @test_throws ArgumentError generate_hf_qwen3_bf16_xla!(
         session,
         [2, 3];

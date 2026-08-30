@@ -494,6 +494,17 @@ end
         @test sampled.generated_ids == sampled_repeat.generated_ids
         @test callback_ids == sampled.generated_ids
 
+        preserved_position = session.position
+        for invalid_stops in (Bool[true], BigInt[too_large])
+            @test_throws ArgumentError generate_hf_qwen3_bf16!(
+                session,
+                tokens;
+                max_new_tokens=0,
+                stop_token_ids=invalid_stops,
+            )
+            @test session.position == preserved_position
+        end
+
         zero = generate_hf_qwen3_bf16!(
             session,
             tokens;

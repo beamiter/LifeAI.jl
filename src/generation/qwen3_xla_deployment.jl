@@ -528,10 +528,12 @@ function generate_hf_qwen3_bf16_xla!(
     1 <= pad_token_id <= session.model.vocab_size || throw(ArgumentError(
         "pad_token_id is outside the model vocabulary",
     ))
-    stops = stop_token_ids === nothing ?
-        Set(session.tokenizer.eos_ids) : Set(Int.(stop_token_ids))
-    all(id -> 1 <= id <= session.model.vocab_size, stops) ||
-        throw(ArgumentError("stop token id is outside the model vocabulary"))
+    raw_stop_token_ids = stop_token_ids === nothing ?
+        session.tokenizer.eos_ids : stop_token_ids
+    stops = _qwen3_stop_token_set(
+        raw_stop_token_ids,
+        session.model.vocab_size,
+    )
 
     resolved_temperature = temperature === nothing ?
         session.generation_config.temperature : temperature

@@ -83,6 +83,8 @@ Qwen3-8B 是 36 层、8 个 KV heads、head dim 128，即每 token 144 KiB：
 session 的 prompt token 向量也在 reset/cache 写入前走同一合同，非法输入失败时
 保留既有 position；单步 decode token 在前向与 position 增长前同样规范化。
 合法 Int8/Int32/Int128/BigInt prompt 统一为 `Vector{Int}`。
+dense 与 XLA generation 共用严格 stop-id 集合构造，Bool/越界/词表外 id 都在
+零输出 reset、prefill 或 compiled execution 前拒绝。
 
 ## 已实现
 
