@@ -28,6 +28,16 @@ const _QWEN3_CALIBRATED_QUANTIZATION_ASSETS_PATH = joinpath(
     "assets.json",
 )
 
+function _quantization_argument_error_message(f)
+    try
+        f()
+    catch exception
+        exception isa ArgumentError || rethrow()
+        return exception.msg
+    end
+    return nothing
+end
+
 @testset "INT4 reconstruction-MSE calibration" begin
     # Each group has one outlier and many unit-scale values. Candidate 0.9
     # clips the outlier slightly but lowers total reconstruction error.
@@ -129,6 +139,13 @@ end
     int4_mse = LinearQuantizationSpec(:int4; group=128, calibration=:mse)
     int8 = LinearQuantizationSpec(:int8)
     bf16 = LinearQuantizationSpec(:bf16)
+    @test LinearQuantizationSpec(:int8; group=Int128(64)).group == 64
+    @test _quantization_argument_error_message() do
+        LinearQuantizationSpec(:int8; group=true)
+    end == "quantization group must be an integer"
+    @test _quantization_argument_error_message() do
+        LinearQuantizationSpec(:int8; group=big(typemax(Int)) + 1)
+    end == "quantization group is outside the host integer range"
     plan = QuantizationPlan(
         default=int4_mse,
         projection_overrides=Dict(:q_proj => int8, :lm_head => bf16),
@@ -138,6 +155,48 @@ end
     @test quantization_spec(plan, :q_proj; layer=1) === int8
     @test quantization_spec(plan, :q_proj; layer=2) === bf16
     @test quantization_spec(plan, :lm_head) === bf16
+
+    wide_plan = QuantizationPlan(
+        int4_mse,
+        Dict(:q_proj => int8),
+        Dict((Int128(2), :q_proj) => bf16),
+    )
+    @test quantization_spec(wide_plan, :q_proj; layer=Int128(2)) === bf16
+
+    too_large = big(typemax(Int)) + 1
+    for (value, message) in (
+        (true, "quantization override layer must be an integer"),
+        (1.0, "quantization override layer must be an integer"),
+        (
+            too_large,
+            "quantization override layer is outside the host integer range",
+        ),
+    )
+        @test _quantization_argument_error_message() do
+            QuantizationPlan(
+                layer_overrides=Dict((value, :q_proj) => int8),
+            )
+        end == message
+    end
+    for (value, message) in (
+        (true, "quantization layer must be an integer"),
+        (1.0, "quantization layer must be an integer"),
+        (too_large, "quantization layer is outside the host integer range"),
+    )
+        @test _quantization_argument_error_message() do
+            quantization_spec(plan, :q_proj; layer=value)
+        end == message
+    end
+
+    @test _quantization_argument_error_message() do
+        QuantizationPlan(
+            int4_mse,
+            Dict{Symbol,LinearQuantizationSpec}(),
+            Dict{Tuple{Int,Symbol},LinearQuantizationSpec}(
+                (0, :q_proj) => int8,
+            ),
+        )
+    end == "quantization override layers must be positive one-based integers"
 
     @test_throws ArgumentError LinearQuantizationSpec(:int3)
     @test_throws ArgumentError LinearQuantizationSpec(:int4; group=3)

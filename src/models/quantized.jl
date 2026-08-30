@@ -61,9 +61,14 @@ struct LinearQuantizationSpec{C<:Tuple}
         scheme in (:int4, :int8, :bf16) || throw(ArgumentError(
             "unsupported quantization scheme $(repr(scheme))",
         ))
-        group > 0 || throw(ArgumentError("quantization group must be positive"))
+        resolved_group = _strict_host_int(group, "quantization group")
+        resolved_group > 0 || throw(ArgumentError(
+            "quantization group must be positive",
+        ))
         if scheme === :int4
-            iseven(group) || throw(ArgumentError("INT4 group size must be even"))
+            iseven(resolved_group) || throw(ArgumentError(
+                "INT4 group size must be even",
+            ))
             calibration in (:maxabs, :mse, :activation_mse) || throw(ArgumentError(
                 "unsupported INT4 calibration $(repr(calibration))",
             ))
@@ -86,7 +91,12 @@ struct LinearQuantizationSpec{C<:Tuple}
         1.0f0 in ratios || throw(ArgumentError(
             "INT4 MSE clipping ratios must include 1.0 as the max-abs baseline",
         ))
-        return new{typeof(ratios)}(scheme, Int(group), calibration, ratios)
+        return new{typeof(ratios)}(
+            scheme,
+            resolved_group,
+            calibration,
+            ratios,
+        )
     end
 end
 
@@ -106,7 +116,38 @@ struct QuantizationPlan
     default::LinearQuantizationSpec
     projection_overrides::Dict{Symbol,LinearQuantizationSpec}
     layer_overrides::Dict{Tuple{Int,Symbol},LinearQuantizationSpec}
+
+    function QuantizationPlan(
+        default::LinearQuantizationSpec,
+        projection_overrides::Dict{Symbol,LinearQuantizationSpec},
+        layer_overrides::Dict{Tuple{Int,Symbol},LinearQuantizationSpec},
+    )
+        for projection in keys(projection_overrides)
+            projection in _QWEN3_QUANTIZATION_TARGETS || throw(ArgumentError(
+                "unsupported quantization projection $(repr(projection))",
+            ))
+        end
+        for (layer, projection) in keys(layer_overrides)
+            layer > 0 || throw(ArgumentError(
+                "quantization override layers must be positive one-based integers",
+            ))
+            projection in _QWEN3_QUANTIZATION_TARGETS || throw(ArgumentError(
+                "unsupported quantization projection $(repr(projection))",
+            ))
+            projection === :lm_head && throw(ArgumentError(
+                "lm_head does not accept a layer-specific quantization override",
+            ))
+        end
+        return new(default, projection_overrides, layer_overrides)
+    end
 end
+
+QuantizationPlan(default, projection_overrides, layer_overrides) =
+    QuantizationPlan(;
+        default,
+        projection_overrides,
+        layer_overrides,
+    )
 
 function QuantizationPlan(;
     default::LinearQuantizationSpec=LinearQuantizationSpec(),
@@ -133,7 +174,8 @@ function QuantizationPlan(;
             "layer override keys must be `(layer, projection)` tuples",
         ))
         layer, projection = target
-        layer isa Integer && layer > 0 || throw(ArgumentError(
+        resolved_layer = _strict_host_int(layer, "quantization override layer")
+        resolved_layer > 0 || throw(ArgumentError(
             "quantization override layers must be positive one-based integers",
         ))
         projection isa Symbol || throw(ArgumentError(
@@ -148,7 +190,7 @@ function QuantizationPlan(;
         spec isa LinearQuantizationSpec || throw(ArgumentError(
             "quantization layer overrides must be LinearQuantizationSpec values",
         ))
-        layers[(Int(layer), projection)] = spec
+        layers[(resolved_layer, projection)] = spec
     end
     return QuantizationPlan(default, projections, layers)
 end
@@ -161,19 +203,25 @@ Resolve one target using layer override > projection override > default.
 function quantization_spec(
     plan::QuantizationPlan,
     projection::Symbol;
-    layer::Union{Nothing,Integer}=nothing,
+    layer=nothing,
 )
     projection in _QWEN3_QUANTIZATION_TARGETS || throw(ArgumentError(
         "unsupported quantization projection $(repr(projection))",
     ))
-    layer === nothing || layer > 0 || throw(ArgumentError(
-        "quantization layers are positive and one-based",
-    ))
-    projection === :lm_head && layer !== nothing && throw(ArgumentError(
+    resolved_layer = if layer === nothing
+        nothing
+    else
+        value = _strict_host_int(layer, "quantization layer")
+        value > 0 || throw(ArgumentError(
+            "quantization layers are positive and one-based",
+        ))
+        value
+    end
+    projection === :lm_head && resolved_layer !== nothing && throw(ArgumentError(
         "lm_head does not belong to a transformer layer",
     ))
-    if layer !== nothing
-        target = (Int(layer), projection)
+    if resolved_layer !== nothing
+        target = (resolved_layer, projection)
         haskey(plan.layer_overrides, target) && return plan.layer_overrides[target]
     end
     return get(plan.projection_overrides, projection, plan.default)
