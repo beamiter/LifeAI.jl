@@ -390,6 +390,109 @@ end
         end
     end
 
+    nested_duplicate_cases = (
+        (
+            "type",
+            "Sequence",
+            "FutureSequence",
+            2,
+            "duplicate tokenizer.json embedding post_processor field(s): type",
+        ),
+        (
+            "type",
+            "ByteLevel",
+            "FutureByteLevel",
+            2,
+            "duplicate tokenizer.json embedding post_processor ByteLevel field(s): type",
+        ),
+        (
+            "type",
+            "TemplateProcessing",
+            "FutureTemplate",
+            1,
+            "duplicate tokenizer.json embedding post_processor " *
+            "TemplateProcessing field(s): type",
+        ),
+        (
+            "id",
+            "B",
+            "shadow-sequence",
+            1,
+            "duplicate tokenizer.json embedding post_processor pair[2] " *
+            "Sequence field(s): id",
+        ),
+        (
+            "id",
+            "<|endoftext|>",
+            "shadow-special",
+            1,
+            "duplicate tokenizer.json embedding post_processor pair[3] " *
+            "SpecialToken field(s): id",
+        ),
+        (
+            "ids",
+            [258],
+            [999],
+            1,
+            "duplicate tokenizer.json embedding post_processor " *
+            "<|endoftext|> metadata field(s): ids",
+        ),
+    )
+    for (field, original, shadow, occurrence, message) in nested_duplicate_cases
+        mktempdir() do directory
+            _embedding_tokenizer_fixture(directory)
+            shadow_qwen3_tokenizer_fixture_nested_field(
+                directory,
+                :tokenizer,
+                field,
+                original,
+                shadow;
+                occurrence,
+            )
+            @test _embedding_argument_error_message() do
+                load_hf_qwen3_embedding_tokenizer(directory)
+            end == message
+        end
+    end
+
+    mktempdir() do directory
+        payloads = _embedding_tokenizer_payloads()
+        _embedding_tokenizer_fixture(directory)
+        template = payloads.tokenizer["post_processor"]["processors"][2]
+        metadata = template["special_tokens"]["<|endoftext|>"]
+        shadow_qwen3_tokenizer_fixture_nested_field(
+            directory,
+            :tokenizer,
+            "<|endoftext|>",
+            metadata,
+            Dict(
+                "id" => "shadow-special",
+                "ids" => [999],
+                "tokens" => ["shadow-special"],
+            ),
+        )
+        @test _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_tokenizer(directory)
+        end ==
+              "duplicate tokenizer.json embedding post_processor " *
+              "TemplateProcessing special_tokens field(s): <|endoftext|>"
+
+        _embedding_tokenizer_fixture(directory)
+        pair_sequence = template["pair"][2]["Sequence"]
+        shadow_qwen3_tokenizer_fixture_nested_field(
+            directory,
+            :tokenizer,
+            "Sequence",
+            pair_sequence,
+            Dict{String,Any}(),
+        )
+        @test _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_tokenizer(directory)
+        end ==
+              "tokenizer.json embedding post_processor pair[2] must contain " *
+              "exactly one Sequence entry"
+    end
+
     mktempdir() do directory
         _embedding_tokenizer_fixture(directory)
         tokenizer = load_hf_qwen3_embedding_tokenizer(

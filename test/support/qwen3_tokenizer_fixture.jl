@@ -154,3 +154,43 @@ function shadow_qwen3_tokenizer_fixture_root_field(
     end
     return path
 end
+
+function shadow_qwen3_tokenizer_fixture_nested_field(
+    directory,
+    document::Symbol,
+    field::AbstractString,
+    original_value,
+    shadow_value;
+    occurrence::Int=1,
+)
+    occurrence > 0 || throw(ArgumentError("occurrence must be positive"))
+    filename = document === :tokenizer ? "tokenizer.json" :
+        document === :tokenizer_config ? "tokenizer_config.json" :
+        document === :generation_config ? "generation_config.json" :
+        throw(ArgumentError("unsupported tokenizer fixture document: $document"))
+    path = joinpath(directory, filename)
+    raw = read(path, String)
+    encoded_field = JSON3.write(String(field))
+    encoded_original = JSON3.write(original_value)
+    needle = string(encoded_field, ':', encoded_original)
+    matches = findall(needle, raw)
+    length(matches) >= occurrence || throw(ArgumentError(
+        "$filename does not contain nested field occurrence $occurrence for $(repr(field))",
+    ))
+    target = matches[occurrence]
+    replacement = string(
+        encoded_field,
+        ':',
+        JSON3.write(shadow_value),
+        ',',
+        needle,
+    )
+    before = first(target) == firstindex(raw) ? "" :
+        SubString(raw, firstindex(raw), prevind(raw, first(target)))
+    after_start = nextind(raw, last(target))
+    after = after_start > lastindex(raw) ? "" : SubString(raw, after_start)
+    open(path, "w") do io
+        write(io, before, replacement, after)
+    end
+    return path
+end

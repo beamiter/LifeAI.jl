@@ -377,6 +377,7 @@ function hf_byte_unicode_alphabet()
 end
 
 function _hf_byte_flags(object, label::AbstractString)
+    _hf_reject_duplicate_fields(object, label)
     _hf_reject_unknown_fields(
         object,
         ("type", "add_prefix_space", "trim_offsets", "use_regex"),
@@ -398,6 +399,7 @@ function _hf_template_sequence_entry(entry, expected::AbstractString, label)
     sequence isa JSON3.Object || throw(ArgumentError(
         "$label Sequence must be an object",
     ))
+    _hf_reject_duplicate_fields(sequence, "$label Sequence")
     _hf_reject_unknown_fields(sequence, ("id", "type_id"), "$label Sequence")
     _hf_exact_value(sequence, "id", String(expected), label)
     _hf_exact_integer(sequence, "type_id", 0, label)
@@ -413,6 +415,7 @@ function _hf_template_special_entry(entry, label)
     special isa JSON3.Object || throw(ArgumentError(
         "$label SpecialToken must be an object",
     ))
+    _hf_reject_duplicate_fields(special, "$label SpecialToken")
     _hf_reject_unknown_fields(
         special,
         ("id", "type_id"),
@@ -425,6 +428,7 @@ end
 
 function _hf_validate_embedding_post_processor(post_processor)
     label = "tokenizer.json embedding post_processor"
+    _hf_reject_duplicate_fields(post_processor, label)
     _hf_reject_unknown_fields(post_processor, ("type", "processors"), label)
     _hf_exact_value(post_processor, "type", "Sequence", label)
     processors = _hf_required(post_processor, "processors", label)
@@ -441,6 +445,7 @@ function _hf_validate_embedding_post_processor(post_processor)
     template isa JSON3.Object || throw(ArgumentError(
         "embedding TemplateProcessing post-processor must be an object",
     ))
+    _hf_reject_duplicate_fields(template, "$label TemplateProcessing")
     _hf_reject_unknown_fields(
         template,
         ("type", "single", "pair", "special_tokens"),
@@ -462,15 +467,20 @@ function _hf_validate_embedding_post_processor(post_processor)
     _hf_template_special_entry(pair[3], "$label pair[3]")
 
     special_tokens = _hf_required(template, "special_tokens", label)
-    special_tokens isa JSON3.Object &&
-        Set(String.(collect(keys(special_tokens)))) == Set(["<|endoftext|>"]) ||
-        throw(ArgumentError(
-            "embedding template must define only <|endoftext|>",
-        ))
+    special_tokens isa JSON3.Object || throw(ArgumentError(
+        "embedding template must define only <|endoftext|>",
+    ))
+    _hf_reject_duplicate_fields(
+        special_tokens,
+        "$label TemplateProcessing special_tokens",
+    )
+    Set(String.(collect(keys(special_tokens)))) == Set(["<|endoftext|>"]) ||
+        throw(ArgumentError("embedding template must define only <|endoftext|>"))
     endoftext = special_tokens["<|endoftext|>"]
     endoftext isa JSON3.Object || throw(ArgumentError(
         "embedding <|endoftext|> template metadata must be an object",
     ))
+    _hf_reject_duplicate_fields(endoftext, "$label <|endoftext|> metadata")
     _hf_reject_unknown_fields(
         endoftext,
         ("id", "ids", "tokens"),
@@ -514,6 +524,7 @@ function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
 
     normalizer = _hf_required(tokenizer_json, "normalizer", "tokenizer.json")
     normalizer isa JSON3.Object || throw(ArgumentError("normalizer must be an object"))
+    _hf_reject_duplicate_fields(normalizer, "tokenizer.json normalizer")
     _hf_reject_unknown_fields(
         normalizer,
         ("type",),
@@ -523,6 +534,7 @@ function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
 
     pretokenizer = _hf_required(tokenizer_json, "pre_tokenizer", "tokenizer.json")
     pretokenizer isa JSON3.Object || throw(ArgumentError("pre_tokenizer must be an object"))
+    _hf_reject_duplicate_fields(pretokenizer, "tokenizer.json pre_tokenizer")
     _hf_reject_unknown_fields(
         pretokenizer,
         ("type", "pretokenizers"),
@@ -536,6 +548,7 @@ function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
 
     split_component = components[1]
     split_component isa JSON3.Object || throw(ArgumentError("Split pre-tokenizer must be an object"))
+    _hf_reject_duplicate_fields(split_component, "tokenizer.json Split")
     _hf_reject_unknown_fields(
         split_component,
         ("type", "pattern", "behavior", "invert"),
@@ -546,6 +559,7 @@ function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
     _hf_exact_bool(split_component, "invert", false, "tokenizer.json Split")
     pattern_object = _hf_required(split_component, "pattern", "tokenizer.json Split")
     pattern_object isa JSON3.Object || throw(ArgumentError("Split pattern must be an object"))
+    _hf_reject_duplicate_fields(pattern_object, "tokenizer.json Split pattern")
     _hf_reject_unknown_fields(
         pattern_object,
         ("Regex",),
@@ -579,6 +593,7 @@ end
 function _hf_parse_model(tokenizer_json, char_to_byte, profile::Symbol)
     model = _hf_required(tokenizer_json, "model", "tokenizer.json")
     model isa JSON3.Object || throw(ArgumentError("tokenizer model must be an object"))
+    _hf_reject_duplicate_fields(model, "tokenizer.json model")
     _hf_exact_value(model, "type", "BPE", "tokenizer.json model")
     _hf_exact_value(model, "dropout", nothing, "tokenizer.json model")
     _hf_exact_value(model, "unk_token", nothing, "tokenizer.json model")
@@ -686,6 +701,7 @@ function _hf_parse_added_tokens(tokenizer_json, model_vocabulary_size::Int, voca
     seen_contents = Set{String}()
     for (offset, raw_token) in enumerate(raw_added)
         raw_token isa JSON3.Object || throw(ArgumentError("added token must be an object"))
+        _hf_reject_duplicate_fields(raw_token, "tokenizer.json added token")
         _hf_reject_unknown_fields(
             raw_token,
             (
@@ -782,6 +798,7 @@ function _hf_validate_tokenizer_config(
         haskey(decoder, key) || throw(ArgumentError("added_tokens_decoder is missing id $key"))
         entry = decoder[key]
         entry isa JSON3.Object || throw(ArgumentError("added_tokens_decoder entry must be an object"))
+        _hf_reject_duplicate_fields(entry, "added_tokens_decoder[$key]")
         _hf_reject_unknown_fields(
             entry,
             (

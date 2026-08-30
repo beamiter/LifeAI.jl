@@ -92,6 +92,53 @@ end
         end
     end
 
+    nested_duplicate_cases = (
+        (
+            :tokenizer,
+            "type",
+            "NFC",
+            "NFKC",
+            "duplicate tokenizer.json normalizer field(s): type",
+        ),
+        (
+            :tokenizer,
+            "byte_fallback",
+            false,
+            true,
+            "duplicate tokenizer.json model field(s): byte_fallback",
+        ),
+        (
+            :tokenizer_config,
+            "content",
+            "<|endoftext|>",
+            "shadow-token",
+            "duplicate added_tokens_decoder[258] field(s): content",
+        ),
+    )
+    for (document, field, original, shadow, message) in nested_duplicate_cases
+        mktempdir() do directory
+            write_qwen3_tokenizer_fixture(
+                directory;
+                payloads=_ch44_vl_tokenizer_payloads(),
+            )
+            shadow_qwen3_tokenizer_fixture_nested_field(
+                directory,
+                document,
+                field,
+                original,
+                shadow,
+            )
+            failure = try
+                load_hf_qwen3_vl_tokenizer(directory)
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+    end
+
     mutations = [
         payloads -> (payloads.tokenizer["model"]["ignore_merges"] = false),
         payloads -> (payloads.tokenizer["model"]["merges"] = [["h", "i"]]),

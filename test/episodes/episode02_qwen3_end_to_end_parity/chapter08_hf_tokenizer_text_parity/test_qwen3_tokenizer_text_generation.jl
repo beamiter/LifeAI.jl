@@ -312,6 +312,145 @@ end
             "ArgumentError: duplicate tokenizer.json field(s): version"
     end
 
+    nested_duplicate_cases = (
+        (
+            :tokenizer,
+            "type",
+            "NFC",
+            "NFKC",
+            1,
+            "duplicate tokenizer.json normalizer field(s): type",
+        ),
+        (
+            :tokenizer,
+            "type",
+            "Sequence",
+            "FutureSequence",
+            1,
+            "duplicate tokenizer.json pre_tokenizer field(s): type",
+        ),
+        (
+            :tokenizer,
+            "behavior",
+            "Isolated",
+            "Removed",
+            1,
+            "duplicate tokenizer.json Split field(s): behavior",
+        ),
+        (
+            :tokenizer,
+            "Regex",
+            QWEN3_TOKENIZER_FIXTURE_REGEX,
+            "bad-pattern",
+            1,
+            "duplicate tokenizer.json Split pattern field(s): Regex",
+        ),
+        (
+            :tokenizer,
+            "use_regex",
+            false,
+            true,
+            1,
+            "duplicate tokenizer.json ByteLevel pre-tokenizer field(s): use_regex",
+        ),
+        (
+            :tokenizer,
+            "trim_offsets",
+            false,
+            true,
+            2,
+            "duplicate tokenizer.json post_processor field(s): trim_offsets",
+        ),
+        (
+            :tokenizer,
+            "add_prefix_space",
+            false,
+            true,
+            3,
+            "duplicate tokenizer.json decoder field(s): add_prefix_space",
+        ),
+        (
+            :tokenizer,
+            "type",
+            "BPE",
+            "FutureModel",
+            1,
+            "duplicate tokenizer.json model field(s): type",
+        ),
+        (
+            :tokenizer,
+            "content",
+            "<|endoftext|>",
+            "shadow-token",
+            1,
+            "duplicate tokenizer.json added token field(s): content",
+        ),
+        (
+            :tokenizer_config,
+            "content",
+            "<|endoftext|>",
+            "shadow-token",
+            1,
+            "duplicate added_tokens_decoder[258] field(s): content",
+        ),
+    )
+    for (document, field, original, shadow, occurrence, message) in
+        nested_duplicate_cases
+        mktempdir() do directory
+            write_qwen3_tokenizer_fixture(directory)
+            shadow_qwen3_tokenizer_fixture_nested_field(
+                directory,
+                document,
+                field,
+                original,
+                shadow;
+                occurrence,
+            )
+            @test duplicate_error(directory) == "ArgumentError: $message"
+        end
+    end
+
+    mktempdir() do directory
+        payloads = qwen3_tokenizer_fixture_payloads()
+        payloads.tokenizer["model"]["type"] = "FutureModel"
+        write_qwen3_tokenizer_fixture(directory; payloads)
+        shadow_qwen3_tokenizer_fixture_nested_field(
+            directory,
+            :tokenizer,
+            "type",
+            "FutureModel",
+            "BPE",
+        )
+        @test duplicate_error(directory) ==
+            "ArgumentError: duplicate tokenizer.json model field(s): type"
+    end
+
+    mktempdir() do directory
+        payloads = qwen3_tokenizer_fixture_payloads()
+        write_qwen3_tokenizer_fixture(directory; payloads)
+        shadow_qwen3_tokenizer_fixture_nested_field(
+            directory,
+            :tokenizer,
+            "!",
+            33,
+            999,
+        )
+        @test duplicate_error(directory) ==
+            "ArgumentError: duplicate BPE token id 33"
+
+        write_qwen3_tokenizer_fixture(directory; payloads)
+        decoder_entry = payloads.tokenizer_config["added_tokens_decoder"]["258"]
+        shadow_qwen3_tokenizer_fixture_nested_field(
+            directory,
+            :tokenizer_config,
+            "258",
+            decoder_entry,
+            decoder_entry,
+        )
+        @test duplicate_error(directory) ==
+            "ArgumentError: added_tokens_decoder does not cover every tokenizer added token"
+    end
+
     mutations = [
         payloads -> (payloads.tokenizer["normalizer"]["type"] = "NFKC"),
         payloads -> (payloads.tokenizer["pre_tokenizer"]["pretokenizers"][1]["pattern"]["Regex"] = "\\w+"),
