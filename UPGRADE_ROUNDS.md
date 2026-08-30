@@ -375,6 +375,8 @@ Chapter 03 reproducible-training test.
      allocating channels or per-expert upload matrices.
 187. Preflight reusable Qwen3 MoE safetensors read-buffer dimensions and total
      payload bytes before allocating pool channels or byte vectors.
+188. Normalize host Qwen3 generation stop ids through the strict shared token
+     boundary so Boolean, floating-point, and oversized ids cannot be coerced.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

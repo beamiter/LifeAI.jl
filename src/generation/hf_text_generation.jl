@@ -163,10 +163,8 @@ function generate_hf_text(
     ) || throw(ArgumentError("sample_uniforms values must be finite and in [0, 1)"))
     prompt_ids = encode(tokenizer, prompt; add_special_tokens=false)
     _hf_generation_limits(model, length(prompt_ids), max_new_tokens)
-    stops = stop_token_ids === nothing ? Set(tokenizer.eos_ids) : Set(Int.(stop_token_ids))
-    all(id -> 1 <= id <= model.vocab_size, stops) || throw(ArgumentError(
-        "stop token id is outside the model vocabulary",
-    ))
+    raw_stops = stop_token_ids === nothing ? tokenizer.eos_ids : stop_token_ids
+    stops = _qwen3_stop_token_set(raw_stops, model.vocab_size)
 
     generated = copy(prompt_ids)
     new_ids = Int[]

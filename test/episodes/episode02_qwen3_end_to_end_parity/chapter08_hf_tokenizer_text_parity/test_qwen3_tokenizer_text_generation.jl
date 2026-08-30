@@ -347,6 +347,31 @@ end
         @test_throws ArgumentError generate_hf_text(bundle, ""; max_new_tokens=1)
         @test_throws ArgumentError generate_hf_text(bundle, "hi"; strategy=:unknown)
         @test_throws ArgumentError generate_hf_text(bundle, "hi"; cache=:xla)
+
+        invalid_stops = (
+            Bool[true],
+            Float64[1.0],
+            BigInt[big(typemax(Int)) + 1],
+        )
+        for mode in (:full, :dynamic, :static), stop_ids in invalid_stops
+            failure = try
+                generate_hf_text(
+                    bundle,
+                    "hi";
+                    cache=mode,
+                    max_new_tokens=0,
+                    stop_token_ids=stop_ids,
+                )
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test occursin(
+                "Qwen3 stop token id",
+                sprint(showerror, failure),
+            )
+        end
     end
 end
 
