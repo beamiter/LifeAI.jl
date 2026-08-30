@@ -378,6 +378,33 @@ end
     rebuilt = GPTModel(gpt_config(modern))
     @test gpt_config(rebuilt) == gpt_config(modern)
 
+    raw_fields = Tuple(
+        getfield(modern, name) for name in fieldnames(typeof(modern))
+    )
+    raw_rebuilt = GPTModel(raw_fields...)
+    @test gpt_config(raw_rebuilt) == gpt_config(modern)
+    @test gpt_config(Lux.fmap(identity, modern)) == gpt_config(modern)
+
+    layer_count_index = only(findall(
+        ==(:num_layers),
+        fieldnames(typeof(modern)),
+    ))
+    layer_count_failure = try
+        GPTModel(Base.setindex(raw_fields, 3, layer_count_index)...)
+        nothing
+    catch error
+        error
+    end
+    @test layer_count_failure isa ArgumentError
+    @test sprint(showerror, layer_count_failure) ==
+        "ArgumentError: `num_layers` must match the number of entries in " *
+        "`blocks.layers`; got 3 and 2"
+
+    blocks_index = only(findall(==(:blocks), fieldnames(typeof(modern))))
+    @test_throws ArgumentError GPTModel(
+        Base.setindex(raw_fields, nothing, blocks_index)...,
+    )
+
     wide_head = GPTModel(
         19,
         16,

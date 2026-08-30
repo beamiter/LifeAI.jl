@@ -1,5 +1,4 @@
 using Lux
-using ConcreteStructs
 using Random: AbstractRNG
 
 """
@@ -28,19 +27,19 @@ Structure:
 absolute position table. Learned positions are added once after token embedding
 and use the cache's absolute decode position.
 """
-@concrete struct GPTModel <: AbstractLuxContainerLayer{(
+struct GPTModel{TE,PE,B,F,H} <: AbstractLuxContainerLayer{(
     :token_embedding,
     :blocks,
     :final_norm,
     :lm_head,
 )}
-    token_embedding
+    token_embedding::TE
     # Excluded from the automatic child tuple. Custom Lux initialization adds
     # it only for learned-absolute models, preserving legacy parameter trees.
-    position_embedding
-    blocks
-    final_norm
-    lm_head
+    position_embedding::PE
+    blocks::B
+    final_norm::F
+    lm_head::H
 
     vocab_size::Int
     d_model::Int
@@ -68,6 +67,91 @@ and use the cache's absolute decode position.
     num_experts::Int
     experts_per_token::Int
     normalize_routing::Bool
+
+    function GPTModel(
+        token_embedding,
+        position_embedding,
+        blocks,
+        final_norm,
+        lm_head,
+        vocab_size::Int,
+        d_model::Int,
+        num_heads::Int,
+        num_layers::Int,
+        max_seq_len::Int,
+        use_rope::Bool,
+        position_embedding_type::Symbol,
+        num_kv_heads::Int,
+        head_dim::Int,
+        mlp_hidden_dim::Int,
+        use_bias::Bool,
+        lm_head_bias::Bool,
+        is_causal::Bool,
+        rope_theta::Float32,
+        rope_style::Symbol,
+        norm_epsilon::Float32,
+        norm_type::Symbol,
+        mlp_type::Symbol,
+        tie_embeddings::Bool,
+        use_qk_norm::Bool,
+        qk_norm_epsilon::Float32,
+        num_experts::Int,
+        experts_per_token::Int,
+        normalize_routing::Bool,
+    )
+        num_layers > 0 || throw(ArgumentError(
+            "`num_layers` must be positive",
+        ))
+        hasproperty(blocks, :layers) || throw(ArgumentError(
+            "`blocks` must expose a tuple-like `layers` field",
+        ))
+        block_layers = getproperty(blocks, :layers)
+        block_layers isa Union{Tuple,NamedTuple} || throw(ArgumentError(
+            "`blocks.layers` must be a Tuple or NamedTuple",
+        ))
+        actual_layers = length(block_layers)
+        actual_layers == num_layers || throw(ArgumentError(
+            "`num_layers` must match the number of entries in " *
+            "`blocks.layers`; got $num_layers and $actual_layers",
+        ))
+        return new{
+            typeof(token_embedding),
+            typeof(position_embedding),
+            typeof(blocks),
+            typeof(final_norm),
+            typeof(lm_head),
+        }(
+            token_embedding,
+            position_embedding,
+            blocks,
+            final_norm,
+            lm_head,
+            vocab_size,
+            d_model,
+            num_heads,
+            num_layers,
+            max_seq_len,
+            use_rope,
+            position_embedding_type,
+            num_kv_heads,
+            head_dim,
+            mlp_hidden_dim,
+            use_bias,
+            lm_head_bias,
+            is_causal,
+            rope_theta,
+            rope_style,
+            norm_epsilon,
+            norm_type,
+            mlp_type,
+            tie_embeddings,
+            use_qk_norm,
+            qk_norm_epsilon,
+            num_experts,
+            experts_per_token,
+            normalize_routing,
+        )
+    end
 end
 
 function _gpt_parameter_count_int(
