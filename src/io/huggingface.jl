@@ -338,6 +338,28 @@ function qwen3_dense_spec(variant::Union{Symbol,AbstractString})
     ))
 end
 
+function _qwen3_requested_max_seq_len(value)
+    value === nothing && return nothing
+    requested = _strict_host_int(value, "max_seq_len")
+    requested > 0 || throw(ArgumentError("max_seq_len must be positive"))
+    return requested
+end
+
+function _qwen3_requested_dense_variant(value)
+    value === nothing && return nothing
+    value isa Union{Symbol,AbstractString} || throw(ArgumentError(
+        "variant must be a symbol or string",
+    ))
+    return qwen3_dense_spec(value)
+end
+
+function _qwen3_weight_dtype(value)
+    value in (Float32, BFloat16) || throw(ArgumentError(
+        "weight_dtype must be Float32 or BFloat16",
+    ))
+    return value
+end
+
 function _qwen3_dense_spec(
     vocab_size,
     d_model,
@@ -485,6 +507,8 @@ function load_hf_qwen3_config(
     max_seq_len=nothing,
     variant=nothing,
 )
+    requested_max_seq_len = _qwen3_requested_max_seq_len(max_seq_len)
+    requested_variant = _qwen3_requested_dense_variant(variant)
     config = _json_object(path)
 
     model_type = _json_required(config, "model_type", path)
@@ -543,9 +567,9 @@ function load_hf_qwen3_config(
     ))
     iseven(head_dim) || throw(ArgumentError("Qwen3 head_dim must be even for RoPE"))
 
-    resolved_max_seq_len = max_seq_len === nothing ? max_positions :
-        _strict_host_int(max_seq_len, "max_seq_len")
-    1 <= resolved_max_seq_len <= max_positions || throw(ArgumentError(
+    resolved_max_seq_len = requested_max_seq_len === nothing ?
+        max_positions : requested_max_seq_len
+    resolved_max_seq_len <= max_positions || throw(ArgumentError(
         "max_seq_len must be in 1:$max_positions; got $resolved_max_seq_len",
     ))
 
@@ -565,11 +589,10 @@ function load_hf_qwen3_config(
         max_positions,
         tie_embeddings,
     )
-    if variant !== nothing
-        expected = qwen3_dense_spec(variant)
-        dense_spec === expected || throw(ArgumentError(
+    if requested_variant !== nothing
+        dense_spec === requested_variant || throw(ArgumentError(
             "Qwen3 config in $path does not match requested variant " *
-            "$(expected.variant)",
+            "$(requested_variant.variant)",
         ))
     end
 
@@ -1652,14 +1675,18 @@ function load_hf_qwen3_model(
     weight_dtype::Type=Float32,
     variant=nothing,
 )
+    requested_max_seq_len = _qwen3_requested_max_seq_len(max_seq_len)
+    requested_variant = _qwen3_requested_dense_variant(variant)
+    requested_weight_dtype = _qwen3_weight_dtype(weight_dtype)
     isdir(model_dir) || throw(ArgumentError("model directory does not exist: $model_dir"))
     config = load_hf_qwen3_config(
         joinpath(model_dir, "config.json");
-        max_seq_len,
-        variant,
+        max_seq_len=requested_max_seq_len,
+        variant=requested_variant === nothing ?
+            nothing : requested_variant.variant,
     )
     model = GPTModel(config)
-    tensors = load_safetensors(model_dir; target_dtype=weight_dtype)
+    tensors = load_safetensors(model_dir; target_dtype=requested_weight_dtype)
     parameters = load_hf_qwen3_parameters(model, tensors)
     # Parameters reuse every linear/norm array, while the tied HF checkpoint may
     # also contain two large source matrices that were validated and copied into
@@ -1734,12 +1761,16 @@ function load_hf_qwen3_bundle(
     revision::AbstractString="",
     variant=nothing,
 )
+    requested_max_seq_len = _qwen3_requested_max_seq_len(max_seq_len)
+    requested_variant = _qwen3_requested_dense_variant(variant)
+    requested_weight_dtype = _qwen3_weight_dtype(weight_dtype)
     tokenizer = load_hf_qwen3_tokenizer(model_dir; revision)
     loaded = load_hf_qwen3_model(
         model_dir;
-        max_seq_len,
-        weight_dtype,
-        variant,
+        max_seq_len=requested_max_seq_len,
+        weight_dtype=requested_weight_dtype,
+        variant=requested_variant === nothing ?
+            nothing : requested_variant.variant,
     )
     vocab_size(tokenizer) <= loaded.model.vocab_size || throw(ArgumentError(
         "tokenizer vocabulary exceeds the Qwen3 model embedding vocabulary",

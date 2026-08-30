@@ -61,6 +61,9 @@ parameters = load_hf_qwen3_parameters(model, tensors)
 - 所有结构整数与 `max_seq_len` override 都要求非 Bool、平台可表示的整数；RMSNorm
   epsilon 与 RoPE theta 必须在 Float32 收窄后仍为正且有限，zero dropout 也不能用
   `false` 冒充。compact streaming loader 将原始 override 交给同一严格边界。
+- dense config/model/bundle 在任何 JSON、tokenizer 或 weight I/O 前先校验请求的
+  `max_seq_len`、官方 variant 与 weight dtype；合法 bundle 仍保持 tokenizer-first，
+  但明显无效的调用不会被缺文件错误掩盖或触发模型构造。
 - 参数加载必须报告 missing / unexpected / duplicate / shape mismatch / unsupported dtype，
   并在映射前拒绝 checkpoint 不提供的 LM-head bias；不允许用初始化随机值悄悄补齐。
 - tied 模型复用 `embed_tokens`；untied 模型必须存在并加载 `lm_head.weight`。

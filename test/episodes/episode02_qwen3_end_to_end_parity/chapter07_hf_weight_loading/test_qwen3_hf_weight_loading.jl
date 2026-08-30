@@ -1,4 +1,5 @@
 using Test
+using BFloat16s: BFloat16
 using JSON3
 using Lux
 using Optimisers
@@ -16,12 +17,22 @@ using LifeAI:
     init_kv_cache,
     init_static_kv_cache,
     load_checkpoint,
+    load_hf_qwen3_bundle,
     load_hf_qwen3_config,
     load_hf_qwen3_model,
     load_hf_qwen3_parameters,
     load_safetensors,
     prefill,
     save_checkpoint
+
+function _qwen3_weight_loading_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected Qwen3 weight-loading call to fail")
+end
 
 function _qwen3_weight_loading_row_major_values(array)
     values = Float32.(array)
@@ -296,6 +307,128 @@ end
         end
         write(joinpath(directory, "invalid.json"), "[")
         @test_throws ArgumentError load_hf_qwen3_config(joinpath(directory, "invalid.json"))
+    end
+end
+
+@testset "Qwen3 dense requests fail before model and tokenizer I/O" begin
+    mktempdir() do directory
+        missing_config = joinpath(directory, "config.json")
+        too_large = big(typemax(Int)) + 1
+        config_cases = (
+            (
+                "max_seq_len must be an integer",
+                () -> load_hf_qwen3_config(missing_config; max_seq_len=true),
+            ),
+            (
+                "max_seq_len must be positive",
+                () -> load_hf_qwen3_config(missing_config; max_seq_len=0),
+            ),
+            (
+                "max_seq_len is outside the host integer range",
+                () -> load_hf_qwen3_config(
+                    missing_config;
+                    max_seq_len=too_large,
+                ),
+            ),
+            (
+                "unknown Qwen3 dense variant",
+                () -> load_hf_qwen3_config(
+                    missing_config;
+                    variant=:not_qwen3,
+                ),
+            ),
+            (
+                "variant must be a symbol or string",
+                () -> load_hf_qwen3_config(missing_config; variant=true),
+            ),
+        )
+        for (needle, thunk) in config_cases
+            failure = _qwen3_weight_loading_captured_error(thunk)
+            @test failure isa ArgumentError
+            @test occursin(needle, sprint(showerror, failure))
+            @test !occursin(
+                "JSON file does not exist",
+                sprint(showerror, failure),
+            )
+        end
+
+        valid_config_failure = _qwen3_weight_loading_captured_error() do
+            load_hf_qwen3_config(missing_config; max_seq_len=big(8))
+        end
+        @test valid_config_failure isa ArgumentError
+        @test occursin(
+            "JSON file does not exist",
+            sprint(showerror, valid_config_failure),
+        )
+
+        model_cases = (
+            (
+                "max_seq_len must be an integer",
+                () -> load_hf_qwen3_model(directory; max_seq_len=true),
+            ),
+            (
+                "variant must be a symbol or string",
+                () -> load_hf_qwen3_model(directory; variant=true),
+            ),
+            (
+                "weight_dtype must be Float32 or BFloat16",
+                () -> load_hf_qwen3_model(directory; weight_dtype=Float64),
+            ),
+        )
+        for (needle, thunk) in model_cases
+            failure = _qwen3_weight_loading_captured_error(thunk)
+            @test failure isa ArgumentError
+            @test occursin(needle, sprint(showerror, failure))
+            @test !occursin(
+                "JSON file does not exist",
+                sprint(showerror, failure),
+            )
+        end
+        valid_model_failure = _qwen3_weight_loading_captured_error() do
+            load_hf_qwen3_model(
+                directory;
+                max_seq_len=Int32(8),
+                weight_dtype=Float32,
+            )
+        end
+        @test valid_model_failure isa ArgumentError
+        @test occursin(
+            "JSON file does not exist",
+            sprint(showerror, valid_model_failure),
+        )
+
+        bundle_cases = (
+            (
+                "max_seq_len must be an integer",
+                () -> load_hf_qwen3_bundle(directory; max_seq_len=true),
+            ),
+            (
+                "variant must be a symbol or string",
+                () -> load_hf_qwen3_bundle(directory; variant=true),
+            ),
+            (
+                "weight_dtype must be Float32 or BFloat16",
+                () -> load_hf_qwen3_bundle(directory; weight_dtype=Float64),
+            ),
+        )
+        for (needle, thunk) in bundle_cases
+            failure = _qwen3_weight_loading_captured_error(thunk)
+            @test failure isa ArgumentError
+            @test occursin(needle, sprint(showerror, failure))
+            @test !occursin("tokenizer", sprint(showerror, failure))
+        end
+        valid_bundle_failure = _qwen3_weight_loading_captured_error() do
+            load_hf_qwen3_bundle(
+                directory;
+                max_seq_len=Int128(8),
+                weight_dtype=BFloat16,
+            )
+        end
+        @test valid_bundle_failure isa ArgumentError
+        @test occursin(
+            "required Qwen3 tokenizer file",
+            sprint(showerror, valid_bundle_failure),
+        )
     end
 end
 
