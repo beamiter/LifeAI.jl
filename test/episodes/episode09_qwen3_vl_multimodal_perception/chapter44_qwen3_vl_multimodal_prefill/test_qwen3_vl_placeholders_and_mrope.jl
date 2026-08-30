@@ -218,6 +218,40 @@ end
     @test_throws ArgumentError qwen3_vl_rope_layout(tokens)
 end
 
+@testset "Chapter 44 — two-image mRoPE base progression" begin
+    checkpoint = qwen3_vl_checkpoint_spec()
+    vision_start = checkpoint.vision_start_token_id + 1
+    vision_end = checkpoint.vision_end_token_id + 1
+    image_token = checkpoint.image_token_id + 1
+    tokens = vcat(
+        Int[11, vision_start],
+        fill(image_token, 4),
+        Int[vision_end, 12, vision_start],
+        fill(image_token, 8),
+        Int[vision_end, 13],
+    )
+    grids = BigInt[
+        1 1
+        4 4
+        4 8
+    ]
+    layout = qwen3_vl_rope_layout(tokens, grids)
+
+    @test size(layout.position_ids) == (3, 19, 1)
+    @test layout.position_ids[:, 3, 1] == [2, 2, 2]
+    @test layout.position_ids[:, 6, 1] == [2, 3, 3]
+    @test layout.position_ids[:, 7, 1] == [4, 4, 4]
+    @test layout.position_ids[:, 8, 1] == [5, 5, 5]
+    @test layout.position_ids[:, 9, 1] == [6, 6, 6]
+    @test layout.position_ids[:, 10, 1] == [7, 7, 7]
+    @test layout.position_ids[:, 17, 1] == [7, 8, 10]
+    @test layout.position_ids[:, 18, 1] == [11, 11, 11]
+    @test layout.position_ids[:, 19, 1] == [12, 12, 12]
+    @test layout.rope_deltas == reshape(Int[-6], 1, 1)
+    @test findall(view(layout.visual_mask, :, 1)) == vcat(3:6, 10:17)
+    @test all(layout.attention_mask)
+end
+
 @testset "Chapter 44 — 256-patch-grid visual mRoPE oracle" begin
     checkpoint = qwen3_vl_checkpoint_spec()
     tokens = fill(11, 76)

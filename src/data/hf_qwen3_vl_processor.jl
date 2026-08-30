@@ -1258,6 +1258,7 @@ function qwen3_vl_rope_layout(
         columns = NTuple{3,Int}[]
         sizehint!(columns, length(filtered))
         cursor = 1
+        next_base = 0
         for image_start in image_starts
             grid_index += 1
             grid_index <= length(grids) || throw(ArgumentError(
@@ -1298,9 +1299,12 @@ function qwen3_vl_rope_layout(
             ))
 
             text_length = image_start - cursor
-            base = isempty(columns) ? 0 : maximum(maximum, columns) + 1
-            _qwen3_vl_append_text_positions!(columns, text_length, base)
-            visual_base = base + text_length
+            _qwen3_vl_append_text_positions!(
+                columns,
+                text_length,
+                next_base,
+            )
+            visual_base = next_base + text_length
             for temporal in 0:(grid_t - 1), height in 0:(merged_h - 1),
                 width in 0:(merged_w - 1)
                 push!(columns, (
@@ -1309,18 +1313,20 @@ function qwen3_vl_rope_layout(
                     visual_base + width,
                 ))
             end
+            next_base = visual_base + max(grid_t, merged_h, merged_w)
             for filtered_index in image_start:last_visual
                 visual_mask[valid_positions[filtered_index], batch] = true
             end
             cursor = last_visual + 1
         end
         if cursor <= length(filtered)
-            base = isempty(columns) ? 0 : maximum(maximum, columns) + 1
+            tail_length = length(filtered) - cursor + 1
             _qwen3_vl_append_text_positions!(
                 columns,
-                length(filtered) - cursor + 1,
-                base,
+                tail_length,
+                next_base,
             )
+            next_base += tail_length
         end
         length(columns) == length(filtered) || error(
             "internal Qwen3-VL mRoPE position length mismatch",
@@ -1332,7 +1338,7 @@ function qwen3_vl_rope_layout(
         for (index, source_position) in enumerate(valid_positions)
             position_ids[:, source_position, batch] .= columns[index]
         end
-        deltas[batch, 1] = maximum(maximum, columns) + 1 - sequence_length
+        deltas[batch, 1] = next_base - sequence_length
     end
     grid_index == length(grids) || throw(ArgumentError(
         "Qwen3-VL image grid count exceeds prompt image placeholders",

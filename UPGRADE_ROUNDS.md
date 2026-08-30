@@ -207,6 +207,8 @@ Chapter 03 reproducible-training test.
      integer contract used by tuple/vector grids.
 103. Preflight Qwen3-VL visual spans with exact products and prompt bounds
      before generating coordinate tuples or mutating visual masks.
+104. Track Qwen3-VL mRoPE bases incrementally so multi-image layouts avoid
+     repeatedly rescanning all prior coordinate tuples.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
