@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the fifty-six follow-up rounds implemented on top of the
+This ledger records the fifty-seven follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -111,6 +111,8 @@ Chapter 03 reproducible-training test.
     rejecting Boolean or unrepresentable inputs before checked byte arithmetic.
 56. Apply strict host-integer normalization to every Qwen3 MoE offload planner
     input while retaining representable narrow and arbitrary-width integers.
+57. Normalize every Qwen3 XLA window integer and check rounded-bucket arithmetic,
+    preventing Boolean coercion, conversion leaks, and host-width overflow.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

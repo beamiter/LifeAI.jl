@@ -88,6 +88,10 @@ logits。窗口规划同时区分：
 - physical bucket：左补齐后的 prompt；
 - cache position：bucket + generated - 1，最后选中的 token 不必写回。
 
+planner 的 context/prompt/output/chunk 输入先严格归一为宿主 `Int`，可表示的
+窄整数和 BigInt 均可使用，Bool 与越界整数统一拒绝；rounded bucket 的乘法也
+采用 checked arithmetic，避免跨宿主字宽时回绕。
+
 真实 65-token case 因而进入 128-token bucket、左补 63 slots，并与
 CUDA BF16 reference 的 32/32 tokens 一致；3,584+512 整窗最终是
 logical sequence 4,096、cache position 4,095。

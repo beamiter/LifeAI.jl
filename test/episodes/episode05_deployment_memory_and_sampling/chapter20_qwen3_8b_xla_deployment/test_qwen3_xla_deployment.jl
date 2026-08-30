@@ -19,6 +19,15 @@ isdefined(@__MODULE__, :repository_test_asset) ||
 isdefined(@__MODULE__, :_qwen3_tiny_model_fixture_dir) ||
     include(joinpath(@__DIR__, "..", "..", "..", "support", "qwen3_tiny_model_fixture.jl"))
 
+function _qwen3_xla_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected Qwen3 XLA planning call to fail")
+end
+
 @testset "exact XLA 4K window planning" begin
     plan = plan_qwen3_xla_window(3584, 512)
     @test plan.context_tokens == 4096
@@ -40,6 +49,80 @@ isdefined(@__MODULE__, :_qwen3_tiny_model_fixture_dir) ||
     key_positions = qwen3_xla_key_positions(padded)
     @test key_positions[1:15] == fill(typemax(Int32), 15)
     @test key_positions[16:end] == Int32.(16:64)
+
+    normalized = plan_qwen3_xla_window(
+        Int32(17),
+        Int128(4);
+        context_tokens=big(64),
+        chunk_tokens=Int16(16),
+    )
+    @test all(
+        getfield(normalized, field) isa Int
+        for field in fieldnames(typeof(normalized))
+    )
+    @test normalized == padded
+
+    boolean_cases = (
+        (
+            label="prompt_tokens",
+            thunk=() -> plan_qwen3_xla_window(
+                true,
+                1;
+                context_tokens=4,
+                chunk_tokens=1,
+            ),
+        ),
+        (
+            label="max_new_tokens",
+            thunk=() -> plan_qwen3_xla_window(
+                1,
+                true;
+                context_tokens=4,
+                chunk_tokens=1,
+            ),
+        ),
+        (
+            label="context_tokens",
+            thunk=() -> plan_qwen3_xla_window(
+                1,
+                1;
+                context_tokens=true,
+                chunk_tokens=1,
+            ),
+        ),
+        (
+            label="chunk_tokens",
+            thunk=() -> plan_qwen3_xla_window(
+                1,
+                1;
+                context_tokens=4,
+                chunk_tokens=true,
+            ),
+        ),
+    )
+    for case in boolean_cases
+        failure = _qwen3_xla_captured_error(case.thunk)
+        @test failure isa ArgumentError
+        @test occursin(
+            "$(case.label) must be an integer",
+            sprint(showerror, failure),
+        )
+    end
+
+    too_large = big(typemax(Int)) + 1
+    @test_throws ArgumentError plan_qwen3_xla_window(too_large, 1)
+    @test_throws ArgumentError plan_qwen3_xla_window(1, too_large)
+    @test_throws ArgumentError plan_qwen3_xla_window(
+        1,
+        1;
+        context_tokens=too_large,
+    )
+    @test_throws ArgumentError plan_qwen3_xla_window(
+        1,
+        1;
+        context_tokens=4,
+        chunk_tokens=too_large,
+    )
 
     @test_throws ArgumentError plan_qwen3_xla_window(0, 1)
     @test_throws ArgumentError plan_qwen3_xla_window(1, 0)

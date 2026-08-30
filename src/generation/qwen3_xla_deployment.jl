@@ -36,10 +36,10 @@ function plan_qwen3_xla_window(
     context_tokens::Integer=4096,
     chunk_tokens::Integer=64,
 )
-    context = Int(context_tokens)
-    prompt = Int(prompt_tokens)
-    output = Int(max_new_tokens)
-    chunk = Int(chunk_tokens)
+    context = _strict_host_int(context_tokens, "context_tokens")
+    prompt = _strict_host_int(prompt_tokens, "prompt_tokens")
+    output = _strict_host_int(max_new_tokens, "max_new_tokens")
+    chunk = _strict_host_int(chunk_tokens, "chunk_tokens")
     context > 0 || throw(ArgumentError("context_tokens must be positive"))
     context <= typemax(Int32) || throw(ArgumentError(
         "context_tokens must fit in Int32 device positions",
@@ -56,7 +56,14 @@ function plan_qwen3_xla_window(
         "prompt plus requested output exceeds context_tokens",
     ))
 
-    bucket = cld(prompt, chunk) * chunk
+    bucket = try
+        Base.Checked.checked_mul(cld(prompt, chunk), chunk)
+    catch error
+        error isa OverflowError || rethrow()
+        throw(ArgumentError(
+            "padded XLA prompt bucket exceeds the host integer range",
+        ))
+    end
     bucket <= context - output || throw(ArgumentError(
         "padded XLA prompt bucket plus requested output exceeds " *
         "context_tokens",
