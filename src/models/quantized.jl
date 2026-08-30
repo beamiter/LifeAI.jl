@@ -812,7 +812,7 @@ end
 _dequantize_bf16(weight::AbstractMatrix) = weight
 
 function _dequantize_bf16(weight::Int8ChannelWeight)
-    return BFloat16.(Float32.(weight.q) .* reshape(weight.scale, :, 1))
+    return BFloat16.(_bf16a_f32(weight.q) .* reshape(weight.scale, :, 1))
 end
 
 function _dequantize_bf16(weight::Int4GroupWeight)
@@ -822,8 +822,12 @@ function _dequantize_bf16(weight::Int4GroupWeight)
     # into a single broadcast so no full-width Float32 intermediate exists.
     packed_group_index = ((2 .* (1:(weight.in_dim ÷ 2)) .- 2) .÷ weight.group) .+ 1
     scale_half = weight.scale[:, packed_group_index]
-    low = BFloat16.((Float32.(weight.packed .& 0x0f) .- 8.0f0) .* scale_half)
-    high = BFloat16.((Float32.(weight.packed .>> 4) .- 8.0f0) .* scale_half)
+    low = BFloat16.((
+        _bf16a_f32(weight.packed .% UInt8(16)) .- 8.0f0
+    ) .* scale_half)
+    high = BFloat16.((
+        _bf16a_f32(weight.packed .÷ UInt8(16)) .- 8.0f0
+    ) .* scale_half)
     stacked = cat(
         reshape(low, out_dim, 1, weight.in_dim ÷ 2),
         reshape(high, out_dim, 1, weight.in_dim ÷ 2);

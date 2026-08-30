@@ -295,6 +295,8 @@ Chapter 03 reproducible-training test.
      rejecting numerically equal floats, complex numbers, and missing data.
 147. Validate Qwen3-VL raw-generation message roles before image extraction,
      replacing numeric and symbolic role conversion failures with clear errors.
+148. Make Qwen3 INT8 and packed-INT4 dequantization traceable on Reactant while
+     preserving exhaustive host nibble semantics and compiled row slicing.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

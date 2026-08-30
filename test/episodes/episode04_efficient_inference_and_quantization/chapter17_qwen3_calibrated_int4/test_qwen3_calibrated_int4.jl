@@ -38,6 +38,29 @@ function _quantization_argument_error_message(f)
     return nothing
 end
 
+@testset "trace-safe quantized dequantization preserves host values" begin
+    int8_values = reshape(Int8[-128, -1, 0, 127], 1, :)
+    int8_scale = Float32[0.25]
+    int8_weight = Int8ChannelWeight(int8_values, int8_scale)
+    @test LifeAI._dequantize_bf16(int8_weight) ==
+        BFloat16.(Float32.(int8_values) .* reshape(int8_scale, :, 1))
+
+    packed_values = reshape(UInt8.(0:255), 1, :)
+    int4_weight = Int4GroupWeight(
+        packed_values,
+        ones(Float32, 1, 256),
+        2,
+        512,
+    )
+    expected = BFloat16[
+        isodd(column) ?
+            Int(packed_values[cld(column, 2)] % UInt8(16)) - 8 :
+            Int(packed_values[cld(column, 2)] ÷ UInt8(16)) - 8
+        for column in 1:512
+    ]
+    @test vec(LifeAI._dequantize_bf16(int4_weight)) == expected
+end
+
 @testset "INT4 reconstruction-MSE calibration" begin
     # Each group has one outlier and many unit-scale values. Candidate 0.9
     # clips the outlier slightly but lowers total reconstruction error.
