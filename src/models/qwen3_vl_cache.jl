@@ -728,6 +728,25 @@ function _qwen3_vl_decode_token_matrix(token, batch_size::Int)
     return tokens
 end
 
+function _qwen3_vl_decode_coordinate(
+    position::Int,
+    rope_delta::Int,
+    limit::Int,
+)
+    coordinate = try
+        Base.Checked.checked_add(position, rope_delta)
+    catch error
+        error isa OverflowError || rethrow()
+        throw(ArgumentError(
+            "Qwen3-VL decode mRoPE coordinate exceeds the host integer range",
+        ))
+    end
+    0 <= coordinate < limit || throw(ArgumentError(
+        "Qwen3-VL decode mRoPE coordinate is outside the decoder context",
+    ))
+    return coordinate
+end
+
 """
     hf_qwen3_vl_text_decode_step(parameters, token, cache)
 
@@ -749,10 +768,11 @@ function hf_qwen3_vl_text_decode_step(
     cache.position < spec.max_position_embeddings || throw(ArgumentError(
         "Qwen3-VL KV cache has reached the decoder context limit",
     ))
-    coordinate = cache.position + cache.rope_delta
-    0 <= coordinate < spec.max_position_embeddings || throw(ArgumentError(
-        "Qwen3-VL decode mRoPE coordinate is outside the decoder context",
-    ))
+    coordinate = _qwen3_vl_decode_coordinate(
+        cache.position,
+        cache.rope_delta,
+        spec.max_position_embeddings,
+    )
     tokens = _qwen3_vl_decode_token_matrix(token, cache.batch_size)
     all(id -> 1 <= id <= spec.vocab_size, tokens) || throw(ArgumentError(
         "Qwen3-VL decode token is outside the vocabulary",
@@ -1029,10 +1049,11 @@ function _qwen3_vl_text_decode_step_static_impl(
     cache.position < cache.capacity || throw(ArgumentError(
         "Qwen3-VL static KV cache has reached its capacity",
     ))
-    coordinate = cache.position + cache.rope_delta
-    0 <= coordinate < spec.max_position_embeddings || throw(ArgumentError(
-        "Qwen3-VL decode mRoPE coordinate is outside the decoder context",
-    ))
+    coordinate = _qwen3_vl_decode_coordinate(
+        cache.position,
+        cache.rope_delta,
+        spec.max_position_embeddings,
+    )
     tokens = _qwen3_vl_decode_token_matrix(token, cache.batch_size)
     all(id -> 1 <= id <= spec.vocab_size, tokens) || throw(ArgumentError(
         "Qwen3-VL decode token is outside the vocabulary",

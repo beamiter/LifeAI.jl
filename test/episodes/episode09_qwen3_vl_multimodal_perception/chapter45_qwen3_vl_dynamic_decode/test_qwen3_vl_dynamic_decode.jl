@@ -461,6 +461,29 @@ end
     prefill_keys = map(layer -> copy(layer.keys), cache8.layers)
     prefill_values = map(layer -> copy(layer.values), cache8.layers)
 
+    overflow_cache = LifeAI.Qwen3VLKVCache(
+        cache8.layers,
+        cache8.position,
+        typemax(Int),
+        cache8.batch_size,
+    )
+    coordinate_error = _ch45_captured_error(() ->
+        hf_qwen3_vl_text_decode_step(parameters, 8, overflow_cache),
+    )
+    @test coordinate_error isa ArgumentError
+    @test occursin(
+        "decode mRoPE coordinate exceeds the host integer range",
+        sprint(showerror, coordinate_error),
+    )
+    @test overflow_cache.position == 8
+    @test overflow_cache.rope_delta == typemax(Int)
+    for layer in eachindex(overflow_cache.layers)
+        @test overflow_cache.layers[layer].keys === cache8.layers[layer].keys
+        @test overflow_cache.layers[layer].values === cache8.layers[layer].values
+        @test overflow_cache.layers[layer].keys == prefill_keys[layer]
+        @test overflow_cache.layers[layer].values == prefill_values[layer]
+    end
+
     choice = _ch45_top_two(prefill.logits)
     @test choice.ids == [8, 24]
     @test choice.margin ≈ 0.0004043877f0 atol=2.0f-7 rtol=2.0f-5

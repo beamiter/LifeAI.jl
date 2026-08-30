@@ -195,6 +195,8 @@ Chapter 03 reproducible-training test.
     accepting booleans or leaking host-integer conversion failures.
 97. Share strict Qwen3-VL prompt coordinate/delta validation across cache-free,
     dynamic, and static prefill without unsigned wraparound or cache mutation.
+98. Check dynamic and static Qwen3-VL decode-coordinate addition before token,
+    profiling, embedding, or cache-write work.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

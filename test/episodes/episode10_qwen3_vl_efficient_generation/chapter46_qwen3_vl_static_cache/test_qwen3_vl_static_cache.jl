@@ -851,6 +851,38 @@ end
         vision_features=inputs.vision_features,
         cache=token_validation,
     )
+    token_validation_refs = _ch46_storage_refs(token_validation)
+    token_validation_snapshot = map(
+        layer -> (copy(layer.keys), copy(layer.values)),
+        token_validation.layers,
+    )
+    token_validation.rope_delta = typemax(Int)
+    coordinate_error = try
+        hf_qwen3_vl_text_decode_step_static(
+            parameters,
+            8,
+            token_validation,
+        )
+        nothing
+    catch caught
+        caught
+    end
+    @test coordinate_error isa ArgumentError
+    @test coordinate_error isa Exception && occursin(
+        "decode mRoPE coordinate exceeds the host integer range",
+        sprint(showerror, coordinate_error),
+    )
+    @test token_validation.position == 8
+    @test token_validation.rope_delta == typemax(Int)
+    for layer in eachindex(token_validation.layers)
+        @test token_validation.layers[layer].keys ==
+            token_validation_snapshot[layer][1]
+        @test token_validation.layers[layer].values ==
+            token_validation_snapshot[layer][2]
+    end
+    _ch46_assert_storage_identity(token_validation, token_validation_refs)
+    token_validation.rope_delta = -2
+
     @test_throws ArgumentError hf_qwen3_vl_text_decode_step_static(
         parameters,
         0,

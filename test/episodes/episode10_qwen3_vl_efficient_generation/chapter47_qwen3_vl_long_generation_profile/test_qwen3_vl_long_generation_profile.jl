@@ -236,6 +236,43 @@ end
             baseline_cache.layers[layer].values
     end
 
+    overflow_refs = _ch46_storage_refs(profiled_cache)
+    overflow_snapshot = map(
+        layer -> (copy(layer.keys), copy(layer.values)),
+        profiled_cache.layers,
+    )
+    profiled_cache.rope_delta = typemax(Int)
+    overflow_observed = Tuple{Symbol,Int}[]
+    overflow_runner = function (stage, layer, thunk)
+        push!(overflow_observed, (stage, layer))
+        return thunk()
+    end
+    coordinate_error = try
+        LifeAI._profile_qwen3_vl_text_decode_step_static(
+            parameters,
+            token,
+            profiled_cache,
+            overflow_runner,
+        )
+        nothing
+    catch caught
+        caught
+    end
+    @test coordinate_error isa ArgumentError
+    @test coordinate_error isa Exception && occursin(
+        "decode mRoPE coordinate exceeds the host integer range",
+        sprint(showerror, coordinate_error),
+    )
+    @test isempty(overflow_observed)
+    @test profiled_cache.position == 9
+    @test profiled_cache.rope_delta == typemax(Int)
+    for layer in eachindex(profiled_cache.layers)
+        @test profiled_cache.layers[layer].keys == overflow_snapshot[layer][1]
+        @test profiled_cache.layers[layer].values == overflow_snapshot[layer][2]
+    end
+    _ch46_assert_storage_identity(profiled_cache, overflow_refs)
+    profiled_cache.rope_delta = -2
+
     @test_throws ArgumentError LifeAI._profile_qwen3_vl_text_decode_step_static(
         parameters,
         token,
