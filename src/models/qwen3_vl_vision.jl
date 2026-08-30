@@ -836,6 +836,18 @@ function _qwen3_vl_merge(spec, merger, x)
     )
 end
 
+function _validate_qwen3_vl_vision_parameter_device(parameters)
+    try
+        get_device(parameters)
+    catch error
+        error isa ArgumentError || rethrow()
+        throw(ArgumentError(
+            "Qwen3-VL vision parameters must reside on one device",
+        ))
+    end
+    return nothing
+end
+
 """
     hf_qwen3_vl_vision_forward(parameters, input; capture_layers=())
 
@@ -870,6 +882,7 @@ function hf_qwen3_vl_vision_forward(
         throw(ArgumentError(
             "Qwen3-VL pixel_values device must match loaded vision weights",
         ))
+    _validate_qwen3_vl_vision_parameter_device(parameters)
 
     x = _qwen3_vl_linear(
         parameters.patch_weight,

@@ -355,6 +355,52 @@ end
     @test device_error isa ArgumentError
     @test sprint(showerror, device_error) ==
         "ArgumentError: Qwen3-VL pixel_values device must match loaded vision weights"
+
+    parameters = _ch43_tiny_parameters(Float32)
+    foreign_position = merge(parameters, (
+        pos_embedding=_Ch43ForeignDeviceMatrix(parameters.pos_embedding),
+    ))
+    foreign_block = merge(parameters.blocks[1], (
+        qkv_weight=_Ch43ForeignDeviceMatrix(parameters.blocks[1].qkv_weight),
+    ))
+    foreign_blocks = merge(parameters, (
+        blocks=Base.setindex(parameters.blocks, foreign_block, 1),
+    ))
+    foreign_merger_value = merge(parameters.merger, (
+        fc1_weight=_Ch43ForeignDeviceMatrix(parameters.merger.fc1_weight),
+    ))
+    foreign_merger = merge(parameters, (merger=foreign_merger_value,))
+    foreign_deepstack_value = merge(parameters.deepstack_mergers[1], (
+        fc1_weight=_Ch43ForeignDeviceMatrix(
+            parameters.deepstack_mergers[1].fc1_weight,
+        ),
+    ))
+    foreign_deepstack = merge(parameters, (
+        deepstack_mergers=Base.setindex(
+            parameters.deepstack_mergers,
+            foreign_deepstack_value,
+            1,
+        ),
+    ))
+    for mixed_parameters in (
+        foreign_position,
+        foreign_blocks,
+        foreign_merger,
+        foreign_deepstack,
+    )
+        parameter_device_error = try
+            hf_qwen3_vl_vision_forward(
+                mixed_parameters,
+                host_input,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test parameter_device_error isa ArgumentError
+        @test sprint(showerror, parameter_device_error) ==
+            "ArgumentError: Qwen3-VL vision parameters must reside on one device"
+    end
 end
 
 const _CH43_BIAS_VISION_SPEC = Qwen3VLVisionSpec(
