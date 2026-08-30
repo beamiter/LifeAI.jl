@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the thirty-six follow-up rounds implemented on top of the
+This ledger records the thirty-seven follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -60,6 +60,9 @@ Chapter 03 reproducible-training test.
 36. Compute global gradient norms with scale normalization so squaring finite
     Float32 or integer leaves cannot first underflow or overflow, and calculate
     clipping ratios in Float64 before enforcing the public Float32 metric contract.
+37. Align host and device Qwen3 MoE top-k routing at exact ties by selecting the
+    highest remaining expert index, including all-tie and cutoff-tie regressions
+    with and without selected-weight normalization.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

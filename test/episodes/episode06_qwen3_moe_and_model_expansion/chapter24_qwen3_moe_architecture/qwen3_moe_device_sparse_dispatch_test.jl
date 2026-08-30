@@ -29,6 +29,42 @@ using LifeAI:
     tied = qwen3_device_topk_routing(zeros(Float32, 4, 1), 3)
     @test vec(tied.expert_indices) == Int32[4, 3, 2]
     @test vec(tied.routing_weights) == fill(1.0f0 / 3.0f0, 3)
+
+    for normalize in (true, false)
+        all_tied_logits = zeros(Float32, 4, 2)
+        compact_tied = qwen3_device_topk_routing(
+            all_tied_logits,
+            3;
+            normalize,
+        )
+        dense_tied = qwen3_topk_routing(all_tied_logits, 3; normalize)
+        reconstructed_tied = zeros(Float32, size(dense_tied))
+        for token in axes(all_tied_logits, 2), slot in 1:3
+            expert = compact_tied.expert_indices[slot, token]
+            reconstructed_tied[expert, token] =
+                compact_tied.routing_weights[slot, token]
+        end
+        @test compact_tied.expert_indices == repeat(Int32[4, 3, 2], 1, 2)
+        @test reconstructed_tied == dense_tied
+        @test all(iszero, dense_tied[1, :])
+
+        boundary_logits = reshape(Float32[3, 2, 2, 2], :, 1)
+        compact_boundary = qwen3_device_topk_routing(
+            boundary_logits,
+            2;
+            normalize,
+        )
+        dense_boundary = qwen3_topk_routing(boundary_logits, 2; normalize)
+        reconstructed_boundary = zeros(Float32, size(dense_boundary))
+        for slot in 1:2
+            expert = compact_boundary.expert_indices[slot, 1]
+            reconstructed_boundary[expert, 1] =
+                compact_boundary.routing_weights[slot, 1]
+        end
+        @test vec(compact_boundary.expert_indices) == Int32[1, 4]
+        @test reconstructed_boundary == dense_boundary
+        @test findall(!iszero, vec(dense_boundary)) == [1, 4]
+    end
 end
 
 @testset "Qwen3 MoE route-major expert compute matches the all-expert oracle" begin

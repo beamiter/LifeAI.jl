@@ -55,7 +55,9 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 
 - CPU 默认路径已经按 expert gather 被选 token；全 expert masked 版本保留为 `qwen3_dense_expert_reference` 数值 oracle。非 CPU Array 的标准 Lux 调用会进入 compact device path；Reactant/XLA CPU 使用可移植 route-major fallback，RTX 4090 D CUDA 通过 package extension 自动启用 indexed/bucketed kernels。XLA fallback 仍物化 route 权重；CUDA 另有纯设备 grouped BF16 WMMA 实验入口，但其 activation 舍入契约尚未替换生产路径。
 - `load_hf_qwen3_moe_model` 仍会把 expert 权重 stack 成三维数组，只适合 tiny fixture；`stream_hf_qwen3_moe_forward` 已提供真实 checkpoint 所需的 header-only、逐层、路由后按 active expert 读取生命周期，并可显式选择 Float32 或 native BF16。真实 30B-A3B 已完成两种口径的逐层 prompt/cache-decode parity；这仍不是完整 40K context 的部署吞吐证明。
-- host `partialsortperm` 不是 CUDA/XLA 路由实现，不能把现有 Float32 CPU 通过写成 accelerator 已支持。
+- host `partialsortperm` 显式按 `(probability, expert index)` 选择，精确并列时与
+  CUDA/XLA compact 路径一致地优先较高 expert index；它仍不是 accelerator 路由
+  实现，不能把现有 Float32 CPU 通过写成 accelerator 已支持。
 - Qwen3 后续系列可能使用融合 expert tensor、shared expert、不同 attention 或 hybrid layer；必须按各自配置重新建立契约。
 
 ## 实验与过程记录

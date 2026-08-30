@@ -76,7 +76,8 @@ were not selected.
 This is the correctness-first host implementation. It deliberately makes the
 top-k boundary explicit; [`qwen3_device_topk_routing`](@ref) provides the
 compact accelerator representation without changing the expert or checkpoint
-parameter contract.
+parameter contract. Exact ties select the highest remaining expert index first,
+matching the compact device path.
 """
 function qwen3_topk_routing(
     router_logits::AbstractMatrix,
@@ -93,8 +94,9 @@ function qwen3_topk_routing(
     routing = zeros(Float32, num_experts, num_tokens)
     for token in 1:num_tokens
         selected = partialsortperm(
-            view(probabilities, :, token),
+            axes(probabilities, 1),
             1:experts_per_token;
+            by=expert -> (probabilities[expert, token], expert),
             rev=true,
         )
         @inbounds routing[selected, token] .= probabilities[selected, token]
