@@ -679,12 +679,48 @@ function _qwen3_vl_prompt_rope_deltas(
     return vec(normalized_deltas)
 end
 
+function _qwen3_vl_prompt_visual_token_contract(
+    parameters,
+    tokens,
+    visual_mask,
+)
+    hasproperty(parameters, :checkpoint) || return nothing
+    size(visual_mask) == size(tokens) || throw(DimensionMismatch(
+        "Qwen3-VL visual mask does not match input_ids",
+    ))
+    checkpoint = parameters.checkpoint
+    hasproperty(checkpoint, :image_token_id) || throw(ArgumentError(
+        "Qwen3-VL checkpoint must contain image_token_id",
+    ))
+    raw_image_token = _strict_host_int(
+        checkpoint.image_token_id,
+        "Qwen3-VL checkpoint image_token_id",
+    )
+    vocab_size = parameters.spec.vocab_size
+    0 <= raw_image_token < vocab_size || throw(ArgumentError(
+        "Qwen3-VL checkpoint image_token_id must be in 0:$(vocab_size - 1)",
+    ))
+    image_token = _strict_host_int(
+        BigInt(raw_image_token) + 1,
+        "Qwen3-VL one-based image token id",
+    )
+    expected_visual_mask = tokens .== image_token
+    all((.!expected_visual_mask) .| visual_mask) || throw(ArgumentError(
+        "Qwen3-VL checkpoint image tokens must be marked by visual_mask",
+    ))
+    all((.!visual_mask) .| expected_visual_mask) || throw(ArgumentError(
+        "Qwen3-VL visual_mask must not mark non-image input tokens",
+    ))
+    return nothing
+end
+
 function _qwen3_vl_cache_free_prompt_contract(
-    spec::Qwen3VLTextSpec,
+    parameters,
     tokens,
     rope_layout::Qwen3VLRopeLayout,
     max_prefill_tokens::Int,
 )
+    spec = parameters.spec
     sequence_length, batch_size = size(tokens)
     max_prefill_tokens > 0 || throw(ArgumentError(
         "max_prefill_tokens must be positive",
@@ -701,6 +737,11 @@ function _qwen3_vl_cache_free_prompt_contract(
     eltype(visual_mask) <: Bool || throw(ArgumentError(
         "Qwen3-VL visual_mask must contain Bool values",
     ))
+    _qwen3_vl_prompt_visual_token_contract(
+        parameters,
+        tokens,
+        visual_mask,
+    )
 
     _qwen3_vl_prompt_rope_deltas(
         spec,
@@ -760,7 +801,7 @@ function hf_qwen3_vl_text_prefill(
         "Qwen3-VL input_ids contain an out-of-vocabulary id",
     ))
     _qwen3_vl_cache_free_prompt_contract(
-        spec,
+        parameters,
         tokens,
         rope_layout,
         options.max_prefill_tokens,
@@ -872,6 +913,14 @@ function hf_qwen3_vl_prefill(
             vision_input.grid_thw;
             checkpoint=text_parameters.checkpoint,
         ) : rope_layout
+    if hasproperty(text_parameters, :checkpoint)
+        tokens = _qwen3_vl_token_matrix(input_ids)
+        _qwen3_vl_prompt_visual_token_contract(
+            text_parameters,
+            tokens,
+            resolved_rope_layout.visual_mask,
+        )
+    end
     features = hf_qwen3_vl_vision_forward(vision_parameters, vision_input)
     text = hf_qwen3_vl_text_prefill(
         text_parameters,

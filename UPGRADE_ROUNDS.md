@@ -457,6 +457,9 @@ Chapter 03 reproducible-training test.
 225. Make Qwen3 MoE invalid-input cache atomicity checks NaN-stable and seed
      untouched preallocated BF16 tails so allocator contents cannot make the
      integration result nondeterministic.
+226. Bind Qwen3-VL visual masks to checkpoint image-token identities across
+     cache-free, dynamic-cache, and static-cache prompt preflight before vision
+     compute, embedding consumption, or cache writes.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

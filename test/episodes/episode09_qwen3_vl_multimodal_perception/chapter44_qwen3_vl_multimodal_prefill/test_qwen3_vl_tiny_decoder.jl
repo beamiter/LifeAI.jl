@@ -826,6 +826,98 @@ end
     )
     @test size(unlimited.logits) == (parameters.spec.vocab_size, 1, 1)
 
+    bound_tokens = Int[1, 2, 3, 3, 3, 3, 4, 5]
+    checkpoint_parameters = merge(
+        parameters,
+        (; checkpoint=(; image_token_id=2)),
+    )
+    bound = hf_qwen3_vl_text_prefill(
+        checkpoint_parameters,
+        bound_tokens,
+        inputs.rope_layout;
+        vision_features=inputs.vision_features,
+        logits_to_keep=1,
+    )
+    @test size(bound.logits) == (parameters.spec.vocab_size, 1, 1)
+    @test all(isfinite, bound.logits)
+
+    missing_image = copy(inputs.rope_layout.visual_mask)
+    missing_image[3, 1] = false
+    non_image_position = copy(inputs.rope_layout.visual_mask)
+    non_image_position[2, 1] = true
+    for (visual_mask, message) in (
+        (
+            missing_image,
+            "ArgumentError: Qwen3-VL checkpoint image tokens must be " *
+            "marked by visual_mask",
+        ),
+        (
+            non_image_position,
+            "ArgumentError: Qwen3-VL visual_mask must not mark non-image " *
+            "input tokens",
+        ),
+    )
+        mismatched_layout = Qwen3VLRopeLayout(
+            inputs.rope_layout.position_ids,
+            inputs.rope_layout.rope_deltas,
+            visual_mask,
+            inputs.rope_layout.attention_mask,
+        )
+        mismatch_error = _ch44_captured_error() do
+            hf_qwen3_vl_text_prefill(
+                checkpoint_parameters,
+                bound_tokens,
+                mismatched_layout;
+                vision_features=inputs.vision_features,
+                logits_to_keep=1,
+            )
+        end
+        @test mismatch_error isa ArgumentError
+        @test sprint(showerror, mismatch_error) == message
+
+        combined_error = _ch44_captured_error() do
+            hf_qwen3_vl_prefill(
+                42,
+                checkpoint_parameters,
+                vision_input,
+                bound_tokens;
+                rope_layout=mismatched_layout,
+                logits_to_keep=1,
+            )
+        end
+        @test combined_error isa ArgumentError
+        @test sprint(showerror, combined_error) == message
+    end
+
+    for (raw_id, message) in (
+        (
+            typemax(Int),
+            "ArgumentError: Qwen3-VL checkpoint image_token_id must be " *
+            "in 0:31",
+        ),
+        (
+            big(typemax(Int)) + 1,
+            "ArgumentError: Qwen3-VL checkpoint image_token_id is outside " *
+            "the host integer range",
+        ),
+    )
+        invalid_checkpoint = merge(
+            parameters,
+            (; checkpoint=(; image_token_id=raw_id)),
+        )
+        checkpoint_id_error = _ch44_captured_error() do
+            hf_qwen3_vl_text_prefill(
+                invalid_checkpoint,
+                bound_tokens,
+                inputs.rope_layout;
+                vision_features=inputs.vision_features,
+                logits_to_keep=1,
+            )
+        end
+        @test checkpoint_id_error isa ArgumentError
+        @test sprint(showerror, checkpoint_id_error) == message
+    end
+
     wide_layout = Qwen3VLRopeLayout(
         UInt128.(inputs.rope_layout.position_ids),
         Int128.(inputs.rope_layout.rope_deltas),

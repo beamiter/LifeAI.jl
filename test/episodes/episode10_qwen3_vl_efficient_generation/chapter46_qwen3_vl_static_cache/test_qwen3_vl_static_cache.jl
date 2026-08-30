@@ -816,6 +816,62 @@ end
     @test isempty(malformed)
 end
 
+@testset "Chapter 46 — image-token masks fail before static cache writes" begin
+    parameters = merge(
+        _ch46_tiny_text_parameters(),
+        (; checkpoint=(; image_token_id=2)),
+    )
+    inputs = _ch46_tiny_prefill_inputs()
+    input_ids = Int[1, 2, 3, 3, 3, 3, 4, 5]
+    missing_image = copy(inputs.rope_layout.visual_mask)
+    missing_image[3, 1] = false
+    non_image_position = copy(inputs.rope_layout.visual_mask)
+    non_image_position[2, 1] = true
+
+    for (visual_mask, message) in (
+        (
+            missing_image,
+            "ArgumentError: Qwen3-VL checkpoint image tokens must be " *
+            "marked by visual_mask",
+        ),
+        (
+            non_image_position,
+            "ArgumentError: Qwen3-VL visual_mask must not mark non-image " *
+            "input tokens",
+        ),
+    )
+        layout = Qwen3VLRopeLayout(
+            inputs.rope_layout.position_ids,
+            inputs.rope_layout.rope_deltas,
+            visual_mask,
+            inputs.rope_layout.attention_mask,
+        )
+        cache = init_qwen3_vl_static_kv_cache(parameters; capacity=10)
+        refs = _ch46_storage_refs(cache)
+        key_snapshots = map(layer -> copy(layer.keys), cache.layers)
+        value_snapshots = map(layer -> copy(layer.values), cache.layers)
+        error = _ch46_captured_error() do
+            hf_qwen3_vl_text_prefill_static(
+                parameters,
+                input_ids,
+                layout;
+                vision_features=inputs.vision_features,
+                cache,
+            )
+        end
+        @test error isa ArgumentError
+        @test sprint(showerror, error) == message
+        @test isempty(cache)
+        @test cache.position == 0
+        @test cache.rope_delta == 0
+        _ch46_assert_storage_identity(cache, refs)
+        for layer in eachindex(cache.layers)
+            @test cache.layers[layer].keys == key_snapshots[layer]
+            @test cache.layers[layer].values == value_snapshots[layer]
+        end
+    end
+end
+
 @testset "Chapter 46 — feature residency fails before static cache writes" begin
     parameters = _ch46_tiny_text_parameters()
     inputs = _ch46_tiny_prefill_inputs()
