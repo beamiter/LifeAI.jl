@@ -73,14 +73,6 @@ function _ch45_captured_error(thunk)
     error("expected the test call to fail")
 end
 
-function _ch45_replace_spec_field(value, name::Symbol, replacement)
-    names = fieldnames(typeof(value))
-    index = findfirst(==(name), names)
-    index === nothing && error("unknown specification field: $name")
-    fields = Tuple(getfield(value, field) for field in names)
-    return typeof(value)(Base.setindex(fields, replacement, index)...)
-end
-
 struct _CH45VisionComputePoison end
 
 function Base.getproperty(::_CH45VisionComputePoison, ::Symbol)
@@ -304,6 +296,57 @@ end
     @test cache.layers[1] === first_layer
     @test cache.layers[2] === second_layer
     @test cache.layers[1].keys !== cache.layers[2].keys
+
+    disjoint_parent = zeros(Float32, 8, 1, 4, 1)
+    disjoint_keys = view(disjoint_parent, :, :, 1:2, :)
+    disjoint_values = view(disjoint_parent, :, :, 3:4, :)
+    @test !Base.mightalias(disjoint_keys, disjoint_values)
+    disjoint_layer = LayerKVCache(disjoint_keys, disjoint_values)
+    disjoint_layers = (disjoint_layer,)
+    disjoint_cache = LifeAI.Qwen3VLKVCache(disjoint_layers, 2, 0, 1)
+    @test disjoint_cache.layers === disjoint_layers
+    @test disjoint_cache.layers[1].keys === disjoint_keys
+    @test disjoint_cache.layers[1].values === disjoint_values
+
+    intra_layer_parent = zeros(Float32, 8, 1, 3, 1)
+    intra_layer_keys = view(intra_layer_parent, :, :, 1:2, :)
+    intra_layer_values = view(intra_layer_parent, :, :, 2:3, :)
+    @test intra_layer_keys !== intra_layer_values
+    @test Base.mightalias(intra_layer_keys, intra_layer_values)
+    intra_layer = LayerKVCache(intra_layer_keys, intra_layer_values)
+    intra_layer_failure = _ch45_captured_error() do
+        LifeAI.Qwen3VLKVCache((intra_layer,), 2, 0, 1)
+    end
+    @test intra_layer_failure isa ArgumentError
+    @test sprint(showerror, intra_layer_failure) ==
+        "ArgumentError: Qwen3-VL dynamic cache layers must use " *
+        "non-overlapping storage"
+
+    cross_layer_parent = zeros(Float32, 8, 1, 8, 1)
+    cross_layer_first = LayerKVCache(
+        view(cross_layer_parent, :, :, 1:2, :),
+        view(cross_layer_parent, :, :, 4:5, :),
+    )
+    cross_layer_second = LayerKVCache(
+        view(cross_layer_parent, :, :, 2:3, :),
+        view(cross_layer_parent, :, :, 6:7, :),
+    )
+    @test Base.mightalias(
+        cross_layer_first.keys,
+        cross_layer_second.keys,
+    )
+    cross_layer_failure = _ch45_captured_error() do
+        LifeAI.Qwen3VLKVCache(
+            (cross_layer_first, cross_layer_second),
+            2,
+            0,
+            1,
+        )
+    end
+    @test cross_layer_failure isa ArgumentError
+    @test sprint(showerror, cross_layer_failure) ==
+        "ArgumentError: Qwen3-VL dynamic cache layers must use " *
+        "non-overlapping storage"
 
     @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
         LayerKVCache[LayerKVCache()],
@@ -970,21 +1013,10 @@ end
     parameters = _ch45_tiny_text_parameters()
     inputs = _ch45_tiny_prefill_inputs()
 
-    default_checkpoint = qwen3_vl_checkpoint_spec()
-    default_checkpoint = _ch45_replace_spec_field(
-        default_checkpoint,
-        :text,
-        parameters.spec,
-    )
-    default_checkpoint = _ch45_replace_spec_field(
-        default_checkpoint,
-        :eos_token_id,
-        7,
-    )
-    default_checkpoint = _ch45_replace_spec_field(
-        default_checkpoint,
-        :bos_token_id,
-        6,
+    default_checkpoint = (
+        text=parameters.spec,
+        eos_token_id=7,
+        bos_token_id=6,
     )
     default_parameters = merge(parameters, (; checkpoint=default_checkpoint))
     default_stops = generate_hf_qwen3_vl_tokens(
@@ -997,10 +1029,9 @@ end
     @test isempty(default_stops.generated_ids)
 
     for name in (:eos_token_id, :bos_token_id)
-        invalid_checkpoint = _ch45_replace_spec_field(
+        invalid_checkpoint = merge(
             default_checkpoint,
-            name,
-            parameters.spec.vocab_size,
+            (; name => parameters.spec.vocab_size),
         )
         failure = _ch45_captured_error() do
             generate_hf_qwen3_vl_tokens(

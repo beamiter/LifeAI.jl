@@ -1,5 +1,18 @@
 using MLDataDevices: get_device
 
+"""Record cache storage after proving that it cannot overlap earlier tensors."""
+function _record_qwen3_vl_cache_storage!(
+    storages::Vector{Any},
+    storage::AbstractArray,
+    message::AbstractString,
+)
+    for existing in storages
+        Base.mightalias(storage, existing) && throw(ArgumentError(message))
+    end
+    push!(storages, storage)
+    return nothing
+end
+
 """Validate Qwen3-VL dynamic layer storage without reading or copying tensors."""
 function _validate_qwen3_vl_dynamic_cache_layers(
     layers,
@@ -14,7 +27,7 @@ function _validate_qwen3_vl_dynamic_cache_layers(
     expected_shape = nothing
     expected_dtype = nothing
     expected_device = nothing
-    seen_storage = IdDict{Any,Nothing}()
+    seen_storage = Any[]
     for (layer_index, layer) in enumerate(layers)
         layer isa LayerKVCache || throw(ArgumentError(
             "Qwen3-VL dynamic cache layer $layer_index must be LayerKVCache storage",
@@ -78,10 +91,11 @@ function _validate_qwen3_vl_dynamic_cache_layers(
             ))
         end
         for storage in (keys, values)
-            haskey(seen_storage, storage) && throw(ArgumentError(
-                "Qwen3-VL dynamic cache layers must use distinct storage",
-            ))
-            seen_storage[storage] = nothing
+            _record_qwen3_vl_cache_storage!(
+                seen_storage,
+                storage,
+                "Qwen3-VL dynamic cache layers must use non-overlapping storage",
+            )
         end
     end
     return nothing
@@ -299,8 +313,8 @@ struct Qwen3VLStaticLayerKVCache{K,V}
         get_device(keys) == get_device(values) || throw(ArgumentError(
             "Qwen3-VL static layer keys and values must use the same device",
         ))
-        keys === values && throw(ArgumentError(
-            "Qwen3-VL static layer keys and values must use distinct storage",
+        Base.mightalias(keys, values) && throw(ArgumentError(
+            "Qwen3-VL static layer keys and values must use non-overlapping storage",
         ))
         return new{typeof(keys),typeof(values)}(keys, values)
     end
@@ -329,7 +343,7 @@ function _validate_qwen3_vl_static_cache_layers(
     )
     expected_dtype = eltype(first_layer.keys)
     expected_device = get_device(first_layer.keys)
-    seen_storage = IdDict{Any,Nothing}()
+    seen_storage = Any[]
     for (layer_index, layer) in enumerate(layers)
         layer isa Qwen3VLStaticLayerKVCache || throw(ArgumentError(
             "Qwen3-VL static cache layer $layer_index is not static layer storage",
@@ -349,10 +363,11 @@ function _validate_qwen3_vl_static_cache_layers(
             "Qwen3-VL static cache layer devices must match",
         ))
         for storage in (layer.keys, layer.values)
-            haskey(seen_storage, storage) && throw(ArgumentError(
-                "Qwen3-VL static cache layers must use distinct storage",
-            ))
-            seen_storage[storage] = nothing
+            _record_qwen3_vl_cache_storage!(
+                seen_storage,
+                storage,
+                "Qwen3-VL static cache layers must use non-overlapping storage",
+            )
         end
     end
     return nothing

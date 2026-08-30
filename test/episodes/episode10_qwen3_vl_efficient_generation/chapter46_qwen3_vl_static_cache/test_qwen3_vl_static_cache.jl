@@ -250,6 +250,30 @@ end
     @test size(layer.keys) == (8, 1, 4, 1)
     @test eltype(layer.values) === Float32
 
+    disjoint_parent = zeros(Float32, 8, 1, 8, 1)
+    disjoint_keys = view(disjoint_parent, :, :, 1:4, :)
+    disjoint_values = view(disjoint_parent, :, :, 5:8, :)
+    @test !Base.mightalias(disjoint_keys, disjoint_values)
+    disjoint_layer = Qwen3VLStaticLayerKVCache(
+        disjoint_keys,
+        disjoint_values,
+    )
+    @test disjoint_layer.keys === disjoint_keys
+    @test disjoint_layer.values === disjoint_values
+
+    overlapping_parent = zeros(Float32, 8, 1, 5, 1)
+    overlapping_keys = view(overlapping_parent, :, :, 1:4, :)
+    overlapping_values = view(overlapping_parent, :, :, 2:5, :)
+    @test overlapping_keys !== overlapping_values
+    @test Base.mightalias(overlapping_keys, overlapping_values)
+    overlap_failure = _ch46_captured_error() do
+        Qwen3VLStaticLayerKVCache(overlapping_keys, overlapping_values)
+    end
+    @test overlap_failure isa ArgumentError
+    @test sprint(showerror, overlap_failure) ==
+        "ArgumentError: Qwen3-VL static layer keys and values must use " *
+        "non-overlapping storage"
+
     @test_throws MethodError Qwen3VLStaticLayerKVCache{
         typeof(keys),
         typeof(values),
@@ -399,6 +423,54 @@ end
     @test cache.layers[2] === second_layer
     @test cache.layers[1].keys !== cache.layers[2].keys
 
+    disjoint_parent = zeros(Float32, 8, 1, 16, 1)
+    disjoint_first = Qwen3VLStaticLayerKVCache(
+        view(disjoint_parent, :, :, 1:4, :),
+        view(disjoint_parent, :, :, 5:8, :),
+    )
+    disjoint_second = Qwen3VLStaticLayerKVCache(
+        view(disjoint_parent, :, :, 9:12, :),
+        view(disjoint_parent, :, :, 13:16, :),
+    )
+    disjoint_layers = (disjoint_first, disjoint_second)
+    disjoint_cache = Qwen3VLStaticKVCache(
+        disjoint_layers,
+        0,
+        0,
+        1,
+        4,
+    )
+    @test disjoint_cache.layers === disjoint_layers
+    @test disjoint_cache.layers[1].keys === disjoint_first.keys
+    @test disjoint_cache.layers[2].values === disjoint_second.values
+
+    cross_layer_parent = zeros(Float32, 8, 1, 20, 1)
+    cross_layer_first = Qwen3VLStaticLayerKVCache(
+        view(cross_layer_parent, :, :, 1:4, :),
+        view(cross_layer_parent, :, :, 9:12, :),
+    )
+    cross_layer_second = Qwen3VLStaticLayerKVCache(
+        view(cross_layer_parent, :, :, 4:7, :),
+        view(cross_layer_parent, :, :, 13:16, :),
+    )
+    @test Base.mightalias(
+        cross_layer_first.keys,
+        cross_layer_second.keys,
+    )
+    cross_layer_failure = _ch46_captured_error() do
+        Qwen3VLStaticKVCache(
+            (cross_layer_first, cross_layer_second),
+            0,
+            0,
+            1,
+            4,
+        )
+    end
+    @test cross_layer_failure isa ArgumentError
+    @test sprint(showerror, cross_layer_failure) ==
+        "ArgumentError: Qwen3-VL static cache layers must use " *
+        "non-overlapping storage"
+
     @test_throws ArgumentError Qwen3VLStaticKVCache(
         Qwen3VLStaticLayerKVCache[first_layer],
         0,
@@ -472,6 +544,22 @@ end
         cache;
         clear=true,
     )
+
+    disjoint_cache.layers = (cross_layer_first, cross_layer_second)
+    disjoint_cache.position = 3
+    disjoint_cache.rope_delta = -2
+    fill!(cross_layer_parent, 7.0f0)
+    preserved_storage = copy(cross_layer_parent)
+    atomic_failure = _ch46_captured_error() do
+        reset_qwen3_vl_static_kv_cache!(disjoint_cache; clear=true)
+    end
+    @test atomic_failure isa ArgumentError
+    @test sprint(showerror, atomic_failure) ==
+        "ArgumentError: Qwen3-VL static cache layers must use " *
+        "non-overlapping storage"
+    @test cross_layer_parent == preserved_storage
+    @test disjoint_cache.position == 3
+    @test disjoint_cache.rope_delta == -2
 end
 
 @testset "Chapter 46 — static cache allocation and error contract" begin

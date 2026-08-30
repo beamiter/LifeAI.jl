@@ -517,6 +517,9 @@ Chapter 03 reproducible-training test.
 245. Require finite positive INT8 channel and INT4 group scales at public
      quantized-weight construction while preserving trusted Adapt and row-slice
      reconstruction for device and Reactant paths.
+246. Reject overlapping Qwen3-VL dynamic and static K/V views within and across
+     layers while retaining zero-copy disjoint views and atomic static-cache
+     reset validation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
