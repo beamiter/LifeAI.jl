@@ -218,12 +218,158 @@ struct AgentLoopTrace
     answer::String
     stop_reason::Symbol
     memory_context::Union{Nothing,AgentMemoryContext}
+
+    function AgentLoopTrace(steps, messages, answer, stop_reason, memory_context)
+        steps isa Vector || throw(ArgumentError(
+            "agent loop trace steps must be a Vector",
+        ))
+        step_values = AgentLoopStep[]
+        for step in steps
+            step isa AgentLoopStep || throw(ArgumentError(
+                "agent loop trace steps must contain AgentLoopStep values",
+            ))
+            push!(step_values, AgentLoopStep(
+                step.turn,
+                step.prompt,
+                step.prompt_sha256,
+                step.prompt_token_count,
+                step.generated_ids,
+                step.completion,
+                step.stop_reason,
+                step.validity,
+                step.tool_calls,
+                step.invalid_blocks,
+                step.prefill_seconds,
+                step.decode_seconds,
+            ))
+        end
+        messages isa Vector || throw(ArgumentError(
+            "agent loop trace messages must be a Vector",
+        ))
+        answer isa AbstractString || throw(ArgumentError(
+            "agent loop trace answer must be a string",
+        ))
+        stop_reason isa Symbol || throw(ArgumentError(
+            "agent loop trace stop_reason must be a Symbol",
+        ))
+        stop_reason in (:answered, :invalid_tool_call, :max_steps) ||
+            throw(ArgumentError(
+                "unsupported agent loop trace stop_reason: $(repr(stop_reason))",
+            ))
+
+        context = if memory_context === nothing
+            nothing
+        else
+            memory_context isa AgentMemoryContext || throw(ArgumentError(
+                "agent loop trace memory_context must be nothing or an AgentMemoryContext",
+            ))
+            hits = AgentMemoryHit[
+                AgentMemoryHit(
+                    hit.rank,
+                    hit.id,
+                    hit.sequence,
+                    hit.text,
+                    hit.score,
+                    copy(hit.metadata),
+                )
+                for hit in memory_context.hits
+            ]
+            validate_agent_memory_context(AgentMemoryContext(
+                memory_context.query,
+                memory_context.query_sha256,
+                memory_context.store_sha256,
+                hits,
+                memory_context.rendered,
+                memory_context.rendered_sha256,
+            ))
+        end
+        trace = new(
+            step_values,
+            deepcopy(messages),
+            String(answer),
+            stop_reason,
+            context,
+        )
+        return _validate_agent_loop_trace(trace)
+    end
 end
 
 # Preserve the Chapter 36 constructor for callers that materialize a trace without
 # retrieval evidence.
 AgentLoopTrace(steps, messages, answer, stop_reason) =
     AgentLoopTrace(steps, messages, answer, stop_reason, nothing)
+
+function _validate_agent_loop_trace(trace::AgentLoopTrace)
+    trace.stop_reason in (:answered, :invalid_tool_call, :max_steps) ||
+        throw(ArgumentError(
+            "unsupported agent loop trace stop_reason: $(repr(trace.stop_reason))",
+        ))
+    for (position, step) in enumerate(trace.steps)
+        # Every step owns public vectors. Re-enter its constructor so a caller
+        # cannot mutate recorded evidence after construction and then have a
+        # summary or persistence boundary silently trust the forged state.
+        AgentLoopStep(
+            step.turn,
+            step.prompt,
+            step.prompt_sha256,
+            step.prompt_token_count,
+            step.generated_ids,
+            step.completion,
+            step.stop_reason,
+            step.validity,
+            step.tool_calls,
+            step.invalid_blocks,
+            step.prefill_seconds,
+            step.decode_seconds,
+        )
+        step.turn == position || throw(ArgumentError(
+            "agent loop trace step turns must be contiguous and one-based",
+        ))
+        position < length(trace.steps) && isempty(step.tool_calls) &&
+            throw(ArgumentError(
+                "agent loop trace non-final steps must contain at least one tool call",
+            ))
+    end
+    trace.memory_context === nothing ||
+        validate_agent_memory_context(trace.memory_context)
+
+    if isempty(trace.steps)
+        trace.stop_reason === :answered || throw(ArgumentError(
+            "agent loop trace without steps must use :answered stop_reason",
+        ))
+        return trace
+    end
+
+    final_step = last(trace.steps)
+    if trace.stop_reason === :answered
+        final_step.validity === :none || throw(ArgumentError(
+            "agent loop trace :answered final step must have :none validity",
+        ))
+        trace.answer == _qwen3_visible_assistant_content(final_step.completion) ||
+            throw(ArgumentError(
+                "agent loop trace answer does not match final visible completion",
+            ))
+    elseif trace.stop_reason === :invalid_tool_call
+        final_step.validity === :invalid || throw(ArgumentError(
+            "agent loop trace :invalid_tool_call final step must have :invalid validity",
+        ))
+        isempty(final_step.tool_calls) || throw(ArgumentError(
+            "agent loop trace :invalid_tool_call final step must not contain tool calls",
+        ))
+        trace.answer == _qwen3_visible_assistant_content(final_step.completion) ||
+            throw(ArgumentError(
+                "agent loop trace answer does not match final visible completion",
+            ))
+    else
+        !isempty(final_step.tool_calls) || throw(ArgumentError(
+            "agent loop trace :max_steps final step must contain a tool call",
+        ))
+        isempty(trace.answer) || throw(ArgumentError(
+            "agent loop trace :max_steps answer must be empty",
+        ))
+    end
+    return trace
+end
 
 """
 Assistant content to retain in history, given one raw generation.
@@ -423,6 +569,7 @@ Machine-readable summary of one run, including the pre-registered validity verdi
 of the first model turn.
 """
 function agent_loop_summary(trace::AgentLoopTrace)
+    _validate_agent_loop_trace(trace)
     first_validity = isempty(trace.steps) ? :none : trace.steps[1].validity
     executed = sum(length(step.tool_calls) for step in trace.steps; init=0)
     succeeded = sum(

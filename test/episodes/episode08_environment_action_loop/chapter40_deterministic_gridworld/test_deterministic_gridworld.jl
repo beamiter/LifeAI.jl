@@ -334,6 +334,20 @@ end
                 JSON3.read(JSON3.write(changed_transition)),
             )
         end
+
+        mutated = _scripted_agent_environment_trace(task, tokenizer; feedback=:full)
+        push!(first(mutated.agent.steps).generated_ids, 0)
+        for consume in (agent_environment_summary, agent_environment_trace_payload)
+            failure = try
+                consume(mutated)
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) ==
+                "ArgumentError: agent loop step generated ids must be positive"
+        end
     end
 end
 

@@ -437,12 +437,37 @@ end
         @test prompt_a == prompt_b
 
         trace = AgentLoopTrace(AgentLoopStep[], messages, "amber-104", :answered, context)
+        @test trace.messages == messages
+        @test trace.messages !== messages
+        @test trace.messages[1] !== messages[1]
+        @test trace.memory_context !== context
+        @test trace.memory_context.query == context.query
+        @test trace.memory_context.query_sha256 == context.query_sha256
+        @test trace.memory_context.store_sha256 == context.store_sha256
+        @test trace.memory_context.rendered == context.rendered
+        @test trace.memory_context.rendered_sha256 == context.rendered_sha256
+        @test trace.memory_context.hits !== context.hits
+        @test only(trace.memory_context.hits).id == only(context.hits).id
+        @test only(trace.memory_context.hits).metadata == only(context.hits).metadata
+        @test only(trace.memory_context.hits).metadata !== only(context.hits).metadata
         summary = agent_loop_summary(trace)
         @test summary.memory_query_sha256 == context.query_sha256
         @test summary.memory_store_sha256 == context.store_sha256
         @test summary.memory_context_sha256 == context.rendered_sha256
         @test summary.memory_ids == ["fact-aster"]
         @test summary.memory_scores == Float32[1]
+
+        saved_hit = pop!(trace.memory_context.hits)
+        failure = try
+            agent_loop_summary(trace)
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: memory context must contain at least one hit"
+        push!(trace.memory_context.hits, saved_hit)
 
         no_memory = agent_loop_summary(AgentLoopTrace(
             AgentLoopStep[], Any[], "", :answered,
@@ -499,7 +524,9 @@ end
         )
         @test length(trace.steps) == 1
         @test trace.stop_reason == :answered
-        @test trace.memory_context === context
+        @test trace.memory_context !== context
+        @test trace.memory_context.rendered == context.rendered
+        @test trace.memory_context.hits !== context.hits
         @test occursin(context.rendered, only(trace.steps).prompt)
         @test !occursin("# Tools", only(trace.steps).prompt)
         @test only(trace.steps).prompt_sha256 == LifeAI._sha256_hex(only(trace.steps).prompt)

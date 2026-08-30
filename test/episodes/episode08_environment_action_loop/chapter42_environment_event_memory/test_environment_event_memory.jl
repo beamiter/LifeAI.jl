@@ -75,7 +75,7 @@ function _chapter42_trace(
         String(system),
         initial,
         copy(environment.transitions),
-        AgentLoopTrace(steps, Any[], "", :answered),
+        AgentLoopTrace(steps, Any[], "", :max_steps),
         environment.terminal,
         environment.success,
         final.state_sha256,
@@ -198,6 +198,7 @@ end
         system=writer_system,
     )
     trace_payload = agent_environment_trace_payload(trace)
+    @test trace_payload.agent_stop_reason == "max_steps"
     @test trace_payload.system_prompt == writer_system
     @test trace_payload.system_prompt_sha256 == LifeAI._sha256_hex(writer_system)
     @test_throws UndefKeywordError agent_environment_memory_events(
@@ -410,6 +411,22 @@ end
         run_id="chapter42/corrupt/grid-01",
         policy,
     )
+
+    empty!(last(good.agent.steps).tool_calls)
+    failure = try
+        agent_environment_memory_events(
+            good,
+            task.spec;
+            run_id="chapter42/corrupt/agent-loop",
+            policy,
+        )
+        nothing
+    catch caught
+        caught
+    end
+    @test failure isa ArgumentError
+    @test sprint(showerror, failure) ==
+        "ArgumentError: agent loop step :valid validity requires calls and no invalid blocks"
 end
 
 @testset "Chapter 42 — delayed context injection and tokenizer-only replay" begin
@@ -639,7 +656,11 @@ end
             enable_thinking=false,
             strategy=:greedy,
         )
-        @test trace.agent.memory_context === context
+        @test trace.agent.memory_context !== context
+        @test trace.agent.memory_context.rendered == context.rendered
+        @test trace.agent.memory_context.hits !== context.hits
+        @test only(trace.agent.memory_context.hits).metadata == only(context.hits).metadata
+        @test only(trace.agent.memory_context.hits).metadata !== only(context.hits).metadata
         @test trace.system_prompt == gridworld_memory_system_prompt()
         @test occursin(context.rendered, only(trace.agent.steps).prompt)
         @test agent_environment_trace_payload(trace).memory.ids == [event_id]

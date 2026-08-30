@@ -521,6 +521,7 @@ function run_qwen3_environment_loop(
 end
 
 function agent_environment_summary(trace::AgentEnvironmentTrace)
+    _validate_agent_loop_trace(trace.agent)
     tool_calls = sum(length(step.tool_calls) for step in trace.agent.steps; init=0)
     tool_failures = sum(
         count(call -> !call.ok, step.tool_calls) for step in trace.agent.steps;
@@ -560,6 +561,7 @@ end
 
 """Stable JSON-ready representation written by the Chapter 40 runner."""
 function agent_environment_trace_payload(trace::AgentEnvironmentTrace)
+    _validate_agent_loop_trace(trace.agent)
     memory = trace.agent.memory_context
     return (;
         schema_version=AGENT_ENVIRONMENT_TRACE_FORMAT_VERSION,

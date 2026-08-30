@@ -298,6 +298,196 @@ end
         @test failure isa ArgumentError
         @test sprint(showerror, failure) == "ArgumentError: $message"
     end
+
+    @testset "trace snapshots and terminal coherence" begin
+        step_source = make_step()
+        steps_source = [step_source]
+        messages_source = Any[Dict{String,Any}(
+            "role" => "assistant",
+            "content" => Any["done"],
+        )]
+        answer_source = "done!"
+        trace = AgentLoopTrace(
+            steps_source,
+            messages_source,
+            SubString(answer_source, 1, 4),
+            :answered,
+        )
+        @test length(methods(AgentLoopTrace)) == 2
+        @test trace.steps isa Vector{AgentLoopStep}
+        @test trace.steps !== steps_source
+        @test only(trace.steps).generated_ids !== step_source.generated_ids
+        @test trace.messages isa Vector{Any}
+        @test trace.messages !== messages_source
+        @test trace.messages[1] !== messages_source[1]
+        @test trace.messages[1]["content"] !== messages_source[1]["content"]
+        @test trace.answer == "done"
+        @test trace.answer isa String
+        empty!(steps_source)
+        empty!(messages_source[1]["content"])
+        @test length(trace.steps) == 1
+        @test trace.messages[1]["content"] == Any["done"]
+
+        call_step = make_step(validity=:valid, tool_calls=[source_call])
+        answer_step = make_step(turn=2)
+        multi = AgentLoopTrace(
+            AgentLoopStep[call_step, answer_step],
+            Any[],
+            "done",
+            :answered,
+        )
+        @test multi.stop_reason === :answered
+        invalid_terminal = make_step(
+            validity=:invalid,
+            invalid_blocks=[(raw="bad", reason="broken")],
+        )
+        @test AgentLoopTrace(
+            AgentLoopStep[invalid_terminal],
+            Any[],
+            "done",
+            :invalid_tool_call,
+        ).stop_reason === :invalid_tool_call
+        @test AgentLoopTrace(
+            AgentLoopStep[call_step],
+            Any[],
+            "",
+            :max_steps,
+        ).stop_reason === :max_steps
+        @test isempty(AgentLoopTrace(
+            AgentLoopStep[],
+            Any[],
+            "offline answer",
+            :answered,
+        ).steps)
+
+        trace_invalid_cases = (
+            (
+                () -> AgentLoopTrace((step_source,), Any[], "done", :answered),
+                "agent loop trace steps must be a Vector",
+            ),
+            (
+                () -> AgentLoopTrace(Any[1], Any[], "done", :answered),
+                "agent loop trace steps must contain AgentLoopStep values",
+            ),
+            (
+                () -> AgentLoopTrace(AgentLoopStep[], (), "", :answered),
+                "agent loop trace messages must be a Vector",
+            ),
+            (
+                () -> AgentLoopTrace(AgentLoopStep[], Any[], 42, :answered),
+                "agent loop trace answer must be a string",
+            ),
+            (
+                () -> AgentLoopTrace(AgentLoopStep[], Any[], "", "answered"),
+                "agent loop trace stop_reason must be a Symbol",
+            ),
+            (
+                () -> AgentLoopTrace(AgentLoopStep[], Any[], "", :forged),
+                "unsupported agent loop trace stop_reason: :forged",
+            ),
+            (
+                () -> AgentLoopTrace(AgentLoopStep[], Any[], "", :answered, 1),
+                "agent loop trace memory_context must be nothing or an AgentMemoryContext",
+            ),
+            (
+                () -> AgentLoopTrace(
+                    AgentLoopStep[make_step(turn=2)],
+                    Any[],
+                    "done",
+                    :answered,
+                ),
+                "agent loop trace step turns must be contiguous and one-based",
+            ),
+            (
+                () -> AgentLoopTrace(
+                    AgentLoopStep[make_step(), make_step(turn=2)],
+                    Any[],
+                    "done",
+                    :answered,
+                ),
+                "agent loop trace non-final steps must contain at least one tool call",
+            ),
+            (
+                () -> AgentLoopTrace(AgentLoopStep[], Any[], "", :max_steps),
+                "agent loop trace without steps must use :answered stop_reason",
+            ),
+            (
+                () -> AgentLoopTrace(
+                    AgentLoopStep[invalid_terminal],
+                    Any[],
+                    "done",
+                    :answered,
+                ),
+                "agent loop trace :answered final step must have :none validity",
+            ),
+            (
+                () -> AgentLoopTrace(
+                    AgentLoopStep[step_source],
+                    Any[],
+                    "forged",
+                    :answered,
+                ),
+                "agent loop trace answer does not match final visible completion",
+            ),
+            (
+                () -> AgentLoopTrace(
+                    AgentLoopStep[step_source],
+                    Any[],
+                    "done",
+                    :invalid_tool_call,
+                ),
+                "agent loop trace :invalid_tool_call final step must have :invalid validity",
+            ),
+            (
+                () -> AgentLoopTrace(
+                    AgentLoopStep[make_step(validity=:invalid, tool_calls=[source_call])],
+                    Any[],
+                    "done",
+                    :invalid_tool_call,
+                ),
+                "agent loop trace :invalid_tool_call final step must not contain tool calls",
+            ),
+            (
+                () -> AgentLoopTrace(
+                    AgentLoopStep[step_source],
+                    Any[],
+                    "",
+                    :max_steps,
+                ),
+                "agent loop trace :max_steps final step must contain a tool call",
+            ),
+            (
+                () -> AgentLoopTrace(
+                    AgentLoopStep[call_step],
+                    Any[],
+                    "forged",
+                    :max_steps,
+                ),
+                "agent loop trace :max_steps answer must be empty",
+            ),
+        )
+        for (build, message) in trace_invalid_cases
+            failure = try
+                build()
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+
+        push!(trace.steps[1].generated_ids, 0)
+        failure = try
+            agent_loop_summary(trace)
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: agent loop step generated ids must be positive"
+    end
 end
 
 # Replays the frozen Qwen3-4B run without loading a model. Rendering depends on the

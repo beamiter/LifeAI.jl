@@ -431,6 +431,8 @@ Chapter 03 reproducible-training test.
      owned collections so retained constructor inputs cannot rewrite retrieval.
 215. Reject duplicate Qwen3-VL processor fields at the frozen root and nested
      size boundaries before semantic values or asset checksums are trusted.
+216. Seal Qwen3 agent-loop traces behind owned step, message, and memory
+     snapshots plus contiguous turns and coherent terminal answer states.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

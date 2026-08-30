@@ -239,6 +239,7 @@ function _validate_environment_memory_trace(
     spec::GridWorldSpec,
 )
     _validate_environment_memory_spec(spec)
+    _validate_agent_loop_trace(trace.agent)
     trace.environment == "deterministic_gridworld" || throw(ArgumentError(
         "environment memory policy does not support $(repr(trace.environment))",
     ))
