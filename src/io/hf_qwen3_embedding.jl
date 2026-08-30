@@ -32,6 +32,74 @@ struct Qwen3EmbeddingSpec
     head_dim::Int
     max_position_embeddings::Int
     minimum_dimension::Int
+
+    function Qwen3EmbeddingSpec(
+        variant,
+        model_id,
+        revision,
+        config_sha256,
+        tokenizer_sha256,
+        tokenizer_config_sha256,
+        generation_config_sha256,
+        modules_sha256,
+        sentence_transformers_config_sha256,
+        pooling_config_sha256,
+        model_sha256,
+        vocab_size,
+        d_model,
+        mlp_hidden_dim,
+        num_layers,
+        num_heads,
+        num_kv_heads,
+        head_dim,
+        max_position_embeddings,
+        minimum_dimension,
+    )
+        variant isa Symbol || throw(ArgumentError(
+            "Qwen3 embedding variant must be a Symbol",
+        ))
+        prefix = "Qwen3 embedding"
+        return new(
+            variant,
+            _qwen3_spec_string(model_id, "$prefix model_id"),
+            _qwen3_spec_string(revision, "$prefix revision"),
+            _qwen3_spec_string(config_sha256, "$prefix config_sha256"),
+            _qwen3_spec_string(tokenizer_sha256, "$prefix tokenizer_sha256"),
+            _qwen3_spec_string(
+                tokenizer_config_sha256,
+                "$prefix tokenizer_config_sha256",
+            ),
+            _qwen3_spec_string(
+                generation_config_sha256,
+                "$prefix generation_config_sha256",
+            ),
+            _qwen3_spec_string(modules_sha256, "$prefix modules_sha256"),
+            _qwen3_spec_string(
+                sentence_transformers_config_sha256,
+                "$prefix sentence_transformers_config_sha256",
+            ),
+            _qwen3_spec_string(
+                pooling_config_sha256,
+                "$prefix pooling_config_sha256",
+            ),
+            _qwen3_spec_string(model_sha256, "$prefix model_sha256"),
+            _qwen3_spec_positive_int(vocab_size, "$prefix vocab_size"),
+            _qwen3_spec_positive_int(d_model, "$prefix d_model"),
+            _qwen3_spec_positive_int(mlp_hidden_dim, "$prefix mlp_hidden_dim"),
+            _qwen3_spec_positive_int(num_layers, "$prefix num_layers"),
+            _qwen3_spec_positive_int(num_heads, "$prefix num_heads"),
+            _qwen3_spec_positive_int(num_kv_heads, "$prefix num_kv_heads"),
+            _qwen3_spec_positive_int(head_dim, "$prefix head_dim"),
+            _qwen3_spec_positive_int(
+                max_position_embeddings,
+                "$prefix max_position_embeddings",
+            ),
+            _qwen3_spec_positive_int(
+                minimum_dimension,
+                "$prefix minimum_dimension",
+            ),
+        )
+    end
 end
 
 const _QWEN3_EMBEDDING_SPEC = Qwen3EmbeddingSpec(

@@ -245,6 +245,8 @@ Chapter 03 reproducible-training test.
      token conversion, grid parsing, mask creation, or coordinate allocation.
 122. Derive default Qwen3-VL generation stop ids through checked checkpoint
      token mapping, rejecting invalid BOS/EOS contracts before prompt work.
+123. Strictly construct Qwen3 embedding checkpoint specifications, normalizing
+     provenance strings and every positive architecture dimension.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -109,6 +109,55 @@ function _embedding_tokenizer_fixture(directory)
     )
 end
 
+@testset "Qwen3 embedding specifications are strict" begin
+    strings = ntuple(_ -> SubString("xvalue", 2), 10)
+    valid = (
+        :fixture,
+        strings...,
+        ntuple(_ -> big(1), 9)...,
+    )
+    spec = Qwen3EmbeddingSpec(valid...)
+    @test spec.variant === :fixture
+    @test spec.model_id === "value"
+    @test spec.model_sha256 === "value"
+    @test spec.vocab_size === 1
+    @test spec.minimum_dimension === 1
+
+    names = fieldnames(Qwen3EmbeddingSpec)
+    for index in 12:20
+        label = names[index]
+        for (value, message) in (
+            (true, "must be an integer"),
+            (0, "must be positive"),
+        )
+            failure = _embedding_argument_error_message() do
+                Qwen3EmbeddingSpec(Base.setindex(valid, value, index)...)
+            end
+            @test failure == "Qwen3 embedding $label $message"
+        end
+    end
+
+    too_large = big(typemax(Int)) + 1
+    for (index, value, message) in (
+        (12, 1.0, "vocab_size must be an integer"),
+        (12, too_large, "vocab_size is outside the host integer range"),
+        (1, "fixture", "variant must be a Symbol"),
+    )
+        failure = _embedding_argument_error_message() do
+            Qwen3EmbeddingSpec(Base.setindex(valid, value, index)...)
+        end
+        @test failure == "Qwen3 embedding $message"
+    end
+
+    for index in 2:11
+        label = names[index]
+        failure = _embedding_argument_error_message() do
+            Qwen3EmbeddingSpec(Base.setindex(valid, label, index)...)
+        end
+        @test failure == "Qwen3 embedding $label must be a string"
+    end
+end
+
 @testset "Qwen3 embedding frozen config contract" begin
     spec = qwen3_embedding_spec()
     @test spec.variant === :qwen3_embedding_0_6b
