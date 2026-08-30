@@ -185,6 +185,11 @@ end
             Qwen3EmbeddingSpec(Base.setindex(valid, label, index)...)
         end
         @test failure == "Qwen3 embedding $label must be a string"
+
+        failure = _embedding_argument_error_message() do
+            Qwen3EmbeddingSpec(Base.setindex(valid, "", index)...)
+        end
+        @test failure == "Qwen3 embedding $label must not be empty"
     end
 
     invalid_gqa = Base.setindex(valid, 3, 16)

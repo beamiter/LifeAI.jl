@@ -505,6 +505,9 @@ Chapter 03 reproducible-training test.
 241. Give Qwen3 semantic memories defensive ownership of texts, normalized
      embeddings, and nested metadata while keeping retrieval on the sealed
      matrix and copying only returned metadata instead of the whole library.
+242. Reject empty Qwen3 model ids, revisions, hashes, asset/shard names,
+     activation names, and processor identities at frozen-spec construction
+     instead of deferring impossible provenance contracts to checkpoint I/O.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

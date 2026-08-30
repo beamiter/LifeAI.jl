@@ -80,6 +80,8 @@ end
     for (arguments, message) in (
         ((:model, 7, "hash"), "name must be a string"),
         (("model", 7, :hash), "sha256 must be a string"),
+        (("", 7, "hash"), "name must not be empty"),
+        (("model", 7, ""), "sha256 must not be empty"),
         (("model", true, "hash"), "bytes must be an integer"),
         (("model", 7.0, "hash"), "bytes must be an integer"),
         (("model", -1, "hash"), "bytes must be non-negative"),
@@ -156,6 +158,7 @@ end
         (11, 1, "mrope_interleaved must be a Bool"),
         (13, 1, "tie_word_embeddings must be a Bool"),
         (14, :silu, "hidden_act must be a string"),
+        (14, "", "hidden_act must not be empty"),
     )
         failure = _ch43_captured_error() do
             Qwen3VLTextSpec(Base.setindex(valid, value, index)...)
@@ -285,6 +288,7 @@ end
         (2, 1.0, "hidden_size must be an integer"),
         (2, too_large, "hidden_size is outside the host integer range"),
         (12, :gelu, "hidden_act must be a string"),
+        (12, "", "hidden_act must not be empty"),
     )
         failure = _ch43_captured_error() do
             Qwen3VLVisionSpec(Base.setindex(valid, value, index)...)
@@ -400,6 +404,9 @@ end
         (6, too_large, "tensor_count is outside the host integer range"),
         (1, "fixture", "variant must be a Symbol"),
         (2, :model, "model_id must be a string"),
+        (2, "", "model_id must not be empty"),
+        (3, "", "modelscope_revision must not be empty"),
+        (4, "", "hf_revision must not be empty"),
         (5, [], "assets must be a tuple"),
         (
             5,

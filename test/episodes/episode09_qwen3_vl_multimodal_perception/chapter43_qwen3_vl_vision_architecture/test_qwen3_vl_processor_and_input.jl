@@ -60,6 +60,9 @@ end
         (1, :hash, "preprocessor_config_sha256 must be a string"),
         (2, :processor, "processor_class must be a string"),
         (3, :image, "image_processor_type must be a string"),
+        (1, "", "preprocessor_config_sha256 must not be empty"),
+        (2, "", "processor_class must not be empty"),
+        (3, "", "image_processor_type must not be empty"),
     )
         failure = _ch43_processor_error() do
             Qwen3VLProcessorSpec(Base.setindex(valid, value, index)...)

@@ -92,6 +92,32 @@ end
     @test spec.max_position_embeddings === 1
     @test isempty(spec.shards)
 
+    for (arguments, label) in (
+        (("", 1, "hash"), "filename"),
+        (("shard", 1, ""), "sha256"),
+    )
+        failure = _qwen3_moe_contract_captured_error() do
+            Qwen3MoEShardSpec(arguments...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3 MoE shard $label must not be empty"
+    end
+
+    for (index, label) in (
+        (2, "model_id"),
+        (3, "revision"),
+        (4, "config_sha256"),
+        (5, "index_sha256"),
+    )
+        failure = _qwen3_moe_contract_captured_error() do
+            Qwen3MoECheckpointSpec(Base.setindex(valid, "", index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3 MoE checkpoint $label must not be empty"
+    end
+
     integer_fields = (
         6 => "index_tensor_count",
         7 => "tensor_bytes",

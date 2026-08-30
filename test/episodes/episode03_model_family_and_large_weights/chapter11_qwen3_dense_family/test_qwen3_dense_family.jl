@@ -158,6 +158,19 @@ end
         @test sprint(showerror, failure) == "ArgumentError: Qwen3 dense $message"
     end
 
+    for (index, label) in (
+        (2, "model_id"),
+        (3, "revision"),
+        (4, "config_sha256"),
+    )
+        failure = _qwen3_family_captured_error() do
+            Qwen3DenseSpec(Base.setindex(valid, "", index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3 dense $label must not be empty"
+    end
+
     for index in (12, 13)
         label = index == 12 ? "rms_norm_epsilon" : "rope_theta"
         for (value, message) in (

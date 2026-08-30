@@ -16,7 +16,9 @@ end
 
 function _qwen3_spec_string(value, label::AbstractString)
     value isa AbstractString || throw(ArgumentError("$label must be a string"))
-    return String(value)
+    resolved = String(value)
+    isempty(resolved) && throw(ArgumentError("$label must not be empty"))
+    return resolved
 end
 
 function _qwen3_spec_nonnegative_int(value, label::AbstractString)
@@ -195,17 +197,15 @@ struct Qwen3MoEShardSpec
     sha256::String
 
     function Qwen3MoEShardSpec(filename, bytes, sha256)
-        filename isa AbstractString || throw(ArgumentError(
-            "Qwen3 MoE shard filename must be a string",
-        ))
-        sha256 isa AbstractString || throw(ArgumentError(
-            "Qwen3 MoE shard sha256 must be a string",
-        ))
         resolved_bytes = _strict_host_int(bytes, "Qwen3 MoE shard bytes")
         resolved_bytes >= 0 || throw(ArgumentError(
             "Qwen3 MoE shard bytes must be non-negative",
         ))
-        return new(String(filename), resolved_bytes, String(sha256))
+        return new(
+            _qwen3_spec_string(filename, "Qwen3 MoE shard filename"),
+            resolved_bytes,
+            _qwen3_spec_string(sha256, "Qwen3 MoE shard sha256"),
+        )
     end
 end
 
