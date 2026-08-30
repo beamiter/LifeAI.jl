@@ -121,6 +121,55 @@ struct Qwen3VLVisionSpec
     num_position_embeddings::Int
     deepstack_visual_indexes::NTuple{3,Int}
     hidden_act::String
+
+    function Qwen3VLVisionSpec(
+        depth,
+        hidden_size,
+        intermediate_size,
+        num_heads,
+        in_channels,
+        patch_size,
+        temporal_patch_size,
+        spatial_merge_size,
+        out_hidden_size,
+        num_position_embeddings,
+        deepstack_visual_indexes,
+        hidden_act,
+    )
+        prefix = "Qwen3-VL vision"
+        return new(
+            _qwen3_spec_nonnegative_int(depth, "$prefix depth"),
+            _qwen3_spec_positive_int(hidden_size, "$prefix hidden_size"),
+            _qwen3_spec_positive_int(
+                intermediate_size,
+                "$prefix intermediate_size",
+            ),
+            _qwen3_spec_positive_int(num_heads, "$prefix num_heads"),
+            _qwen3_spec_positive_int(in_channels, "$prefix in_channels"),
+            _qwen3_spec_positive_int(patch_size, "$prefix patch_size"),
+            _qwen3_spec_positive_int(
+                temporal_patch_size,
+                "$prefix temporal_patch_size",
+            ),
+            _qwen3_spec_positive_int(
+                spatial_merge_size,
+                "$prefix spatial_merge_size",
+            ),
+            _qwen3_spec_positive_int(
+                out_hidden_size,
+                "$prefix out_hidden_size",
+            ),
+            _qwen3_spec_positive_int(
+                num_position_embeddings,
+                "$prefix num_position_embeddings",
+            ),
+            _qwen3_vl_spec_int3(
+                deepstack_visual_indexes,
+                "$prefix deepstack_visual_indexes",
+            ),
+            _qwen3_spec_string(hidden_act, "$prefix hidden_act"),
+        )
+    end
 end
 
 """

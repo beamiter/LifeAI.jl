@@ -158,6 +158,89 @@ end
     end
 end
 
+@testset "Qwen3-VL vision specifications are strict" begin
+    valid = (
+        big(0),
+        Int32(16),
+        UInt8(32),
+        big(2),
+        Int16(3),
+        big(4),
+        Int128(2),
+        UInt8(2),
+        big(16),
+        Int32(64),
+        (Int32(0), big(1), UInt8(2)),
+        SubString("xgelu", 2),
+    )
+    spec = Qwen3VLVisionSpec(valid...)
+    @test spec.depth === 0
+    @test spec.hidden_size === 16
+    @test spec.spatial_merge_size === 2
+    @test spec.deepstack_visual_indexes === (0, 1, 2)
+    @test spec.hidden_act === "gelu"
+
+    integer_fields = (
+        1 => "depth",
+        2 => "hidden_size",
+        3 => "intermediate_size",
+        4 => "num_heads",
+        5 => "in_channels",
+        6 => "patch_size",
+        7 => "temporal_patch_size",
+        8 => "spatial_merge_size",
+        9 => "out_hidden_size",
+        10 => "num_position_embeddings",
+    )
+    for (index, label) in integer_fields
+        failure = _ch43_captured_error() do
+            Qwen3VLVisionSpec(Base.setindex(valid, true, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL vision $label must be an integer"
+
+        invalid = index == 1 ? -1 : 0
+        qualifier = index == 1 ? "non-negative" : "positive"
+        failure = _ch43_captured_error() do
+            Qwen3VLVisionSpec(Base.setindex(valid, invalid, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL vision $label must be $qualifier"
+    end
+
+    too_large = big(typemax(Int)) + 1
+    for (index, value, message) in (
+        (2, 1.0, "hidden_size must be an integer"),
+        (2, too_large, "hidden_size is outside the host integer range"),
+        (12, :gelu, "hidden_act must be a string"),
+    )
+        failure = _ch43_captured_error() do
+            Qwen3VLVisionSpec(Base.setindex(valid, value, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: Qwen3-VL vision $message"
+    end
+
+    for (indexes, message) in (
+        ([0, 1, 2], "must be a tuple of three integers"),
+        ((0, 1), "must be a tuple of three integers"),
+        ((true, 1, 2), "[1] must be an integer"),
+        ((-1, 1, 2), "[1] must be non-negative"),
+        ((too_large, 1, 2), "[1] is outside the host integer range"),
+    )
+        failure = _ch43_captured_error() do
+            Qwen3VLVisionSpec(Base.setindex(valid, indexes, 11)...)
+        end
+        @test failure isa ArgumentError
+        separator = startswith(message, "[") ? "" : " "
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL vision " *
+            "deepstack_visual_indexes$separator$message"
+    end
+end
+
 @testset "Qwen3-VL frozen checkpoint and tensor contract" begin
     spec = qwen3_vl_checkpoint_spec()
     @test spec.variant == :qwen3_vl_2b_instruct
