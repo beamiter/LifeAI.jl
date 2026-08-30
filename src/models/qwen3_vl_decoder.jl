@@ -725,12 +725,12 @@ function _qwen3_vl_prompt_visual_token_contract(
     any((tokens .== video_token) .& attention_mask) && throw(ArgumentError(
         "Qwen3-VL video placeholders are not supported by image-only text prefill",
     ))
-    expected_visual_mask = tokens .== image_token
+    expected_visual_mask = (tokens .== image_token) .& attention_mask
     all((.!expected_visual_mask) .| visual_mask) || throw(ArgumentError(
         "Qwen3-VL checkpoint image tokens must be marked by visual_mask",
     ))
     all((.!visual_mask) .| expected_visual_mask) || throw(ArgumentError(
-        "Qwen3-VL visual_mask must not mark non-image input tokens",
+        "Qwen3-VL visual_mask must only mark attended image input tokens",
     ))
     return nothing
 end

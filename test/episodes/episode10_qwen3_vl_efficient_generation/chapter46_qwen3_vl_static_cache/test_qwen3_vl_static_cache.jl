@@ -836,8 +836,8 @@ end
         ),
         (
             non_image_position,
-            "ArgumentError: Qwen3-VL visual_mask must not mark non-image " *
-            "input tokens",
+            "ArgumentError: Qwen3-VL visual_mask must only mark attended " *
+            "image input tokens",
         ),
     )
         layout = Qwen3VLRopeLayout(

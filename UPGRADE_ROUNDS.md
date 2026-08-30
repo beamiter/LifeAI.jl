@@ -469,6 +469,9 @@ Chapter 03 reproducible-training test.
 229. Reject attended Qwen3-VL video placeholders across cache-free, dynamic,
      and static image-only prefill before vision compute, feature consumption,
      or cache writes, with strict checkpoint video-token metadata.
+230. Bind Qwen3-VL image roles only to attended checkpoint image tokens so
+     masked image-valued padding remains valid while masked visual positions
+     are rejected before decoder compute.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

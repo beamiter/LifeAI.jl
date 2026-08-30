@@ -841,6 +841,48 @@ end
     @test size(bound.logits) == (parameters.spec.vocab_size, 1, 1)
     @test all(isfinite, bound.logits)
 
+    padded_image_tokens = copy(bound_tokens)
+    padded_image_tokens[1] = 3
+    padded_image_attention = copy(inputs.rope_layout.attention_mask)
+    padded_image_attention[1, 1] = false
+    padded_image_layout = Qwen3VLRopeLayout(
+        inputs.rope_layout.position_ids,
+        inputs.rope_layout.rope_deltas,
+        inputs.rope_layout.visual_mask,
+        padded_image_attention,
+    )
+    padded_image = hf_qwen3_vl_text_prefill(
+        checkpoint_parameters,
+        padded_image_tokens,
+        padded_image_layout;
+        vision_features=inputs.vision_features,
+        logits_to_keep=1,
+    )
+    @test size(padded_image.logits) == (parameters.spec.vocab_size, 1, 1)
+    @test all(isfinite, padded_image.logits)
+
+    padded_visual_mask = copy(inputs.rope_layout.visual_mask)
+    padded_visual_mask[1, 1] = true
+    padded_visual_layout = Qwen3VLRopeLayout(
+        inputs.rope_layout.position_ids,
+        inputs.rope_layout.rope_deltas,
+        padded_visual_mask,
+        padded_image_attention,
+    )
+    padded_visual_error = _ch44_captured_error() do
+        hf_qwen3_vl_text_prefill(
+            checkpoint_parameters,
+            padded_image_tokens,
+            padded_visual_layout;
+            vision_features=inputs.vision_features,
+            logits_to_keep=1,
+        )
+    end
+    @test padded_visual_error isa ArgumentError
+    @test sprint(showerror, padded_visual_error) ==
+        "ArgumentError: Qwen3-VL visual_mask must only mark attended image " *
+        "input tokens"
+
     for video_position in (2, 3)
         video_tokens = copy(bound_tokens)
         video_tokens[video_position] = 9
@@ -887,8 +929,8 @@ end
         ),
         (
             non_image_position,
-            "ArgumentError: Qwen3-VL visual_mask must not mark non-image " *
-            "input tokens",
+            "ArgumentError: Qwen3-VL visual_mask must only mark attended " *
+            "image input tokens",
         ),
     )
         mismatched_layout = Qwen3VLRopeLayout(
