@@ -52,6 +52,8 @@ gpt_config(...; n_kv_heads=n_heads, use_qk_norm=false, ...)
 兼容约束：
 
 - Q 投影输出 `n_heads * head_dim`，K/V 投影输出 `n_kv_heads * head_dim`；`n_heads` 必须能被 `n_kv_heads` 整除，违反立即报错。
+- Q/KV 派生宽度以任意精度计算后收窄，四个 projection、可选 bias 与 QK-Norm
+  的总参数量也在构造 RoPE/Dense 前检查；极端合法正整数不能回绕成小 shape。
 - QK-Norm 在 head reshape 之后、RoPE 之前施加，对每个 head 的 `head_dim` 维做 RMSNorm；Q 和 K 使用独立可学习 scale（对应 Qwen3 的 `q_norm` / `k_norm`）。
 - KV cache（动态与静态）按 `n_kv_heads` 分配；attention 计算时按 group 广播或 repeat，两种路径结果必须一致。
 - checkpoint config 新增 `n_kv_heads`、`use_qk_norm`、`qk_norm_eps` 字段；旧 checkpoint 缺省迁移为 `n_kv_heads=n_heads`、`use_qk_norm=false`，恢复后 logits 不变。

@@ -119,6 +119,23 @@ end
     @test_throws AssertionError GPTModel(61, 32, 4, 2; num_kv_heads=3)
     @test_throws AssertionError _W06MHA(16, 4; use_qk_norm=true, qk_norm_epsilon=0)
 
+    maximum_dimension = typemax(Int)
+    wrapped_heads = maximum_dimension ÷ 2 + 2
+    @test_throws ArgumentError _W06MHA(
+        1,
+        wrapped_heads;
+        num_kv_heads=wrapped_heads,
+        head_dim=4,
+        use_rope=false,
+    )
+    @test_throws ArgumentError _W06MHA(
+        maximum_dimension,
+        1;
+        num_kv_heads=1,
+        head_dim=maximum_dimension,
+        use_rope=false,
+    )
+
     # Default construction reproduces the legacy layout and parameter tree.
     legacy = _W06MHA(16, 4)
     @test legacy.num_kv_heads == 4

@@ -28,6 +28,46 @@ using Random: AbstractRNG
     qk_norm_epsilon::Float32
 end
 
+function _attention_positive_host_int(value, label::AbstractString)
+    value isa Integer && !(value isa Bool) || throw(ArgumentError(
+        "$label must be an integer",
+    ))
+    resolved = try
+        Int(value)
+    catch error
+        error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
+            rethrow()
+        throw(ArgumentError("$label is outside the host integer range"))
+    end
+    resolved > 0 || throw(ArgumentError("$label must be positive"))
+    return resolved
+end
+
+function _attention_dimension_int(count::BigInt, label::AbstractString)
+    0 < count <= typemax(Int) || throw(ArgumentError(
+        "$label exceeds the host integer range",
+    ))
+    return Int(count)
+end
+
+function _attention_parameter_count_int(
+    d_in::Int,
+    d_out::Int,
+    kv_dim::Int,
+    head_dim::Int,
+    use_bias::Bool,
+    use_qk_norm::Bool,
+)
+    input = BigInt(d_in)
+    count = 2 * input * d_out + 2 * input * kv_dim
+    use_bias && (count += BigInt(d_out) + 2 * BigInt(kv_dim) + d_in)
+    use_qk_norm && (count += 2 * BigInt(head_dim))
+    0 < count <= typemax(Int) || throw(ArgumentError(
+        "MultiHeadAttention parameter count exceeds the host integer range",
+    ))
+    return Int(count)
+end
+
 function MultiHeadAttention(
     d_in::Int,
     num_heads::Int;
@@ -42,6 +82,8 @@ function MultiHeadAttention(
     rope_theta::Real=10000.0,
     rope_style::Symbol=:interleaved,
 )
+    @assert d_in > 0 "`d_in` must be positive"
+    @assert num_heads > 0 "`num_heads` must be positive"
     @assert num_kv_heads > 0 "`num_kv_heads` must be positive"
     @assert num_heads % num_kv_heads == 0 "`num_heads` must be divisible by `num_kv_heads`"
     @assert qk_norm_epsilon > 0 "`qk_norm_epsilon` must be positive"
@@ -50,10 +92,26 @@ function MultiHeadAttention(
     if head_dim === nothing
         @assert d_in % num_heads == 0 "`d_in` must be divisible by `num_heads`"
         head_dim = d_in ÷ num_heads
+    else
+        head_dim = _attention_positive_host_int(head_dim, "head_dim")
     end
 
-    d_out = num_heads * head_dim
-    kv_dim = num_kv_heads * head_dim
+    d_out = _attention_dimension_int(
+        BigInt(num_heads) * head_dim,
+        "MultiHeadAttention query dimension",
+    )
+    kv_dim = _attention_dimension_int(
+        BigInt(num_kv_heads) * head_dim,
+        "MultiHeadAttention key/value dimension",
+    )
+    _attention_parameter_count_int(
+        d_in,
+        d_out,
+        kv_dim,
+        head_dim,
+        use_bias,
+        use_qk_norm,
+    )
 
     if use_rope
         @assert iseven(head_dim) "`head_dim` must be even when using RoPE"
