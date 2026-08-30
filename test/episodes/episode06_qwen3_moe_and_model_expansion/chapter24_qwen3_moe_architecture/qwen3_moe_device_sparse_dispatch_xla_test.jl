@@ -42,4 +42,39 @@ using LifeAI: Qwen3SparseMoE, qwen3_moe_device_forward
     @test actual ≈ reference.output atol = 3.0f-6 rtol = 3.0f-5
     @test size(actual) == size(x)
     @test all(isfinite, actual)
+
+    underflow_x = ones(Float32, 6, 4, 1)
+    underflow_router = zeros(Float32, 8, 6)
+    underflow_router[:, 1] .= Float32[
+        0, -200, -201, -202, -203, -204, -205, -206,
+    ]
+    underflow_gate = copy(parameters.experts.gate_proj)
+    underflow_up = copy(parameters.experts.up_proj)
+    underflow_down = copy(parameters.experts.down_proj)
+    underflow_gate[:, :, 2:8] .= Float32(NaN)
+    underflow_up[:, :, 2:8] .= Float32(NaN)
+    underflow_down[:, :, 2:8] .= Float32(NaN)
+    underflow_reference = qwen3_moe_device_forward(
+        layer,
+        underflow_x,
+        (;
+            gate=(; weight=underflow_router),
+            experts=(;
+                gate_proj=underflow_gate,
+                up_proj=underflow_up,
+                down_proj=underflow_down,
+            ),
+        ),
+    )
+    underflow_actual = Array(compiled(
+        Reactant.to_rarray(underflow_x),
+        Reactant.to_rarray(underflow_router),
+        Reactant.to_rarray(underflow_gate),
+        Reactant.to_rarray(underflow_up),
+        Reactant.to_rarray(underflow_down),
+    ))
+    @test vec(underflow_reference.expert_indices[:, 1]) == Int32[1, 8]
+    @test vec(underflow_reference.routing_weights[:, 1]) == Float32[1, 0]
+    @test all(isfinite, underflow_actual)
+    @test underflow_actual ≈ underflow_reference.output atol = 3.0f-6 rtol = 3.0f-5
 end

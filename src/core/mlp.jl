@@ -98,10 +98,11 @@ end
     qwen3_topk_routing(router_logits, experts_per_token; normalize=true)
 
 Apply the Qwen3 MoE routing contract to a `(num_experts, num_tokens)` logits
-matrix. Softmax is evaluated in Float32, exactly `experts_per_token` routes are
-kept for every token, and the selected probabilities are optionally
-renormalized. The returned dense routing matrix contains zero for experts that
-were not selected.
+matrix. Softmax is evaluated in Float32, exactly `experts_per_token` expert
+indices are selected for every token, and the selected probabilities are
+optionally renormalized. A selected probability may itself underflow to zero at
+Float32 routing precision; the returned dense routing matrix also contains zero
+for experts that were not selected.
 
 This is the correctness-first host implementation. It deliberately makes the
 top-k boundary explicit; [`qwen3_device_topk_routing`](@ref) provides the
@@ -432,7 +433,11 @@ function qwen3_dense_expert_reference(tokens, routing, expert_parameters)
             1,
             :,
         )
-        output .+= expert_output .* weights
+        output .+= ifelse.(
+            iszero.(weights),
+            zero(eltype(expert_output)),
+            expert_output .* weights,
+        )
     end
     return output
 end
@@ -506,8 +511,11 @@ end
 Portable device fallback that evaluates the compact route-major token/expert
 pairs produced by
 [`qwen3_device_topk_routing`](@ref). Expert weights are gathered for exactly
-`experts_per_token * num_tokens` routes, evaluated with batched matrix
-multiplication, then combined back into token order on the device.
+`experts_per_token * num_tokens` route slots, evaluated with batched matrix
+multiplication, then combined back into token order on the device. Exact
+zero-weight route outputs are masked before reduction so an underflowed route
+has the same numerical effect as the host sparse path, even if that expert's
+parameters contain non-finite values.
 
 The implementation contains no `findall`, scalar indexing, or data-dependent
 Julia branch. Reactant/XLA uses this path; CUDA overrides
@@ -604,7 +612,12 @@ function qwen3_route_major_expert_dispatch(
         experts_per_token,
         num_tokens,
     )
-    return dropdims(sum(routed_output .* weights; dims=2); dims=2)
+    weighted_output = ifelse.(
+        iszero.(weights),
+        zero(eltype(routed_output)),
+        routed_output .* weights,
+    )
+    return dropdims(sum(weighted_output; dims=2); dims=2)
 end
 
 """

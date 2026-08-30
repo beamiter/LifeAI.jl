@@ -715,11 +715,14 @@ function _qwen3_cuda_combine_padded_grouped_routes_kernel!(
             expert_index = Int(sorted_experts[bucket_pair])
             within_expert = bucket_pair - Int(expert_offsets[expert_index])
             padded_pair = Int(padded_offsets[expert_index]) + within_expert
-            value = muladd(
-                padded_output[model_index, padded_pair],
-                Float32(routing_weights[slot, token_index]),
-                value,
-            )
+            weight = Float32(routing_weights[slot, token_index])
+            if !iszero(weight)
+                value = muladd(
+                    padded_output[model_index, padded_pair],
+                    weight,
+                    value,
+                )
+            end
         end
         output[model_index, token_index] = value
     end
@@ -1326,11 +1329,14 @@ function _qwen3_cuda_combine_routes_kernel!(
         value = 0.0f0
         @inbounds for slot in 1:experts_per_token
             pair_index = (token_index - 1) * experts_per_token + slot
-            value = muladd(
-                routed_output[output_index, pair_index],
-                Float32(routing_weights[slot, token_index]),
-                value,
-            )
+            weight = Float32(routing_weights[slot, token_index])
+            if !iszero(weight)
+                value = muladd(
+                    routed_output[output_index, pair_index],
+                    weight,
+                    value,
+                )
+            end
         end
         @inbounds output[output_index, token_index] = value
     end

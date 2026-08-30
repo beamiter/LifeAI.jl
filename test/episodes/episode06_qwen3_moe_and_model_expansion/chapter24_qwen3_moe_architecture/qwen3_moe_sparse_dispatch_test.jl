@@ -69,7 +69,8 @@ end
         parameters.experts,
     )
     @test all(isfinite, result.output)
-    @test any(isnan, dense)
+    @test all(isfinite, dense)
+    @test reshape(result.output, 4, :) ≈ dense
     @test result.stats.active_expert_count == 1
     @test result.stats.expert_token_counts == [5, 0, 0, 0]
     @test result.stats.routed_token_expert_pairs == 5

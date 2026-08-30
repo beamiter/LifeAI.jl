@@ -7,6 +7,7 @@ using LifeAI:
     qwen3_device_sparse_expert_dispatch,
     qwen3_device_topk_routing,
     qwen3_moe_device_forward,
+    qwen3_moe_forward_with_stats,
     qwen3_topk_routing
 
 struct _OversizedQwen3Router <: AbstractMatrix{Float32} end
@@ -118,6 +119,36 @@ end
         _OversizedQwen3Router(),
         1,
     )
+end
+
+@testset "Qwen3 compact dispatch masks underflowed zero-weight routes" begin
+    layer = Qwen3SparseMoE(1, 1, 4, 2)
+    poisoned_experts = reshape(Float32[1, NaN, NaN, NaN], 1, 1, 4)
+    parameters = (;
+        gate=(; weight=reshape(Float32[0, -200, -201, -202], 4, 1)),
+        experts=(;
+            gate_proj=copy(poisoned_experts),
+            up_proj=copy(poisoned_experts),
+            down_proj=copy(poisoned_experts),
+        ),
+    )
+    input = ones(Float32, 1, 1, 1)
+
+    host = qwen3_moe_forward_with_stats(layer, input, parameters)
+    device = qwen3_moe_device_forward(layer, input, parameters)
+    dense = qwen3_dense_expert_reference(
+        reshape(input, 1, :),
+        host.routing,
+        parameters.experts,
+    )
+    @test vec(device.expert_indices) == Int32[1, 4]
+    @test vec(device.routing_weights) == Float32[1, 0]
+    @test host.stats.routed_token_expert_pairs == 1
+    @test all(isfinite, host.output)
+    @test all(isfinite, dense)
+    @test all(isfinite, device.output)
+    @test dense ≈ reshape(host.output, 1, :)
+    @test device.output ≈ host.output
 end
 
 @testset "Qwen3 MoE route-major expert compute matches the all-expert oracle" begin

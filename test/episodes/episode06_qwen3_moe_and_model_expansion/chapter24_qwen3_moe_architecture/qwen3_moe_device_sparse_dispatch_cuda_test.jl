@@ -171,6 +171,53 @@ end
     @test all(isfinite, actual)
 end
 
+@testset "Qwen3 MoE CUDA combines zero-weight routes without NaN pollution" begin
+    d_model = 16
+    hidden_dim = 16
+    num_experts = 4
+    tokens = ones(Float32, d_model, 1)
+    expert_indices = reshape(Int32[1, 4], 2, 1)
+    routing_weights = reshape(Float32[1, 0], 2, 1)
+    gate_proj = ones(BFloat16, hidden_dim, d_model, num_experts)
+    up_proj = ones(BFloat16, hidden_dim, d_model, num_experts)
+    down_proj = ones(BFloat16, d_model, hidden_dim, num_experts)
+    gate_proj[:, :, 2:4] .= BFloat16(NaN)
+    up_proj[:, :, 2:4] .= BFloat16(NaN)
+    down_proj[:, :, 2:4] .= BFloat16(NaN)
+    grouped =
+        _QWEN3_MOE_CUDA_EXT.qwen3_cuda_grouped_bf16_sparse_expert_dispatch(
+            CUDA.cu(tokens),
+            CUDA.cu(expert_indices),
+            CUDA.cu(routing_weights),
+            CUDA.cu((; gate_proj, up_proj, down_proj)),
+        )
+
+    @test all(isfinite, Array(grouped))
+
+    layer = Qwen3SparseMoE(1, 1, 4, 2)
+    poisoned_experts = reshape(Float32[1, NaN, NaN, NaN], 1, 1, 4)
+    parameters = (;
+        gate=(; weight=reshape(Float32[0, -200, -201, -202], 4, 1)),
+        experts=(;
+            gate_proj=copy(poisoned_experts),
+            up_proj=copy(poisoned_experts),
+            down_proj=copy(poisoned_experts),
+        ),
+    )
+    expected = qwen3_moe_device_forward(
+        layer,
+        ones(Float32, 1, 1, 1),
+        parameters,
+    ).output
+    actual, _ = layer(
+        CUDA.cu(ones(Float32, 1, 1, 1)),
+        CUDA.cu(parameters),
+        (;),
+    )
+    @test all(isfinite, Array(actual))
+    @test Array(actual) ≈ expected
+end
+
 @testset "Qwen3 MoE compact sparse dispatch runs on CUDA" begin
     layer = Qwen3SparseMoE(16, 12, 8, 2)
     parameters, state = Lux.setup(Xoshiro(20260817), layer)
