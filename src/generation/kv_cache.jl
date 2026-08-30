@@ -104,10 +104,116 @@ Per-request KV cache for a decoder-only GPT model.
 kept separate from Lux model state because it belongs to one generation
 request, not to the model itself.
 """
+struct _GPTKVCacheValidated end
+const _GPT_KV_CACHE_VALIDATED = _GPTKVCacheValidated()
+
 struct GPTKVCache{C}
     layers::C
     position::Int
     batch_size::Int
+
+    function GPTKVCache(
+        ::_GPTKVCacheValidated,
+        layers::C,
+        position::Int,
+        batch_size::Int,
+    ) where {C}
+        return new{C}(layers, position, batch_size)
+    end
+end
+
+function _validate_gpt_kv_cache_layers(
+    layers,
+    position::Int,
+    batch_size::Int,
+)
+    layers isa Tuple || throw(ArgumentError(
+        "GPT KV cache layers must be a tuple",
+    ))
+    isempty(layers) && throw(ArgumentError(
+        "GPT KV cache layers must not be empty",
+    ))
+
+    expected_shape = nothing
+    expected_dtype = nothing
+    expected_device = nothing
+    seen_storage = IdDict{Any,Nothing}()
+    for (layer_index, layer) in enumerate(layers)
+        layer isa LayerKVCache || throw(ArgumentError(
+            "GPT KV cache layer $layer_index must be LayerKVCache storage",
+        ))
+        keys = layer.keys
+        values = layer.values
+        if position == 0
+            keys === nothing && values === nothing || throw(DimensionMismatch(
+                "empty GPT KV cache contains layer storage",
+            ))
+            continue
+        end
+        keys === nothing && throw(DimensionMismatch(
+            "populated GPT KV cache is missing layer $layer_index storage",
+        ))
+        values === nothing && throw(DimensionMismatch(
+            "populated GPT KV cache is missing layer $layer_index storage",
+        ))
+        keys isa AbstractArray && values isa AbstractArray || throw(ArgumentError(
+            "GPT KV cache keys and values must be arrays",
+        ))
+        _validate_layer_kv_arrays(keys, values)
+        get_device(keys) == get_device(values) || throw(ArgumentError(
+            "GPT KV cache keys and values must use the same device",
+        ))
+        size(keys, 3) == position || throw(DimensionMismatch(
+            "GPT KV cache token dimension must match position",
+        ))
+        size(keys, 4) == batch_size || throw(DimensionMismatch(
+            "GPT KV cache batch dimension must match batch_size",
+        ))
+
+        shape = size(keys)
+        dtype = eltype(keys)
+        device = get_device(keys)
+        if expected_shape === nothing
+            expected_shape = shape
+            expected_dtype = dtype
+            expected_device = device
+        else
+            shape == expected_shape || throw(DimensionMismatch(
+                "GPT KV cache layer shapes must match",
+            ))
+            dtype == expected_dtype || throw(ArgumentError(
+                "GPT KV cache layer dtypes must match",
+            ))
+            device == expected_device || throw(ArgumentError(
+                "GPT KV cache layer devices must match",
+            ))
+        end
+        for storage in (keys, values)
+            haskey(seen_storage, storage) && throw(ArgumentError(
+                "GPT KV cache layers must use distinct storage",
+            ))
+            seen_storage[storage] = nothing
+        end
+    end
+    return nothing
+end
+
+function GPTKVCache(layers, position, batch_size)
+    resolved_position = _strict_host_int(position, "GPT KV cache position")
+    resolved_batch = _strict_host_int(batch_size, "GPT KV cache batch_size")
+    resolved_position >= 0 || throw(ArgumentError(
+        "GPT KV cache position must be non-negative",
+    ))
+    resolved_batch > 0 || throw(ArgumentError(
+        "GPT KV cache batch_size must be positive",
+    ))
+    _validate_gpt_kv_cache_layers(layers, resolved_position, resolved_batch)
+    return GPTKVCache(
+        _GPT_KV_CACHE_VALIDATED,
+        layers,
+        resolved_position,
+        resolved_batch,
+    )
 end
 
 Base.length(cache::GPTKVCache) = cache.position
@@ -119,10 +225,11 @@ Base.isempty(cache::GPTKVCache) = cache.position == 0
 Create an empty cache for `model`. Storage is allocated lazily during `prefill`
 so its dtype and device always match the model projections.
 """
-function init_kv_cache(model::GPTModel; batch_size::Int=1)
-    batch_size > 0 || throw(ArgumentError("`batch_size` must be positive"))
+function init_kv_cache(model::GPTModel; batch_size::Integer=1)
+    resolved_batch = _strict_host_int(batch_size, "`batch_size`")
+    resolved_batch > 0 || throw(ArgumentError("`batch_size` must be positive"))
     layers = ntuple(_ -> LayerKVCache(), model.num_layers)
-    return GPTKVCache(layers, 0, batch_size)
+    return GPTKVCache(layers, 0, resolved_batch)
 end
 
 function _validate_kv_cache(model::GPTModel, cache::GPTKVCache)
@@ -132,15 +239,21 @@ function _validate_kv_cache(model::GPTModel, cache::GPTKVCache)
         throw(ArgumentError("cache position is outside 0:model.max_seq_len"))
     cache.batch_size > 0 || throw(ArgumentError("cache batch size must be positive"))
 
-    for layer_cache in cache.layers
+    expected_shape = (
+        model.head_dim,
+        model.num_kv_heads,
+        cache.position,
+        cache.batch_size,
+    )
+    for (layer_index, layer_cache) in enumerate(cache.layers)
         length(layer_cache) == cache.position ||
             throw(DimensionMismatch("all layer caches must match cache.position"))
 
         if !isempty(layer_cache)
-            size(layer_cache.keys) == size(layer_cache.values) ||
-                throw(DimensionMismatch("cached keys and values must have matching shapes"))
-            size(layer_cache.keys, 4) == cache.batch_size ||
-                throw(DimensionMismatch("layer cache batch size does not match cache.batch_size"))
+            size(layer_cache.keys) == expected_shape &&
+                size(layer_cache.values) == expected_shape || throw(DimensionMismatch(
+                    "layer $layer_index cache shape does not match model geometry",
+                ))
         end
     end
 
@@ -343,6 +456,7 @@ function _gpt_with_kv_cache(
         lm_head=st_lm_head,
     )
     new_cache = GPTKVCache(
+        _GPT_KV_CACHE_VALIDATED,
         Tuple(new_layer_caches),
         cache.position + seq_len,
         cache.batch_size,

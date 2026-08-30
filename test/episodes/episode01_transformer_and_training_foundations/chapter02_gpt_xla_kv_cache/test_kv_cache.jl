@@ -4,6 +4,7 @@ using Lux
 import MLDataDevices
 using LifeAI:
     GPTModel,
+    GPTKVCache,
     LayerKVCache,
     _append_kv,
     decode_step,
@@ -49,6 +50,15 @@ Base.IndexStyle(::Type{<:_Ch02ForeignDeviceArray}) = IndexCartesian()
 Base.getindex(array::_Ch02ForeignDeviceArray, indices...) =
     getindex(array.parent, indices...)
 MLDataDevices.get_device(::_Ch02ForeignDeviceArray) = _Ch02ForeignDevice()
+
+function _ch02_captured_error(f)
+    try
+        f()
+    catch error
+        return sprint(showerror, error)
+    end
+    return nothing
+end
 
 @testset "LayerKVCache seals dynamic storage invariants" begin
     empty_cache = LayerKVCache()
@@ -130,6 +140,147 @@ MLDataDevices.get_device(::_Ch02ForeignDeviceArray) = _Ch02ForeignDevice()
         zeros(Float64, 2, 3, 1, 1),
         ones(Float64, 2, 3, 1, 1),
     )
+end
+
+@testset "GPTKVCache seals dynamic container invariants" begin
+    empty_layers = (LayerKVCache(), LayerKVCache())
+    empty_cache = GPTKVCache(empty_layers, Int32(0), BigInt(2))
+    @test empty_cache.layers === empty_layers
+    @test empty_cache.position === 0
+    @test empty_cache.batch_size === 2
+    @test isempty(empty_cache)
+    @test length(empty_cache) == 0
+    @test_throws MethodError GPTKVCache{typeof(empty_layers)}(
+        empty_layers,
+        0,
+        2,
+    )
+
+    shape = (2, 3, 4, 2)
+    first_layer = LayerKVCache(
+        zeros(Int32, shape),
+        ones(Int32, shape),
+    )
+    second_layer = LayerKVCache(
+        fill(Int32(2), shape),
+        fill(Int32(3), shape),
+    )
+    populated_layers = (first_layer, second_layer)
+    populated = GPTKVCache(populated_layers, 4, 2)
+    @test populated.layers === populated_layers
+    @test length(populated) == 4
+    @test !isempty(populated)
+    @test eltype(populated.layers[1].keys) == Int32
+
+    overflow = big(typemax(Int)) + 1
+    invalid_metadata_cases = (
+        (
+            () -> GPTKVCache(empty_layers, true, 2),
+            "ArgumentError: GPT KV cache position must be an integer",
+        ),
+        (
+            () -> GPTKVCache(empty_layers, 1.5, 2),
+            "ArgumentError: GPT KV cache position must be an integer",
+        ),
+        (
+            () -> GPTKVCache(empty_layers, overflow, 2),
+            "ArgumentError: GPT KV cache position is outside the host integer range",
+        ),
+        (
+            () -> GPTKVCache(empty_layers, -1, 2),
+            "ArgumentError: GPT KV cache position must be non-negative",
+        ),
+        (
+            () -> GPTKVCache(empty_layers, 0, false),
+            "ArgumentError: GPT KV cache batch_size must be an integer",
+        ),
+        (
+            () -> GPTKVCache(empty_layers, 0, 1.5),
+            "ArgumentError: GPT KV cache batch_size must be an integer",
+        ),
+        (
+            () -> GPTKVCache(empty_layers, 0, overflow),
+            "ArgumentError: GPT KV cache batch_size is outside the host integer range",
+        ),
+        (
+            () -> GPTKVCache(empty_layers, 0, 0),
+            "ArgumentError: GPT KV cache batch_size must be positive",
+        ),
+    )
+    for (build, message) in invalid_metadata_cases
+        @test _ch02_captured_error(build) == message
+    end
+
+    invalid_layer_cases = (
+        (
+            () -> GPTKVCache(collect(empty_layers), 0, 2),
+            "ArgumentError: GPT KV cache layers must be a tuple",
+        ),
+        (
+            () -> GPTKVCache((), 0, 2),
+            "ArgumentError: GPT KV cache layers must not be empty",
+        ),
+        (
+            () -> GPTKVCache((1,), 0, 2),
+            "ArgumentError: GPT KV cache layer 1 must be LayerKVCache storage",
+        ),
+        (
+            () -> GPTKVCache((first_layer,), 0, 2),
+            "DimensionMismatch: empty GPT KV cache contains layer storage",
+        ),
+        (
+            () -> GPTKVCache((LayerKVCache(),), 1, 2),
+            "DimensionMismatch: populated GPT KV cache is missing layer 1 storage",
+        ),
+        (
+            () -> GPTKVCache((first_layer, LayerKVCache()), 4, 2),
+            "DimensionMismatch: populated GPT KV cache is missing layer 2 storage",
+        ),
+        (
+            () -> GPTKVCache((first_layer,), 3, 2),
+            "DimensionMismatch: GPT KV cache token dimension must match position",
+        ),
+        (
+            () -> GPTKVCache((first_layer,), 4, 1),
+            "DimensionMismatch: GPT KV cache batch dimension must match batch_size",
+        ),
+    )
+    for (build, message) in invalid_layer_cases
+        @test _ch02_captured_error(build) == message
+    end
+
+    wrong_shape_layer = LayerKVCache(
+        zeros(Int32, 4, 3, 4, 2),
+        ones(Int32, 4, 3, 4, 2),
+    )
+    @test _ch02_captured_error() do
+        GPTKVCache((first_layer, wrong_shape_layer), 4, 2)
+    end == "DimensionMismatch: GPT KV cache layer shapes must match"
+
+    wrong_dtype_layer = LayerKVCache(
+        zeros(Float32, shape),
+        ones(Float32, shape),
+    )
+    @test _ch02_captured_error() do
+        GPTKVCache((first_layer, wrong_dtype_layer), 4, 2)
+    end == "ArgumentError: GPT KV cache layer dtypes must match"
+
+    foreign_layer = LayerKVCache(
+        _Ch02ForeignDeviceArray(zeros(Int32, shape)),
+        _Ch02ForeignDeviceArray(ones(Int32, shape)),
+    )
+    @test _ch02_captured_error() do
+        GPTKVCache((first_layer, foreign_layer), 4, 2)
+    end == "ArgumentError: GPT KV cache layer devices must match"
+
+    @test _ch02_captured_error() do
+        GPTKVCache((first_layer, first_layer), 4, 2)
+    end == "ArgumentError: GPT KV cache layers must use distinct storage"
+
+    cross_reused_layer = LayerKVCache(first_layer.values, first_layer.keys)
+    @test _ch02_captured_error() do
+        GPTKVCache((first_layer, cross_reused_layer), 4, 2)
+    end == "ArgumentError: GPT KV cache layers must use distinct storage"
 end
 
 @testset "KV cache prefill and incremental decode" begin
@@ -248,8 +399,74 @@ end
     model = GPTModel(9, 8, 2, 1; max_seq_len=3, use_rope=true)
     ps, st = Lux.setup(rng, model)
     empty_cache = init_kv_cache(model)
+    @test init_kv_cache(model; batch_size=BigInt(2)).batch_size == 2
+    @test _ch02_captured_error() do
+        init_kv_cache(model; batch_size=true)
+    end == "ArgumentError: `batch_size` must be an integer"
+    @test _ch02_captured_error() do
+        init_kv_cache(model; batch_size=0)
+    end == "ArgumentError: `batch_size` must be positive"
+    @test _ch02_captured_error() do
+        init_kv_cache(model; batch_size=big(typemax(Int)) + 1)
+    end == "ArgumentError: `batch_size` is outside the host integer range"
 
     @test_throws ArgumentError decode_step(model, ps, st, 1, empty_cache)
+
+    wrong_layer_count = GPTKVCache(
+        (LayerKVCache(), LayerKVCache()),
+        0,
+        1,
+    )
+    @test _ch02_captured_error() do
+        prefill(model, ps, st, [1], wrong_layer_count)
+    end == "DimensionMismatch: cache layer count does not match model.num_layers"
+
+    wrong_head_shape = (3, model.num_kv_heads, 1, 1)
+    wrong_head_cache = GPTKVCache(
+        (LayerKVCache(
+            zeros(Float32, wrong_head_shape),
+            ones(Float32, wrong_head_shape),
+        ),),
+        1,
+        1,
+    )
+    @test _ch02_captured_error() do
+        decode_step(model, ps, st, 1, wrong_head_cache)
+    end ==
+          "DimensionMismatch: layer 1 cache shape does not match model geometry"
+
+    wrong_head_count_shape = (model.head_dim, 1, 1, 1)
+    wrong_head_count_cache = GPTKVCache(
+        (LayerKVCache(
+            zeros(Float32, wrong_head_count_shape),
+            ones(Float32, wrong_head_count_shape),
+        ),),
+        1,
+        1,
+    )
+    @test _ch02_captured_error() do
+        decode_step(model, ps, st, 1, wrong_head_count_cache)
+    end ==
+          "DimensionMismatch: layer 1 cache shape does not match model geometry"
+
+    overlength_shape = (
+        model.head_dim,
+        model.num_kv_heads,
+        model.max_seq_len + 1,
+        1,
+    )
+    overlength_cache = GPTKVCache(
+        (LayerKVCache(
+            zeros(Float32, overlength_shape),
+            ones(Float32, overlength_shape),
+        ),),
+        model.max_seq_len + 1,
+        1,
+    )
+    @test _ch02_captured_error() do
+        decode_step(model, ps, st, 1, overlength_cache)
+    end ==
+          "ArgumentError: cache position is outside 0:model.max_seq_len"
 
     _, full_cache, cached_state = prefill(model, ps, st, [1, 2, 3], empty_cache)
     @test_throws ArgumentError prefill(model, ps, cached_state, [1], full_cache)

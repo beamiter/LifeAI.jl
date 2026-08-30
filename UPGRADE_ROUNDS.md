@@ -446,6 +446,9 @@ Chapter 03 reproducible-training test.
 221. Bind the archived Qwen3 MoE grouped-scattered report to its frozen
      original-commit source snapshots without rewriting historical measurement
      digests as the implementation evolves.
+222. Seal generic GPT dynamic cache metadata and cross-layer shape, dtype,
+     device, geometry, and distinct-storage invariants behind a trace-safe
+     internal constructor.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
