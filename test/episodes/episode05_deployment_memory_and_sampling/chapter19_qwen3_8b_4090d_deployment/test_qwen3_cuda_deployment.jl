@@ -231,6 +231,15 @@ end
         )
         @test report.total_bytes == 5
         @test only(report.files).name == "hello.bin"
+        @test LifeAI._qwen3_add_asset_bytes(0, 5) == 5
+        @test LifeAI._qwen3_add_asset_bytes(typemax(Int) - 1, 1) ==
+            typemax(Int)
+        overflow_failure = _qwen3_deployment_captured_error() do
+            LifeAI._qwen3_add_asset_bytes(typemax(Int), 1)
+        end
+        @test overflow_failure isa ArgumentError
+        @test sprint(showerror, overflow_failure) ==
+            "ArgumentError: asset manifest total byte count exceeds the host integer range"
 
         write(joinpath(directory, "model.safetensors"), "unverified")
         @test_throws ArgumentError verify_qwen3_deployment_assets(directory, path)

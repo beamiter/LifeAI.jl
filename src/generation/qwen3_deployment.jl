@@ -317,6 +317,17 @@ function _qwen3_sha256_file(path::AbstractString)
     end
 end
 
+function _qwen3_add_asset_bytes(total::Int, file_bytes::Int)
+    return try
+        Base.checked_add(total, file_bytes)
+    catch error
+        error isa OverflowError || rethrow()
+        throw(ArgumentError(
+            "asset manifest total byte count exceeds the host integer range",
+        ))
+    end
+end
+
 """
     verify_qwen3_deployment_assets(model_dir, manifest_path;
                                    model_id=nothing, revision=nothing)
@@ -361,6 +372,7 @@ function verify_qwen3_deployment_assets(
 
     seen = Set{String}()
     verified = NamedTuple[]
+    total_bytes = 0
     for entry in files
         entry isa JSON3.Object || throw(ArgumentError(
             "each asset manifest file entry must be an object",
@@ -390,6 +402,7 @@ function verify_qwen3_deployment_assets(
         actual_size == expected_size || throw(ArgumentError(
             "model asset size mismatch for $name: expected $expected_size, got $actual_size",
         ))
+        total_bytes = _qwen3_add_asset_bytes(total_bytes, actual_size)
         actual_sha256 = _qwen3_sha256_file(path)
         actual_sha256 == expected_sha256 || throw(ArgumentError(
             "model asset SHA256 mismatch for $name",
@@ -417,7 +430,7 @@ function verify_qwen3_deployment_assets(
         model_id=manifest_model_id,
         revision=manifest_revision,
         files=Tuple(verified),
-        total_bytes=sum(file.size for file in verified),
+        total_bytes,
     )
 end
 

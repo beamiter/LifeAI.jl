@@ -259,6 +259,8 @@ Chapter 03 reproducible-training test.
      including strict scalar types and Float32 sampling boundaries.
 129. Harden Qwen3 quantization group and layer boundaries, including positional
      plan construction and layer-specific policy lookup.
+130. Accumulate verified Qwen3 deployment asset sizes with checked arithmetic
+     so multi-file manifests cannot wrap their total byte report.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
