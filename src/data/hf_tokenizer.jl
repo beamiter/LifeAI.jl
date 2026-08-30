@@ -985,6 +985,16 @@ function encode(
     return ids
 end
 
+function _hf_qwen3_token_id(raw_id)
+    raw_id isa Integer && !(raw_id isa Bool) || throw(ArgumentError(
+        "token id $(repr(raw_id)) is not an integer",
+    ))
+    typemin(Int) <= raw_id <= typemax(Int) || throw(ArgumentError(
+        "token id is outside the host integer range",
+    ))
+    return Int(raw_id)
+end
+
 function decode_bytes(
     tokenizer::HFQwen3Tokenizer,
     ids;
@@ -992,8 +1002,7 @@ function decode_bytes(
 )
     output = UInt8[]
     for raw_id in ids
-        raw_id isa Integer || throw(ArgumentError("token id $(repr(raw_id)) is not an integer"))
-        id = Int(raw_id)
+        id = _hf_qwen3_token_id(raw_id)
         1 <= id <= vocab_size(tokenizer) || throw(ArgumentError(
             "token id $id is outside the imported tokenizer vocabulary",
         ))
@@ -1012,9 +1021,12 @@ function decode(
     return _decode_utf8(decode_bytes(tokenizer, ids; skip_special_tokens); errors)
 end
 
-function token_byte_length(tokenizer::HFQwen3Tokenizer, id::Integer)
-    1 <= id <= vocab_size(tokenizer) || throw(ArgumentError("token id is outside vocabulary"))
-    return Int(id) in tokenizer.special_ids ? 0 : length(tokenizer.token_bytes[Int(id)])
+function token_byte_length(tokenizer::HFQwen3Tokenizer, raw_id)
+    id = _hf_qwen3_token_id(raw_id)
+    1 <= id <= vocab_size(tokenizer) || throw(ArgumentError(
+        "token id is outside vocabulary",
+    ))
+    return id in tokenizer.special_ids ? 0 : length(tokenizer.token_bytes[id])
 end
 
 function tokenizer_config(tokenizer::HFQwen3Tokenizer)

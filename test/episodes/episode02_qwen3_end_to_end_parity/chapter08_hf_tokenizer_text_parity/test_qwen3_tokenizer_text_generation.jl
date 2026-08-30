@@ -22,6 +22,7 @@ using LifeAI:
     save_checkpoint,
     save_tokenizer,
     special_token_id,
+    token_byte_length,
     tokenizer_config,
     tokenizer_fingerprint,
     vocab_size
@@ -69,6 +70,29 @@ isdefined(@__MODULE__, :qwen3_tokenizer_fixture_payloads) ||
         @test decode(tokenizer, added; skip_special_tokens=true) == "hi<think>x</think>"
         @test decode_bytes(tokenizer, added; skip_special_tokens=true) ==
               Vector{UInt8}(codeunits("hi<think>x</think>"))
+        @test decode_bytes(tokenizer, Int32[258]) ==
+              Vector{UInt8}(codeunits("hi!"))
+        @test token_byte_length(tokenizer, big(258)) == 3
+        too_large = big(typemax(Int)) + 1
+        for (raw_id, message) in (
+            (true, "token id true is not an integer"),
+            (1.5, "token id 1.5 is not an integer"),
+            (too_large, "token id is outside the host integer range"),
+        )
+            for call in (
+                () -> decode_bytes(tokenizer, [raw_id]),
+                () -> token_byte_length(tokenizer, raw_id),
+            )
+                failure = try
+                    call()
+                    nothing
+                catch caught
+                    caught
+                end
+                @test failure isa ArgumentError
+                @test sprint(showerror, failure) == "ArgumentError: $message"
+            end
+        end
         @test_throws ArgumentError decode(tokenizer, [0])
         @test_throws ArgumentError decode(tokenizer, [264])
         @test_throws ArgumentError decode(tokenizer, [1.5])

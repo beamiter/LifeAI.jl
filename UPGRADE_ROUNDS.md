@@ -225,6 +225,8 @@ Chapter 03 reproducible-training test.
      dimensions and finite Float32 hyperparameters without lossy coercions.
 112. Bind automatic Qwen3-VL prefill mRoPE layouts to the text parameters'
      checkpoint, preserving custom special-token and merge contracts.
+113. Strictly normalize Qwen3 tokenizer decode ids and byte-length queries,
+     rejecting Bool and host-range overflow without leaking conversions.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
