@@ -2,7 +2,8 @@ using BFloat16s: BFloat16
 using LinearAlgebra: I
 using Test
 import LifeAI
-using LifeAI: Qwen3VLVisionInput,
+using LifeAI: Qwen3VLVisionFeatures,
+    Qwen3VLVisionInput,
     Qwen3VLVisionSpec,
     hf_qwen3_vl_vision_forward
 
@@ -152,6 +153,7 @@ function _ch43_assert_tiny_forward(::Type{T}) where {T}
         layer -> first_run.checkpoints[layer] == second_run.checkpoints[layer],
         0:3,
     )
+    @test first_run.checkpoints[3] === first_run.patch_hidden_state
     @test first_run.checkpoints[0] != first_run.checkpoints[3]
 
     overflow_integer = big(typemax(Int)) + 1
@@ -190,6 +192,121 @@ function _ch43_assert_tiny_forward(::Type{T}) where {T}
         capture_layers=(4,),
     )
     return first_run
+end
+
+@testset "Qwen3-VL vision feature construction binds output geometry" begin
+    spec = _CH43_TINY_VISION_SPEC
+    patch_hidden_state = zeros(Float32, 8, 4)
+    visual_embeddings = zeros(Float32, 6, 1)
+    deepstack = ntuple(_ -> zeros(Float32, 6, 1), 3)
+    checkpoints = Dict{Int,Any}(
+        0 => copy(patch_hidden_state),
+        3 => patch_hidden_state,
+    )
+    features = Qwen3VLVisionFeatures(
+        patch_hidden_state,
+        visual_embeddings,
+        deepstack,
+        checkpoints;
+        spec,
+    )
+    @test features.patch_hidden_state === patch_hidden_state
+    @test features.visual_embeddings === visual_embeddings
+    @test features.deepstack === deepstack
+    @test features.checkpoints === checkpoints
+    @test features.checkpoints[3] === features.patch_hidden_state
+
+    @test_throws MethodError Qwen3VLVisionFeatures{
+        typeof(patch_hidden_state),
+        typeof(visual_embeddings),
+        typeof(deepstack),
+        typeof(checkpoints),
+    }(
+        patch_hidden_state,
+        visual_embeddings,
+        deepstack,
+        checkpoints,
+    )
+    @test_throws DimensionMismatch Qwen3VLVisionFeatures(
+        zeros(Float32, 7, 4),
+        visual_embeddings,
+        deepstack,
+        checkpoints;
+        spec,
+    )
+    @test_throws DimensionMismatch Qwen3VLVisionFeatures(
+        zeros(Float32, 8, 5),
+        visual_embeddings,
+        deepstack,
+        checkpoints;
+        spec,
+    )
+    @test_throws DimensionMismatch Qwen3VLVisionFeatures(
+        patch_hidden_state,
+        zeros(Float32, 6, 2),
+        deepstack,
+        checkpoints;
+        spec,
+    )
+    @test_throws ArgumentError Qwen3VLVisionFeatures(
+        patch_hidden_state,
+        BFloat16.(visual_embeddings),
+        deepstack,
+        checkpoints;
+        spec,
+    )
+    @test_throws DimensionMismatch Qwen3VLVisionFeatures(
+        patch_hidden_state,
+        visual_embeddings,
+        deepstack[1:2],
+        checkpoints;
+        spec,
+    )
+    wrong_deepstack_shape = Base.setindex(
+        deepstack,
+        zeros(Float32, 6, 2),
+        1,
+    )
+    @test_throws DimensionMismatch Qwen3VLVisionFeatures(
+        patch_hidden_state,
+        visual_embeddings,
+        wrong_deepstack_shape,
+        checkpoints;
+        spec,
+    )
+    wrong_deepstack_dtype = Base.setindex(
+        deepstack,
+        zeros(BFloat16, 6, 1),
+        1,
+    )
+    @test_throws ArgumentError Qwen3VLVisionFeatures(
+        patch_hidden_state,
+        visual_embeddings,
+        wrong_deepstack_dtype,
+        checkpoints;
+        spec,
+    )
+    @test_throws ArgumentError Qwen3VLVisionFeatures(
+        patch_hidden_state,
+        visual_embeddings,
+        deepstack,
+        Dict{Any,Any}(true => patch_hidden_state);
+        spec,
+    )
+    @test_throws ArgumentError Qwen3VLVisionFeatures(
+        patch_hidden_state,
+        visual_embeddings,
+        deepstack,
+        Dict{Int,Any}(4 => patch_hidden_state);
+        spec,
+    )
+    @test_throws DimensionMismatch Qwen3VLVisionFeatures(
+        patch_hidden_state,
+        visual_embeddings,
+        deepstack,
+        Dict{Int,Any}(0 => zeros(Float32, 8, 3));
+        spec,
+    )
 end
 
 @testset "Qwen3-VL deterministic tiny Float32 and BF16 full forward" begin

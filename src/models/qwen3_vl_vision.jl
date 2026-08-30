@@ -42,13 +42,42 @@ Outputs of the standalone Qwen3-VL vision tower and its mergers.
 
 `patch_hidden_state` retains one hidden vector per unmerged vision patch.
 `visual_embeddings` is the main merger output consumed by the language model;
-each entry in `deepstack` is likewise spatially merged.
+each entry in `deepstack` is likewise spatially merged. `checkpoints` contains
+an arbitrary zero-based subset of captured block outputs; when the last block
+is captured, its value may share storage with `patch_hidden_state`.
 """
 struct Qwen3VLVisionFeatures{H,V,D,C}
     patch_hidden_state::H
     visual_embeddings::V
     deepstack::D
     checkpoints::C
+
+    function Qwen3VLVisionFeatures(
+        patch_hidden_state::AbstractMatrix,
+        visual_embeddings::AbstractMatrix,
+        deepstack::Tuple,
+        checkpoints::AbstractDict;
+        spec::Qwen3VLVisionSpec=qwen3_vl_checkpoint_spec().vision,
+    )
+        _validate_qwen3_vl_vision_features(
+            patch_hidden_state,
+            visual_embeddings,
+            deepstack,
+            checkpoints,
+            spec,
+        )
+        return new{
+            typeof(patch_hidden_state),
+            typeof(visual_embeddings),
+            typeof(deepstack),
+            typeof(checkpoints),
+        }(
+            patch_hidden_state,
+            visual_embeddings,
+            deepstack,
+            checkpoints,
+        )
+    end
 end
 
 function _qwen3_vl_dimension_product(label::AbstractString, dimensions::Int...)
@@ -60,6 +89,105 @@ function _qwen3_vl_dimension_product(label::AbstractString, dimensions::Int...)
         ))
     end
     return Int(product)
+end
+
+function _validate_qwen3_vl_feature_matrix_axes(value, label::AbstractString)
+    all(
+        dimension -> axes(value, dimension) ==
+            Base.OneTo(size(value, dimension)),
+        1:2,
+    ) || throw(ArgumentError("$label must use one-based axes"))
+    return nothing
+end
+
+function _validate_qwen3_vl_vision_features(
+    patch_hidden_state,
+    visual_embeddings,
+    deepstack,
+    checkpoints,
+    spec,
+)
+    _validate_qwen3_vl_feature_matrix_axes(
+        patch_hidden_state,
+        "Qwen3-VL patch_hidden_state",
+    )
+    _validate_qwen3_vl_feature_matrix_axes(
+        visual_embeddings,
+        "Qwen3-VL visual_embeddings",
+    )
+    feature_type = eltype(patch_hidden_state)
+    feature_type in (Float32, BFloat16) || throw(ArgumentError(
+        "Qwen3-VL vision features must contain Float32 or BFloat16 values",
+    ))
+    eltype(visual_embeddings) == feature_type || throw(ArgumentError(
+        "Qwen3-VL visual_embeddings dtype must match patch_hidden_state",
+    ))
+
+    patch_count = size(patch_hidden_state, 2)
+    patch_count > 0 || throw(ArgumentError(
+        "Qwen3-VL patch_hidden_state must contain at least one patch",
+    ))
+    merge_unit = _qwen3_vl_dimension_product(
+        "Qwen3-VL vision merge unit",
+        spec.spatial_merge_size,
+        spec.spatial_merge_size,
+    )
+    patch_count % merge_unit == 0 || throw(DimensionMismatch(
+        "Qwen3-VL patch count must be divisible by the spatial merge unit",
+    ))
+    patch_shape = (spec.hidden_size, patch_count)
+    size(patch_hidden_state) == patch_shape || throw(DimensionMismatch(
+        "Qwen3-VL patch_hidden_state must have shape $patch_shape; " *
+        "got $(size(patch_hidden_state))",
+    ))
+    visual_shape = (spec.out_hidden_size, patch_count ÷ merge_unit)
+    size(visual_embeddings) == visual_shape || throw(DimensionMismatch(
+        "Qwen3-VL visual_embeddings must have shape $visual_shape; " *
+        "got $(size(visual_embeddings))",
+    ))
+
+    length(deepstack) == length(spec.deepstack_visual_indexes) ||
+        throw(DimensionMismatch(
+            "Qwen3-VL deepstack feature count must match the vision spec",
+        ))
+    for (index, feature) in enumerate(deepstack)
+        feature isa AbstractMatrix || throw(ArgumentError(
+            "Qwen3-VL deepstack[$index] must be a matrix",
+        ))
+        _validate_qwen3_vl_feature_matrix_axes(
+            feature,
+            "Qwen3-VL deepstack[$index]",
+        )
+        size(feature) == visual_shape || throw(DimensionMismatch(
+            "Qwen3-VL deepstack[$index] must have shape $visual_shape; " *
+            "got $(size(feature))",
+        ))
+        eltype(feature) == feature_type || throw(ArgumentError(
+            "Qwen3-VL deepstack[$index] dtype must match patch_hidden_state",
+        ))
+    end
+
+    for (raw_layer, state) in pairs(checkpoints)
+        layer = _strict_host_int(raw_layer, "Qwen3-VL checkpoint layer")
+        0 <= layer < spec.depth || throw(ArgumentError(
+            "Qwen3-VL checkpoint layer is outside 0:$(spec.depth - 1)",
+        ))
+        state isa AbstractMatrix || throw(ArgumentError(
+            "Qwen3-VL checkpoint $layer must be a matrix",
+        ))
+        _validate_qwen3_vl_feature_matrix_axes(
+            state,
+            "Qwen3-VL checkpoint $layer",
+        )
+        size(state) == patch_shape || throw(DimensionMismatch(
+            "Qwen3-VL checkpoint $layer must have shape $patch_shape; " *
+            "got $(size(state))",
+        ))
+        eltype(state) == feature_type || throw(ArgumentError(
+            "Qwen3-VL checkpoint $layer dtype must match patch_hidden_state",
+        ))
+    end
+    return nothing
 end
 
 function _validate_qwen3_vl_vision_input(pixel_values, grid_thw, spec)
@@ -783,6 +911,7 @@ function hf_qwen3_vl_vision_forward(
         x,
         visual_embeddings,
         Tuple(deepstack),
-        checkpoints,
+        checkpoints;
+        spec,
     )
 end
