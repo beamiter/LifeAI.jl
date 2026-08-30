@@ -262,6 +262,18 @@ function _hf_required(object, name::AbstractString, label::AbstractString)
     return object[name]
 end
 
+function _hf_reject_unknown_fields(object, allowed_fields, label::AbstractString)
+    unknown_fields = String[]
+    for raw_name in keys(object)
+        name = String(raw_name)
+        name in allowed_fields || push!(unknown_fields, name)
+    end
+    isempty(unknown_fields) || throw(ArgumentError(
+        "unsupported $label fields: $(join(sort!(unknown_fields), ", "))",
+    ))
+    return nothing
+end
+
 function _hf_strict_host_int(value, label::AbstractString)
     value isa Integer && !(value isa Bool) || throw(ArgumentError(
         "$label must be an integer",
@@ -572,6 +584,19 @@ function _hf_parse_added_tokens(tokenizer_json, model_vocabulary_size::Int, voca
     seen_contents = Set{String}()
     for (offset, raw_token) in enumerate(raw_added)
         raw_token isa JSON3.Object || throw(ArgumentError("added token must be an object"))
+        _hf_reject_unknown_fields(
+            raw_token,
+            (
+                "id",
+                "content",
+                "single_word",
+                "lstrip",
+                "rstrip",
+                "normalized",
+                "special",
+            ),
+            "tokenizer.json added token",
+        )
         raw_id = _hf_required(raw_token, "id", "tokenizer.json added token")
         id = _hf_zero_based_token_id(raw_id, "added token id")
         expected_id = model_vocabulary_size + offset - 1
@@ -634,6 +659,18 @@ function _hf_validate_tokenizer_config(
         haskey(decoder, key) || throw(ArgumentError("added_tokens_decoder is missing id $key"))
         entry = decoder[key]
         entry isa JSON3.Object || throw(ArgumentError("added_tokens_decoder entry must be an object"))
+        _hf_reject_unknown_fields(
+            entry,
+            (
+                "content",
+                "single_word",
+                "lstrip",
+                "rstrip",
+                "normalized",
+                "special",
+            ),
+            "added_tokens_decoder[$key]",
+        )
         _hf_exact_value(entry, "content", token.content, "added_tokens_decoder[$key]")
         _hf_exact_bool(entry, "single_word", token.single_word, "added_tokens_decoder[$key]")
         _hf_exact_bool(entry, "lstrip", token.lstrip, "added_tokens_decoder[$key]")

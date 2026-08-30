@@ -241,6 +241,67 @@ end
         end
     end
 
+    added_token_field_mutations = (
+        (
+            payloads -> (
+                payloads.tokenizer["added_tokens"][1]["future_behavior"] = true
+            ),
+            "unsupported tokenizer.json added token fields: future_behavior",
+        ),
+        (
+            payloads -> begin
+                entry = payloads.tokenizer["added_tokens"][1]
+                entry["z_future"] = true
+                entry["a_future"] = true
+            end,
+            "unsupported tokenizer.json added token fields: a_future, z_future",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer_config["added_tokens_decoder"]["258"][
+                    "future_behavior"
+                ] = true
+            ),
+            "unsupported added_tokens_decoder[258] fields: future_behavior",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer_config["added_tokens_decoder"]["258"]["id"] =
+                    258
+            ),
+            "unsupported added_tokens_decoder[258] fields: id",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer["added_tokens"][1],
+                "content",
+            ),
+            "missing `content` in tokenizer.json added token",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer_config["added_tokens_decoder"]["258"],
+                "content",
+            ),
+            "missing `content` in added_tokens_decoder[258]",
+        ),
+    )
+    for (mutate!, message) in added_token_field_mutations
+        mktempdir() do directory
+            payloads = qwen3_tokenizer_fixture_payloads()
+            mutate!(payloads)
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            failure = try
+                load_hf_qwen3_tokenizer(directory)
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+    end
+
     set_bpe_token_id! = function(payloads, value)
         vocabulary = payloads.tokenizer["model"]["vocab"]
         widened = Dict{String,Any}(
