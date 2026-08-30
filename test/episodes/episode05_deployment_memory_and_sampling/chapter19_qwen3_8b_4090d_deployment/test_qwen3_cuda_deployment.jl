@@ -247,6 +247,21 @@ end
         )
         @test report.total_bytes == 5
         @test only(report.files).name == "hello.bin"
+        for (field, message) in (
+            ("model_id", "asset manifest model_id must not be empty"),
+            ("revision", "asset manifest revision must not be empty"),
+        )
+            original = manifest[field]
+            manifest[field] = ""
+            write(path, JSON3.write(manifest))
+            failure = _qwen3_deployment_captured_error() do
+                verify_qwen3_deployment_assets(directory, path)
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+            manifest[field] = original
+        end
+        write(path, valid_manifest_json)
         @test LifeAI._qwen3_add_asset_bytes(0, 5) == 5
         @test LifeAI._qwen3_add_asset_bytes(typemax(Int) - 1, 1) ==
             typemax(Int)

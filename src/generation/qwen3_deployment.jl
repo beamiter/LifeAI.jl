@@ -375,6 +375,12 @@ function verify_qwen3_deployment_assets(
     ))
     manifest_model_id = _qwen3_required_string(object, "model_id")
     manifest_revision = _qwen3_required_string(object, "revision")
+    !isempty(manifest_model_id) || throw(ArgumentError(
+        "asset manifest model_id must not be empty",
+    ))
+    !isempty(manifest_revision) || throw(ArgumentError(
+        "asset manifest revision must not be empty",
+    ))
     if model_id !== nothing
         expected_model_id = _qwen3_profile_string(model_id, "model_id")
         expected_model_id == manifest_model_id || throw(ArgumentError(

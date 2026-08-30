@@ -281,6 +281,8 @@ Chapter 03 reproducible-training test.
      checkpoint I/O, rejecting Bool, non-integers, and host-range overflow.
 140. Enforce positive, even, divisible Qwen3 INT4 weight metadata through its
      exported constructor before dequantization or row slicing.
+141. Require non-empty model and revision provenance in Qwen3 deployment asset
+     manifests even when no external identity expectation is supplied.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
