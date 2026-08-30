@@ -1,14 +1,36 @@
 using MLDataDevices: cpu_device, get_device
 using Random: AbstractRNG, default_rng, rand
 
-function _hf_greedy_choice(logits, host, capture_logits::Bool)
+function _hf_generation_last_logits(logits, host)
+    ndims(logits) == 3 || throw(DimensionMismatch(
+        "generation logits must have shape (vocab, sequence, batch)",
+    ))
+    size(logits, 2) > 0 || throw(DimensionMismatch(
+        "generation logits must contain at least one sequence position",
+    ))
+    size(logits, 3) == 1 || throw(DimensionMismatch(
+        "generation currently requires batch size one",
+    ))
     values = vec(host(@view(logits[:, end, 1])))
+    _sampling_length(values, "logits")
+    return values
+end
+
+function _hf_greedy_choice(logits, host, capture_logits::Bool)
+    values = _hf_generation_last_logits(logits, host)
+    all(isfinite, values) || throw(ArgumentError(
+        "`logits` contains non-finite values",
+    ))
+    float_values = Float32.(values)
+    all(isfinite, float_values) || throw(ArgumentError(
+        "`logits` must remain finite at Float32 generation precision",
+    ))
     count = min(2, length(values))
     top_ids = partialsortperm(values, 1:count; rev=true)
     token_id = first(top_ids)
-    top_logit = Float32(values[token_id])
+    top_logit = float_values[token_id]
     second_id = count == 2 ? top_ids[2] : token_id
-    second_logit = Float32(values[second_id])
+    second_logit = float_values[second_id]
     return token_id, (;
         token_id,
         hf_token_id=token_id - 1,
@@ -17,7 +39,7 @@ function _hf_greedy_choice(logits, host, capture_logits::Bool)
         second_hf_token_id=second_id - 1,
         second_logit,
         margin=top_logit - second_logit,
-        logits=capture_logits ? Float32.(collect(values)) : nothing,
+        logits=capture_logits ? copy(float_values) : nothing,
     )
 end
 
@@ -32,7 +54,7 @@ function _hf_sample_choice(
     capture_logits::Bool=false,
     capture_distribution::Bool=false,
 )
-    values = vec(host(@view(logits[:, end, 1])))
+    values = _hf_generation_last_logits(logits, host)
     filtered_logits, probabilities = _sampling_distribution(
         values;
         temperature,

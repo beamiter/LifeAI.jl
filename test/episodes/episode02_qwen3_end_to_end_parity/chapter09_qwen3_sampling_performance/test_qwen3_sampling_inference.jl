@@ -281,6 +281,46 @@ end
     )
 end
 
+@testset "Qwen3 greedy logits fail closed" begin
+    logits = reshape(Float32[1, 4, 2], 3, 1, 1)
+    token, trace = LifeAI._hf_greedy_choice(logits, identity, true)
+    @test token == 2
+    @test trace.top_logit == 4.0f0
+    @test trace.second_token_id == 3
+    @test trace.logits == Float32[1, 4, 2]
+
+    for invalid in (NaN32, Inf32, -Inf32)
+        invalid_logits = reshape(Float32[1, invalid, 2], 3, 1, 1)
+        @test_throws ArgumentError LifeAI._hf_greedy_choice(
+            invalid_logits,
+            identity,
+            false,
+        )
+    end
+    overflowing = reshape(
+        BigFloat[1, big(floatmax(Float32)) * 2, 2],
+        3,
+        1,
+        1,
+    )
+    @test_throws ArgumentError LifeAI._hf_greedy_choice(
+        overflowing,
+        identity,
+        false,
+    )
+    for invalid_shape in (
+        zeros(Float32, 3, 1),
+        zeros(Float32, 3, 0, 1),
+        zeros(Float32, 3, 1, 2),
+    )
+        @test_throws DimensionMismatch LifeAI._hf_greedy_choice(
+            invalid_shape,
+            identity,
+            false,
+        )
+    end
+end
+
 @testset "Qwen3 generation length arithmetic is checked" begin
     model = GPTModel(
         17,
