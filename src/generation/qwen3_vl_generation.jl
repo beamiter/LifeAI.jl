@@ -118,6 +118,116 @@ function _qwen3_vl_generation_prompt_preflight(
     return required_capacity
 end
 
+function _qwen3_vl_generation_rope_snapshot(
+    rope_layout::Qwen3VLRopeLayout,
+)
+    return Qwen3VLRopeLayout(
+        copy(rope_layout.position_ids),
+        copy(rope_layout.rope_deltas),
+        copy(rope_layout.visual_mask),
+        copy(rope_layout.attention_mask),
+    )
+end
+
+function _qwen3_vl_generation_prompt_contract(
+    text_parameters,
+    tokens,
+    rope_layout::Qwen3VLRopeLayout,
+    vision_features,
+    require_prefill::Bool,
+)
+    spec = text_parameters.spec
+    sequence_length, batch_size = size(tokens)
+    batch_size == 1 || throw(ArgumentError(
+        "Qwen3-VL generation currently supports batch size one",
+    ))
+    0 < sequence_length <= spec.max_position_embeddings || throw(ArgumentError(
+        "Qwen3-VL prompt length is outside the decoder context",
+    ))
+    all(id -> 1 <= id <= spec.vocab_size, tokens) || throw(ArgumentError(
+        "Qwen3-VL input_ids contain an out-of-vocabulary id",
+    ))
+    visual_mask = rope_layout.visual_mask
+    size(visual_mask) == size(tokens) || throw(DimensionMismatch(
+        "Qwen3-VL visual mask does not match input_ids",
+    ))
+    eltype(visual_mask) <: Bool || throw(ArgumentError(
+        "Qwen3-VL visual_mask must contain Bool values",
+    ))
+    rope_deltas = _qwen3_vl_prompt_rope_deltas(
+        spec,
+        rope_layout,
+        sequence_length,
+        batch_size,
+    )
+
+    # A zero-token request deliberately skips both vision and text prefill.
+    # Its prompt layout is still part of the public input contract, but vision
+    # features are not required because they would never be consumed.
+    require_prefill || return nothing
+    all(rope_layout.attention_mask) || throw(ArgumentError(
+        "Qwen3-VL cached generation currently requires an all-ones attention mask",
+    ))
+    checkpoint_token_ids = _qwen3_vl_prompt_visual_token_contract(
+        text_parameters,
+        tokens,
+        visual_mask,
+        rope_layout.attention_mask,
+    )
+    vision_sources = if vision_features === nothing
+        any(visual_mask) && throw(ArgumentError(
+            "Qwen3-VL visual placeholders require vision features",
+        ))
+        (;
+            visual_embeddings=nothing,
+            deepstack=(),
+            deepstack_features=(),
+        )
+    else
+        deepstack = vision_features.deepstack
+        length(deepstack) == 3 || throw(DimensionMismatch(
+            "Qwen3-VL generation prefill requires exactly three DeepStack features",
+        ))
+        deepstack_features = ntuple(index -> deepstack[index], 3)
+        visual_embeddings = vision_features.visual_embeddings
+        visual_embeddings isa AbstractMatrix || throw(ArgumentError(
+            "Qwen3-VL visual_embeddings must be a matrix",
+        ))
+        visual_count = count(visual_mask)
+        size(visual_embeddings, 2) == visual_count || throw(DimensionMismatch(
+            "Qwen3-VL main visual feature count does not match image placeholders",
+        ))
+        size(visual_embeddings, 1) == spec.hidden_size || throw(DimensionMismatch(
+            "Qwen3-VL visual feature width does not match text hidden size",
+        ))
+
+        expected_shape = (spec.hidden_size, visual_count)
+        for index in 1:min(3, spec.num_hidden_layers)
+            feature = deepstack_features[index]
+            feature isa AbstractMatrix || throw(ArgumentError(
+                "Qwen3-VL deepstack[$index] must be a matrix",
+            ))
+            size(feature) == expected_shape || throw(DimensionMismatch(
+                "Qwen3-VL DeepStack feature shape does not match visual positions",
+            ))
+        end
+        _validate_qwen3_vl_text_feature_residency(
+            text_parameters,
+            (; visual_embeddings, deepstack=deepstack_features),
+        )
+        (; visual_embeddings, deepstack, deepstack_features)
+    end
+    return _qwen3_vl_seal_generation_prompt_contract(
+        text_parameters,
+        tokens,
+        rope_layout,
+        vision_features,
+        vision_sources,
+        only(rope_deltas),
+        checkpoint_token_ids,
+    )
+end
+
 function _qwen3_vl_generation_cache(
     text_parameters,
     required_capacity::Int,
@@ -154,14 +264,15 @@ function _qwen3_vl_generation_prefill(
     vision_features,
     cache::Qwen3VLKVCache,
     capture_prefill_states::Bool,
+    contract::_Qwen3VLGenerationPromptContract,
 )
-    prefill_result, updated_cache = hf_qwen3_vl_text_prefill_cached(
+    prefill_result, updated_cache = _qwen3_vl_text_prefill_cached_prevalidated(
         text_parameters,
         tokens,
         rope_layout;
         vision_features,
         cache,
-        logits_to_keep=1,
+        contract,
         capture_input_embeddings=capture_prefill_states,
         capture_final_hidden=capture_prefill_states,
     )
@@ -178,14 +289,15 @@ function _qwen3_vl_generation_prefill(
     vision_features,
     cache::Qwen3VLStaticKVCache,
     capture_prefill_states::Bool,
+    contract::_Qwen3VLGenerationPromptContract,
 )
-    prefill_result, updated_cache = hf_qwen3_vl_text_prefill_static(
+    prefill_result, updated_cache = _qwen3_vl_text_prefill_static_prevalidated(
         text_parameters,
         tokens,
         rope_layout;
         vision_features,
         cache,
-        logits_to_keep=1,
+        contract,
         capture_input_embeddings=capture_prefill_states,
         capture_final_hidden=capture_prefill_states,
     )
@@ -265,17 +377,19 @@ function generate_hf_qwen3_vl_tokens(
     )
     requested = preflight.max_new_tokens
     tokens = _qwen3_vl_token_matrix(input_ids)
-    prompt_length, batch_size = size(tokens)
-    batch_size == 1 || throw(ArgumentError(
-        "Qwen3-VL generation currently supports batch size one",
-    ))
+    prompt_length = size(tokens, 1)
     required_capacity = _qwen3_vl_generation_limits(
         text_parameters.spec,
         prompt_length,
         requested,
     )
-    all(id -> 1 <= id <= text_parameters.spec.vocab_size, tokens) || throw(
-        ArgumentError("Qwen3-VL input_ids contain an out-of-vocabulary id"),
+    prompt_rope_layout = _qwen3_vl_generation_rope_snapshot(rope_layout)
+    prompt_contract = _qwen3_vl_generation_prompt_contract(
+        text_parameters,
+        tokens,
+        prompt_rope_layout,
+        vision_features,
+        requested > 0,
     )
     stops = preflight.stops
     prompt_ids = vec(copy(tokens))
@@ -306,10 +420,11 @@ function generate_hf_qwen3_vl_tokens(
     prefill_result, cache_state = _qwen3_vl_generation_prefill(
         text_parameters,
         tokens,
-        rope_layout,
+        prompt_rope_layout,
         vision_features,
         cache_state,
         capture_prefill_states,
+        prompt_contract,
     )
     logits = prefill_result.logits
     host = cpu_device()

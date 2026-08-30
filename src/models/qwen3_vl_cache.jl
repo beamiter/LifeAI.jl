@@ -177,6 +177,138 @@ function _qwen3_vl_cache_spec(parameters)
     return parameters.spec
 end
 
+struct _Qwen3VLGenerationPromptValidated end
+const _QWEN3_VL_GENERATION_PROMPT_VALIDATED =
+    _Qwen3VLGenerationPromptValidated()
+
+"""Sealed proof that one generation prompt passed every non-cache check."""
+struct _Qwen3VLGenerationPromptContract{S}
+    sources::S
+    sequence_length::Int
+    batch_size::Int
+    rope_delta::Int
+
+    function _Qwen3VLGenerationPromptContract(
+        ::_Qwen3VLGenerationPromptValidated,
+        sources::S,
+        sequence_length::Int,
+        batch_size::Int,
+        rope_delta::Int,
+    ) where {S}
+        return new{S}(sources, sequence_length, batch_size, rope_delta)
+    end
+end
+
+function _qwen3_vl_seal_generation_prompt_contract(
+    parameters,
+    tokens,
+    rope_layout::Qwen3VLRopeLayout,
+    vision_features,
+    vision_sources,
+    rope_delta::Int,
+    checkpoint_token_ids,
+)
+    checkpoint_present = checkpoint_token_ids !== nothing
+    blocks = parameters.blocks
+    sources = (;
+        parameters,
+        spec=parameters.spec,
+        embedding=parameters.embedding,
+        blocks,
+        block_sources=Tuple(blocks),
+        final_norm=parameters.final_norm,
+        checkpoint_present,
+        checkpoint=checkpoint_present ?
+            checkpoint_token_ids.checkpoint : nothing,
+        checkpoint_image_token_id=checkpoint_present ?
+            checkpoint_token_ids.image_token_id : nothing,
+        checkpoint_video_token_id=checkpoint_present ?
+            checkpoint_token_ids.video_token_id : nothing,
+        tokens,
+        rope_layout,
+        position_ids=rope_layout.position_ids,
+        rope_deltas=rope_layout.rope_deltas,
+        visual_mask=rope_layout.visual_mask,
+        attention_mask=rope_layout.attention_mask,
+        vision_features,
+        vision_sources...,
+    )
+    sequence_length, batch_size = size(tokens)
+    return _Qwen3VLGenerationPromptContract(
+        _QWEN3_VL_GENERATION_PROMPT_VALIDATED,
+        sources,
+        sequence_length,
+        batch_size,
+        rope_delta,
+    )
+end
+
+function _qwen3_vl_validate_generation_prompt_sources(
+    contract::_Qwen3VLGenerationPromptContract,
+    parameters,
+    tokens,
+    rope_layout::Qwen3VLRopeLayout,
+    vision_features,
+)
+    sources = contract.sources
+    unchanged = sources.parameters === parameters &&
+        sources.spec === parameters.spec &&
+        sources.embedding === parameters.embedding &&
+        sources.blocks === parameters.blocks &&
+        sources.final_norm === parameters.final_norm &&
+        sources.tokens === tokens &&
+        sources.rope_layout === rope_layout &&
+        sources.position_ids === rope_layout.position_ids &&
+        sources.rope_deltas === rope_layout.rope_deltas &&
+        sources.visual_mask === rope_layout.visual_mask &&
+        sources.attention_mask === rope_layout.attention_mask &&
+        sources.vision_features === vision_features &&
+        sources.checkpoint_present == hasproperty(parameters, :checkpoint)
+    if unchanged
+        blocks = parameters.blocks
+        unchanged = length(blocks) == length(sources.block_sources) &&
+            all(
+                index -> sources.block_sources[index] === blocks[index],
+                eachindex(sources.block_sources),
+            )
+    end
+    if unchanged && sources.checkpoint_present
+        checkpoint = parameters.checkpoint
+        unchanged = sources.checkpoint === checkpoint &&
+            hasproperty(checkpoint, :image_token_id) &&
+            hasproperty(checkpoint, :video_token_id)
+        if unchanged
+            unchanged = sources.checkpoint_image_token_id == _strict_host_int(
+                checkpoint.image_token_id,
+                "Qwen3-VL checkpoint image_token_id",
+            ) && sources.checkpoint_video_token_id == _strict_host_int(
+                checkpoint.video_token_id,
+                "Qwen3-VL checkpoint video_token_id",
+            )
+        end
+    end
+    if unchanged && vision_features !== nothing
+        deepstack = vision_features.deepstack
+        unchanged = sources.visual_embeddings ===
+            vision_features.visual_embeddings &&
+            sources.deepstack === deepstack &&
+            length(deepstack) == length(sources.deepstack_features) &&
+            all(
+                index -> sources.deepstack_features[index] === deepstack[index],
+                eachindex(sources.deepstack_features),
+            )
+    end
+    unchanged || throw(ArgumentError(
+        "Qwen3-VL prevalidated generation prompt sources changed",
+    ))
+    size(tokens) == (contract.sequence_length, contract.batch_size) || throw(
+        DimensionMismatch(
+            "Qwen3-VL prevalidated generation token shape changed",
+        ),
+    )
+    return sources.spec
+end
+
 """
     init_qwen3_vl_kv_cache(text_parameters; batch_size=1)
 
@@ -921,7 +1053,6 @@ function hf_qwen3_vl_text_prefill_cached(
         cache,
         options.logits_to_keep,
     )
-    sequence_length, batch_size = size(tokens)
 
     if vision_features === nothing
         any(rope_layout.visual_mask) && throw(ArgumentError(
@@ -936,6 +1067,122 @@ function hf_qwen3_vl_text_prefill_cached(
             vision_features,
         )
     end
+    return _qwen3_vl_text_prefill_cached_compute(
+        parameters,
+        tokens,
+        rope_layout,
+        vision_features,
+        cache,
+        spec,
+        rope_delta,
+        options.logits_to_keep,
+        capture_input_embeddings,
+        capture_final_hidden,
+    )
+end
+
+function _qwen3_vl_prevalidated_dynamic_prompt_contract(
+    parameters,
+    tokens,
+    rope_layout::Qwen3VLRopeLayout,
+    vision_features,
+    cache::Qwen3VLKVCache,
+    contract::_Qwen3VLGenerationPromptContract,
+)
+    spec = _qwen3_vl_cache_spec(parameters)
+    _validate_qwen3_vl_kv_cache(parameters, cache)
+    isempty(cache) || throw(ArgumentError(
+        "Qwen3-VL cached prefill requires an empty cache",
+    ))
+    contract.batch_size == cache.batch_size || throw(DimensionMismatch(
+        "Qwen3-VL prompt batch size does not match the cache",
+    ))
+    0 < contract.sequence_length <= spec.max_position_embeddings || throw(
+        ArgumentError("Qwen3-VL prompt length is outside the decoder context"),
+    )
+    sealed_spec = _qwen3_vl_validate_generation_prompt_sources(
+        contract,
+        parameters,
+        tokens,
+        rope_layout,
+        vision_features,
+    )
+    spec === sealed_spec || throw(ArgumentError(
+        "Qwen3-VL prevalidated generation decoder spec changed",
+    ))
+    return spec, contract.rope_delta
+end
+
+function _qwen3_vl_prevalidated_vision_features(
+    contract::_Qwen3VLGenerationPromptContract,
+)
+    sources = contract.sources
+    sources.vision_features === nothing && return nothing
+    return (;
+        visual_embeddings=sources.visual_embeddings,
+        deepstack=sources.deepstack_features,
+    )
+end
+
+function _qwen3_vl_prevalidated_text_parameters(
+    contract::_Qwen3VLGenerationPromptContract,
+)
+    sources = contract.sources
+    return (;
+        spec=sources.spec,
+        embedding=sources.embedding,
+        blocks=sources.block_sources,
+        final_norm=sources.final_norm,
+    )
+end
+
+function _qwen3_vl_text_prefill_cached_prevalidated(
+    parameters,
+    tokens,
+    rope_layout::Qwen3VLRopeLayout;
+    vision_features=nothing,
+    cache::Qwen3VLKVCache,
+    contract::_Qwen3VLGenerationPromptContract,
+    capture_input_embeddings::Bool=true,
+    capture_final_hidden::Bool=true,
+)
+    spec, rope_delta = _qwen3_vl_prevalidated_dynamic_prompt_contract(
+        parameters,
+        tokens,
+        rope_layout,
+        vision_features,
+        cache,
+        contract,
+    )
+    sealed_parameters = _qwen3_vl_prevalidated_text_parameters(contract)
+    sealed_vision_features = _qwen3_vl_prevalidated_vision_features(contract)
+    return _qwen3_vl_text_prefill_cached_compute(
+        sealed_parameters,
+        tokens,
+        rope_layout,
+        sealed_vision_features,
+        cache,
+        spec,
+        rope_delta,
+        1,
+        capture_input_embeddings,
+        capture_final_hidden,
+    )
+end
+
+function _qwen3_vl_text_prefill_cached_compute(
+    parameters,
+    tokens,
+    rope_layout::Qwen3VLRopeLayout,
+    vision_features,
+    cache::Qwen3VLKVCache,
+    spec::Qwen3VLTextSpec,
+    rope_delta::Int,
+    logits_to_keep::Int,
+    capture_input_embeddings::Bool,
+    capture_final_hidden::Bool,
+)
+    sequence_length, batch_size = size(tokens)
     x = reshape(
         gather(parameters.embedding, tokens),
         spec.hidden_size,
@@ -985,7 +1232,7 @@ function hf_qwen3_vl_text_prefill_cached(
         parameters,
         x,
         sequence_length,
-        options.logits_to_keep,
+        logits_to_keep,
         capture_final_hidden,
     )
     logits = _qwen3_vl_project_tied(parameters.embedding, projection)
@@ -1288,7 +1535,6 @@ function hf_qwen3_vl_text_prefill_static(
         cache,
         options.logits_to_keep,
     )
-    sequence_length, batch_size = size(tokens)
 
     if vision_features === nothing
         any(rope_layout.visual_mask) && throw(ArgumentError(
@@ -1303,6 +1549,99 @@ function hf_qwen3_vl_text_prefill_static(
             vision_features,
         )
     end
+    return _qwen3_vl_text_prefill_static_compute!(
+        parameters,
+        tokens,
+        rope_layout,
+        vision_features,
+        cache,
+        spec,
+        rope_delta,
+        options.logits_to_keep,
+        capture_input_embeddings,
+        capture_final_hidden,
+    )
+end
+
+function _qwen3_vl_prevalidated_static_prompt_contract(
+    parameters,
+    tokens,
+    rope_layout::Qwen3VLRopeLayout,
+    vision_features,
+    cache::Qwen3VLStaticKVCache,
+    contract::_Qwen3VLGenerationPromptContract,
+)
+    spec = _qwen3_vl_cache_spec(parameters)
+    _validate_qwen3_vl_static_kv_cache(parameters, cache)
+    isempty(cache) || throw(ArgumentError(
+        "Qwen3-VL static cached prefill requires an empty cache",
+    ))
+    contract.batch_size == cache.batch_size || throw(DimensionMismatch(
+        "Qwen3-VL prompt batch size does not match the static cache",
+    ))
+    0 < contract.sequence_length <= cache.capacity || throw(ArgumentError(
+        "Qwen3-VL prompt length exceeds the static cache capacity",
+    ))
+    sealed_spec = _qwen3_vl_validate_generation_prompt_sources(
+        contract,
+        parameters,
+        tokens,
+        rope_layout,
+        vision_features,
+    )
+    spec === sealed_spec || throw(ArgumentError(
+        "Qwen3-VL prevalidated generation decoder spec changed",
+    ))
+    return spec, contract.rope_delta
+end
+
+function _qwen3_vl_text_prefill_static_prevalidated(
+    parameters,
+    tokens,
+    rope_layout::Qwen3VLRopeLayout;
+    vision_features=nothing,
+    cache::Qwen3VLStaticKVCache,
+    contract::_Qwen3VLGenerationPromptContract,
+    capture_input_embeddings::Bool=true,
+    capture_final_hidden::Bool=true,
+)
+    spec, rope_delta = _qwen3_vl_prevalidated_static_prompt_contract(
+        parameters,
+        tokens,
+        rope_layout,
+        vision_features,
+        cache,
+        contract,
+    )
+    sealed_parameters = _qwen3_vl_prevalidated_text_parameters(contract)
+    sealed_vision_features = _qwen3_vl_prevalidated_vision_features(contract)
+    return _qwen3_vl_text_prefill_static_compute!(
+        sealed_parameters,
+        tokens,
+        rope_layout,
+        sealed_vision_features,
+        cache,
+        spec,
+        rope_delta,
+        1,
+        capture_input_embeddings,
+        capture_final_hidden,
+    )
+end
+
+function _qwen3_vl_text_prefill_static_compute!(
+    parameters,
+    tokens,
+    rope_layout::Qwen3VLRopeLayout,
+    vision_features,
+    cache::Qwen3VLStaticKVCache,
+    spec::Qwen3VLTextSpec,
+    rope_delta::Int,
+    logits_to_keep::Int,
+    capture_input_embeddings::Bool,
+    capture_final_hidden::Bool,
+)
+    sequence_length, batch_size = size(tokens)
     x = reshape(
         gather(parameters.embedding, tokens),
         spec.hidden_size,
@@ -1352,7 +1691,7 @@ function hf_qwen3_vl_text_prefill_static(
         parameters,
         x,
         sequence_length,
-        options.logits_to_keep,
+        logits_to_keep,
         capture_final_hidden,
     )
     logits = _qwen3_vl_project_tied(parameters.embedding, projection)

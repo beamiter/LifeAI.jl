@@ -79,7 +79,38 @@ function Base.getproperty(::_CH45VisionComputePoison, ::Symbol)
     error("vision compute was touched")
 end
 
+struct _CH45GenerationCachePoison
+    spec::Qwen3VLTextSpec
+    embedding::Matrix{Float32}
+end
+
+Base.propertynames(
+    ::_CH45GenerationCachePoison,
+    ::Bool=false,
+) = (:spec, :blocks, :embedding, :final_norm)
+
+function Base.getproperty(
+    parameters::_CH45GenerationCachePoison,
+    name::Symbol,
+)
+    name === :spec && return getfield(parameters, :spec)
+    name === :embedding && return getfield(parameters, :embedding)
+    error("generation cache allocation was touched")
+end
+
 struct _Ch45ForeignDevice <: MLDataDevices.AbstractDevice end
+
+mutable struct _Ch45MutableCheckpoint
+    image_token_id::Int
+    video_token_id::Int
+end
+
+mutable struct _Ch45MutableTextParameters{E,B,N,S}
+    embedding::E
+    blocks::B
+    final_norm::N
+    spec::S
+end
 
 struct _Ch45ForeignDeviceArray{T,N,A<:AbstractArray{T,N}} <:
        AbstractArray{T,N}
@@ -92,6 +123,24 @@ Base.IndexStyle(::Type{<:_Ch45ForeignDeviceArray}) = IndexCartesian()
 Base.getindex(values::_Ch45ForeignDeviceArray, indices...) =
     getindex(values.data, indices...)
 MLDataDevices.get_device(::_Ch45ForeignDeviceArray) = _Ch45ForeignDevice()
+
+struct _Ch45CountedIntArray{N,A<:AbstractArray{Int,N}} <:
+       AbstractArray{Int,N}
+    data::A
+    collections::Base.RefValue{Int}
+end
+
+Base.size(values::_Ch45CountedIntArray) = size(values.data)
+Base.axes(values::_Ch45CountedIntArray) = axes(values.data)
+Base.IndexStyle(::Type{<:_Ch45CountedIntArray}) = IndexCartesian()
+Base.getindex(values::_Ch45CountedIntArray, indices...) =
+    getindex(values.data, indices...)
+Base.copy(values::_Ch45CountedIntArray) =
+    _Ch45CountedIntArray(copy(values.data), values.collections)
+function Base.collect(values::_Ch45CountedIntArray)
+    values.collections[] += 1
+    return collect(values.data)
+end
 
 # Mathematical matrix emitted by the exporter's row-major
 # `tiny_values((rows, columns), offset)` construction.
@@ -1217,6 +1266,421 @@ end
         only(boundary.generated_ids),
         boundary.cache,
     )
+end
+
+@testset "Chapter 45 — generation prompt fails before cache allocation" begin
+    inputs = _ch45_tiny_prefill_inputs()
+    parameters = _ch45_tiny_text_parameters()
+    poison = _CH45GenerationCachePoison(
+        _CH45_TINY_TEXT_SPEC,
+        parameters.embedding,
+    )
+    cache_options = (
+        (; cache=:dynamic),
+        (; cache=:static, static_capacity=7),
+    )
+
+    # Prompt/layout mismatch is a public input error even when no prefill is
+    # requested. It must not reach either dynamic or static cache creation.
+    for options in cache_options, requested in (0, 1)
+        failure = _ch45_captured_error() do
+            generate_hf_qwen3_vl_tokens(
+                poison,
+                inputs.input_ids[1:7],
+                inputs.rope_layout;
+                vision_features=inputs.vision_features,
+                max_new_tokens=requested,
+                stop_token_ids=Int[],
+                options...,
+            )
+        end
+        @test failure isa DimensionMismatch
+        @test sprint(showerror, failure) ==
+            "DimensionMismatch: Qwen3-VL visual mask does not match input_ids"
+    end
+
+    invalid_features = merge(
+        inputs.vision_features,
+        (; visual_embeddings=inputs.vision_features.visual_embeddings[:, 1:3]),
+    )
+    dtype_features = merge(
+        inputs.vision_features,
+        (; visual_embeddings=Float64.(
+            inputs.vision_features.visual_embeddings,
+        )),
+    )
+    device_features = merge(
+        inputs.vision_features,
+        (; visual_embeddings=_Ch45ForeignDeviceArray(
+            inputs.vision_features.visual_embeddings,
+        )),
+    )
+    for options in (
+        (; cache=:dynamic),
+        (; cache=:static, static_capacity=8),
+    )
+        missing_failure = _ch45_captured_error() do
+            generate_hf_qwen3_vl_tokens(
+                poison,
+                inputs.input_ids,
+                inputs.rope_layout;
+                max_new_tokens=1,
+                stop_token_ids=Int[],
+                options...,
+            )
+        end
+        @test missing_failure isa ArgumentError
+        @test sprint(showerror, missing_failure) ==
+            "ArgumentError: Qwen3-VL visual placeholders require vision features"
+
+        shape_failure = _ch45_captured_error() do
+            generate_hf_qwen3_vl_tokens(
+                poison,
+                inputs.input_ids,
+                inputs.rope_layout;
+                vision_features=invalid_features,
+                max_new_tokens=1,
+                stop_token_ids=Int[],
+                options...,
+            )
+        end
+        @test shape_failure isa DimensionMismatch
+        @test sprint(showerror, shape_failure) ==
+            "DimensionMismatch: Qwen3-VL main visual feature count does not " *
+            "match image placeholders"
+
+        for (features, message) in (
+            (
+                dtype_features,
+                "ArgumentError: Qwen3-VL visual_embeddings dtype must match " *
+                "text parameter embedding",
+            ),
+            (
+                device_features,
+                "ArgumentError: Qwen3-VL visual_embeddings device must match " *
+                "text parameter embedding",
+            ),
+        )
+            residency_failure = _ch45_captured_error() do
+                generate_hf_qwen3_vl_tokens(
+                    poison,
+                    inputs.input_ids,
+                    inputs.rope_layout;
+                    vision_features=features,
+                    max_new_tokens=1,
+                    stop_token_ids=Int[],
+                    options...,
+                )
+            end
+            @test residency_failure isa ArgumentError
+            @test sprint(showerror, residency_failure) == message
+        end
+    end
+
+    # Zero-token generation retains its intentional no-vision-compute path.
+    zero = generate_hf_qwen3_vl_tokens(
+        _ch45_tiny_text_parameters(),
+        inputs.input_ids,
+        inputs.rope_layout;
+        max_new_tokens=0,
+        stop_token_ids=Int[],
+    )
+    @test isempty(zero.generated_ids)
+    @test isempty(zero.cache)
+
+    padded_attention = copy(inputs.rope_layout.attention_mask)
+    padded_attention[end, 1] = false
+    padded_layout = Qwen3VLRopeLayout(
+        inputs.rope_layout.position_ids,
+        reshape(Int[-3], 1, 1),
+        inputs.rope_layout.visual_mask,
+        padded_attention,
+    )
+    padded_zero = generate_hf_qwen3_vl_tokens(
+        parameters,
+        inputs.input_ids,
+        padded_layout;
+        max_new_tokens=0,
+        stop_token_ids=Int[],
+    )
+    @test isempty(padded_zero.generated_ids)
+    @test padded_zero.prefill === nothing
+    @test isempty(padded_zero.cache)
+end
+
+@testset "Chapter 45 — generation reuses sealed prompt validation" begin
+    parameters = _ch45_tiny_text_parameters()
+    inputs = _ch45_tiny_prefill_inputs()
+    for options in (
+        (; cache=:dynamic),
+        (; cache=:static, static_capacity=8),
+    )
+        collections = Ref(0)
+        counted_positions = _Ch45CountedIntArray(
+            inputs.rope_layout.position_ids,
+            collections,
+        )
+        counted_layout = Qwen3VLRopeLayout(
+            counted_positions,
+            inputs.rope_layout.rope_deltas,
+            inputs.rope_layout.visual_mask,
+            inputs.rope_layout.attention_mask,
+        )
+        generated = generate_hf_qwen3_vl_tokens(
+            parameters,
+            inputs.input_ids,
+            counted_layout;
+            vision_features=inputs.vision_features,
+            max_new_tokens=1,
+            stop_token_ids=Int[],
+            options...,
+        )
+        @test collections[] == 1
+        @test generated.generated_ids == [8]
+        @test generated.cache.position == 8
+    end
+
+    tokens = LifeAI._qwen3_vl_token_matrix(inputs.input_ids)
+    rope_layout = LifeAI._qwen3_vl_generation_rope_snapshot(
+        inputs.rope_layout,
+    )
+    contract = LifeAI._qwen3_vl_generation_prompt_contract(
+        parameters,
+        tokens,
+        rope_layout,
+        inputs.vision_features,
+        true,
+    )
+    cache = init_qwen3_vl_kv_cache(parameters)
+    changed_parameters = merge(
+        parameters,
+        (; embedding=copy(parameters.embedding)),
+    )
+    changed_layout = LifeAI._qwen3_vl_generation_rope_snapshot(rope_layout)
+    changed_features = merge(
+        inputs.vision_features,
+        (; visual_embeddings=copy(
+            inputs.vision_features.visual_embeddings,
+        )),
+    )
+    for (source_parameters, source_tokens, source_layout, source_features) in (
+        (changed_parameters, tokens, rope_layout, inputs.vision_features),
+        (parameters, copy(tokens), rope_layout, inputs.vision_features),
+        (parameters, tokens, changed_layout, inputs.vision_features),
+        (parameters, tokens, rope_layout, changed_features),
+    )
+        @test_throws ArgumentError LifeAI._qwen3_vl_text_prefill_cached_prevalidated(
+            source_parameters,
+            source_tokens,
+            source_layout;
+            vision_features=source_features,
+            cache,
+            contract,
+        )
+        @test isempty(cache)
+    end
+
+    mutable_deepstack = Any[inputs.vision_features.deepstack...]
+    mutable_features = (;
+        visual_embeddings=inputs.vision_features.visual_embeddings,
+        deepstack=mutable_deepstack,
+    )
+    mutable_contract = LifeAI._qwen3_vl_generation_prompt_contract(
+        parameters,
+        tokens,
+        rope_layout,
+        mutable_features,
+        true,
+    )
+    mutable_deepstack[1] = zeros(
+        Float32,
+        parameters.spec.hidden_size,
+        size(inputs.vision_features.visual_embeddings, 2) - 1,
+    )
+
+    dynamic_guard = init_qwen3_vl_kv_cache(parameters)
+    dynamic_failure = _ch45_captured_error() do
+        LifeAI._qwen3_vl_text_prefill_cached_prevalidated(
+            parameters,
+            tokens,
+            rope_layout;
+            vision_features=mutable_features,
+            cache=dynamic_guard,
+            contract=mutable_contract,
+        )
+    end
+    @test dynamic_failure isa ArgumentError
+    @test sprint(showerror, dynamic_failure) ==
+        "ArgumentError: Qwen3-VL prevalidated generation prompt sources changed"
+    @test isempty(dynamic_guard)
+
+    static_guard = LifeAI.init_qwen3_vl_static_kv_cache(
+        parameters;
+        capacity=8,
+    )
+    static_keys = map(layer -> copy(layer.keys), static_guard.layers)
+    static_values = map(layer -> copy(layer.values), static_guard.layers)
+    static_failure = _ch45_captured_error() do
+        LifeAI._qwen3_vl_text_prefill_static_prevalidated(
+            parameters,
+            tokens,
+            rope_layout;
+            vision_features=mutable_features,
+            cache=static_guard,
+            contract=mutable_contract,
+        )
+    end
+    @test static_failure isa ArgumentError
+    @test sprint(showerror, static_failure) ==
+        "ArgumentError: Qwen3-VL prevalidated generation prompt sources changed"
+    @test isempty(static_guard)
+    @test static_guard.position == 0
+    @test static_guard.rope_delta == 0
+    for layer in eachindex(static_guard.layers)
+        @test static_guard.layers[layer].keys == static_keys[layer]
+        @test static_guard.layers[layer].values == static_values[layer]
+    end
+
+    checkpoint = _Ch45MutableCheckpoint(2, 8)
+    checkpoint_parameters = merge(parameters, (; checkpoint))
+    checkpoint_tokens = LifeAI._qwen3_vl_token_matrix(
+        Int[1, 2, 3, 3, 3, 3, 4, 5],
+    )
+    checkpoint_contract = LifeAI._qwen3_vl_generation_prompt_contract(
+        checkpoint_parameters,
+        checkpoint_tokens,
+        rope_layout,
+        inputs.vision_features,
+        true,
+    )
+    checkpoint.image_token_id = 3
+
+    checkpoint_dynamic_guard = init_qwen3_vl_kv_cache(checkpoint_parameters)
+    @test_throws ArgumentError LifeAI._qwen3_vl_text_prefill_cached_prevalidated(
+        checkpoint_parameters,
+        checkpoint_tokens,
+        rope_layout;
+        vision_features=inputs.vision_features,
+        cache=checkpoint_dynamic_guard,
+        contract=checkpoint_contract,
+    )
+    @test isempty(checkpoint_dynamic_guard)
+
+    checkpoint_static_guard = LifeAI.init_qwen3_vl_static_kv_cache(
+        checkpoint_parameters;
+        capacity=8,
+    )
+    checkpoint_static_keys = map(
+        layer -> copy(layer.keys),
+        checkpoint_static_guard.layers,
+    )
+    checkpoint_static_values = map(
+        layer -> copy(layer.values),
+        checkpoint_static_guard.layers,
+    )
+    @test_throws ArgumentError LifeAI._qwen3_vl_text_prefill_static_prevalidated(
+        checkpoint_parameters,
+        checkpoint_tokens,
+        rope_layout;
+        vision_features=inputs.vision_features,
+        cache=checkpoint_static_guard,
+        contract=checkpoint_contract,
+    )
+    @test isempty(checkpoint_static_guard)
+    for layer in eachindex(checkpoint_static_guard.layers)
+        @test checkpoint_static_guard.layers[layer].keys ==
+            checkpoint_static_keys[layer]
+        @test checkpoint_static_guard.layers[layer].values ==
+            checkpoint_static_values[layer]
+    end
+end
+
+@testset "Chapter 45 — sealed generation parameter replacement is rejected" begin
+    base = _ch45_tiny_text_parameters()
+    parameters = _Ch45MutableTextParameters(
+        base.embedding,
+        collect(base.blocks),
+        base.final_norm,
+        base.spec,
+    )
+    inputs = _ch45_tiny_prefill_inputs()
+    tokens = LifeAI._qwen3_vl_token_matrix(inputs.input_ids)
+    rope_layout = LifeAI._qwen3_vl_generation_rope_snapshot(
+        inputs.rope_layout,
+    )
+    contract = LifeAI._qwen3_vl_generation_prompt_contract(
+        parameters,
+        tokens,
+        rope_layout,
+        inputs.vision_features,
+        true,
+    )
+    dynamic_guard = init_qwen3_vl_kv_cache(parameters)
+    static_guard = LifeAI.init_qwen3_vl_static_kv_cache(
+        parameters;
+        capacity=8,
+    )
+    static_key_sources = map(layer -> layer.keys, static_guard.layers)
+    static_value_sources = map(layer -> layer.values, static_guard.layers)
+    static_keys = map(copy, static_key_sources)
+    static_values = map(copy, static_value_sources)
+
+    assert_rejected_before_compute = () -> begin
+        dynamic_failure = _ch45_captured_error() do
+            LifeAI._qwen3_vl_text_prefill_cached_prevalidated(
+                parameters,
+                tokens,
+                rope_layout;
+                vision_features=inputs.vision_features,
+                cache=dynamic_guard,
+                contract,
+            )
+        end
+        @test dynamic_failure isa ArgumentError
+        @test sprint(showerror, dynamic_failure) ==
+            "ArgumentError: Qwen3-VL prevalidated generation prompt sources changed"
+        @test isempty(dynamic_guard)
+
+        static_failure = _ch45_captured_error() do
+            LifeAI._qwen3_vl_text_prefill_static_prevalidated(
+                parameters,
+                tokens,
+                rope_layout;
+                vision_features=inputs.vision_features,
+                cache=static_guard,
+                contract,
+            )
+        end
+        @test static_failure isa ArgumentError
+        @test sprint(showerror, static_failure) ==
+            "ArgumentError: Qwen3-VL prevalidated generation prompt sources changed"
+        @test isempty(static_guard)
+        @test static_guard.position == 0
+        @test static_guard.rope_delta == 0
+        for layer in eachindex(static_guard.layers)
+            @test static_guard.layers[layer].keys === static_key_sources[layer]
+            @test static_guard.layers[layer].values === static_value_sources[layer]
+            @test static_guard.layers[layer].keys == static_keys[layer]
+            @test static_guard.layers[layer].values == static_values[layer]
+        end
+    end
+
+    original_blocks = parameters.blocks
+    original_block = original_blocks[3]
+    original_final_norm = parameters.final_norm
+    parameters.blocks[3] = merge(
+        original_block,
+        (; q_weight=zeros(Float32, 1, 1)),
+    )
+    assert_rejected_before_compute()
+
+    parameters.blocks[3] = original_block
+    parameters.final_norm = copy(parameters.final_norm)
+    assert_rejected_before_compute()
+
+    parameters.final_norm = original_final_norm
+    parameters.blocks = copy(original_blocks)
+    assert_rejected_before_compute()
 end
 
 @testset "Chapter 45 — raw generation image roles are strict" begin

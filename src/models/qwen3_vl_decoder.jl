@@ -732,7 +732,11 @@ function _qwen3_vl_prompt_visual_token_contract(
     all((.!visual_mask) .| expected_visual_mask) || throw(ArgumentError(
         "Qwen3-VL visual_mask must only mark attended image input tokens",
     ))
-    return nothing
+    return (;
+        checkpoint,
+        image_token_id=raw_image_token,
+        video_token_id=raw_video_token,
+    )
 end
 
 function _qwen3_vl_cache_free_prompt_contract(
