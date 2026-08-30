@@ -89,12 +89,15 @@ function Qwen3XLAHTTPService(;
     max_new_tokens::Integer=512,
     max_body_bytes::Integer=1024^2,
 )
-    context = Int(context_tokens)
-    chunk = Int(prefill_chunk_tokens)
-    output = Int(max_new_tokens)
-    body_limit = Int(max_body_bytes)
+    context = _strict_host_int(context_tokens, "context_tokens")
+    chunk = _strict_host_int(prefill_chunk_tokens, "prefill_chunk_tokens")
+    output = _strict_host_int(max_new_tokens, "max_new_tokens")
+    body_limit = _strict_host_int(max_body_bytes, "max_body_bytes")
     !isempty(model_id) || throw(ArgumentError("model_id must not be empty"))
     context > 0 || throw(ArgumentError("context_tokens must be positive"))
+    context <= typemax(Int32) || throw(ArgumentError(
+        "context_tokens must fit in Int32 device positions",
+    ))
     0 < chunk <= context || throw(ArgumentError(
         "prefill_chunk_tokens must be in 1:context_tokens",
     ))

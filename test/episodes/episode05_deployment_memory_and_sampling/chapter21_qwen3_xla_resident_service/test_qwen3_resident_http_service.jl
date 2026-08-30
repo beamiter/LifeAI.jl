@@ -214,6 +214,15 @@ function _qwen3_resident_service_request_metrics(service)
     )
 end
 
+function _qwen3_resident_service_capture_failure(f)
+    try
+        f()
+    catch error
+        return error
+    end
+    return nothing
+end
+
 @testset "service loads once and serves Ollama-compatible JSON" begin
     fixture = _qwen3_resident_service_fake_service()
     service = fixture.service
@@ -502,6 +511,78 @@ end
     @test only(legal_callback.observed_decoder_ids) isa Vector{Int}
     @test _qwen3_resident_service_request_metrics(legal_callback.service) ==
         (1, 1, 0, 0, 0, 1)
+end
+
+@testset "service constructor integer preflight" begin
+    defaults = (
+        context_tokens=64,
+        prefill_chunk_tokens=8,
+        max_new_tokens=16,
+        max_body_bytes=1024,
+    )
+    too_large = big(typemax(Int)) + 1
+    for name in keys(defaults), invalid in (true, too_large)
+        load_calls = Ref(0)
+        loader = function ()
+            load_calls[] += 1
+            return (name=:unexpected_load,)
+        end
+        options = merge(defaults, NamedTuple{(name,)}((invalid,)))
+        failure = _qwen3_resident_service_capture_failure() do
+            Qwen3XLAHTTPService(;
+                loader,
+                model_id=_QWEN3_RESIDENT_SERVICE_MODEL,
+                options...,
+            )
+        end
+        @test failure isa ArgumentError
+        expected = invalid === true ?
+            "$name must be an integer" :
+            "$name is outside the host integer range"
+        @test sprint(showerror, failure) == "ArgumentError: $expected"
+        @test load_calls[] == 0
+    end
+
+    device_load_calls = Ref(0)
+    device_failure = _qwen3_resident_service_capture_failure() do
+        Qwen3XLAHTTPService(;
+            loader=() -> begin
+                device_load_calls[] += 1
+                (name=:unexpected_device_load,)
+            end,
+            model_id=_QWEN3_RESIDENT_SERVICE_MODEL,
+            context_tokens=big(typemax(Int32)) + 1,
+            prefill_chunk_tokens=8,
+            max_new_tokens=16,
+            max_body_bytes=1024,
+        )
+    end
+    @test device_failure isa ArgumentError
+    @test sprint(showerror, device_failure) ==
+        "ArgumentError: context_tokens must fit in Int32 device positions"
+    @test device_load_calls[] == 0
+
+    load_calls = Ref(0)
+    service = Qwen3XLAHTTPService(;
+        loader=() -> begin
+            load_calls[] += 1
+            (name=:wide_integer_session,)
+        end,
+        model_id=_QWEN3_RESIDENT_SERVICE_MODEL,
+        context_tokens=Int128(64),
+        prefill_chunk_tokens=Int16(8),
+        max_new_tokens=big(16),
+        max_body_bytes=UInt32(1024),
+    )
+    capacities = (
+        service.context_tokens,
+        service.prefill_chunk_tokens,
+        service.max_new_tokens,
+        service.max_body_bytes,
+    )
+    @test capacities == (64, 8, 16, 1024)
+    @test all(value -> value isa Int, capacities)
+    @test load_calls[] == 1
 end
 
 @testset "server defaults remain loopback-only" begin
