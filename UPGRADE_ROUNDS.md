@@ -487,6 +487,9 @@ Chapter 03 reproducible-training test.
 235. Bind Qwen3-VL text specifications to overflow-safe GQA projection
      geometry and vision specifications to head-divisible hidden widths before
      tensor-shape derivation or checkpoint work.
+236. Bind Qwen3 embedding specifications to overflow-safe independent
+     attention widths, valid GQA divisibility, and an MRL minimum dimension no
+     wider than the model representation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

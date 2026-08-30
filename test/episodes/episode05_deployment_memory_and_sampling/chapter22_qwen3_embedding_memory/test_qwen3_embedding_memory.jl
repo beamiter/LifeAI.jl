@@ -186,6 +186,29 @@ end
         end
         @test failure == "Qwen3 embedding $label must be a string"
     end
+
+    invalid_gqa = Base.setindex(valid, 3, 16)
+    invalid_gqa = Base.setindex(invalid_gqa, 2, 17)
+    @test _embedding_argument_error_message() do
+        Qwen3EmbeddingSpec(invalid_gqa...)
+    end == "Qwen3 embedding num_heads must be divisible by num_kv_heads"
+
+    query_overflow = Base.setindex(valid, typemax(Int), 16)
+    query_overflow = Base.setindex(query_overflow, 2, 18)
+    @test _embedding_argument_error_message() do
+        Qwen3EmbeddingSpec(query_overflow...)
+    end == "Qwen3 embedding query projection width exceeds the host integer range"
+
+    kv_overflow = Base.setindex(valid, 1, 16)
+    kv_overflow = Base.setindex(kv_overflow, typemax(Int), 17)
+    kv_overflow = Base.setindex(kv_overflow, 2, 18)
+    @test _embedding_argument_error_message() do
+        Qwen3EmbeddingSpec(kv_overflow...)
+    end == "Qwen3 embedding key/value projection width exceeds the host integer range"
+
+    @test _embedding_argument_error_message() do
+        Qwen3EmbeddingSpec(Base.setindex(valid, 2, 20)...)
+    end == "Qwen3 embedding minimum_dimension must not exceed d_model"
 end
 
 @testset "Qwen3 embedding frozen config contract" begin
@@ -200,7 +223,7 @@ end
     @test qwen3_embedding_parameter_count() == 595_776_512
     overflow_fields = map(fieldnames(Qwen3EmbeddingSpec)) do name
         name === :vocab_size && return typemax(Int)
-        name === :d_model && return 2
+        name === :d_model && return 32
         return getfield(spec, name)
     end
     overflow_spec = Qwen3EmbeddingSpec(overflow_fields...)

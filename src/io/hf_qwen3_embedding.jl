@@ -59,6 +59,35 @@ struct Qwen3EmbeddingSpec
             "Qwen3 embedding variant must be a Symbol",
         ))
         prefix = "Qwen3 embedding"
+        resolved_d_model = _qwen3_spec_positive_int(
+            d_model,
+            "$prefix d_model",
+        )
+        resolved_num_heads = _qwen3_spec_positive_int(
+            num_heads,
+            "$prefix num_heads",
+        )
+        resolved_num_kv_heads = _qwen3_spec_positive_int(
+            num_kv_heads,
+            "$prefix num_kv_heads",
+        )
+        resolved_head_dim = _qwen3_spec_positive_int(
+            head_dim,
+            "$prefix head_dim",
+        )
+        _qwen3_spec_attention_geometry(
+            prefix,
+            resolved_num_heads,
+            resolved_num_kv_heads,
+            resolved_head_dim,
+        )
+        resolved_minimum_dimension = _qwen3_spec_positive_int(
+            minimum_dimension,
+            "$prefix minimum_dimension",
+        )
+        resolved_minimum_dimension <= resolved_d_model || throw(ArgumentError(
+            "$prefix minimum_dimension must not exceed d_model",
+        ))
         return new(
             variant,
             _qwen3_spec_string(model_id, "$prefix model_id"),
@@ -84,20 +113,17 @@ struct Qwen3EmbeddingSpec
             ),
             _qwen3_spec_string(model_sha256, "$prefix model_sha256"),
             _qwen3_spec_positive_int(vocab_size, "$prefix vocab_size"),
-            _qwen3_spec_positive_int(d_model, "$prefix d_model"),
+            resolved_d_model,
             _qwen3_spec_positive_int(mlp_hidden_dim, "$prefix mlp_hidden_dim"),
             _qwen3_spec_positive_int(num_layers, "$prefix num_layers"),
-            _qwen3_spec_positive_int(num_heads, "$prefix num_heads"),
-            _qwen3_spec_positive_int(num_kv_heads, "$prefix num_kv_heads"),
-            _qwen3_spec_positive_int(head_dim, "$prefix head_dim"),
+            resolved_num_heads,
+            resolved_num_kv_heads,
+            resolved_head_dim,
             _qwen3_spec_positive_int(
                 max_position_embeddings,
                 "$prefix max_position_embeddings",
             ),
-            _qwen3_spec_positive_int(
-                minimum_dimension,
-                "$prefix minimum_dimension",
-            ),
+            resolved_minimum_dimension,
         )
     end
 end
