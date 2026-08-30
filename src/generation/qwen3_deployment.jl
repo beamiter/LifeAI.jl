@@ -27,6 +27,19 @@ const _QWEN3_DEPLOYMENT_PROFILE_FIELDS = Set((
     "asset_manifest",
 ))
 
+function _qwen3_unique_object_fields(object, label::AbstractString)
+    fields = Set{String}()
+    duplicates = Set{String}()
+    for raw_field in keys(object)
+        field = String(raw_field)
+        field in fields ? push!(duplicates, field) : push!(fields, field)
+    end
+    isempty(duplicates) || throw(ArgumentError(
+        "duplicate $label field(s): $(join(sort!(collect(duplicates)), ", "))",
+    ))
+    return fields
+end
+
 function _qwen3_profile_string(value, label::AbstractString)
     value isa AbstractString || throw(ArgumentError("$label must be a string"))
     return String(value)
@@ -270,8 +283,9 @@ values that disagree with the frozen dense-family registry are rejected.
 function load_qwen3_deployment_profile(path::AbstractString)
     isfile(path) || throw(ArgumentError("deployment profile does not exist: $path"))
     object = _qwen3_json_object(path, "Qwen3 deployment profile")
+    fields = _qwen3_unique_object_fields(object, "Qwen3 deployment profile")
     unknown = sort!(collect(setdiff(
-        Set(String.(collect(keys(object)))),
+        fields,
         _QWEN3_DEPLOYMENT_PROFILE_FIELDS,
     )))
     isempty(unknown) || throw(ArgumentError(
@@ -347,8 +361,9 @@ function verify_qwen3_deployment_assets(
         "asset manifest does not exist: $manifest_path",
     ))
     object = _qwen3_json_object(manifest_path, "Qwen3 asset manifest")
+    fields = _qwen3_unique_object_fields(object, "Qwen3 asset manifest")
     unknown = sort!(collect(setdiff(
-        Set(String.(collect(keys(object)))),
+        fields,
         _QWEN3_ASSET_MANIFEST_FIELDS,
     )))
     isempty(unknown) || throw(ArgumentError(
@@ -383,8 +398,9 @@ function verify_qwen3_deployment_assets(
         entry isa JSON3.Object || throw(ArgumentError(
             "each asset manifest file entry must be an object",
         ))
+        entry_fields = _qwen3_unique_object_fields(entry, "asset file entry")
         entry_unknown = sort!(collect(setdiff(
-            Set(String.(collect(keys(entry)))),
+            entry_fields,
             _QWEN3_ASSET_FILE_FIELDS,
         )))
         isempty(entry_unknown) || throw(ArgumentError(

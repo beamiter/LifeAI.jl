@@ -167,6 +167,21 @@ end
         write(invalid, "[]")
         @test_throws ArgumentError load_qwen3_deployment_profile(invalid)
 
+        profile_json = read(_QWEN3_CUDA_DEPLOYMENT_PROFILE_PATH, String)
+        duplicate_profile = replace(
+            profile_json,
+            "\"schema_version\": 1," =>
+                "\"schema_version\": 2,\n  \"schema_version\": 1,";
+            count=1,
+        )
+        write(invalid, duplicate_profile)
+        duplicate_failure = _qwen3_deployment_captured_error() do
+            load_qwen3_deployment_profile(invalid)
+        end
+        @test duplicate_failure isa ArgumentError
+        @test sprint(showerror, duplicate_failure) ==
+            "ArgumentError: duplicate Qwen3 deployment profile field(s): schema_version"
+
         object = JSON3.read(read(_QWEN3_CUDA_DEPLOYMENT_PROFILE_PATH, String), Dict{String,Any})
         object["enable_thinking"] = 1
         write(invalid, JSON3.write(object))
@@ -222,7 +237,8 @@ end
             )],
         )
         path = joinpath(directory, "assets.json")
-        write(path, JSON3.write(manifest))
+        valid_manifest_json = JSON3.write(manifest)
+        write(path, valid_manifest_json)
         report = verify_qwen3_deployment_assets(
             directory,
             path;
@@ -263,6 +279,35 @@ end
             @test failure isa ArgumentError
             @test sprint(showerror, failure) == "ArgumentError: $message"
         end
+
+        duplicate_manifests = (
+            (
+                replace(
+                    valid_manifest_json,
+                    "\"schema_version\":1" =>
+                        "\"schema_version\":2,\"schema_version\":1";
+                    count=1,
+                ),
+                "duplicate Qwen3 asset manifest field(s): schema_version",
+            ),
+            (
+                replace(
+                    valid_manifest_json,
+                    "\"size\":5" => "\"size\":4,\"size\":5";
+                    count=1,
+                ),
+                "duplicate asset file entry field(s): size",
+            ),
+        )
+        for (payload, message) in duplicate_manifests
+            write(path, payload)
+            failure = _qwen3_deployment_captured_error() do
+                verify_qwen3_deployment_assets(directory, path)
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+        write(path, valid_manifest_json)
 
         write(joinpath(directory, "model.safetensors"), "unverified")
         @test_throws ArgumentError verify_qwen3_deployment_assets(directory, path)

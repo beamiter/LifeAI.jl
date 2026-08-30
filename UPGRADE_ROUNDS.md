@@ -271,6 +271,8 @@ Chapter 03 reproducible-training test.
      while retaining normalized AbstractString compatibility.
 135. Validate Qwen3 INT4 group positivity before modulo or reshape arithmetic,
      replacing zero-group DivideError leaks with stable argument failures.
+136. Reject duplicate JSON fields in Qwen3 deployment profiles, asset manifests,
+     and individual asset entries before last-value lookup can hide conflicts.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
