@@ -283,6 +283,51 @@ end
         end
     end
 
+    byte_level_field_mutations = (
+        (
+            payloads -> (
+                payloads.tokenizer["pre_tokenizer"]["pretokenizers"][2][
+                    "future_behavior"
+                ] = true
+            ),
+            "unsupported tokenizer.json ByteLevel pre-tokenizer fields: future_behavior",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer["post_processor"]["future_behavior"] = true
+            ),
+            "unsupported tokenizer.json post_processor fields: future_behavior",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer["decoder"]["future_behavior"] = true
+            ),
+            "unsupported tokenizer.json decoder fields: future_behavior",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer["pre_tokenizer"]["pretokenizers"][2],
+                "use_regex",
+            ),
+            "missing `use_regex` in tokenizer.json ByteLevel pre-tokenizer",
+        ),
+    )
+    for (mutate!, message) in byte_level_field_mutations
+        mktempdir() do directory
+            payloads = qwen3_tokenizer_fixture_payloads()
+            mutate!(payloads)
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            failure = try
+                load_hf_qwen3_tokenizer(directory)
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+    end
+
     added_token_field_mutations = (
         (
             payloads -> (

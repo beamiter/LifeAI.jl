@@ -454,6 +454,24 @@ end
         @test_throws ArgumentError load_hf_qwen3_embedding_tokenizer(directory)
     end
 
+    mktempdir() do directory
+        payloads = _embedding_tokenizer_payloads()
+        payloads.tokenizer["post_processor"]["processors"][1][
+            "future_behavior"
+        ] = true
+        write_qwen3_tokenizer_fixture(directory; payloads)
+        failure = try
+            load_hf_qwen3_embedding_tokenizer(directory)
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: unsupported tokenizer.json embedding " *
+            "post_processor ByteLevel fields: future_behavior"
+    end
+
     type_id_mutations = (
         payloads -> (
             payloads.tokenizer["post_processor"]["processors"][2]["single"][1][

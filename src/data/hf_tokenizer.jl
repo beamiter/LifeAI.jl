@@ -364,6 +364,11 @@ function hf_byte_unicode_alphabet()
 end
 
 function _hf_byte_flags(object, label::AbstractString)
+    _hf_reject_unknown_fields(
+        object,
+        ("type", "add_prefix_space", "trim_offsets", "use_regex"),
+        label,
+    )
     _hf_exact_value(object, "type", "ByteLevel", label)
     _hf_exact_bool(object, "add_prefix_space", false, label)
     _hf_exact_bool(object, "trim_offsets", false, label)

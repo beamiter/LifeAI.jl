@@ -399,6 +399,8 @@ Chapter 03 reproducible-training test.
      arguments so direct construction cannot bypass parser fail-closed behavior.
 199. Reject unknown Qwen3 tokenizer root pipeline fields across generation,
      embedding, and vision-language profiles with deterministic diagnostics.
+200. Reject unknown fields in every Qwen ByteLevel pre-tokenizer, post-processor,
+     and decoder mirror while preserving profile-specific required-field errors.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
