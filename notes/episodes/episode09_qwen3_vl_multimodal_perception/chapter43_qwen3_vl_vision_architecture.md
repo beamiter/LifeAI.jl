@@ -80,6 +80,10 @@ revision `78448d793a7eb2f7a987a1da76d464384aa1becd`。ModelScope 的移动分支
 还严格检查 mRoPE、DeepStack indexes、special ids、tied head 和 text/vision
 width 接口，未知字段或 shape 漂移直接拒绝。
 
+通用规格的参数量公式与 tensor-shape 合同也保持一致：若 text tower 使用独立
+LM head，`qwen3_vl_parameter_count` 会额外计入完整 vocabulary projection；
+不会出现 shape 表含 `lm_head.weight` 而总参数量漏算的情况。
+
 ## processor 与输入边界
 
 官方 `preprocessor_config.json` SHA256 为

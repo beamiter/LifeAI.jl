@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the fifty-two follow-up rounds implemented on top of the
+This ledger records the fifty-three follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -103,6 +103,8 @@ Chapter 03 reproducible-training test.
     formulas while preserving the exact official 30B-A3B parameter total.
 52. Make Qwen3 embedding parameter accounting overflow-safe with exact
     intermediates and a checked host-integer return boundary.
+53. Count the independent Qwen3-VL language-model head for untied text specs,
+    keeping parameter totals consistent with the expected tensor-shape contract.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

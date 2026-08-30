@@ -210,9 +210,11 @@ function _qwen3_vl_text_parameter_count(text::Qwen3VLTextSpec)
         2 * text.head_dim
     mlp = 3 * text.hidden_size * text.intermediate_size
     norms = 2 * text.hidden_size
+    lm_head = text.tie_word_embeddings ? 0 : embedding
     return embedding +
         text.num_hidden_layers * (attention + mlp + norms) +
-        text.hidden_size
+        text.hidden_size +
+        lm_head
 end
 
 function _qwen3_vl_vision_parameter_count(vision::Qwen3VLVisionSpec)

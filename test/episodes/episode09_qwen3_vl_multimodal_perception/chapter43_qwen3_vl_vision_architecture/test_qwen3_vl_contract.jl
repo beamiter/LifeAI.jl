@@ -1,7 +1,9 @@
 using JSON3
 using SHA: sha256
 using Test
-using LifeAI: load_hf_qwen3_vl_config,
+using LifeAI: Qwen3VLCheckpointSpec,
+    Qwen3VLTextSpec,
+    load_hf_qwen3_vl_config,
     _qwen3_vl_vision_reference_sha256,
     load_hf_qwen3_vl_processor_config,
     qwen3_vl_checkpoint_spec,
@@ -95,6 +97,25 @@ end
     @test shapes["model.visual.deepstack_merger_list.2.norm.weight"] == (4_096,)
     @test shapes["model.visual.deepstack_merger_list.2.linear_fc2.weight"] ==
         (2_048, 4_096)
+
+    untied_text_fields = map(fieldnames(Qwen3VLTextSpec)) do name
+        name === :tie_word_embeddings && return false
+        return getfield(spec.text, name)
+    end
+    untied_text = Qwen3VLTextSpec(untied_text_fields...)
+    untied_spec_fields = map(fieldnames(Qwen3VLCheckpointSpec)) do name
+        name === :tensor_count && return spec.tensor_count + 1
+        name === :tensor_bytes && return spec.tensor_bytes + 622_329_856
+        name === :parameter_count && return spec.parameter_count + 311_164_928
+        name === :text && return untied_text
+        return getfield(spec, name)
+    end
+    untied_spec = Qwen3VLCheckpointSpec(untied_spec_fields...)
+    untied_shapes = qwen3_vl_expected_tensor_shapes(untied_spec)
+    @test untied_shapes["lm_head.weight"] == (151_936, 2_048)
+    @test qwen3_vl_parameter_count(untied_spec) == 2_438_696_960
+    @test sum(prod(shape) for shape in values(untied_shapes)) ==
+        qwen3_vl_parameter_count(untied_spec)
 
     @test spec.text.mrope_interleaved
     @test spec.text.mrope_section == (24, 20, 20)
