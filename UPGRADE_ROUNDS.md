@@ -511,6 +511,9 @@ Chapter 03 reproducible-training test.
 243. Reject overlapping Qwen3 XLA K/V layers, RoPE tables, and cache/table
      views with full-entry alias preflight while retaining constant-size
      per-chunk compiled-session validation.
+244. Normalize Qwen3 MoE route matrices once across strict host-integer
+     boundaries and replace the dense global expert remap with an active-only
+     dictionary while preserving Int32 local indices and input geometry.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

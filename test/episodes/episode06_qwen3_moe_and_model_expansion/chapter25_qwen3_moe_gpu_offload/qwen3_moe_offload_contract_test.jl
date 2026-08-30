@@ -266,11 +266,48 @@ end
         )
     end
 
-    routes = Int32[5 2 8; 2 5 2]
-    remapped = LifeAI._qwen3_local_expert_routes(routes, 8)
-    @test remapped.active_experts == [2, 5, 8]
-    @test remapped.local_indices == Int32[2 1 3; 1 2 1]
-    @test size(remapped.local_indices) == size(routes)
+    for routes in (
+        Int8[5 2 8; 2 5 2],
+        Int128[5 2 8; 2 5 2],
+        BigInt[5 2 8; 2 5 2],
+    )
+        remapped = LifeAI._qwen3_local_expert_routes(routes, big(8))
+        @test remapped.active_experts == [2, 5, 8]
+        @test remapped.local_indices == Int32[2 1 3; 1 2 1]
+        @test size(remapped.local_indices) == size(routes)
+        @test eltype(remapped.local_indices) === Int32
+    end
+
+    invalid_routes = (
+        Bool[true false],
+        Matrix{Int}(undef, 0, 1),
+        Int32[0 1],
+        Int32[1 9],
+        BigInt[big(typemax(Int)) + 1 1],
+        BigInt[big(typemin(Int)) - 1 1],
+    )
+    for routes in invalid_routes
+        @test_throws ArgumentError LifeAI._qwen3_local_expert_routes(routes, 8)
+    end
+    for invalid_expert_count in (
+        true,
+        0,
+        -1,
+        big(typemax(Int)) + 1,
+    )
+        @test_throws ArgumentError LifeAI._qwen3_local_expert_routes(
+            Int8[1 2],
+            invalid_expert_count,
+        )
+    end
+    if typemax(Int) > typemax(Int32)
+        sparse_large = LifeAI._qwen3_local_expert_routes(
+            Int8[1 1],
+            big(typemax(Int32)) + 1,
+        )
+        @test sparse_large.active_experts == [1]
+        @test sparse_large.local_indices == Int32[1 1]
+    end
 
     @test_throws ArgumentError qwen3_moe_offload_plan(model, 0)
     @test_throws ArgumentError qwen3_moe_offload_plan(
@@ -309,10 +346,6 @@ end
         model,
         1;
         dtype_bytes=typemax(Int),
-    )
-    @test_throws ArgumentError LifeAI._qwen3_local_expert_routes(
-        Int32[0 1],
-        8,
     )
 end
 

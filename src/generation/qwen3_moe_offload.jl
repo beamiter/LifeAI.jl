@@ -126,22 +126,26 @@ end
 
 function _qwen3_local_expert_routes(
     expert_indices::AbstractMatrix{<:Integer},
-    num_experts::Int,
+    num_experts,
 )
+    expert_count = _strict_host_int(num_experts, "num_experts")
+    expert_count > 0 || throw(ArgumentError("num_experts must be positive"))
     isempty(expert_indices) && throw(ArgumentError(
         "expert route table must not be empty",
     ))
-    active_experts = sort!(unique!(Int.(vec(collect(expert_indices)))))
-    all(expert -> 1 <= expert <= num_experts, active_experts) ||
+    routes = _strict_host_int_array(expert_indices, "expert route index")
+    all(expert -> 1 <= expert <= expert_count, routes) ||
         throw(ArgumentError("expert route index is outside 1:num_experts"))
-    global_to_local = zeros(Int32, num_experts)
+    active_experts = sort!(unique(vec(routes)))
+    length(active_experts) <= typemax(Int32) || throw(ArgumentError(
+        "active expert count exceeds the Int32 local-index capacity",
+    ))
+    global_to_local = Dict{Int,Int32}()
+    sizehint!(global_to_local, length(active_experts))
     for (local_index, global_expert) in enumerate(active_experts)
         global_to_local[global_expert] = Int32(local_index)
     end
-    local_indices = reshape(
-        global_to_local[Int.(vec(collect(expert_indices)))],
-        size(expert_indices),
-    )
+    local_indices = map(expert -> global_to_local[expert], routes)
     return (; active_experts, local_indices)
 end
 
