@@ -64,18 +64,20 @@ qwen3_embedding_spec() = _QWEN3_EMBEDDING_SPEC
 function qwen3_embedding_parameter_count(
     spec::Qwen3EmbeddingSpec=qwen3_embedding_spec(),
 )
-    query_dim = spec.num_heads * spec.head_dim
-    kv_dim = spec.num_kv_heads * spec.head_dim
-    embedding = spec.vocab_size * spec.d_model
-    attention = 2 * query_dim * spec.d_model +
-        2 * kv_dim * spec.d_model +
-        2 * spec.head_dim
-    mlp = 3 * spec.d_model * spec.mlp_hidden_dim
-    norms = 2 * spec.d_model
-    final_norm = spec.d_model
-    return embedding +
+    d_model = BigInt(spec.d_model)
+    query_dim = BigInt(spec.num_heads) * spec.head_dim
+    kv_dim = BigInt(spec.num_kv_heads) * spec.head_dim
+    embedding = BigInt(spec.vocab_size) * d_model
+    attention = 2 * query_dim * d_model +
+        2 * kv_dim * d_model +
+        2 * BigInt(spec.head_dim)
+    mlp = 3 * d_model * spec.mlp_hidden_dim
+    norms = 2 * d_model
+    final_norm = d_model
+    count = embedding +
         spec.num_layers * (attention + mlp + norms) +
         final_norm
+    return _qwen3_parameter_count_int(count, "Qwen3 embedding parameter count")
 end
 
 _qwen3_embedding_sha256_file(path::AbstractString) =

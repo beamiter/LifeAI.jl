@@ -74,6 +74,8 @@ Qwen3-Embedding-0.6B 的 last-token pooling、归一化与 MRL 语义，并驱�
   （`embed_tokens.* / layers.* / norm.*`），而不是 causal-LM 的
   `model.*`。embedding 专用 loader 只接受该 namespace，再映射给共享的
   严格 Qwen3 参数校验；causal-LM loader 未放宽。
+- `qwen3_embedding_parameter_count` 以任意精度计算完整公式，仅在公开返回边界
+  收窄为宿主 `Int`；官方精确值不变，超范围规格不会静默回绕。
 - Python reference 使用项目内 `.venv`：Python `3.10.12`、
   PyTorch `2.7.1+cpu`、Transformers `4.51.3`、Tokenizers `0.21.4`。
   8 条文本、35-token padded sequence、280 padded / 181 valid tokens 的

@@ -2,8 +2,10 @@ using Test
 using BFloat16s: BFloat16
 using JSON3
 using LinearAlgebra: norm
+import LifeAI
 using LifeAI:
     QWEN3_EMBEDDING_RETRIEVAL_INSTRUCTION,
+    Qwen3EmbeddingSpec,
     Qwen3SemanticMemory,
     embed_texts,
     hf_qwen3_embedding_forward,
@@ -106,6 +108,13 @@ end
     @test spec.max_position_embeddings == 32_768
     @test spec.minimum_dimension == 32
     @test qwen3_embedding_parameter_count() == 595_776_512
+    overflow_fields = map(fieldnames(Qwen3EmbeddingSpec)) do name
+        name === :vocab_size && return typemax(Int)
+        name === :d_model && return 2
+        return getfield(spec, name)
+    end
+    overflow_spec = Qwen3EmbeddingSpec(overflow_fields...)
+    @test_throws ArgumentError qwen3_embedding_parameter_count(overflow_spec)
 
     manifest = JSON3.read(read(_QWEN3_EMBEDDING_ASSETS_PATH, String))
     @test manifest["model_id"] == spec.model_id
