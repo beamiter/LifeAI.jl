@@ -71,6 +71,8 @@ parameters = load_hf_qwen3_parameters(model, tensors)
   并在映射前拒绝 checkpoint 不提供的 LM-head bias；不允许用初始化随机值悄悄补齐。
 - tied 模型复用 `embed_tokens`；untied 模型必须存在并加载 `lm_head.weight`。
 - safetensors 返回 Julia 语义 shape 的数组；row-major 文件字节到 column-major Julia 数组的转换由格式层完成，模型映射层只处理 HF/Lux 语义轴差异。
+- safetensors 的目标 dtype 在目录选择、index JSON 和 shard 文件读取前预检；非法
+  Float64 请求不会触碰 checkpoint metadata，合法 Float32/BFloat16 路径顺序不变。
 
 ## 计划
 

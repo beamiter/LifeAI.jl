@@ -434,6 +434,31 @@ end
 
 @testset "strict safetensors BF16/F32 and sharded index" begin
     mktempdir() do directory
+        dtype_failure = _qwen3_weight_loading_captured_error() do
+            load_safetensors(directory; target_dtype=Float64)
+        end
+        @test dtype_failure isa ArgumentError
+        @test sprint(showerror, dtype_failure) ==
+            "ArgumentError: safetensors loading only supports target_dtype " *
+            "Float32 or BFloat16"
+
+        poison_index = joinpath(directory, "poison.index.json")
+        write(poison_index, "not JSON")
+        poison_dtype_failure = _qwen3_weight_loading_captured_error() do
+            load_safetensors(poison_index; target_dtype=Float64)
+        end
+        @test poison_dtype_failure isa ArgumentError
+        @test sprint(showerror, poison_dtype_failure) ==
+            sprint(showerror, dtype_failure)
+        poison_io_failure = _qwen3_weight_loading_captured_error() do
+            load_safetensors(poison_index; target_dtype=Float32)
+        end
+        @test poison_io_failure isa ArgumentError
+        @test !occursin(
+            "target_dtype",
+            sprint(showerror, poison_io_failure),
+        )
+
         matrix = Float32[1 2 3; 4 5 6]
         vector = Float32[-2.5, 0.0, 3.25]
         single = _qwen3_weight_loading_write_safetensors(

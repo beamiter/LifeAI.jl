@@ -946,13 +946,18 @@ function _safetensors_entries(path::AbstractString)
     end
 end
 
+function _safetensors_target_dtype(value)
+    value in (Float32, BFloat16) || throw(ArgumentError(
+        "safetensors loading only supports target_dtype Float32 or BFloat16",
+    ))
+    return value
+end
+
 function _load_safetensors_file(
     path::AbstractString;
     target_dtype::Type=Float32,
 )
-    target_dtype in (Float32, BFloat16) || throw(ArgumentError(
-        "safetensors loading only supports target_dtype Float32 or BFloat16",
-    ))
+    requested_target_dtype = _safetensors_target_dtype(target_dtype)
     isfile(path) || throw(ArgumentError("safetensors file does not exist: $path"))
     entries, data_base = _safetensors_entries(path)
     tensors = Dict{String,Any}()
@@ -968,7 +973,7 @@ function _load_safetensors_file(
                 raw,
                 entry.dtype,
                 entry.shape;
-                target_dtype,
+                target_dtype=requested_target_dtype,
             )
         end
     end
@@ -988,6 +993,7 @@ function _load_safetensors_index(
     path::AbstractString;
     target_dtype::Type=Float32,
 )
+    requested_target_dtype = _safetensors_target_dtype(target_dtype)
     index = _json_object(path)
     weight_map_raw = _json_required(index, "weight_map", path)
     weight_map_raw isa JSON3.Object || throw(ArgumentError(
@@ -1011,7 +1017,10 @@ function _load_safetensors_index(
     merged = Dict{String,Any}()
     for shard in sort!(unique!(collect(values(weight_map))))
         shard_path = _safe_shard_path(root, shard)
-        shard_tensors = _load_safetensors_file(shard_path; target_dtype)
+        shard_tensors = _load_safetensors_file(
+            shard_path;
+            target_dtype=requested_target_dtype,
+        )
         for (name, tensor) in shard_tensors
             get(weight_map, name, nothing) == shard || throw(ArgumentError(
                 "tensor `$name` is stored in `$shard` but the index assigns a different shard",
@@ -1039,6 +1048,7 @@ function load_safetensors(
     path::AbstractString;
     target_dtype::Type=Float32,
 )
+    requested_target_dtype = _safetensors_target_dtype(target_dtype)
     resolved = if isdir(path)
         single = joinpath(path, "model.safetensors")
         index = joinpath(path, "model.safetensors.index.json")
@@ -1057,9 +1067,12 @@ function load_safetensors(
 
     endswith(resolved, ".index.json") && return _load_safetensors_index(
         resolved;
-        target_dtype,
+        target_dtype=requested_target_dtype,
     )
-    return _load_safetensors_file(resolved; target_dtype)
+    return _load_safetensors_file(
+        resolved;
+        target_dtype=requested_target_dtype,
+    )
 end
 
 function _expect_tensor(
