@@ -44,6 +44,16 @@ function _qwen3_deployment_captured_error(thunk)
     error("expected Qwen3 deployment call to fail")
 end
 
+function _qwen3_dense_session_state(session)
+    return (;
+        position=session.position,
+        cache_layers=Tuple(
+            (keys=copy(cache.keys), values=copy(cache.values))
+            for cache in session.caches
+        ),
+    )
+end
+
 struct _InterruptingQwen3JSONPath <: AbstractString end
 Base.read(::_InterruptingQwen3JSONPath, ::Type{String}) =
     throw(InterruptException())
@@ -894,6 +904,199 @@ end
             max_new_tokens=1,
             strategy=:beam,
         )
+    end
+end
+
+@testset "dense session construction and mutable metadata stay sealed" begin
+    mktempdir() do directory
+        bundle = _qwen3_cuda_deployment_tiny_bundle(directory; max_seq_len=32)
+        mismatched_config = merge(
+            bundle.generation_config,
+            (; pad_id=bundle.generation_config.pad_id + 1),
+        )
+        config_failure = _qwen3_deployment_captured_error() do
+            init_hf_qwen3_bf16_session(
+                merge(bundle, (; generation_config=mismatched_config));
+                context_tokens=16,
+                prefill_chunk_tokens=3,
+            )
+        end
+        @test config_failure isa ArgumentError
+        @test occursin(
+            "generation_config token ids must match the tokenizer metadata",
+            sprint(showerror, config_failure),
+        )
+
+        custom_config = merge(bundle.generation_config, (;
+            do_sample=false,
+            temperature=0.5f0,
+            top_k=bundle.generation_config.top_k + 1,
+            top_p=0.9f0,
+            transformers_version="custom-runtime",
+        ))
+        custom_session = init_hf_qwen3_bf16_session(
+            merge(bundle, (; generation_config=custom_config));
+            context_tokens=16,
+            prefill_chunk_tokens=3,
+        )
+        @test custom_session.generation_config === custom_config
+
+        wrong_embedding = zeros(
+            BFloat16,
+            bundle.model.d_model,
+            bundle.model.vocab_size - 1,
+        )
+        parameter_failure = _qwen3_deployment_captured_error() do
+            init_hf_qwen3_bf16_session(
+                merge(bundle, (;
+                    parameters=merge(
+                        bundle.parameters,
+                        (; token_embedding=(; weight=wrong_embedding)),
+                    ),
+                ));
+                context_tokens=16,
+                prefill_chunk_tokens=3,
+            )
+        end
+        @test parameter_failure isa DimensionMismatch
+        @test occursin(
+            "token embedding weight must have shape",
+            sprint(showerror, parameter_failure),
+        )
+
+        session = init_hf_qwen3_bf16_session(
+            bundle;
+            context_tokens=16,
+            prefill_chunk_tokens=3,
+        )
+        quantized_session = init_hf_qwen3_bf16_session(
+            merge(bundle, (;
+                parameters=LifeAI.quantize_bf16_parameters(
+                    bundle.parameters;
+                    scheme=:int8,
+                ),
+            ));
+            context_tokens=16,
+            prefill_chunk_tokens=3,
+        )
+        @test quantized_session.context_tokens == 16
+        @test length(quantized_session.caches) == bundle.model.num_layers
+        raw_fields = (
+            session.model,
+            session.parameters,
+            session.tokenizer,
+            session.generation_config,
+            session.cos_table,
+            session.sin_table,
+            session.caches,
+            session.position,
+            session.context_tokens,
+            session.prefill_chunk_tokens,
+        )
+        @test_throws MethodError LifeAI.HFQwen3BF16Session(raw_fields...)
+        @test_throws MethodError typeof(session)(raw_fields...)
+        @test prefill_hf_qwen3_bf16!(session, [1, 5]) !== nothing
+        @test session.position == 2
+
+        session.position = -1
+        preserved = _qwen3_dense_session_state(session)
+        position_failure = _qwen3_deployment_captured_error() do
+            prefill_hf_qwen3_bf16!(session, [1, 5])
+        end
+        @test position_failure isa ArgumentError
+        @test occursin(
+            "position must be in 0:context_tokens",
+            sprint(showerror, position_failure),
+        )
+        @test isequal(_qwen3_dense_session_state(session), preserved)
+        session.position = 2
+
+        session.context_tokens = 15
+        preserved = _qwen3_dense_session_state(session)
+        context_failure = _qwen3_deployment_captured_error() do
+            prefill_hf_qwen3_bf16!(session, [1, 5])
+        end
+        @test context_failure isa ArgumentError
+        @test occursin(
+            "context_tokens changed after initialization",
+            sprint(showerror, context_failure),
+        )
+        @test isequal(_qwen3_dense_session_state(session), preserved)
+        session.context_tokens = 16
+
+        session.prefill_chunk_tokens = 0
+        preserved = _qwen3_dense_session_state(session)
+        chunk_failure = _qwen3_deployment_captured_error() do
+            prefill_hf_qwen3_bf16!(session, [1, 5])
+        end
+        @test chunk_failure isa ArgumentError
+        @test occursin(
+            "prefill_chunk_tokens changed after initialization",
+            sprint(showerror, chunk_failure),
+        )
+        @test isequal(_qwen3_dense_session_state(session), preserved)
+        session.prefill_chunk_tokens = 3
+
+        original_layer = session.caches[1]
+        wrong_shape = (session.model.head_dim, session.model.num_kv_heads, 15, 1)
+        session.caches[1] = LifeAI.BF16AStaticLayerCache(
+            zeros(BFloat16, wrong_shape),
+            zeros(BFloat16, wrong_shape),
+        )
+        preserved = _qwen3_dense_session_state(session)
+        cache_failure = _qwen3_deployment_captured_error() do
+            prefill_hf_qwen3_bf16!(session, [1, 5])
+        end
+        @test cache_failure isa DimensionMismatch
+        @test occursin(
+            "cache layer 1 key storage must have shape",
+            sprint(showerror, cache_failure),
+        )
+        @test isequal(_qwen3_dense_session_state(session), preserved)
+        session.caches[1] = original_layer
+
+        push!(session.generation_config.eos_ids, 1)
+        preserved = _qwen3_dense_session_state(session)
+        config_mutation_failure = _qwen3_deployment_captured_error() do
+            prefill_hf_qwen3_bf16!(session, [1, 5])
+        end
+        @test config_mutation_failure isa ArgumentError
+        @test occursin(
+            "tokenizer/generation metadata changed after initialization",
+            sprint(showerror, config_mutation_failure),
+        )
+        @test isequal(_qwen3_dense_session_state(session), preserved)
+        pop!(session.generation_config.eos_ids)
+
+        original_tokenizer_eos = session.tokenizer.eos_ids[1]
+        session.tokenizer.eos_ids[1] = original_tokenizer_eos == 1 ? 2 : 1
+        preserved = _qwen3_dense_session_state(session)
+        tokenizer_mutation_failure = _qwen3_deployment_captured_error() do
+            decode_hf_qwen3_bf16!(session, 7)
+        end
+        @test tokenizer_mutation_failure isa ArgumentError
+        @test occursin(
+            "tokenizer/generation metadata changed after initialization",
+            sprint(showerror, tokenizer_mutation_failure),
+        )
+        @test isequal(_qwen3_dense_session_state(session), preserved)
+        session.tokenizer.eos_ids[1] = original_tokenizer_eos
+
+        replacement_config = merge(
+            session.generation_config,
+            (; eos_ids=copy(session.generation_config.eos_ids)),
+        )
+        session.generation_config = replacement_config
+        preserved = _qwen3_dense_session_state(session)
+        source_failure = _qwen3_deployment_captured_error() do
+            decode_hf_qwen3_bf16!(session, 7)
+        end
+        @test source_failure isa ArgumentError
+        @test occursin(
+            "session source changed after initialization",
+            sprint(showerror, source_failure),
+        )
+        @test isequal(_qwen3_dense_session_state(session), preserved)
     end
 end
 

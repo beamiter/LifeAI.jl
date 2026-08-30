@@ -1,6 +1,6 @@
 using BFloat16s: BFloat16
 using JSON3
-using MLDataDevices: cpu_device
+using MLDataDevices: cpu_device, get_device
 using Random: AbstractRNG, default_rng
 using SHA: sha256
 
@@ -540,6 +540,26 @@ parameters consumed by the LifeAI BF16 accelerator kernels. RoPE tables and a
 fixed-capacity KV cache are allocated once. Each request resets only the
 logical cache position.
 """
+struct _HFQwen3BF16SessionValidated end
+const _HF_QWEN3_BF16_SESSION_VALIDATED = _HFQwen3BF16SessionValidated()
+
+struct _HFQwen3BF16SessionContract
+    sources::Tuple
+    cache_layers::Tuple
+    metadata_signature::Tuple
+    context_tokens::Int
+    prefill_chunk_tokens::Int
+end
+
+function _qwen3_session_metadata_signature(tokenizer, generation_config)
+    return (tokenizer.bos_id, tokenizer.pad_id, tokenizer.eos_id,
+        Tuple(tokenizer.eos_ids), generation_config.bos_id,
+        generation_config.pad_id, Tuple(generation_config.eos_ids),
+        generation_config.do_sample, generation_config.temperature,
+        generation_config.top_k, generation_config.top_p,
+        String(generation_config.transformers_version))
+end
+
 mutable struct HFQwen3BF16Session{M,P,T,G,C,S}
     model::M
     parameters::P
@@ -551,6 +571,214 @@ mutable struct HFQwen3BF16Session{M,P,T,G,C,S}
     position::Int
     context_tokens::Int
     prefill_chunk_tokens::Int
+
+    contract::_HFQwen3BF16SessionContract
+
+    function HFQwen3BF16Session(
+        ::_HFQwen3BF16SessionValidated,
+        model::M,
+        parameters::P,
+        tokenizer::T,
+        generation_config::G,
+        cos_table::C,
+        sin_table::S,
+        caches::Vector{Any},
+        position::Int,
+        context_tokens::Int,
+        prefill_chunk_tokens::Int,
+        contract::_HFQwen3BF16SessionContract,
+    ) where {M,P,T,G,C,S}
+        return new{M,P,T,G,C,S}(model, parameters, tokenizer,
+            generation_config, cos_table, sin_table, caches, position,
+            context_tokens, prefill_chunk_tokens, contract)
+    end
+end
+
+function _qwen3_session_array_contract(
+    value,
+    shape::Tuple,
+    label::AbstractString,
+    device,
+)
+    value isa AbstractArray || throw(ArgumentError("$label must be an array"))
+    ndims(value) == length(shape) || throw(DimensionMismatch(
+        "$label must be $(length(shape))-dimensional",
+    ))
+    all(
+        dimension -> axes(value, dimension) == Base.OneTo(size(value, dimension)),
+        eachindex(shape),
+    ) || throw(ArgumentError("$label must use one-based axes"))
+    size(value) == shape || throw(DimensionMismatch(
+        "$label must have shape $shape; got $(size(value))",
+    ))
+    eltype(value) === BFloat16 || throw(ArgumentError(
+        "$label must contain BFloat16 values",
+    ))
+    get_device(value) == device || throw(ArgumentError(
+        "$label must reside on the Qwen3 session parameter device",
+    ))
+    return nothing
+end
+
+function _qwen3_validate_session_parameter_source(
+    model::GPTModel,
+    parameters,
+)
+    hasproperty(parameters, :token_embedding) &&
+        hasproperty(parameters.token_embedding, :weight) || throw(ArgumentError(
+            "Qwen3 parameters must expose token_embedding.weight",
+        ))
+    embedding = parameters.token_embedding.weight
+    embedding isa AbstractMatrix || throw(ArgumentError(
+        "Qwen3 token embedding weight must be a matrix",
+    ))
+    device = get_device(embedding)
+    _qwen3_session_array_contract(
+        embedding,
+        (model.d_model, model.vocab_size),
+        "Qwen3 token embedding weight",
+        device,
+    )
+    return device
+end
+
+function _qwen3_validate_session_tokenizer_source(
+    model::GPTModel,
+    tokenizer,
+    generation_config,
+)
+    tokenizer isa HFQwen3Tokenizer || throw(ArgumentError(
+        "Qwen3 BF16 sessions require an HFQwen3Tokenizer",
+    ))
+    tokenizer.profile === :generation || throw(ArgumentError(
+        "Qwen3 BF16 sessions require the text-generation tokenizer profile",
+    ))
+    vocab_size(tokenizer) <= model.vocab_size || throw(ArgumentError(
+        "tokenizer vocabulary exceeds the model vocabulary",
+    ))
+    expected = hf_generation_config(tokenizer)
+    fields = (:bos_id, :eos_ids, :pad_id, :do_sample, :temperature,
+        :top_k, :top_p, :transformers_version)
+    all(hasproperty(generation_config, field) for field in fields) ||
+        throw(ArgumentError(
+            "generation_config must expose the validated Qwen3 generation fields",
+        ))
+    all(isequal(getproperty(generation_config, field), getproperty(expected, field))
+        for field in (:bos_id, :eos_ids, :pad_id)) || throw(ArgumentError(
+            "generation_config token ids must match the tokenizer metadata",
+        ))
+    generation_config.do_sample isa Bool || throw(ArgumentError(
+        "generation_config do_sample must be Bool",
+    ))
+    _qwen3_session_sampling_options(generation_config.temperature,
+        generation_config.top_k, generation_config.top_p)
+    generation_config.transformers_version isa AbstractString &&
+        !isempty(generation_config.transformers_version) || throw(ArgumentError(
+            "generation_config transformers_version must be a non-empty string",
+        ))
+    return nothing
+end
+
+function _qwen3_validate_session_storage(
+    model::GPTModel,
+    parameters,
+    cos_table,
+    sin_table,
+    caches,
+    context_tokens::Int,
+    ;
+    check_distinct::Bool=true,
+)
+    reference = parameters.token_embedding.weight
+    device = get_device(reference)
+    rope_shape = (model.head_dim ÷ 2, context_tokens)
+    _qwen3_session_array_contract(
+        cos_table,
+        rope_shape,
+        "Qwen3 session cosine table",
+        device,
+    )
+    _qwen3_session_array_contract(
+        sin_table,
+        rope_shape,
+        "Qwen3 session sine table",
+        device,
+    )
+    cos_table === sin_table && throw(ArgumentError(
+        "Qwen3 session RoPE tables must use distinct storage",
+    ))
+    caches isa Vector{Any} || throw(ArgumentError(
+        "Qwen3 session caches must be a Vector{Any}",
+    ))
+    length(caches) == model.num_layers || throw(DimensionMismatch(
+        "Qwen3 session cache layer count must match model.num_layers",
+    ))
+    cache_shape = (model.head_dim, model.num_kv_heads, context_tokens, 1)
+    seen_storage = check_distinct ? IdDict{Any,Nothing}() : nothing
+    for (index, cache) in enumerate(caches)
+        cache isa BF16AStaticLayerCache || throw(ArgumentError(
+            "Qwen3 session cache layer $index must be BF16AStaticLayerCache storage",
+        ))
+        for (kind, storage) in (("key", cache.keys), ("value", cache.values))
+            _qwen3_session_array_contract(
+                storage,
+                cache_shape,
+                "Qwen3 session cache layer $index $kind storage",
+                device,
+            )
+            if check_distinct
+                haskey(seen_storage, storage) && throw(ArgumentError(
+                    "Qwen3 session cache layers must use distinct storage",
+                ))
+                seen_storage[storage] = nothing
+            end
+        end
+    end
+    return nothing
+end
+
+function _validate_hf_qwen3_bf16_session(session::HFQwen3BF16Session)
+    contract = session.contract
+    session.context_tokens == contract.context_tokens || throw(ArgumentError(
+        "Qwen3 session context_tokens changed after initialization",
+    ))
+    session.prefill_chunk_tokens == contract.prefill_chunk_tokens ||
+        throw(ArgumentError(
+            "Qwen3 session prefill_chunk_tokens changed after initialization",
+        ))
+    0 <= session.position <= session.context_tokens || throw(ArgumentError(
+        "Qwen3 session position must be in 0:context_tokens",
+    ))
+    sources = (session.model, session.parameters, session.tokenizer,
+        session.generation_config, session.cos_table, session.sin_table,
+        session.caches)
+    all(sources[index] === contract.sources[index]
+        for index in eachindex(sources)) || throw(ArgumentError(
+            "Qwen3 session source changed after initialization",
+        ))
+    metadata = _qwen3_session_metadata_signature(
+        session.tokenizer,
+        session.generation_config,
+    )
+    isequal(metadata, contract.metadata_signature) || throw(ArgumentError(
+        "Qwen3 session tokenizer/generation metadata changed after initialization",
+    ))
+    _qwen3_validate_session_storage(
+        session.model,
+        session.parameters,
+        session.cos_table,
+        session.sin_table,
+        session.caches,
+        session.context_tokens,
+        check_distinct=false,
+    )
+    all(
+        session.caches[index] === contract.cache_layers[index]
+        for index in eachindex(session.caches)
+    ) || throw(ArgumentError(
+        "Qwen3 session cache layer source changed after initialization",
+    ))
+    return nothing
 end
 
 function _qwen3_session_window_preflight(
@@ -602,17 +830,24 @@ function init_hf_qwen3_bf16_session(
     parameters = bundle.parameters
     tokenizer = bundle.tokenizer
     _qwen3_validate_semantics(model)
-    eltype(parameters.token_embedding.weight) === BFloat16 || throw(ArgumentError(
-        "Qwen3 BF16 sessions require a BFloat16 embedding/compute tree",
-    ))
     context = window.context_tokens
     chunk = window.prefill_chunk_tokens
     context <= model.max_seq_len || throw(ArgumentError(
         "context_tokens must be in 1:model.max_seq_len",
     ))
-    vocab_size(tokenizer) <= model.vocab_size || throw(ArgumentError(
-        "tokenizer vocabulary exceeds the model vocabulary",
-    ))
+    generation_config = if hasproperty(bundle, :generation_config)
+        bundle.generation_config
+    elseif tokenizer isa HFQwen3Tokenizer
+        hf_generation_config(tokenizer)
+    else
+        throw(ArgumentError("Qwen3 BF16 sessions require an HFQwen3Tokenizer"))
+    end
+    _qwen3_validate_session_parameter_source(model, parameters)
+    _qwen3_validate_session_tokenizer_source(
+        model,
+        tokenizer,
+        generation_config,
+    )
 
     rope = first(values(model.blocks.layers)).attn.rope
     to_device = _bf16a_device_mover(parameters.token_embedding.weight)
@@ -623,9 +858,24 @@ function init_hf_qwen3_bf16_session(
         model,
         context,
     )
-    generation_config = hasproperty(bundle, :generation_config) ?
-        bundle.generation_config : hf_generation_config(tokenizer)
+    _qwen3_validate_session_storage(
+        model,
+        parameters,
+        cos_table,
+        sin_table,
+        caches,
+        context,
+    )
+    contract = _HFQwen3BF16SessionContract(
+        (model, parameters, tokenizer, generation_config, cos_table,
+            sin_table, caches),
+        Tuple(caches),
+        _qwen3_session_metadata_signature(tokenizer, generation_config),
+        context,
+        chunk,
+    )
     return HFQwen3BF16Session(
+        _HF_QWEN3_BF16_SESSION_VALIDATED,
         model,
         parameters,
         tokenizer,
@@ -636,6 +886,7 @@ function init_hf_qwen3_bf16_session(
         0,
         context,
         chunk,
+        contract,
     )
 end
 
@@ -688,6 +939,7 @@ Forget the logical request prefix. Static buffers are intentionally retained
 and overwritten on the next request.
 """
 function reset_hf_qwen3_bf16_session!(session::HFQwen3BF16Session)
+    _validate_hf_qwen3_bf16_session(session)
     session.position = 0
     return session
 end
@@ -714,6 +966,7 @@ function prefill_hf_qwen3_bf16!(
     ;
     on_chunk=nothing,
 )
+    _validate_hf_qwen3_bf16_session(session)
     tokens = _qwen3_session_token_vector(session, prompt_tokens)
     length(tokens) <= session.context_tokens || throw(ArgumentError(
         "prompt exceeds the session context_tokens limit",
@@ -721,6 +974,7 @@ function prefill_hf_qwen3_bf16!(
     reset_hf_qwen3_bf16_session!(session)
     logits = nothing
     for first_index in 1:session.prefill_chunk_tokens:length(tokens)
+        _validate_hf_qwen3_bf16_session(session)
         last_index = min(
             first_index + session.prefill_chunk_tokens - 1,
             length(tokens),
@@ -761,6 +1015,7 @@ function decode_hf_qwen3_bf16!(
     session::HFQwen3BF16Session,
     token::Integer,
 )
+    _validate_hf_qwen3_bf16_session(session)
     session.position > 0 || throw(ArgumentError(
         "call prefill_hf_qwen3_bf16! before decode",
     ))
@@ -872,6 +1127,7 @@ function generate_hf_qwen3_bf16!(
     on_token=nothing,
     on_prefill_chunk=nothing,
 )
+    _validate_hf_qwen3_bf16_session(session)
     requested = _strict_host_int(max_new_tokens, "max_new_tokens")
     requested >= 0 || throw(ArgumentError("max_new_tokens must be non-negative"))
     requested <= session.context_tokens || throw(ArgumentError(
@@ -1014,6 +1270,7 @@ function fit_qwen3_chat_context(
     max_prompt_tokens,
     enable_thinking::Bool=false,
 )
+    _validate_hf_qwen3_bf16_session(session)
     limit = _strict_host_int(max_prompt_tokens, "max_prompt_tokens")
     0 < limit <= session.context_tokens || throw(ArgumentError(
         "max_prompt_tokens must be in 1:session.context_tokens",
@@ -1072,6 +1329,7 @@ function _qwen3_text_generation_options(
     max_new_tokens,
     max_prompt_tokens,
 )
+    _validate_hf_qwen3_bf16_session(session)
     requested = _strict_host_int(max_new_tokens, "max_new_tokens")
     requested >= 0 || throw(ArgumentError(
         "max_new_tokens must be non-negative",

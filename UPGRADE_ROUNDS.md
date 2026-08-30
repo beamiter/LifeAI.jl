@@ -478,6 +478,9 @@ Chapter 03 reproducible-training test.
 232. Bind Qwen3 dense and MoE specifications to overflow-safe independent
      attention widths, valid GQA divisibility and expert fanout, plus exact MoE
      shard payload sums without conflating query width with model width.
+233. Seal reusable dense Qwen3 BF16 sessions behind validated embedding,
+     tokenizer/config, RoPE/cache, window, source-identity, and immutable
+     metadata contracts with atomic consumer-side revalidation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
