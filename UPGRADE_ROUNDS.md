@@ -385,6 +385,8 @@ Chapter 03 reproducible-training test.
      content, literal flags, and the supported byte-BPE behavior subset.
 192. Seal Qwen3 tool registries behind their canonical name-index builder so
      advertised and executable tool sets cannot diverge.
+193. Bind Qwen3-VL text-prefill logits, optional hidden states, and capture maps
+     to their shared RoPE sequence and batch geometry without copying arrays.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

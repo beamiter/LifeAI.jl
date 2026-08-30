@@ -10,6 +10,180 @@ struct Qwen3VLTextPrefill{E,B,L,F,O,R}
     final_hidden::F
     logits::O
     rope_layout::R
+
+    function Qwen3VLTextPrefill(
+        input_embeddings::Union{Nothing,AbstractArray},
+        block_outputs::AbstractDict,
+        layer_outputs::AbstractDict,
+        final_hidden::Union{Nothing,AbstractArray},
+        logits::AbstractArray,
+        rope_layout::Qwen3VLRopeLayout,
+    )
+        _validate_qwen3_vl_text_prefill(
+            input_embeddings,
+            block_outputs,
+            layer_outputs,
+            final_hidden,
+            logits,
+            rope_layout,
+        )
+        return new{
+            typeof(input_embeddings),
+            typeof(block_outputs),
+            typeof(layer_outputs),
+            typeof(final_hidden),
+            typeof(logits),
+            typeof(rope_layout),
+        }(
+            input_embeddings,
+            block_outputs,
+            layer_outputs,
+            final_hidden,
+            logits,
+            rope_layout,
+        )
+    end
+end
+
+function _qwen3_vl_text_prefill_state_width(
+    state,
+    label::AbstractString,
+    sequence_length::Int,
+    batch_size::Int,
+    value_type,
+)
+    state isa AbstractArray || throw(ArgumentError("$label must be an array"))
+    ndims(state) == 3 || throw(DimensionMismatch(
+        "$label must have shape (hidden, sequence, batch)",
+    ))
+    all(
+        dimension -> axes(state, dimension) ==
+            Base.OneTo(size(state, dimension)),
+        1:3,
+    ) || throw(ArgumentError("$label must use one-based axes"))
+    size(state, 1) > 0 || throw(ArgumentError(
+        "$label hidden width must be positive",
+    ))
+    size(state, 2) == sequence_length && size(state, 3) == batch_size ||
+        throw(DimensionMismatch(
+            "$label sequence and batch dimensions must match rope_layout",
+        ))
+    eltype(state) == value_type || throw(ArgumentError(
+        "$label dtype must match logits",
+    ))
+    return size(state, 1)
+end
+
+function _qwen3_vl_text_prefill_capture_layers(
+    states,
+    label::AbstractString,
+    sequence_length::Int,
+    batch_size::Int,
+    value_type,
+    hidden_widths::Vector{Int},
+)
+    layers = Set{Int}()
+    for (raw_layer, state) in pairs(states)
+        layer = _strict_host_int(raw_layer, "$label layer")
+        layer >= 0 || throw(ArgumentError(
+            "$label layer must be non-negative",
+        ))
+        layer in layers && throw(ArgumentError(
+            "$label contains duplicate normalized layer ids",
+        ))
+        push!(layers, layer)
+        push!(hidden_widths, _qwen3_vl_text_prefill_state_width(
+            state,
+            "$label[$layer]",
+            sequence_length,
+            batch_size,
+            value_type,
+        ))
+    end
+    return layers
+end
+
+function _validate_qwen3_vl_text_prefill(
+    input_embeddings,
+    block_outputs,
+    layer_outputs,
+    final_hidden,
+    logits,
+    rope_layout,
+)
+    sequence_length, batch_size = size(rope_layout.visual_mask)
+    sequence_length > 0 && batch_size > 0 || throw(ArgumentError(
+        "Qwen3-VL text prefill rope layout must be non-empty",
+    ))
+    ndims(logits) == 3 || throw(DimensionMismatch(
+        "Qwen3-VL text prefill logits must have shape (vocab, kept, batch)",
+    ))
+    all(
+        dimension -> axes(logits, dimension) ==
+            Base.OneTo(size(logits, dimension)),
+        1:3,
+    ) || throw(ArgumentError(
+        "Qwen3-VL text prefill logits must use one-based axes",
+    ))
+    size(logits, 1) > 0 || throw(ArgumentError(
+        "Qwen3-VL text prefill vocabulary width must be positive",
+    ))
+    1 <= size(logits, 2) <= sequence_length || throw(DimensionMismatch(
+        "Qwen3-VL text prefill kept logits must be in 1:$sequence_length",
+    ))
+    size(logits, 3) == batch_size || throw(DimensionMismatch(
+        "Qwen3-VL text prefill logits batch must match rope_layout",
+    ))
+    value_type = eltype(logits)
+    value_type in (Float32, BFloat16) || throw(ArgumentError(
+        "Qwen3-VL text prefill arrays must contain Float32 or BFloat16 values",
+    ))
+
+    hidden_widths = Int[]
+    input_embeddings === nothing || push!(
+        hidden_widths,
+        _qwen3_vl_text_prefill_state_width(
+            input_embeddings,
+            "Qwen3-VL input_embeddings",
+            sequence_length,
+            batch_size,
+            value_type,
+        ),
+    )
+    final_hidden === nothing || push!(
+        hidden_widths,
+        _qwen3_vl_text_prefill_state_width(
+            final_hidden,
+            "Qwen3-VL final_hidden",
+            sequence_length,
+            batch_size,
+            value_type,
+        ),
+    )
+    block_layers = _qwen3_vl_text_prefill_capture_layers(
+        block_outputs,
+        "Qwen3-VL block_outputs",
+        sequence_length,
+        batch_size,
+        value_type,
+        hidden_widths,
+    )
+    layer_layers = _qwen3_vl_text_prefill_capture_layers(
+        layer_outputs,
+        "Qwen3-VL layer_outputs",
+        sequence_length,
+        batch_size,
+        value_type,
+        hidden_widths,
+    )
+    block_layers == layer_layers || throw(DimensionMismatch(
+        "Qwen3-VL block_outputs and layer_outputs must capture the same layers",
+    ))
+    isempty(hidden_widths) || all(==(first(hidden_widths)), hidden_widths) ||
+        throw(DimensionMismatch(
+            "Qwen3-VL text prefill hidden widths must match",
+        ))
+    return nothing
 end
 
 function _qwen3_vl_text_read_parameter(

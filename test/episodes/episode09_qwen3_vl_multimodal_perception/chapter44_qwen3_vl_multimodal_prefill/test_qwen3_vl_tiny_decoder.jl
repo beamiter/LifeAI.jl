@@ -5,6 +5,7 @@ using Test
 import LifeAI
 using LifeAI: Qwen3VLCheckpointSpec,
     Qwen3VLRopeLayout,
+    Qwen3VLTextPrefill,
     Qwen3VLVisionInput,
     Qwen3VLTextSpec,
     hf_qwen3_vl_prefill,
@@ -194,6 +195,145 @@ end
     }(positions, deltas, visual, attention)
 end
 
+@testset "Chapter 44 — text prefill construction binds capture geometry" begin
+    rope_layout = _ch44_tiny_prefill_inputs().rope_layout
+    input_embeddings = zeros(Float32, 16, 8, 1)
+    final_hidden = zeros(Float32, 16, 8, 1)
+    last_state = zeros(Float32, 16, 8, 1)
+    block_outputs = Dict{Int,Any}(
+        0 => zeros(Float32, 16, 8, 1),
+        3 => last_state,
+    )
+    layer_outputs = Dict{Int,Any}(
+        0 => zeros(Float32, 16, 8, 1),
+        3 => last_state,
+    )
+    logits = zeros(Float32, 32, 1, 1)
+    prefill = Qwen3VLTextPrefill(
+        input_embeddings,
+        block_outputs,
+        layer_outputs,
+        final_hidden,
+        logits,
+        rope_layout,
+    )
+    @test prefill.input_embeddings === input_embeddings
+    @test prefill.block_outputs === block_outputs
+    @test prefill.layer_outputs === layer_outputs
+    @test prefill.final_hidden === final_hidden
+    @test prefill.logits === logits
+    @test prefill.rope_layout === rope_layout
+    @test prefill.block_outputs[3] === prefill.layer_outputs[3]
+
+    @test Qwen3VLTextPrefill(
+        input_embeddings,
+        Dict{Int,Any}(),
+        Dict{Int,Any}(),
+        nothing,
+        logits,
+        rope_layout,
+    ).input_embeddings === input_embeddings
+    @test Qwen3VLTextPrefill(
+        nothing,
+        Dict{Int,Any}(),
+        Dict{Int,Any}(),
+        final_hidden,
+        logits,
+        rope_layout,
+    ).final_hidden === final_hidden
+
+    @test_throws MethodError Qwen3VLTextPrefill{
+        typeof(input_embeddings),
+        typeof(block_outputs),
+        typeof(layer_outputs),
+        typeof(final_hidden),
+        typeof(logits),
+        typeof(rope_layout),
+    }(
+        input_embeddings,
+        block_outputs,
+        layer_outputs,
+        final_hidden,
+        logits,
+        rope_layout,
+    )
+    @test_throws DimensionMismatch Qwen3VLTextPrefill(
+        input_embeddings,
+        block_outputs,
+        layer_outputs,
+        final_hidden,
+        zeros(Float32, 32, 1),
+        rope_layout,
+    )
+    @test_throws DimensionMismatch Qwen3VLTextPrefill(
+        input_embeddings,
+        block_outputs,
+        layer_outputs,
+        final_hidden,
+        zeros(Float32, 32, 9, 1),
+        rope_layout,
+    )
+    @test_throws DimensionMismatch Qwen3VLTextPrefill(
+        input_embeddings,
+        block_outputs,
+        layer_outputs,
+        final_hidden,
+        zeros(Float32, 32, 1, 2),
+        rope_layout,
+    )
+    @test_throws DimensionMismatch Qwen3VLTextPrefill(
+        zeros(Float32, 16, 7, 1),
+        block_outputs,
+        layer_outputs,
+        final_hidden,
+        logits,
+        rope_layout,
+    )
+    @test_throws DimensionMismatch Qwen3VLTextPrefill(
+        input_embeddings,
+        block_outputs,
+        layer_outputs,
+        zeros(Float32, 15, 8, 1),
+        logits,
+        rope_layout,
+    )
+    @test_throws DimensionMismatch Qwen3VLTextPrefill(
+        input_embeddings,
+        block_outputs,
+        Dict{Int,Any}(0 => last_state, 2 => last_state),
+        final_hidden,
+        logits,
+        rope_layout,
+    )
+    for bad_key in (-1, true)
+        captures = Dict{Any,Any}(bad_key => last_state)
+        @test_throws ArgumentError Qwen3VLTextPrefill(
+            input_embeddings,
+            captures,
+            captures,
+            final_hidden,
+            logits,
+            rope_layout,
+        )
+    end
+    @test_throws DimensionMismatch Qwen3VLTextPrefill(
+        input_embeddings,
+        Dict{Int,Any}(0 => zeros(Float32, 16, 7, 1)),
+        Dict{Int,Any}(0 => zeros(Float32, 16, 7, 1)),
+        final_hidden,
+        logits,
+        rope_layout,
+    )
+    @test_throws ArgumentError Qwen3VLTextPrefill(
+        input_embeddings,
+        Dict{Int,Any}(0 => zeros(Core.BFloat16, 16, 8, 1)),
+        Dict{Int,Any}(0 => zeros(Core.BFloat16, 16, 8, 1)),
+        final_hidden,
+        logits,
+        rope_layout,
+    )
+end
+
 @testset "Chapter 44 — deterministic tiny Float32 decoder HF parity" begin
     reference = _ch44_hf_reference()
     @test String(reference.metadata.transformers) == "4.57.0"
@@ -254,6 +394,8 @@ end
         @test all(iszero, difference[:, text_positions, 1])
     end
     @test result.layer_outputs[3] == result.block_outputs[3]
+    @test result.layer_outputs[3] === result.block_outputs[3]
+    @test result.rope_layout === inputs.rope_layout
 
     predicted = [argmax(view(result.logits, :, token, 1)) for token in 1:8]
     @test predicted == [1, 2, 13, 14, 15, 7, 32, 8]
