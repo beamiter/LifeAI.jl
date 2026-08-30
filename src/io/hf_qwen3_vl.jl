@@ -219,6 +219,8 @@ end
 Immutable provenance and architecture contract for the official
 `Qwen/Qwen3-VL-2B-Instruct` checkpoint. The two revision fields deliberately
 name their registries: neither may be replaced with a moving `main` branch.
+Token roles are distinct zero-based ids in the text vocabulary, and the vision
+merger output width must connect exactly to the text hidden width.
 """
 struct Qwen3VLCheckpointSpec
     variant::Symbol
@@ -276,39 +278,81 @@ struct Qwen3VLCheckpointSpec
             "Qwen3-VL checkpoint vision must be a Qwen3VLVisionSpec",
         ))
         prefix = "Qwen3-VL checkpoint"
-        return new(
-            variant,
-            _qwen3_spec_string(model_id, "$prefix model_id"),
-            _qwen3_spec_string(
-                modelscope_revision,
-                "$prefix modelscope_revision",
-            ),
-            _qwen3_spec_string(hf_revision, "$prefix hf_revision"),
-            assets,
-            _qwen3_spec_nonnegative_int(tensor_count, "$prefix tensor_count"),
-            _qwen3_spec_nonnegative_int(tensor_bytes, "$prefix tensor_bytes"),
-            _qwen3_spec_nonnegative_int(
-                parameter_count,
-                "$prefix parameter_count",
-            ),
-            _qwen3_spec_nonnegative_int(
+        resolved_model_id = _qwen3_spec_string(model_id, "$prefix model_id")
+        resolved_modelscope_revision = _qwen3_spec_string(
+            modelscope_revision,
+            "$prefix modelscope_revision",
+        )
+        resolved_hf_revision = _qwen3_spec_string(
+            hf_revision,
+            "$prefix hf_revision",
+        )
+        resolved_tensor_count = _qwen3_spec_nonnegative_int(
+            tensor_count,
+            "$prefix tensor_count",
+        )
+        resolved_tensor_bytes = _qwen3_spec_nonnegative_int(
+            tensor_bytes,
+            "$prefix tensor_bytes",
+        )
+        resolved_parameter_count = _qwen3_spec_nonnegative_int(
+            parameter_count,
+            "$prefix parameter_count",
+        )
+        token_role_ids = (
+            image_token_id=_qwen3_spec_nonnegative_int(
                 image_token_id,
                 "$prefix image_token_id",
             ),
-            _qwen3_spec_nonnegative_int(
+            video_token_id=_qwen3_spec_nonnegative_int(
                 video_token_id,
                 "$prefix video_token_id",
             ),
-            _qwen3_spec_nonnegative_int(
+            vision_start_token_id=_qwen3_spec_nonnegative_int(
                 vision_start_token_id,
                 "$prefix vision_start_token_id",
             ),
-            _qwen3_spec_nonnegative_int(
+            vision_end_token_id=_qwen3_spec_nonnegative_int(
                 vision_end_token_id,
                 "$prefix vision_end_token_id",
             ),
-            _qwen3_spec_nonnegative_int(bos_token_id, "$prefix bos_token_id"),
-            _qwen3_spec_nonnegative_int(eos_token_id, "$prefix eos_token_id"),
+            bos_token_id=_qwen3_spec_nonnegative_int(
+                bos_token_id,
+                "$prefix bos_token_id",
+            ),
+            eos_token_id=_qwen3_spec_nonnegative_int(
+                eos_token_id,
+                "$prefix eos_token_id",
+            ),
+        )
+        maximum_token_id = text.vocab_size - 1
+        for (role, id) in pairs(token_role_ids)
+            id <= maximum_token_id || throw(ArgumentError(
+                "$prefix $role must be in 0:$maximum_token_id",
+            ))
+        end
+        length(Set(values(token_role_ids))) == length(token_role_ids) ||
+            throw(ArgumentError(
+                "$prefix token role ids must be pairwise distinct",
+            ))
+        vision.out_hidden_size == text.hidden_size || throw(ArgumentError(
+            "$prefix vision out_hidden_size must equal text hidden_size",
+        ))
+        return new(
+            variant,
+            resolved_model_id,
+            resolved_modelscope_revision,
+            resolved_hf_revision,
+            assets,
+            resolved_tensor_count,
+            resolved_tensor_bytes,
+            resolved_parameter_count,
+            token_role_ids.image_token_id,
+            token_role_ids.video_token_id,
+            token_role_ids.vision_start_token_id,
+            token_role_ids.vision_end_token_id,
+            token_role_ids.bos_token_id,
+            token_role_ids.eos_token_id,
             text,
             vision,
         )

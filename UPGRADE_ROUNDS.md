@@ -499,6 +499,9 @@ Chapter 03 reproducible-training test.
 239. Seal BF16 accelerator static layer caches behind validated one-based 4-D
      BF16 geometry, same-device independent storage, and private trace-safe
      reconstruction compatible with Reactant host transfer and compilation.
+240. Bind Qwen3-VL checkpoint token roles to distinct zero-based ids inside the
+     text vocabulary and require the vision merger output width to match the
+     language tower before loading or tensor-shape derivation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

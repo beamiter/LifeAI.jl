@@ -348,7 +348,15 @@ end
         :fixture,
         strings...,
         (),
-        ntuple(_ -> big(0), 9)...,
+        big(0),
+        Int32(0),
+        Int16(0),
+        big(0),
+        Int32(1),
+        UInt8(2),
+        big(3),
+        Int16(4),
+        Int128(5),
         base.text,
         base.vision,
     )
@@ -358,7 +366,7 @@ end
     @test spec.modelscope_revision === "value"
     @test spec.hf_revision === "value"
     @test spec.tensor_count === 0
-    @test spec.eos_token_id === 0
+    @test spec.eos_token_id === 5
     @test isempty(spec.assets)
 
     integer_fields = (
@@ -416,6 +424,60 @@ end
         @test sprint(showerror, failure) ==
             "ArgumentError: Qwen3-VL checkpoint $message"
     end
+
+    tiny_text_fields = map(fieldnames(Qwen3VLTextSpec)) do name
+        name === :vocab_size && return 6
+        return getfield(base.text, name)
+    end
+    tiny_text = Qwen3VLTextSpec(tiny_text_fields...)
+    boundary_spec = Qwen3VLCheckpointSpec(
+        Base.setindex(valid, tiny_text, 15)...,
+    )
+    @test boundary_spec.image_token_id == 0
+    @test boundary_spec.eos_token_id == tiny_text.vocab_size - 1
+
+    for (index, label) in (
+        9 => "image_token_id",
+        10 => "video_token_id",
+        11 => "vision_start_token_id",
+        12 => "vision_end_token_id",
+        13 => "bos_token_id",
+        14 => "eos_token_id",
+    )
+        failure = _ch43_captured_error() do
+            Qwen3VLCheckpointSpec(
+                Base.setindex(valid, base.text.vocab_size, index)...,
+            )
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL checkpoint $label must be in " *
+            "0:$(base.text.vocab_size - 1)"
+    end
+
+    duplicate_roles = Base.setindex(valid, valid[9], 10)
+    duplicate_failure = _ch43_captured_error() do
+        Qwen3VLCheckpointSpec(duplicate_roles...)
+    end
+    @test duplicate_failure isa ArgumentError
+    @test sprint(showerror, duplicate_failure) ==
+        "ArgumentError: Qwen3-VL checkpoint token role ids must be " *
+        "pairwise distinct"
+
+    mismatched_vision_fields = map(fieldnames(Qwen3VLVisionSpec)) do name
+        name === :out_hidden_size && return base.text.hidden_size + 1
+        return getfield(base.vision, name)
+    end
+    mismatched_vision = Qwen3VLVisionSpec(mismatched_vision_fields...)
+    tower_failure = _ch43_captured_error() do
+        Qwen3VLCheckpointSpec(
+            Base.setindex(valid, mismatched_vision, 16)...,
+        )
+    end
+    @test tower_failure isa ArgumentError
+    @test sprint(showerror, tower_failure) ==
+        "ArgumentError: Qwen3-VL checkpoint vision out_hidden_size must " *
+        "equal text hidden_size"
 end
 
 @testset "Qwen3-VL frozen checkpoint and tensor contract" begin
@@ -572,12 +634,12 @@ end
         0,
         0,
         0,
+        0,
         1,
-        1,
-        1,
-        1,
-        1,
-        1,
+        2,
+        3,
+        4,
+        5,
         half_text,
         half_vision,
     )
@@ -585,7 +647,7 @@ end
 
     maximum_dimension = typemax(Int)
     product_text = Qwen3VLTextSpec(
-        1,
+        6,
         1,
         1,
         0,
@@ -623,12 +685,12 @@ end
         65,
         0,
         77,
+        0,
         1,
-        1,
-        1,
-        1,
-        1,
-        1,
+        2,
+        3,
+        4,
+        5,
         product_text,
         product_vision,
     )
@@ -673,12 +735,12 @@ end
         66,
         0,
         70,
+        0,
         1,
-        1,
-        1,
-        1,
-        1,
-        1,
+        2,
+        3,
+        4,
+        5,
         aggregate_text,
         aggregate_vision,
     )
@@ -723,12 +785,12 @@ end
         29,
         0,
         half + 28,
+        0,
         1,
-        1,
-        1,
-        1,
-        1,
-        1,
+        2,
+        3,
+        4,
+        5,
         half_byte_text,
         half_byte_vision,
     )
