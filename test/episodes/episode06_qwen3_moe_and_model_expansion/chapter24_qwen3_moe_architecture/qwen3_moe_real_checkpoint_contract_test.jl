@@ -2,6 +2,7 @@ using Test
 using JSON3
 using SHA: sha256
 using LifeAI:
+    Qwen3MoECheckpointSpec,
     load_hf_qwen3_moe_config,
     qwen3_moe_checkpoint_spec,
     qwen3_moe_parameter_count,
@@ -49,6 +50,29 @@ const _QWEN3_MOE_REAL_CONTRACT_DIR = joinpath(
 
     @test qwen3_moe_parameter_count() == 30_532_122_624
     @test qwen3_moe_parameter_count() * 2 == spec.tensor_bytes
+    overflow_spec = Qwen3MoECheckpointSpec(
+        :overflow,
+        "overflow",
+        "overflow",
+        "overflow",
+        "overflow",
+        0,
+        0,
+        0,
+        typemax(Int),
+        2,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        (),
+    )
+    @test_throws ArgumentError qwen3_moe_parameter_count(overflow_spec)
     @test Int(manifest.index.tensor_count) == spec.index_tensor_count == 18_867
     @test Int(manifest.index.tensor_bytes) == spec.tensor_bytes
     @test Int(manifest.shard_payload_bytes) == spec.shard_payload_bytes

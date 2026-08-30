@@ -187,18 +187,20 @@ qwen3_moe_checkpoint_spec() = _QWEN3_30B_A3B_SPEC
 function qwen3_moe_parameter_count(
     spec::Qwen3MoECheckpointSpec=qwen3_moe_checkpoint_spec(),
 )
-    query_dim = spec.num_heads * spec.head_dim
-    kv_dim = spec.num_kv_heads * spec.head_dim
-    embeddings_and_head = 2 * spec.vocab_size * spec.d_model
-    attention = 2 * query_dim * spec.d_model +
-        2 * kv_dim * spec.d_model +
-        2 * spec.head_dim
-    norms = 2 * spec.d_model
-    router = spec.num_experts * spec.d_model
-    experts = 3 * spec.num_experts * spec.d_model * spec.moe_hidden_dim
-    return embeddings_and_head +
+    d_model = BigInt(spec.d_model)
+    query_dim = BigInt(spec.num_heads) * spec.head_dim
+    kv_dim = BigInt(spec.num_kv_heads) * spec.head_dim
+    embeddings_and_head = 2 * BigInt(spec.vocab_size) * d_model
+    attention = 2 * query_dim * d_model +
+        2 * kv_dim * d_model +
+        2 * BigInt(spec.head_dim)
+    norms = 2 * d_model
+    router = BigInt(spec.num_experts) * d_model
+    experts = 3 * BigInt(spec.num_experts) * d_model * spec.moe_hidden_dim
+    count = embeddings_and_head +
         spec.num_layers * (attention + norms + router + experts) +
-        spec.d_model
+        d_model
+    return _qwen3_parameter_count_int(count, "Qwen3 MoE parameter count")
 end
 
 const _QWEN3_DENSE_SPECS = (

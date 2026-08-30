@@ -125,6 +125,8 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - `Qwen3SparseMoE` parameter count 与 indexed workspace byte 现在对每一步乘加使用
   checked arithmetic；极端但类型合法的维度不再环绕成负数，而是在任何分配前以
   `ArgumentError` 拒绝。
+- checkpoint 级 `qwen3_moe_parameter_count` 同样以任意精度完成公式后才收窄为
+  `Int`；官方 30B-A3B 精确值保持不变，超范围 metadata 会明确失败。
 - 128 experts/top-8 下，单-token 临时空间从 `0.75 MiB` 降到 `6.50 KiB`，64-token 从 `48 MiB` 降到 `416 KiB`，两组都是 `118.15×` 缩减。
 - RTX 4090 D 最终重跑的 15 次同进程 steady 对照：单-token indexed `0.365 ms` vs route-major `0.481 ms`（`1.32×`），64-token indexed `0.377 ms` vs route-major `0.592 ms`（`1.57×`）。64-token 相对单线程 CPU sparse 为 `4.06×`；单-token 仍只有 CPU 的 `0.198×`，说明下一瓶颈已从权重物化转为小 kernel launch 与标量 dot-product 效率。
 - 原始结果位于 `benchmark_results/qwen3_moe_sparse_dispatch/cuda_4090d_indexed_kernels.json`。该文件 schema 2 也记录 bucketed 对照：小型 `128→64` 的单/64-token bucketed 分别为 `0.416 / 0.449 ms`，均慢于 indexed；这三个直接索引 kernel 是低 workspace baseline，尚未使用 grouped GEMM 或 tensor cores。
