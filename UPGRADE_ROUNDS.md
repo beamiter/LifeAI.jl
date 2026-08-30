@@ -305,6 +305,8 @@ Chapter 03 reproducible-training test.
      while retaining a trace-safe internal row-slice construction path.
 152. Enforce exact Qwen3 INT4 packed and scale tensor layouts, dtypes, axes, and
      device placement without revalidating trusted slices inside XLA traces.
+153. Restrict Qwen3 quantized row slicing to non-empty in-bounds host ranges so
+     its trace-safe constructor cannot create malformed INT8 or INT4 weights.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

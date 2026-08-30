@@ -223,6 +223,38 @@ end
     end == "INT4 packed values and scales must reside on the same device"
 end
 
+@testset "quantized row slicing is strict" begin
+    int8 = Int8ChannelWeight(
+        reshape(Int8.(1:12), 3, 4),
+        Float32[0.25, 0.5, 0.75],
+    )
+    int4 = Int4GroupWeight(
+        reshape(UInt8.(1:12), 3, 4),
+        reshape(Float32.(1:6), 3, 2),
+        4,
+        8,
+    )
+    int8_slice = LifeAI._quant_row_slice(int8, 2:3)
+    int4_slice = LifeAI._quant_row_slice(int4, 2:3)
+    @test LifeAI._dequantize_bf16(int8_slice) ==
+        LifeAI._dequantize_bf16(int8)[2:3, :]
+    @test LifeAI._dequantize_bf16(int4_slice) ==
+        LifeAI._dequantize_bf16(int4)[2:3, :]
+
+    for weight in (int8, int4)
+        for rows in (1, true, Int[1], Int32(1):Int32(1), 1:2:3, Colon(), 1:0)
+            @test _quantization_argument_error_message() do
+                LifeAI._quant_row_slice(weight, rows)
+            end == "quantized row selection must be a non-empty UnitRange{Int}"
+        end
+        for rows in (0:1, 2:4)
+            @test _quantization_argument_error_message() do
+                LifeAI._quant_row_slice(weight, rows)
+            end == "quantized row selection must lie within 1:3"
+        end
+    end
+end
+
 @testset "trace-safe quantized dequantization preserves host values" begin
     int8_values = reshape(Int8[-128, -1, 0, 127], 1, :)
     int8_scale = Float32[0.25]

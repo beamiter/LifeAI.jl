@@ -936,18 +936,35 @@ function _dequantize_bf16(weight::Int4GroupWeight)
     return reshape(stacked, out_dim, weight.in_dim)
 end
 
-_quant_row_slice(weight::Int8ChannelWeight, rows) = Int8ChannelWeight(
-    weight.q[rows, :],
-    weight.scale[rows],
-    _QuantizedWeightRowSlice(),
-)
-_quant_row_slice(weight::Int4GroupWeight, rows) = Int4GroupWeight(
-    weight.packed[rows, :],
-    weight.scale[rows, :],
-    weight.group,
-    weight.in_dim,
-    _QuantizedWeightRowSlice(),
-)
+function _quantized_row_range(rows, out_dim::Int)
+    rows isa UnitRange{Int} && !isempty(rows) || throw(ArgumentError(
+        "quantized row selection must be a non-empty UnitRange{Int}",
+    ))
+    first(rows) >= 1 && last(rows) <= out_dim || throw(ArgumentError(
+        "quantized row selection must lie within 1:$out_dim",
+    ))
+    return rows
+end
+
+function _quant_row_slice(weight::Int8ChannelWeight, rows)
+    resolved_rows = _quantized_row_range(rows, size(weight.q, 1))
+    return Int8ChannelWeight(
+        weight.q[resolved_rows, :],
+        weight.scale[resolved_rows],
+        _QuantizedWeightRowSlice(),
+    )
+end
+
+function _quant_row_slice(weight::Int4GroupWeight, rows)
+    resolved_rows = _quantized_row_range(rows, size(weight.packed, 1))
+    return Int4GroupWeight(
+        weight.packed[resolved_rows, :],
+        weight.scale[resolved_rows, :],
+        weight.group,
+        weight.in_dim,
+        _QuantizedWeightRowSlice(),
+    )
+end
 _quant_out_dim(weight::Int8ChannelWeight) = size(weight.q, 1)
 _quant_out_dim(weight::Int4GroupWeight) = size(weight.packed, 1)
 
