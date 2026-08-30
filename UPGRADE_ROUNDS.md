@@ -223,6 +223,8 @@ Chapter 03 reproducible-training test.
      keeping shard-set membership and payload accounting one-to-one.
 111. Strictly construct Qwen3 dense-family specifications, normalizing positive
      dimensions and finite Float32 hyperparameters without lossy coercions.
+112. Bind automatic Qwen3-VL prefill mRoPE layouts to the text parameters'
+     checkpoint, preserving custom special-token and merge contracts.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

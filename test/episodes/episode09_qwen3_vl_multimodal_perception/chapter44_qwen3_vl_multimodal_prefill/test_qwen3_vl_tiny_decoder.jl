@@ -2,11 +2,13 @@ using Base64: base64decode
 using JSON3
 using SHA: sha256
 using Test
-using LifeAI: Qwen3VLRopeLayout,
+using LifeAI: Qwen3VLCheckpointSpec,
+    Qwen3VLRopeLayout,
     Qwen3VLVisionInput,
     Qwen3VLTextSpec,
     hf_qwen3_vl_prefill,
-    hf_qwen3_vl_text_prefill
+    hf_qwen3_vl_text_prefill,
+    qwen3_vl_checkpoint_spec
 
 const _CH44_TINY_TEXT_SPEC = Qwen3VLTextSpec(
     32,             # vocab_size
@@ -213,6 +215,42 @@ end
         zeros(Float32, 1_536, 4),
         reshape(Int[1, 2, 2], 3, 1),
     )
+    base_checkpoint = qwen3_vl_checkpoint_spec()
+    custom_checkpoint = Qwen3VLCheckpointSpec(
+        base_checkpoint.variant,
+        base_checkpoint.model_id,
+        base_checkpoint.modelscope_revision,
+        base_checkpoint.hf_revision,
+        base_checkpoint.assets,
+        base_checkpoint.tensor_count,
+        base_checkpoint.tensor_bytes,
+        base_checkpoint.parameter_count,
+        base_checkpoint.image_token_id,
+        6,
+        base_checkpoint.vision_start_token_id,
+        base_checkpoint.vision_end_token_id,
+        base_checkpoint.bos_token_id,
+        base_checkpoint.eos_token_id,
+        base_checkpoint.text,
+        base_checkpoint.vision,
+    )
+    checkpoint_error = try
+        hf_qwen3_vl_prefill(
+            42,
+            (; spec=custom_checkpoint.text, checkpoint=custom_checkpoint),
+            vision_input,
+            Int[7],
+        )
+        nothing
+    catch caught
+        caught
+    end
+    @test checkpoint_error isa ArgumentError
+    @test occursin(
+        "video mRoPE requires the timestamp video processor",
+        sprint(showerror, checkpoint_error),
+    )
+
     for case in option_cases
         text_error = try
             hf_qwen3_vl_text_prefill(

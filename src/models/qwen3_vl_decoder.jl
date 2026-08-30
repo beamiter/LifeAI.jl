@@ -652,7 +652,11 @@ function hf_qwen3_vl_prefill(
     all(layer -> 0 <= layer < text_spec.num_hidden_layers, requested) ||
         throw(ArgumentError("Qwen3-VL capture layer is outside the decoder"))
     resolved_rope_layout = rope_layout === nothing ?
-        qwen3_vl_rope_layout(input_ids, vision_input.grid_thw) : rope_layout
+        qwen3_vl_rope_layout(
+            input_ids,
+            vision_input.grid_thw;
+            checkpoint=text_parameters.checkpoint,
+        ) : rope_layout
     features = hf_qwen3_vl_vision_forward(vision_parameters, vision_input)
     text = hf_qwen3_vl_text_prefill(
         text_parameters,
