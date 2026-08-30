@@ -64,6 +64,9 @@ generation lock，下一请求可以继续执行。
   body，以及 padded prompt + output 超过 4K 的请求；
 - token 可能只含 UTF-8 多字节序列的一部分，streamer 会累积到完整有效
   UTF-8 后才 flush，不会向客户端写破碎字符。
+- 可注入的 prompt encoder、generator 结果与 stream callback 都必须产生
+  非 Boolean、可由宿主 `Int` 精确表示的 token；错误 prompt 不进入生成
+  计数，运行期错误则记入 failed 并释放单飞锁。
 
 公共 `serve_qwen3_xla_http!` 默认 `127.0.0.1:11435`。日常 launcher 对
 非 loopback 地址再加一道 `--allow-non-loopback` 门禁；这个开关只代表调用
@@ -176,8 +179,8 @@ SHA256 e006940214ecabb3802dda178faaad994491cfeae2fc2cfd3425a0d71c2d960b
 
 ## 测试与关闭
 
-- Chapter 21 专项：`109 / 109`；
-- 加真实 loopback socket opt-in：`116 / 116`；
+- Chapter 21 专项：`174 / 174`；
+- 加真实 loopback socket opt-in：`181 / 181`；
 - 默认完整套件：`5,489 / 5,489`；
 - Reactant CPU compiled prefill smoke：`5 / 5`；
 - 真机 acceptance：所有 `_passed` 字段为 true，顶层 `closed=true`。

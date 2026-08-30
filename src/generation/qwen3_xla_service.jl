@@ -398,7 +398,10 @@ function _qwen3_service_prepare_generate(
         _qwen3_service_integer(options["seed"], "options.seed")
 
     prompt_ids = try
-        Int.(vec(collect(service.prompt_encoder(service.session, String(prompt)))))
+        vec(_strict_host_int_array(
+            service.prompt_encoder(service.session, String(prompt)),
+            "Qwen3 XLA service prompt token",
+        ))
     catch error
         throw(_qwen3_service_error(
             400,
@@ -485,8 +488,12 @@ function _qwen3_service_generate(
             nothing
         else
             function (token_id, _...)
+                token = _strict_host_int(
+                    token_id,
+                    "Qwen3 XLA service streamed token",
+                )
                 token_bytes = _qwen3_service_bytes(
-                    service.token_decoder(service.session, [token_id]),
+                    service.token_decoder(service.session, [token]),
                 )
                 append!(pending_bytes, token_bytes)
                 if !isempty(pending_bytes) && isvalid(String, pending_bytes)
@@ -506,6 +513,14 @@ function _qwen3_service_generate(
                 prepared.max_new_tokens,
                 on_token,
             )
+            generated_ids = vec(_strict_host_int_array(
+                _qwen3_service_result_field(
+                    result,
+                    :generated_ids,
+                    Int[],
+                ),
+                "Qwen3 XLA service generated token",
+            ))
             completion = String(_qwen3_service_result_field(
                 result,
                 :completion,
@@ -527,11 +542,6 @@ function _qwen3_service_generate(
                 end
             end
 
-            generated_ids = Int.(vec(collect(_qwen3_service_result_field(
-                result,
-                :generated_ids,
-                Int[],
-            ))))
             prefill_seconds = Float64(_qwen3_service_result_field(
                 result,
                 :prefill_seconds,

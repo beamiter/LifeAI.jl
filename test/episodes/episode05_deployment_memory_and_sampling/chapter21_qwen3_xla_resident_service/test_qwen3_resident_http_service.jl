@@ -153,6 +153,67 @@ function _qwen3_resident_service_error_code(response)
     return String(_qwen3_resident_service_json(response)["code"])
 end
 
+function _qwen3_resident_service_injected_tokens(;
+    prompt_ids=Int[7],
+    generated_ids=Int[101],
+    callback_token=nothing,
+)
+    generator_calls = Ref(0)
+    decoder_calls = Ref(0)
+    observed_prompt_ids = Ref{Any}(nothing)
+    observed_decoder_ids = Any[]
+    prompt_encoder = (_, _) -> prompt_ids
+    token_decoder = function (_, ids)
+        decoder_calls[] += 1
+        push!(observed_decoder_ids, copy(ids))
+        return UInt8[0x61]
+    end
+    generator = function (_, ids, _, on_token)
+        generator_calls[] += 1
+        observed_prompt_ids[] = copy(ids)
+        if callback_token !== nothing
+            on_token === nothing && error("missing injected token callback")
+            on_token(callback_token, 1)
+        end
+        return (;
+            generated_ids,
+            completion=callback_token === nothing ? "" : "a",
+            stop_reason=:length,
+            prefill_seconds=0.0,
+            decode_seconds=0.0,
+        )
+    end
+    service = Qwen3XLAHTTPService(;
+        loader=() -> (name=:injected_token_session,),
+        generator,
+        prompt_encoder,
+        token_decoder,
+        model_id=_QWEN3_RESIDENT_SERVICE_MODEL,
+        context_tokens=64,
+        prefill_chunk_tokens=8,
+        max_new_tokens=16,
+    )
+    return (;
+        service,
+        generator_calls,
+        decoder_calls,
+        observed_prompt_ids,
+        observed_decoder_ids,
+    )
+end
+
+function _qwen3_resident_service_request_metrics(service)
+    requests = qwen3_xla_service_status(service).requests
+    return (
+        requests.total,
+        requests.completed,
+        requests.failed,
+        requests.queued,
+        requests.active,
+        requests.max_active,
+    )
+end
+
 @testset "service loads once and serves Ollama-compatible JSON" begin
     fixture = _qwen3_resident_service_fake_service()
     service = fixture.service
@@ -358,6 +419,89 @@ end
     @test status.requests.active == 0
     @test status.requests.queued == 0
     @test fixture.load_calls[] == 1
+end
+
+@testset "injected token contracts fail closed" begin
+    too_large = big(typemax(Int)) + 1
+    invalid_tokens = (
+        Bool[true],
+        Float64[7.0],
+        Char[Char(7)],
+        BigInt[too_large],
+    )
+
+    for prompt_ids in invalid_tokens
+        fixture = _qwen3_resident_service_injected_tokens(; prompt_ids)
+        response = qwen3_xla_http_handler(
+            fixture.service,
+            _qwen3_resident_service_generate_request(stream=false),
+        )
+        @test response.status == 400
+        @test _qwen3_resident_service_error_code(response) == "invalid_prompt"
+        @test fixture.generator_calls[] == 0
+        @test _qwen3_resident_service_request_metrics(fixture.service) ==
+            (0, 0, 0, 0, 0, 0)
+    end
+
+    legal_prompt = _qwen3_resident_service_injected_tokens(;
+        prompt_ids=Int128[7],
+    )
+    legal_prompt_response = qwen3_xla_http_handler(
+        legal_prompt.service,
+        _qwen3_resident_service_generate_request(stream=false),
+    )
+    @test legal_prompt_response.status == 200
+    @test legal_prompt.observed_prompt_ids[] == [7]
+    @test legal_prompt.observed_prompt_ids[] isa Vector{Int}
+    @test _qwen3_resident_service_request_metrics(legal_prompt.service) ==
+        (1, 1, 0, 0, 0, 1)
+
+    for generated_ids in invalid_tokens
+        fixture = _qwen3_resident_service_injected_tokens(; generated_ids)
+        response = qwen3_xla_http_handler(
+            fixture.service,
+            _qwen3_resident_service_generate_request(stream=false),
+        )
+        @test response.status == 500
+        @test _qwen3_resident_service_error_code(response) ==
+            "generation_failed"
+        @test fixture.generator_calls[] == 1
+        @test fixture.decoder_calls[] == 0
+        @test _qwen3_resident_service_request_metrics(fixture.service) ==
+            (1, 0, 1, 0, 0, 1)
+    end
+
+    for callback_ids in invalid_tokens
+        fixture = _qwen3_resident_service_injected_tokens(;
+            callback_token=only(callback_ids),
+        )
+        response = qwen3_xla_http_handler(
+            fixture.service,
+            _qwen3_resident_service_generate_request(stream=true),
+        )
+        @test response.status == 500
+        @test _qwen3_resident_service_error_code(response) ==
+            "generation_failed"
+        @test fixture.generator_calls[] == 1
+        @test fixture.decoder_calls[] == 0
+        @test _qwen3_resident_service_request_metrics(fixture.service) ==
+            (1, 0, 1, 0, 0, 1)
+    end
+
+    legal_callback = _qwen3_resident_service_injected_tokens(;
+        generated_ids=Int128[101],
+        callback_token=Int128(101),
+    )
+    legal_callback_response = qwen3_xla_http_handler(
+        legal_callback.service,
+        _qwen3_resident_service_generate_request(stream=true),
+    )
+    @test legal_callback_response.status == 200
+    @test legal_callback.decoder_calls[] == 1
+    @test only(legal_callback.observed_decoder_ids) == [101]
+    @test only(legal_callback.observed_decoder_ids) isa Vector{Int}
+    @test _qwen3_resident_service_request_metrics(legal_callback.service) ==
+        (1, 1, 0, 0, 0, 1)
 end
 
 @testset "server defaults remain loopback-only" begin
