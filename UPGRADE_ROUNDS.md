@@ -417,6 +417,8 @@ Chapter 03 reproducible-training test.
      preserve the Qwen3-VL `ignore_merges` omission contract.
 208. Preflight the full Qwen3-VL vision parameter tree for single-device
      residency before patch projection, blocks, or mergers begin computing.
+209. Reject unknown Qwen3 tokenizer-config root fields across generation,
+     embedding, and vision-language profiles with deterministic diagnostics.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

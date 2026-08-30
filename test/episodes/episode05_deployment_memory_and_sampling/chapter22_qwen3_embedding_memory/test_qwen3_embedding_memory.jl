@@ -472,6 +472,15 @@ end
             "post_processor ByteLevel fields: future_behavior"
     end
 
+    mktempdir() do directory
+        payloads = _embedding_tokenizer_payloads()
+        payloads.tokenizer_config["future_behavior"] = true
+        write_qwen3_tokenizer_fixture(directory; payloads)
+        @test _embedding_argument_error_message() do
+            load_hf_qwen3_embedding_tokenizer(directory)
+        end == "unsupported tokenizer_config.json fields: future_behavior"
+    end
+
     type_id_mutations = (
         payloads -> (
             payloads.tokenizer["post_processor"]["processors"][2]["single"][1][

@@ -712,6 +712,26 @@ function _hf_validate_tokenizer_config(
     model_vocabulary_size::Int,
     profile::Symbol,
 )
+    _hf_reject_unknown_fields(
+        config,
+        (
+            "add_bos_token",
+            "add_prefix_space",
+            "added_tokens_decoder",
+            "additional_special_tokens",
+            "bos_token",
+            "chat_template",
+            "clean_up_tokenization_spaces",
+            "eos_token",
+            "errors",
+            "model_max_length",
+            "pad_token",
+            "split_special_tokens",
+            "tokenizer_class",
+            "unk_token",
+        ),
+        "tokenizer_config.json",
+    )
     _hf_exact_value(config, "tokenizer_class", "Qwen2Tokenizer", "tokenizer_config.json")
     _hf_exact_bool(config, "add_bos_token", false, "tokenizer_config.json")
     _hf_exact_bool(config, "add_prefix_space", false, "tokenizer_config.json")

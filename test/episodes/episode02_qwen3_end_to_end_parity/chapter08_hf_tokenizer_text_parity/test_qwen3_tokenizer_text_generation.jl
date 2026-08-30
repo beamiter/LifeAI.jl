@@ -283,6 +283,47 @@ end
         end
     end
 
+    tokenizer_config_root_field_mutations = (
+        (
+            payloads -> (
+                payloads.tokenizer_config["future_behavior"] = true
+            ),
+            "unsupported tokenizer_config.json fields: future_behavior",
+        ),
+        (
+            payloads -> begin
+                payloads.tokenizer_config["z_future"] = true
+                payloads.tokenizer_config["a_future"] = true
+            end,
+            "unsupported tokenizer_config.json fields: a_future, z_future",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer_config["model"] = Dict{String,Any}()
+            ),
+            "unsupported tokenizer_config.json fields: model",
+        ),
+        (
+            payloads -> delete!(payloads.tokenizer_config, "errors"),
+            "missing `errors` in tokenizer_config.json",
+        ),
+    )
+    for (mutate!, message) in tokenizer_config_root_field_mutations
+        mktempdir() do directory
+            payloads = qwen3_tokenizer_fixture_payloads()
+            mutate!(payloads)
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            failure = try
+                load_hf_qwen3_tokenizer(directory)
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+    end
+
     pipeline_object_field_mutations = (
         (
             payloads -> (
