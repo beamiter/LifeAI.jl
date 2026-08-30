@@ -3,6 +3,7 @@ using JSON3
 using LifeAI
 using LifeAI:
     AgentTool,
+    AgentToolResult,
     OrderedJSONObject,
     Qwen3ToolCall,
     ToolRegistry,
@@ -237,6 +238,93 @@ end
 @testset "Chapter 36 — builtin tool handlers" begin
     registry = default_agent_tools(LIFEAI_REPO_ROOT)
     call(text) = only(parse_qwen3_tool_calls(text).calls)
+
+    output_source = "success"
+    coercion_source = ["a"]
+    direct_success = AgentToolResult(
+        true,
+        SubString(output_source, 1, 7),
+        nothing,
+        coercion_source,
+    )
+    @test direct_success.output == "success"
+    @test direct_success.output isa String
+    @test direct_success.coerced_arguments == ["a"]
+    @test direct_success.coerced_arguments !== coercion_source
+    push!(coercion_source, "late")
+    @test direct_success.coerced_arguments == ["a"]
+
+    error_source = "failed"
+    direct_failure = AgentToolResult(
+        false,
+        "partial output",
+        SubString(error_source, 1, 6),
+        (),
+    )
+    @test !direct_failure.ok
+    @test direct_failure.error == "failed"
+    @test direct_failure.error isa String
+
+    invalid_results = (
+        (
+            (true, "ran", "failure", String[]),
+            "agent tool result success and error state are inconsistent",
+        ),
+        (
+            (false, "", nothing, String[]),
+            "agent tool result success and error state are inconsistent",
+        ),
+        (
+            (1, "", nothing, String[]),
+            "agent tool result ok must be Bool",
+        ),
+        (
+            (true, 1, nothing, String[]),
+            "agent tool result output must be a string",
+        ),
+        (
+            (false, "", 42, String[]),
+            "agent tool result error must be a string or nothing",
+        ),
+        (
+            (true, "", nothing, nothing),
+            "agent tool result coerced_arguments must be iterable",
+        ),
+        (
+            (true, "", nothing, Any["a", 1]),
+            "agent tool result coerced arguments must be strings",
+        ),
+    )
+    for (arguments, message) in invalid_results
+        failure = try
+            AgentToolResult(arguments...)
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
+    end
+
+    retained_coercions = Ref{Vector{String}}()
+    alias_tool = AgentTool(;
+        name="alias_probe",
+        description="Retain the handler coercion buffer.",
+        handler=(_arguments, coerced) -> begin
+            retained_coercions[] = coerced
+            push!(coerced, "during_handler")
+            return "ran"
+        end,
+    )
+    alias_outcome = invoke_agent_tool(
+        ToolRegistry(alias_tool),
+        Qwen3ToolCall("alias_probe", OrderedJSONObject(), "{}"),
+    )
+    @test alias_outcome.ok
+    @test alias_outcome.coerced_arguments == ["during_handler"]
+    @test alias_outcome.coerced_arguments !== retained_coercions[]
+    push!(retained_coercions[], "after_return")
+    @test alias_outcome.coerced_arguments == ["during_handler"]
 
     @test invoke_agent_tool(
         registry,

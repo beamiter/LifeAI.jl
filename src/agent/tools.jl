@@ -225,6 +225,37 @@ struct AgentToolResult
     output::String
     error::Union{Nothing,String}
     coerced_arguments::Vector{String}
+
+    function AgentToolResult(ok, output, error, coerced_arguments)
+        ok isa Bool || throw(ArgumentError(
+            "agent tool result ok must be Bool",
+        ))
+        output isa AbstractString || throw(ArgumentError(
+            "agent tool result output must be a string",
+        ))
+        error === nothing || error isa AbstractString || throw(ArgumentError(
+            "agent tool result error must be a string or nothing",
+        ))
+        ok == (error === nothing) || throw(ArgumentError(
+            "agent tool result success and error state are inconsistent",
+        ))
+        applicable(iterate, coerced_arguments) || throw(ArgumentError(
+            "agent tool result coerced_arguments must be iterable",
+        ))
+        coerced = String[]
+        for argument in coerced_arguments
+            argument isa AbstractString || throw(ArgumentError(
+                "agent tool result coerced arguments must be strings",
+            ))
+            push!(coerced, String(argument))
+        end
+        return new(
+            ok,
+            String(output),
+            error === nothing ? nothing : String(error),
+            coerced,
+        )
+    end
 end
 
 _tool_argument(arguments, name::AbstractString) = get(arguments, Symbol(name), nothing)

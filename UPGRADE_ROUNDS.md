@@ -401,6 +401,8 @@ Chapter 03 reproducible-training test.
      embedding, and vision-language profiles with deterministic diagnostics.
 200. Reject unknown fields in every Qwen ByteLevel pre-tokenizer, post-processor,
      and decoder mirror while preserving profile-specific required-field errors.
+201. Bind Qwen3 tool outcomes to coherent success/error states and snapshot
+     coercion evidence against aliases retained by tool handlers.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
