@@ -351,6 +351,8 @@ Chapter 03 reproducible-training test.
      cannot silently wrap into a plausible but incorrect tool response.
 175. Validate Qwen3 file-tool default byte limits eagerly as strict host integers
      within the same bounded range enforced for model-supplied requests.
+176. Seal SwiGLU construction behind strict positive host dimensions and a literal
+     bias flag while preserving Lux container reconstruction for Qwen models.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

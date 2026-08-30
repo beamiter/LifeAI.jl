@@ -1,5 +1,4 @@
 using Lux
-using ConcreteStructs
 using NNlib: batched_mul, gather, softmax, swish
 using Random: AbstractRNG
 
@@ -42,34 +41,60 @@ y    = W_down * (SiLU(gate) .* up)
 
 `hidden_dim` is the shared width of the gate and up projections.
 """
-@concrete struct SwiGLU <: AbstractLuxContainerLayer{(
+struct SwiGLU{G,U,D} <: AbstractLuxContainerLayer{(
     :gate_proj,
     :up_proj,
     :down_proj,
 )}
-    gate_proj
-    up_proj
-    down_proj
+    gate_proj::G
+    up_proj::U
+    down_proj::D
 
     d_model::Int
     hidden_dim::Int
     use_bias::Bool
+
+    function SwiGLU(
+        gate_proj,
+        up_proj,
+        down_proj,
+        d_model,
+        hidden_dim,
+        use_bias,
+    )
+        resolved_model_dim = _mlp_positive_host_int(d_model, "d_model")
+        resolved_hidden_dim = _mlp_positive_host_int(hidden_dim, "hidden_dim")
+        use_bias isa Bool || throw(ArgumentError("use_bias must be Bool"))
+        return new{
+            typeof(gate_proj),
+            typeof(up_proj),
+            typeof(down_proj),
+        }(
+            gate_proj,
+            up_proj,
+            down_proj,
+            resolved_model_dim,
+            resolved_hidden_dim,
+            use_bias,
+        )
+    end
 end
 
 function SwiGLU(
-    d_model::Int,
-    hidden_dim::Int;
-    use_bias::Bool=false,
+    d_model,
+    hidden_dim;
+    use_bias=false,
 )
-    @assert d_model > 0 "`d_model` must be positive"
-    @assert hidden_dim > 0 "`hidden_dim` must be positive"
+    resolved_model_dim = _mlp_positive_host_int(d_model, "d_model")
+    resolved_hidden_dim = _mlp_positive_host_int(hidden_dim, "hidden_dim")
+    use_bias isa Bool || throw(ArgumentError("use_bias must be Bool"))
 
     return SwiGLU(
-        Dense(d_model, hidden_dim; use_bias),
-        Dense(d_model, hidden_dim; use_bias),
-        Dense(hidden_dim, d_model; use_bias),
-        d_model,
-        hidden_dim,
+        Dense(resolved_model_dim, resolved_hidden_dim; use_bias),
+        Dense(resolved_model_dim, resolved_hidden_dim; use_bias),
+        Dense(resolved_hidden_dim, resolved_model_dim; use_bias),
+        resolved_model_dim,
+        resolved_hidden_dim,
         use_bias,
     )
 end

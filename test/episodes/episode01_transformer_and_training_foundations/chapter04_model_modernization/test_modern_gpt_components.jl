@@ -150,8 +150,42 @@ end
     @test sum(abs, grad_ps.up_proj.weight) > 0
     @test sum(abs, grad_ps.down_proj.weight) > 0
 
-    @test_throws AssertionError SwiGLU(0, 7)
-    @test_throws AssertionError SwiGLU(4, 0)
+    @test_throws ArgumentError SwiGLU(0, 7)
+    @test_throws ArgumentError SwiGLU(4, 0)
+    @test_throws ArgumentError SwiGLU(-1, 7)
+    @test_throws ArgumentError SwiGLU(4, -1)
+    @test_throws ArgumentError SwiGLU(true, 7)
+    @test_throws ArgumentError SwiGLU(4.0, 7)
+    @test_throws ArgumentError SwiGLU(4, 7; use_bias=1)
+    @test_throws ArgumentError SwiGLU(big(typemax(Int)) + 1, 7)
+
+    wide_integer_mlp = SwiGLU(Int32(4), BigInt(7); use_bias=true)
+    @test wide_integer_mlp.d_model === 4
+    @test wide_integer_mlp.hidden_dim === 7
+    @test wide_integer_mlp.use_bias === true
+
+    rebuilt = Lux.fmap(identity, mlp)
+    @test rebuilt isa SwiGLU
+    @test rebuilt.d_model == mlp.d_model
+    @test rebuilt.hidden_dim == mlp.hidden_dim
+    @test rebuilt.use_bias == mlp.use_bias
+
+    @test_throws ArgumentError SwiGLU(
+        mlp.gate_proj,
+        mlp.up_proj,
+        mlp.down_proj,
+        0,
+        7,
+        true,
+    )
+    @test_throws ArgumentError SwiGLU(
+        mlp.gate_proj,
+        mlp.up_proj,
+        mlp.down_proj,
+        4,
+        7,
+        1,
+    )
 
     default_swiglu = GPTModel(13, 16, 2, 1; mlp_type=:swiglu)
     explicit_swiglu = GPTModel(
