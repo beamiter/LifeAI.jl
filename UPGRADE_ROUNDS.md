@@ -299,6 +299,8 @@ Chapter 03 reproducible-training test.
      preserving exhaustive host nibble semantics and compiled row slicing.
 149. Reject contradictory or unrepresentable Qwen3-VL processor pixel budgets
      before resize arithmetic can overflow or produce an impossible geometry.
+150. Widen Qwen3-VL resize rounding for host-limit dimensions and verify every
+     returned geometry exactly satisfies its factor and closed pixel budget.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -143,6 +143,51 @@ end
         min_pixels=1,
         max_pixels=1_000_000,
     ) == (64, 128)
+    @test qwen3_vl_smart_resize(
+        typemax(Int),
+        typemax(Int);
+        factor=1,
+        min_pixels=1,
+        max_pixels=1_000,
+    ) == (31, 31)
+    @test qwen3_vl_smart_resize(
+        typemax(Int),
+        typemax(Int);
+        factor=2,
+        min_pixels=1,
+        max_pixels=1_000,
+    ) == (30, 30)
+    @test qwen3_vl_smart_resize(typemax(Int), typemax(Int)) == (4_096, 4_096)
+
+    impossible_factor = _ch43_processor_error() do
+        qwen3_vl_smart_resize(
+            1,
+            1;
+            factor=32,
+            min_pixels=1,
+            max_pixels=1_000,
+        )
+    end
+    @test impossible_factor isa ArgumentError
+    @test sprint(showerror, impossible_factor) ==
+        "ArgumentError: max_pixels must be at least factor squared (1024)"
+    for (dimensions, produced) in (
+        ((1, 1), "64 × 64 = 4096"),
+        ((1_000, 1_000), "32 × 32 = 1024"),
+    )
+        failure = _ch43_processor_error() do
+            qwen3_vl_smart_resize(
+                dimensions...;
+                factor=32,
+                min_pixels=2_048,
+                max_pixels=2_048,
+            )
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: resize policy cannot satisfy pixel budget " *
+            "[2048, 2048] at factor 32; produced $produced pixels"
+    end
 
     @test qwen3_vl_image_grid(256, 256) == (1, 16, 16)
     @test qwen3_vl_image_grid((100, 200)) == (1, 12, 24)

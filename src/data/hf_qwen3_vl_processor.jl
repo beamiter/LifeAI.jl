@@ -418,6 +418,11 @@ function qwen3_vl_smart_resize(
     min_pixels_int <= max_pixels_int || throw(ArgumentError(
         "min_pixels must not exceed max_pixels",
     ))
+    minimum_resized_pixels = Base.widemul(factor_int, factor_int)
+    minimum_resized_pixels <= max_pixels_int || throw(ArgumentError(
+        "max_pixels must be at least factor squared " *
+        "($minimum_resized_pixels)",
+    ))
 
     longer = max(height_int, width_int)
     shorter = min(height_int, width_int)
@@ -427,30 +432,25 @@ function qwen3_vl_smart_resize(
     ))
 
     # `RoundNearest` is Julia's ties-to-even rounding mode, matching Python's
-    # integer `round` used by the reference processor.
+    # integer `round` used by the reference processor. A widened host integer
+    # carries a rounded typemax(Int) dimension until the budget branch shrinks
+    # it back into a provably representable output.
+    wide_type = widen(Int)
     height_quanta = round(
-        Int,
+        wide_type,
         Float64(height_int) / Float64(factor_int),
         RoundNearest,
     )
     width_quanta = round(
-        Int,
+        wide_type,
         Float64(width_int) / Float64(factor_int),
         RoundNearest,
     )
-    resized_height = _qwen3_vl_checked_mul(
-        height_quanta,
-        factor_int,
-        "resized height",
-    )
-    resized_width = _qwen3_vl_checked_mul(
-        width_quanta,
-        factor_int,
-        "resized width",
-    )
+    rounded_height = height_quanta * factor_int
+    rounded_width = width_quanta * factor_int
 
-    rounded_pixels = widemul(resized_height, resized_width)
-    original_pixels = Float64(height_int) * Float64(width_int)
+    rounded_pixels = rounded_height * rounded_width
+    original_pixels = Float64(Base.widemul(height_int, width_int))
     if rounded_pixels > max_pixels_int
         beta = sqrt(original_pixels / Float64(max_pixels_int))
         height_quanta = floor(
@@ -489,10 +489,19 @@ function qwen3_vl_smart_resize(
             factor_int,
             "resized width",
         )
+    else
+        resized_height = Int(rounded_height)
+        resized_width = Int(rounded_width)
     end
 
     (resized_height > 0 && resized_width > 0) || throw(ArgumentError(
         "resize policy produced a non-positive dimension",
+    ))
+    final_pixels = Base.widemul(resized_height, resized_width)
+    min_pixels_int <= final_pixels <= max_pixels_int || throw(ArgumentError(
+        "resize policy cannot satisfy pixel budget " *
+        "[$min_pixels_int, $max_pixels_int] at factor $factor_int; " *
+        "produced $resized_height × $resized_width = $final_pixels pixels",
     ))
     return resized_height, resized_width
 end
