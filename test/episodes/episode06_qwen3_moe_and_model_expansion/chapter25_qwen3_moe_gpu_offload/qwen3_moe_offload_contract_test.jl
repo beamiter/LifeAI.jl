@@ -27,6 +27,17 @@ function _qwen3_offload_captured_error(thunk)
     error("expected Qwen3 MoE offload call to fail")
 end
 
+function _qwen3_offload_session_state(session)
+    return (;
+        position=session.position,
+        kv_cache=Tuple(
+            (keys=copy(layer.keys), values=copy(layer.values))
+            for layer in session.caches
+        ),
+        expert_cache=qwen3_moe_expert_cache_stats(session),
+    )
+end
+
 @testset "Qwen3 MoE session options fail before checkpoint I/O" begin
     mktempdir() do directory
         too_large = big(typemax(Int)) + 1
@@ -266,7 +277,7 @@ end
 
     overflow_width = isqrt(typemax(Int)) + 1
     isodd(overflow_width) && (overflow_width += 1)
-    overflow_model = GPTModel(
+    @test_throws ArgumentError GPTModel(
         1,
         overflow_width,
         overflow_width ÷ 2,
@@ -285,7 +296,6 @@ end
         num_experts=2,
         experts_per_token=1,
     )
-    @test_throws ArgumentError qwen3_moe_offload_plan(overflow_model, 1)
     @test_throws ArgumentError qwen3_moe_offload_plan(
         model,
         1;
@@ -304,7 +314,7 @@ end
         prefill_chunk_tokens=1,
         grouped_experts=false,
     )
-    prefill = prefill_hf_qwen3_moe_offload!(session, [2, 3])
+    prefill = prefill_hf_qwen3_moe_offload!(session, Int128[2, 3])
     @test prefill.position == 2
     @test length(prefill.chunks) == 2
     @test size(prefill.logits) == (17, 1, 1)
@@ -312,10 +322,40 @@ end
         prefill.expert_bytes_read
     @test all(length(chunk.active_experts) == 2 for chunk in prefill.chunks)
 
-    decode = decode_hf_qwen3_moe_offload!(session, 4)
+    decode = decode_hf_qwen3_moe_offload!(session, big(4))
     @test decode.position == 3
     @test size(decode.logits) == (17, 1, 1)
     @test decode.expert_bytes_read > 0
+
+    preserved = _qwen3_offload_session_state(session)
+    too_large = big(typemax(Int)) + 1
+    for invalid_prompt in (
+        Bool[true],
+        Float64[2.0],
+        Char[Char(2)],
+        BigInt[too_large],
+    )
+        failure = _qwen3_offload_captured_error() do
+            prefill_hf_qwen3_moe_offload!(session, invalid_prompt)
+        end
+        @test failure isa ArgumentError
+        @test occursin(
+            "Qwen3 MoE offload prompt token",
+            sprint(showerror, failure),
+        )
+        @test _qwen3_offload_session_state(session) == preserved
+    end
+    for invalid_token in (true, 4.0, Char(4), too_large)
+        failure = _qwen3_offload_captured_error() do
+            decode_hf_qwen3_moe_offload!(session, invalid_token)
+        end
+        @test failure isa ArgumentError
+        @test occursin(
+            "Qwen3 MoE offload decode token",
+            sprint(showerror, failure),
+        )
+        @test _qwen3_offload_session_state(session) == preserved
+    end
     @test reset_hf_qwen3_moe_offload_session!(session).position == 0
 end
 

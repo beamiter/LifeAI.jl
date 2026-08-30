@@ -62,6 +62,9 @@ Qwen3-30B-A3B session，而不把 61 GB BF16 权重树假装成能常驻 24 GB �
 - **session 选项先于 checkpoint 工作**：window、cache/GC/reader 数值、四类
   策略枚举及相互依赖在读取 config、构造 RoPE 或加载 resident tensors 前
   完成校验；无效启动参数不会触发高成本 I/O 或内存分配。
+- **token 输入不隐式窄化**：prefill/decode 拒绝 Boolean、浮点、字符与
+  超宿主范围整数，合法 `Int128`/`BigInt` 统一转为 `Int`；失败不会
+  reset position、专家 cache 或请求 I/O 计数。
 - **路由编号必须重映射**：磁盘上的 global expert id 不能直接索引只包含
   active experts 的局部三维参数张量；session 在宿主读取极小的 top-k route
   table，排序 active ids 后构造 local ids，再把小表传回设备。
@@ -118,7 +121,7 @@ Qwen3-30B-A3B session，而不把 61 GB BF16 权重树假装成能常驻 24 GB �
 - **验证证据**：40K cache 实际分配；真实 2-token prompt/decode argmax 与
   Transformers 一致；32-token grouped steady 相对 scalar 为
   `1.092× / 1.335×`；默认全套 `5,989 / 5,989`、Chapter 25 contract
-  `41 / 41`、CUDA 专项 `38 / 38`。
+  `170 / 170`、CUDA 专项 `38 / 38`。
 - **没有完成及原因**：没有填满 40K window，也没有验证长序列生成质量；当前
   逐请求仍重复读取/upload active experts，I/O 是主要延迟，不属于本章最小
   session 闭环。

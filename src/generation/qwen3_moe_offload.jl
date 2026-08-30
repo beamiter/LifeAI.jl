@@ -1790,7 +1790,10 @@ function prefill_hf_qwen3_moe_offload!(
     session::HFQwen3MoEOffloadSession,
     prompt_tokens,
 )
-    tokens = Int.(vec(collect(prompt_tokens)))
+    tokens = vec(_strict_host_int_array(
+        prompt_tokens,
+        "Qwen3 MoE offload prompt token",
+    ))
     isempty(tokens) && throw(ArgumentError("prompt must contain at least one token"))
     _validate_generation_ids(tokens, session.model.vocab_size)
     length(tokens) <= session.context_tokens || throw(ArgumentError(
@@ -1850,7 +1853,11 @@ function decode_hf_qwen3_moe_offload!(
     session.position > 0 || throw(ArgumentError(
         "prefill must run before Qwen3 MoE offload decode",
     ))
-    values = Int.(vec(collect(token isa Integer ? [token] : token)))
+    raw_values = token isa Union{Number,AbstractChar} ? [token] : token
+    values = vec(_strict_host_int_array(
+        raw_values,
+        "Qwen3 MoE offload decode token",
+    ))
     length(values) == 1 || throw(ArgumentError(
         "Qwen3 MoE offload decode requires exactly one token",
     ))
