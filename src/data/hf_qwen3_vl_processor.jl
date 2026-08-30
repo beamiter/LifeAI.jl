@@ -1158,6 +1158,29 @@ function _qwen3_vl_append_text_positions!(
     return columns
 end
 
+function _qwen3_vl_visual_span(
+    grid_t::Int,
+    merged_h::Int,
+    merged_w::Int,
+    image_start::Int,
+    prompt_length::Int,
+)
+    grid_t > 0 && merged_h > 0 && merged_w > 0 || throw(ArgumentError(
+        "Qwen3-VL image grid dimensions must be positive",
+    ))
+    1 <= image_start <= prompt_length || throw(ArgumentError(
+        "Qwen3-VL image placeholder start is outside the prompt",
+    ))
+    visual_exact = BigInt(grid_t) * BigInt(merged_h) * BigInt(merged_w)
+    available = prompt_length - image_start + 1
+    visual_exact <= available || throw(ArgumentError(
+        "Qwen3-VL image placeholder run exceeds the prompt",
+    ))
+    visual_length = Int(visual_exact)
+    last_visual = (image_start - 1) + visual_length
+    return (; visual_length, last_visual)
+end
+
 """
     qwen3_vl_rope_layout(input_ids, image_grid_thw; attention_mask=nothing)
 
@@ -1233,6 +1256,7 @@ function qwen3_vl_rope_layout(
         end
 
         columns = NTuple{3,Int}[]
+        sizehint!(columns, length(filtered))
         cursor = 1
         for image_start in image_starts
             grid_index += 1
@@ -1249,10 +1273,30 @@ function qwen3_vl_rope_layout(
                 ))
             merged_h = grid_h ÷ merge_size
             merged_w = grid_w ÷ merge_size
-            visual_length = grid_t * merged_h * merged_w
             image_start >= cursor || throw(ArgumentError(
                 "Qwen3-VL image placeholders overlap",
             ))
+            span = _qwen3_vl_visual_span(
+                grid_t,
+                merged_h,
+                merged_w,
+                image_start,
+                length(filtered),
+            )
+            visual_length = span.visual_length
+            last_visual = span.last_visual
+            all(==(image_token), view(filtered, image_start:last_visual)) ||
+                throw(ArgumentError(
+                    "Qwen3-VL image placeholder run is not contiguous or " *
+                    "has the wrong length",
+                ))
+            last_visual < length(filtered) || throw(ArgumentError(
+                "Qwen3-VL image placeholder run must be followed by vision_end",
+            ))
+            filtered[last_visual + 1] == vision_end || throw(ArgumentError(
+                "Qwen3-VL image placeholder run must be followed by vision_end",
+            ))
+
             text_length = image_start - cursor
             base = isempty(columns) ? 0 : maximum(maximum, columns) + 1
             _qwen3_vl_append_text_positions!(columns, text_length, base)
@@ -1265,20 +1309,6 @@ function qwen3_vl_rope_layout(
                     visual_base + width,
                 ))
             end
-            last_visual = image_start + visual_length - 1
-            last_visual <= length(filtered) || throw(ArgumentError(
-                "Qwen3-VL image placeholder run exceeds the prompt",
-            ))
-            all(==(image_token), filtered[image_start:last_visual]) ||
-                throw(ArgumentError(
-                    "Qwen3-VL image placeholder run is not contiguous or has the wrong length",
-                ))
-            last_visual < length(filtered) || throw(ArgumentError(
-                "Qwen3-VL image placeholder run must be followed by vision_end",
-            ))
-            filtered[last_visual + 1] == vision_end || throw(ArgumentError(
-                "Qwen3-VL image placeholder run must be followed by vision_end",
-            ))
             for filtered_index in image_start:last_visual
                 visual_mask[valid_positions[filtered_index], batch] = true
             end

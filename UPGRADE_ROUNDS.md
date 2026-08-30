@@ -205,6 +205,8 @@ Chapter 03 reproducible-training test.
      or model/RoPE construction, rejecting host-range overflow.
 102. Route matrix-form Qwen3-VL image grids through the strict positive host
      integer contract used by tuple/vector grids.
+103. Preflight Qwen3-VL visual spans with exact products and prompt bounds
+     before generating coordinate tuples or mutating visual masks.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

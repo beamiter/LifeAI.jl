@@ -1,5 +1,6 @@
 using SHA: sha256
 using Test
+import LifeAI
 using LifeAI: apply_qwen3_vl_chat_template,
     qwen3_vl_checkpoint_spec,
     qwen3_vl_expand_image_placeholders,
@@ -158,6 +159,45 @@ end
         @test grid_error isa Exception &&
             occursin("image grid", sprint(showerror, grid_error))
     end
+
+    @test LifeAI._qwen3_vl_visual_span(1, 2, 2, 3, 8) == (;
+        visual_length=4,
+        last_visual=6,
+    )
+    large_even = typemax(Int) - 1
+    for merged_dimensions in (
+        (large_even ÷ 2, 4),
+        (large_even ÷ 2, 1),
+    )
+        span_error = try
+            LifeAI._qwen3_vl_visual_span(
+                1,
+                merged_dimensions[1],
+                merged_dimensions[2],
+                3,
+                5,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test span_error isa ArgumentError
+        @test span_error isa Exception && occursin(
+            "image placeholder run exceeds the prompt",
+            sprint(showerror, span_error),
+        )
+    end
+    oversized_grid_error = try
+        qwen3_vl_rope_layout(tokens, reshape(Int[1, 6, 6], 3, 1))
+        nothing
+    catch caught
+        caught
+    end
+    @test oversized_grid_error isa ArgumentError
+    @test oversized_grid_error isa Exception && occursin(
+        "image placeholder run exceeds the prompt",
+        sprint(showerror, oversized_grid_error),
+    )
 
     missing_end = vcat(Int[11, vision_start], fill(image_token, 4), Int[12])
     extra_pad = vcat(
