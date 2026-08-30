@@ -395,6 +395,8 @@ Chapter 03 reproducible-training test.
      same-shape, same-dtype, same-device, and distinct zero-copy storage.
 197. Bind Qwen3-VL static cache layer tuples to one shared geometry, dtype, and
      device while rejecting cross-layer storage reuse at construct and use time.
+198. Bind Qwen3 tool-call values to non-empty names and snapshotted ordered JSON
+     arguments so direct construction cannot bypass parser fail-closed behavior.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

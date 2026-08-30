@@ -126,8 +126,28 @@ end
 """One `<tool_call>` block recovered from generated text."""
 struct Qwen3ToolCall
     name::String
-    arguments::Any
+    arguments::OrderedJSONObject
     raw::String
+
+    function Qwen3ToolCall(name, arguments, raw)
+        name isa AbstractString || throw(ArgumentError(
+            "Qwen3 tool call name must be a string",
+        ))
+        isempty(name) && throw(ArgumentError(
+            "Qwen3 tool call name must not be empty",
+        ))
+        arguments isa OrderedJSONObject || throw(ArgumentError(
+            "Qwen3 tool call arguments must be an OrderedJSONObject",
+        ))
+        raw isa AbstractString || throw(ArgumentError(
+            "Qwen3 tool call raw payload must be a string",
+        ))
+        return new(
+            String(name),
+            OrderedJSONObject(collect(pairs(arguments))),
+            String(raw),
+        )
+    end
 end
 
 """Result of scanning generated text for `<tool_call>` blocks."""

@@ -3,6 +3,8 @@ using JSON3
 using LifeAI
 using LifeAI:
     AgentTool,
+    OrderedJSONObject,
+    Qwen3ToolCall,
     ToolRegistry,
     agent_tool_call_validity,
     default_agent_tools,
@@ -99,6 +101,68 @@ end
 
 @testset "Chapter 36 — tool call parsing" begin
     registry = default_agent_tools(LIFEAI_REPO_ROOT)
+
+    name_source = "direct"
+    raw_source = "{\"name\":\"direct\",\"arguments\":{\"a\":1}}"
+    arguments = OrderedJSONObject(["a" => 1])
+    direct = Qwen3ToolCall(
+        SubString(name_source, 1, 6),
+        arguments,
+        SubString(raw_source, 1, lastindex(raw_source)),
+    )
+    @test direct.name == "direct"
+    @test direct.name isa String
+    @test direct.raw == raw_source
+    @test direct.raw isa String
+    @test direct.arguments !== arguments
+    @test direct.arguments.entries !== arguments.entries
+    arguments.entries[1] = "a" => 99
+    @test direct.arguments["a"] == 1
+
+    invalid_direct_calls = (
+        (
+            ("", OrderedJSONObject(), "{}"),
+            "Qwen3 tool call name must not be empty",
+        ),
+        (
+            (42, OrderedJSONObject(), "{}"),
+            "Qwen3 tool call name must be a string",
+        ),
+        (
+            ("add_integers", nothing, "forged"),
+            "Qwen3 tool call arguments must be an OrderedJSONObject",
+        ),
+        (
+            ("ping", 42, "forged"),
+            "Qwen3 tool call arguments must be an OrderedJSONObject",
+        ),
+        (
+            ("ping", Any[], "forged"),
+            "Qwen3 tool call arguments must be an OrderedJSONObject",
+        ),
+        (
+            ("ping", "{}", "forged"),
+            "Qwen3 tool call arguments must be an OrderedJSONObject",
+        ),
+        (
+            ("ping", (;), "forged"),
+            "Qwen3 tool call arguments must be an OrderedJSONObject",
+        ),
+        (
+            ("ping", OrderedJSONObject(), 42),
+            "Qwen3 tool call raw payload must be a string",
+        ),
+    )
+    for (arguments, message) in invalid_direct_calls
+        failure = try
+            Qwen3ToolCall(arguments...)
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
+    end
 
     parsed = parse_qwen3_tool_calls(
         "Let me check.\n<tool_call>\n{\"name\": \"add_integers\", \"arguments\": {\"a\": 1, \"b\": 2}}\n</tool_call>",
