@@ -62,6 +62,33 @@ end
     )
     @test normalized == padded
 
+    small = plan_qwen3_xla_window(
+        1,
+        1;
+        context_tokens=4,
+        chunk_tokens=2,
+    )
+    wide_prompt = qwen3_xla_pad_prompt(
+        Int128[2],
+        small;
+        pad_token_id=big(3),
+    )
+    @test wide_prompt == [3, 2]
+    @test eltype(wide_prompt) === Int
+    too_large = big(typemax(Int)) + 1
+    @test_throws ArgumentError qwen3_xla_pad_prompt(Bool[true], small)
+    @test_throws ArgumentError qwen3_xla_pad_prompt(
+        [2],
+        small;
+        pad_token_id=true,
+    )
+    @test_throws ArgumentError qwen3_xla_pad_prompt(BigInt[too_large], small)
+    @test_throws ArgumentError qwen3_xla_pad_prompt(
+        [2],
+        small;
+        pad_token_id=too_large,
+    )
+
     boolean_cases = (
         (
             label="prompt_tokens",
@@ -109,7 +136,6 @@ end
         )
     end
 
-    too_large = big(typemax(Int)) + 1
     @test_throws ArgumentError plan_qwen3_xla_window(too_large, 1)
     @test_throws ArgumentError plan_qwen3_xla_window(1, too_large)
     @test_throws ArgumentError plan_qwen3_xla_window(
@@ -536,6 +562,22 @@ end
         7,
         nothing,
     )
+
+    too_large = big(typemax(Int)) + 1
+    for invalid_prompt in (Bool[true, true], BigInt[2, too_large])
+        failure = _qwen3_xla_captured_error() do
+            generate_hf_qwen3_bf16_xla!(
+                session,
+                invalid_prompt;
+                max_new_tokens=1,
+                stop_token_ids=Int[],
+            )
+        end
+        @test failure isa ArgumentError
+        @test session.position == 7
+        @test !prefill_reached[]
+        @test !decode_reached[]
+    end
 
     @test_throws ArgumentError generate_hf_qwen3_bf16_xla!(
         session,

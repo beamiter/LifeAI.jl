@@ -86,11 +86,14 @@ function qwen3_xla_pad_prompt(
     plan::Qwen3XLAWindowPlan;
     pad_token_id::Integer=1,
 )
-    prompt = Int.(vec(collect(prompt_tokens)))
+    prompt = vec(_strict_host_int_array(
+        prompt_tokens,
+        "Qwen3 XLA prompt token",
+    ))
     length(prompt) == plan.prompt_tokens || throw(ArgumentError(
         "prompt token count does not match the XLA window plan",
     ))
-    pad = Int(pad_token_id)
+    pad = _strict_host_int(pad_token_id, "pad_token_id")
     pad > 0 || throw(ArgumentError("pad_token_id must be positive"))
     return vcat(fill(pad, plan.left_padding_tokens), prompt)
 end
@@ -506,7 +509,10 @@ function generate_hf_qwen3_bf16_xla!(
     on_token=nothing,
     sample_uniforms=nothing,
 )
-    prompt_ids = Int.(vec(collect(prompt_tokens)))
+    prompt_ids = vec(_strict_host_int_array(
+        prompt_tokens,
+        "Qwen3 XLA prompt token",
+    ))
     _validate_generation_ids(prompt_ids, session.model.vocab_size)
     plan = plan_qwen3_xla_window(
         length(prompt_ids),
