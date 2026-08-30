@@ -23,6 +23,18 @@ small, one-based host metadata even when `pixel_values` resides on a device.
 struct Qwen3VLVisionInput{P,G}
     pixel_values::P
     grid_thw::G
+
+    function Qwen3VLVisionInput(
+        pixel_values::AbstractMatrix,
+        grid_thw::AbstractMatrix;
+        spec::Qwen3VLVisionSpec=qwen3_vl_checkpoint_spec().vision,
+    )
+        _validate_qwen3_vl_vision_input(pixel_values, grid_thw, spec)
+        return new{typeof(pixel_values),typeof(grid_thw)}(
+            pixel_values,
+            grid_thw,
+        )
+    end
 end
 
 """
@@ -39,11 +51,24 @@ struct Qwen3VLVisionFeatures{H,V,D,C}
     checkpoints::C
 end
 
-function Qwen3VLVisionInput(
-    pixel_values::AbstractMatrix,
-    grid_thw::AbstractMatrix{<:Integer};
-    spec::Qwen3VLVisionSpec=qwen3_vl_checkpoint_spec().vision,
-)
+function _qwen3_vl_dimension_product(label::AbstractString, dimensions::Int...)
+    product = big(1)
+    for dimension in dimensions
+        product *= dimension
+        product <= typemax(Int) || throw(ArgumentError(
+            "$label exceeds the host integer range",
+        ))
+    end
+    return Int(product)
+end
+
+function _validate_qwen3_vl_vision_input(pixel_values, grid_thw, spec)
+    pixel_values isa AbstractMatrix || throw(ArgumentError(
+        "Qwen3-VL pixel_values must be a matrix",
+    ))
+    grid_thw isa AbstractMatrix || throw(ArgumentError(
+        "Qwen3-VL grid_thw must be a matrix",
+    ))
     all(
         dimension -> axes(pixel_values, dimension) ==
             Base.OneTo(size(pixel_values, dimension)),
@@ -51,6 +76,10 @@ function Qwen3VLVisionInput(
     ) || throw(ArgumentError(
         "Qwen3-VL pixel_values must use one-based axes",
     ))
+    eltype(grid_thw) <: Integer && !(eltype(grid_thw) <: Bool) ||
+        throw(ArgumentError(
+            "Qwen3-VL grid_thw must contain non-Boolean integers",
+        ))
     grid_thw isa StridedMatrix || throw(ArgumentError(
         "Qwen3-VL grid_thw must be a host-resident StridedMatrix",
     ))
@@ -61,8 +90,13 @@ function Qwen3VLVisionInput(
     ) || throw(ArgumentError(
         "Qwen3-VL grid_thw must use one-based axes",
     ))
-    expected_width = spec.in_channels * spec.temporal_patch_size *
-        spec.patch_size * spec.patch_size
+    expected_width = _qwen3_vl_dimension_product(
+        "Qwen3-VL patch width",
+        spec.in_channels,
+        spec.temporal_patch_size,
+        spec.patch_size,
+        spec.patch_size,
+    )
     size(pixel_values, 1) == expected_width || throw(DimensionMismatch(
         "Qwen3-VL pixel_values first dimension must be $expected_width; " *
         "got $(size(pixel_values, 1))",
@@ -79,9 +113,18 @@ function Qwen3VLVisionInput(
 
     total_patches = 0
     for media in axes(grid_thw, 2)
-        t = Int(grid_thw[1, media])
-        h = Int(grid_thw[2, media])
-        w = Int(grid_thw[3, media])
+        t = _strict_host_int(
+            grid_thw[1, media],
+            "Qwen3-VL grid temporal dimension",
+        )
+        h = _strict_host_int(
+            grid_thw[2, media],
+            "Qwen3-VL grid height",
+        )
+        w = _strict_host_int(
+            grid_thw[3, media],
+            "Qwen3-VL grid width",
+        )
         t > 0 && h > 0 && w > 0 || throw(ArgumentError(
             "every Qwen3-VL grid dimension must be positive",
         ))
@@ -93,10 +136,16 @@ function Qwen3VLVisionInput(
             "Qwen3-VL grid width $w is not divisible by spatial merge " *
             "size $(spec.spatial_merge_size)",
         ))
-        total_patches = Base.Checked.checked_add(
-            total_patches,
-            Base.Checked.checked_mul(t, Base.Checked.checked_mul(h, w)),
+        patch_count = _qwen3_vl_dimension_product(
+            "Qwen3-VL patch count for media $media",
+            t,
+            h,
+            w,
         )
+        patch_count <= typemax(Int) - total_patches || throw(ArgumentError(
+            "total Qwen3-VL patch count exceeds the host integer range",
+        ))
+        total_patches += patch_count
     end
     total_patches == size(pixel_values, 2) || throw(DimensionMismatch(
         "sum(t*h*w) in Qwen3-VL grid_thw is $total_patches, but " *
@@ -105,10 +154,7 @@ function Qwen3VLVisionInput(
     all(isfinite, pixel_values) || throw(ArgumentError(
         "Qwen3-VL pixel_values must be finite",
     ))
-    return Qwen3VLVisionInput{typeof(pixel_values),typeof(grid_thw)}(
-        pixel_values,
-        grid_thw,
-    )
+    return nothing
 end
 
 _qwen3_vl_f32(x) = 1.0f0 .* x

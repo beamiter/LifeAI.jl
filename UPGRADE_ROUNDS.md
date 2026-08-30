@@ -289,6 +289,8 @@ Chapter 03 reproducible-training test.
      disguising `InterruptException` as malformed input.
 144. Contextualize Qwen3 asset size and hashing I/O failures as argument errors
      while preserving cancellation through both operations.
+145. Seal Qwen3-VL vision-input construction behind strict grid metadata and
+     host-safe patch-dimension arithmetic that cannot wrap or leak exceptions.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

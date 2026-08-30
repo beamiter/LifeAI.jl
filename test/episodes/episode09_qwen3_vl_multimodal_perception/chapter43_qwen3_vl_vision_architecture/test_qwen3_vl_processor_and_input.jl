@@ -1,6 +1,7 @@
 using Test
 using LifeAI: Qwen3VLProcessorSpec,
     Qwen3VLVisionInput,
+    Qwen3VLVisionSpec,
     qwen3_vl_image_grid,
     qwen3_vl_image_token_count,
     qwen3_vl_patchify,
@@ -218,6 +219,61 @@ end
     input = Qwen3VLVisionInput(pixels, grid)
     @test input.pixel_values === pixels
     @test input.grid_thw === grid
+    narrow_grid = reshape(Int32[1, 2, 2], 3, 1)
+    @test Qwen3VLVisionInput(pixels, narrow_grid).grid_thw === narrow_grid
+
+    float_grid = Float64.(grid)
+    float_grid_error = _ch43_processor_error() do
+        Qwen3VLVisionInput(pixels, float_grid)
+    end
+    @test float_grid_error isa ArgumentError
+    @test sprint(showerror, float_grid_error) ==
+        "ArgumentError: Qwen3-VL grid_thw must contain non-Boolean integers"
+    bool_grid_error = _ch43_processor_error() do
+        Qwen3VLVisionInput(pixels, trues(3, 1))
+    end
+    @test bool_grid_error isa ArgumentError
+    @test sprint(showerror, bool_grid_error) ==
+        "ArgumentError: Qwen3-VL grid_thw must contain non-Boolean integers"
+    @test_throws MethodError Qwen3VLVisionInput{
+        typeof(pixels),
+        typeof(float_grid),
+    }(pixels, float_grid)
+
+    too_large = big(typemax(Int)) + 1
+    @test_throws ArgumentError Qwen3VLVisionInput(
+        pixels,
+        reshape(BigInt[1, 2, too_large], 3, 1),
+    )
+    @test_throws ArgumentError Qwen3VLVisionInput(
+        pixels,
+        reshape(Int[typemax(Int), 2, 2], 3, 1),
+    )
+    nearly_full = typemax(Int) ÷ 4
+    @test_throws ArgumentError Qwen3VLVisionInput(
+        zeros(Float32, 1_536, 8),
+        Int[nearly_full 1; 2 2; 2 2],
+    )
+
+    overflowing_width_spec = Qwen3VLVisionSpec(
+        1,
+        4,
+        8,
+        1,
+        Int(1) << 62,
+        1,
+        4,
+        1,
+        4,
+        4,
+        (0, 0, 0),
+        "gelu",
+    )
+    @test_throws ArgumentError Qwen3VLVisionInput(
+        zeros(Float32, 0, 1),
+        reshape(Int[1, 1, 1], 3, 1);
+        spec=overflowing_width_spec,
+    )
 
     @test_throws DimensionMismatch Qwen3VLVisionInput(
         zeros(Float32, 1_535, 4),
