@@ -130,6 +130,35 @@ end
         Bool[false, false, true, true, true, true, false, false]
     @test all(layout.attention_mask)
 
+    wide_layout = qwen3_vl_rope_layout(
+        tokens,
+        reshape(BigInt[1, 4, 4], 3, 1),
+    )
+    @test wide_layout.position_ids == layout.position_ids
+    @test wide_layout.rope_deltas == layout.rope_deltas
+    @test wide_layout.visual_mask == layout.visual_mask
+    @test wide_layout.attention_mask == layout.attention_mask
+
+    overflow_integer = big(typemax(Int)) + 1
+    invalid_matrix_grids = (
+        reshape(Any[true, 4, 4], 3, 1),
+        reshape(Float64[1, 4, 4], 3, 1),
+        reshape(BigInt[1, 4, overflow_integer], 3, 1),
+        reshape(Int[1, 0, 4], 3, 1),
+        reshape(Int[1, -4, 4], 3, 1),
+    )
+    for invalid_grid in invalid_matrix_grids
+        grid_error = try
+            qwen3_vl_rope_layout(tokens, invalid_grid)
+            nothing
+        catch caught
+            caught
+        end
+        @test grid_error isa ArgumentError
+        @test grid_error isa Exception &&
+            occursin("image grid", sprint(showerror, grid_error))
+    end
+
     missing_end = vcat(Int[11, vision_start], fill(image_token, 4), Int[12])
     extra_pad = vcat(
         Int[11, vision_start],

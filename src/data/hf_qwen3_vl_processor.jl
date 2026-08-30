@@ -1074,7 +1074,10 @@ function _qwen3_vl_grid_columns(grids)
         size(grids, 1) == 3 || throw(DimensionMismatch(
             "Qwen3-VL image grids must have shape (3, image_count)",
         ))
-        return [Tuple(Int.(grids[:, index])) for index in axes(grids, 2)]
+        return [
+            _qwen3_vl_image_grid_tuple(collect(grids[:, index])) for
+            index in axes(grids, 2)
+        ]
     end
     return [_qwen3_vl_image_grid_tuple(grid) for grid in grids]
 end

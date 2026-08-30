@@ -203,6 +203,8 @@ Chapter 03 reproducible-training test.
      input work, with strict host integers and checked context subtraction.
 101. Compute Qwen3 MoE BF16 checkpoint bytes exactly before configuration I/O
      or model/RoPE construction, rejecting host-range overflow.
+102. Route matrix-form Qwen3-VL image grids through the strict positive host
+     integer contract used by tuple/vector grids.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
