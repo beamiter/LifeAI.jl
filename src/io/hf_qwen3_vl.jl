@@ -158,6 +158,10 @@ struct Qwen3VLVisionSpec
                 BigInt(resolved_spatial_merge_size)^2,
             "$prefix merged width",
         )
+        _qwen3_parameter_count_int(
+            3 * BigInt(resolved_hidden_size),
+            "$prefix QKV width",
+        )
         return new(
             _qwen3_spec_nonnegative_int(depth, "$prefix depth"),
             resolved_hidden_size,

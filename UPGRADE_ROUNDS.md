@@ -363,6 +363,8 @@ Chapter 03 reproducible-training test.
      raw Qwen construction cannot diverge cache and weight-loading layer sets.
 181. Preflight Qwen3-VL spatial-merge derived widths with exact arithmetic so
      enormous merge factors cannot wrap into plausible vision dimensions.
+182. Preflight Qwen3-VL fused QKV widths with exact arithmetic before tensor-shape
+     construction so individually valid hidden sizes cannot overflow tripling.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

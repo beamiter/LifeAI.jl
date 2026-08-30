@@ -279,6 +279,19 @@ end
     @test merged_width_failure isa ArgumentError
     @test sprint(showerror, merged_width_failure) ==
         "ArgumentError: Qwen3-VL vision merged width exceeds the host integer range"
+
+    qkv_width_values = Base.setindex(valid, 1, 8)
+    qkv_width_values = Base.setindex(
+        qkv_width_values,
+        typemax(Int) ÷ 3 + 1,
+        2,
+    )
+    qkv_width_failure = _ch43_captured_error() do
+        Qwen3VLVisionSpec(qkv_width_values...)
+    end
+    @test qkv_width_failure isa ArgumentError
+    @test sprint(showerror, qkv_width_failure) ==
+        "ArgumentError: Qwen3-VL vision QKV width exceeds the host integer range"
 end
 
 @testset "Qwen3-VL checkpoint specifications are strict" begin
@@ -456,8 +469,8 @@ end
 
     vision_overflow = Qwen3VLVisionSpec(
         1,
-        typemax(Int),
         1,
+        typemax(Int),
         1,
         1,
         1,
