@@ -1353,6 +1353,30 @@ function qwen3_vl_expand_image_placeholders(
     return String(take!(output))
 end
 
+function _validate_qwen3_vl_rope_visual_mask_structure(visual_mask)
+    visual_mask isa AbstractArray || throw(ArgumentError(
+        "Qwen3-VL visual_mask must be an array",
+    ))
+    ndims(visual_mask) == 2 || throw(DimensionMismatch(
+        "Qwen3-VL visual_mask must have shape (sequence, batch)",
+    ))
+    axes(visual_mask, 1) == Base.OneTo(size(visual_mask, 1)) &&
+        axes(visual_mask, 2) == Base.OneTo(size(visual_mask, 2)) ||
+        throw(ArgumentError(
+            "Qwen3-VL visual_mask must use one-based axes",
+        ))
+    size(visual_mask, 1) > 0 || throw(ArgumentError(
+        "Qwen3-VL prompt sequence length must be positive",
+    ))
+    size(visual_mask, 2) > 0 || throw(ArgumentError(
+        "Qwen3-VL prompt batch size must be positive",
+    ))
+    eltype(visual_mask) <: Bool || throw(ArgumentError(
+        "Qwen3-VL visual_mask must contain Bool values",
+    ))
+    return nothing
+end
+
 """LifeAI-layout multimodal position ids, decode delta, and prompt masks."""
 struct Qwen3VLRopeLayout{P,D,M,A}
     position_ids::P
@@ -1373,6 +1397,12 @@ struct Qwen3VLRopeLayout{P,D,M,A}
             throw(DimensionMismatch(
                 "Qwen3-VL position_ids must have shape (3, sequence, batch)",
             ))
+        axes(position_ids, 1) == Base.OneTo(size(position_ids, 1)) &&
+            axes(position_ids, 2) == Base.OneTo(size(position_ids, 2)) &&
+            axes(position_ids, 3) == Base.OneTo(size(position_ids, 3)) ||
+            throw(ArgumentError(
+                "Qwen3-VL position_ids must use one-based axes",
+            ))
         eltype(position_ids) <: Integer && !(eltype(position_ids) <: Bool) ||
             throw(ArgumentError(
                 "Qwen3-VL position_ids must be an integer array",
@@ -1384,20 +1414,17 @@ struct Qwen3VLRopeLayout{P,D,M,A}
         ndims(rope_deltas) == 2 || throw(DimensionMismatch(
             "Qwen3-VL rope_deltas must have shape (batch, 1)",
         ))
+        axes(rope_deltas, 1) == Base.OneTo(size(rope_deltas, 1)) &&
+            axes(rope_deltas, 2) == Base.OneTo(size(rope_deltas, 2)) ||
+            throw(ArgumentError(
+                "Qwen3-VL rope_deltas must use one-based axes",
+            ))
         eltype(rope_deltas) <: Integer && !(eltype(rope_deltas) <: Bool) ||
             throw(ArgumentError(
                 "Qwen3-VL rope_delta must be an integer array",
             ))
 
-        visual_mask isa AbstractArray || throw(ArgumentError(
-            "Qwen3-VL visual_mask must be an array",
-        ))
-        ndims(visual_mask) == 2 || throw(DimensionMismatch(
-            "Qwen3-VL visual_mask must have shape (sequence, batch)",
-        ))
-        eltype(visual_mask) <: Bool || throw(ArgumentError(
-            "Qwen3-VL visual_mask must contain Bool values",
-        ))
+        _validate_qwen3_vl_rope_visual_mask_structure(visual_mask)
 
         attention_mask isa AbstractArray || throw(ArgumentError(
             "Qwen3-VL attention_mask must be an array",
@@ -1405,6 +1432,11 @@ struct Qwen3VLRopeLayout{P,D,M,A}
         ndims(attention_mask) == 2 || throw(DimensionMismatch(
             "Qwen3-VL attention_mask must have shape (sequence, batch)",
         ))
+        axes(attention_mask, 1) == Base.OneTo(size(attention_mask, 1)) &&
+            axes(attention_mask, 2) == Base.OneTo(size(attention_mask, 2)) ||
+            throw(ArgumentError(
+                "Qwen3-VL attention_mask must use one-based axes",
+            ))
         eltype(attention_mask) <: Bool || throw(ArgumentError(
             "Qwen3-VL attention_mask must contain Bool values",
         ))
@@ -1436,12 +1468,15 @@ struct Qwen3VLRopeLayout{P,D,M,A}
     end
 end
 
-Qwen3VLRopeLayout(position_ids, rope_deltas, visual_mask) = Qwen3VLRopeLayout(
-    position_ids,
-    rope_deltas,
-    visual_mask,
-    trues(size(visual_mask)),
-)
+function Qwen3VLRopeLayout(position_ids, rope_deltas, visual_mask)
+    _validate_qwen3_vl_rope_visual_mask_structure(visual_mask)
+    return Qwen3VLRopeLayout(
+        position_ids,
+        rope_deltas,
+        visual_mask,
+        trues(size(visual_mask)),
+    )
+end
 
 function _qwen3_vl_token_matrix(input_ids)
     is_vector = input_ids isa AbstractVector

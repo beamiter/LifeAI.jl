@@ -43,6 +43,35 @@ Base.getindex(values::_Ch44ForeignDeviceMatrix, indices...) =
     getindex(values.data, indices...)
 MLDataDevices.get_device(::_Ch44ForeignDeviceMatrix) = _Ch44ForeignDevice()
 
+struct _Ch44ShiftedArray{T,N,A<:AbstractArray{T,N}} <: AbstractArray{T,N}
+    data::A
+    shifts::NTuple{N,Int}
+end
+
+function _Ch44ShiftedArray(
+    data::A,
+    shifts::NTuple{N,Int},
+) where {T,N,A<:AbstractArray{T,N}}
+    return _Ch44ShiftedArray{T,N,A}(data, shifts)
+end
+
+Base.size(values::_Ch44ShiftedArray) = size(values.data)
+Base.axes(values::_Ch44ShiftedArray{T,N}) where {T,N} = ntuple(N) do dimension
+    axis = axes(values.data, dimension)
+    shift = values.shifts[dimension]
+    return (first(axis) + shift):(last(axis) + shift)
+end
+Base.IndexStyle(::Type{<:_Ch44ShiftedArray}) = IndexCartesian()
+function Base.getindex(
+    values::_Ch44ShiftedArray{T,N},
+    indices::Vararg{Int,N},
+) where {T,N}
+    source_indices = ntuple(N) do dimension
+        indices[dimension] - values.shifts[dimension]
+    end
+    return getindex(values.data, source_indices...)
+end
+
 function _ch44_captured_error(thunk)
     try
         thunk()
@@ -185,6 +214,23 @@ end
     @test layout.visual_mask === visual
     @test layout.attention_mask === attention
 
+    implicit_attention = Qwen3VLRopeLayout(positions, deltas, visual)
+    @test implicit_attention.position_ids === positions
+    @test implicit_attention.rope_deltas === deltas
+    @test implicit_attention.visual_mask === visual
+    @test implicit_attention.attention_mask == trues(size(visual))
+
+    wide_positions = UInt128.(positions)
+    wide_deltas = Int128.(deltas)
+    wide_layout = Qwen3VLRopeLayout(
+        wide_positions,
+        wide_deltas,
+        visual,
+        attention,
+    )
+    @test wide_layout.position_ids === wide_positions
+    @test wide_layout.rope_deltas === wide_deltas
+
     @test_throws ArgumentError Qwen3VLRopeLayout(1, 2, 3, 4)
     @test_throws DimensionMismatch Qwen3VLRopeLayout(
         zeros(Int, 3, 2),
@@ -209,6 +255,67 @@ end
         deltas,
         falses(1, 1),
         trues(1, 1),
+    )
+    @test_throws ArgumentError Qwen3VLRopeLayout(
+        zeros(Int, 3, 0, 1),
+        zeros(Int, 1, 1),
+        falses(0, 1),
+        trues(0, 1),
+    )
+    @test_throws ArgumentError Qwen3VLRopeLayout(
+        zeros(Int, 3, 2, 0),
+        zeros(Int, 0, 1),
+        falses(2, 0),
+        trues(2, 0),
+    )
+
+    for shifts in ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+        @test_throws ArgumentError Qwen3VLRopeLayout(
+            _Ch44ShiftedArray(positions, shifts),
+            deltas,
+            visual,
+            attention,
+        )
+    end
+    for shifts in ((1, 0), (0, 1))
+        @test_throws ArgumentError Qwen3VLRopeLayout(
+            positions,
+            _Ch44ShiftedArray(deltas, shifts),
+            visual,
+            attention,
+        )
+        @test_throws ArgumentError Qwen3VLRopeLayout(
+            positions,
+            deltas,
+            _Ch44ShiftedArray(visual, shifts),
+            attention,
+        )
+        @test_throws ArgumentError Qwen3VLRopeLayout(
+            positions,
+            deltas,
+            visual,
+            _Ch44ShiftedArray(attention, shifts),
+        )
+        @test_throws ArgumentError Qwen3VLRopeLayout(
+            positions,
+            deltas,
+            _Ch44ShiftedArray(visual, shifts),
+        )
+    end
+    @test_throws DimensionMismatch Qwen3VLRopeLayout(
+        positions,
+        deltas,
+        falses(2),
+    )
+    @test_throws ArgumentError Qwen3VLRopeLayout(
+        zeros(Int, 3, 0, 1),
+        zeros(Int, 1, 1),
+        falses(0, 1),
+    )
+    @test_throws ArgumentError Qwen3VLRopeLayout(
+        zeros(Int, 3, 2, 0),
+        zeros(Int, 0, 1),
+        falses(2, 0),
     )
     @test_throws MethodError Qwen3VLRopeLayout{
         typeof(positions),

@@ -449,6 +449,8 @@ Chapter 03 reproducible-training test.
 222. Seal generic GPT dynamic cache metadata and cross-layer shape, dtype,
      device, geometry, and distinct-storage invariants behind a trace-safe
      internal constructor.
+223. Reject empty or offset-axis Qwen3-VL prompt RoPE layouts at construction
+     while preserving zero-copy storage and Reactant-compatible reconstruction.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
