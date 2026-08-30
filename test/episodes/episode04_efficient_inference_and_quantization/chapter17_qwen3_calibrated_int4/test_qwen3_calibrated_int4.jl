@@ -2,6 +2,7 @@ using Test
 using BFloat16s: BFloat16
 using JSON3
 using SHA: sha256
+import MLDataDevices
 using LifeAI:
     Int4GroupWeight,
     Int8ChannelWeight,
@@ -36,6 +37,88 @@ function _quantization_argument_error_message(f)
         return exception.msg
     end
     return nothing
+end
+
+struct _Ch17ZeroBasedArray{T,N,A<:AbstractArray{T,N}} <: AbstractArray{T,N}
+    data::A
+end
+
+_Ch17ZeroBasedArray(data::A) where {T,N,A<:AbstractArray{T,N}} =
+    _Ch17ZeroBasedArray{T,N,A}(data)
+Base.size(values::_Ch17ZeroBasedArray) = size(values.data)
+Base.axes(values::_Ch17ZeroBasedArray) = ntuple(
+    dimension -> 0:(size(values, dimension) - 1),
+    ndims(values),
+)
+Base.IndexStyle(::Type{<:_Ch17ZeroBasedArray}) = IndexCartesian()
+Base.getindex(values::_Ch17ZeroBasedArray, indices::Vararg{Int,N}) where {N} =
+    getindex(values.data, map(index -> index + 1, indices)...)
+
+struct _Ch17ForeignDeviceVector{T,A<:AbstractVector{T}} <: AbstractVector{T}
+    data::A
+end
+struct _Ch17ForeignDevice <: MLDataDevices.AbstractDevice end
+Base.size(values::_Ch17ForeignDeviceVector) = size(values.data)
+Base.axes(values::_Ch17ForeignDeviceVector) = axes(values.data)
+Base.IndexStyle(::Type{<:_Ch17ForeignDeviceVector}) = IndexLinear()
+Base.getindex(values::_Ch17ForeignDeviceVector, index::Int) = values.data[index]
+MLDataDevices.get_device(::_Ch17ForeignDeviceVector) = _Ch17ForeignDevice()
+
+@testset "INT8 weight tensors are strict" begin
+    quantized_storage = reshape(Int8.(1:12), 3, 4)
+    scale_storage = Float32[0.25, 0.5, 0.75]
+    quantized = @view quantized_storage[1:2, :]
+    scales = @view scale_storage[1:2]
+    weight = Int8ChannelWeight(quantized, scales)
+    @test weight.q === quantized
+    @test weight.scale === scales
+    @test_throws MethodError Int8ChannelWeight{
+        typeof(quantized),
+        typeof(scales),
+    }(quantized, scales)
+
+    for (values, message) in (
+        (Int8[1, 2], "INT8 quantized values must be a matrix"),
+        (
+            reshape(Int8[1, 2], 1, 1, 2),
+            "INT8 quantized values must be a matrix",
+        ),
+        (reshape(Int16[1, 2], 1, 2), "INT8 quantized values must contain Int8 values"),
+        (
+            _Ch17ZeroBasedArray(reshape(Int8[1, 2], 1, 2)),
+            "INT8 quantized values must use one-based axes",
+        ),
+        (zeros(Int8, 0, 2), "INT8 quantized values must have positive dimensions"),
+        (zeros(Int8, 2, 0), "INT8 quantized values must have positive dimensions"),
+    )
+        @test _quantization_argument_error_message() do
+            Int8ChannelWeight(values, Float32[1])
+        end == message
+    end
+    for (values, message) in (
+        (reshape(Float32[1], 1, 1), "INT8 scales must be a vector"),
+        (Float64[1], "INT8 scales must contain Float32 values"),
+        (
+            _Ch17ZeroBasedArray(Float32[1]),
+            "INT8 scales must use one-based axes",
+        ),
+    )
+        @test _quantization_argument_error_message() do
+            Int8ChannelWeight(reshape(Int8[1], 1, 1), values)
+        end == message
+    end
+    for invalid_scales in (Float32[1], Float32[1, 1, 1])
+        @test_throws DimensionMismatch Int8ChannelWeight(
+            reshape(Int8[1, 2, 3, 4], 2, 2),
+            invalid_scales,
+        )
+    end
+    @test _quantization_argument_error_message() do
+        Int8ChannelWeight(
+            reshape(Int8[1], 1, 1),
+            _Ch17ForeignDeviceVector(Float32[1]),
+        )
+    end == "INT8 quantized values and scales must reside on the same device"
 end
 
 @testset "trace-safe quantized dequantization preserves host values" begin

@@ -1,4 +1,5 @@
 using BFloat16s: BFloat16
+using MLDataDevices: get_device
 import Adapt
 
 # Week 16 introduced RTN weight-only quantization. Week 17 added deterministic
@@ -615,15 +616,56 @@ _resolve_quantization_plan(
     _,
 ) = plan
 
+struct _QuantizedWeightRowSlice end
+
 """
     Int8ChannelWeight(q, scale)
 
 Symmetric per-output-channel INT8 weight: `w ≈ Float32(q) .* scale` with
-`q::Matrix{Int8}` of shape `(out, in)` and `scale::Vector{Float32}` per row.
+`q::AbstractMatrix{Int8}` of shape `(out, in)` and
+`scale::AbstractVector{Float32}` per row.
 """
 struct Int8ChannelWeight{Q,S}
     q::Q
     scale::S
+
+    function Int8ChannelWeight(q, scale)
+        q isa AbstractMatrix || throw(ArgumentError(
+            "INT8 quantized values must be a matrix",
+        ))
+        scale isa AbstractVector || throw(ArgumentError(
+            "INT8 scales must be a vector",
+        ))
+        all(
+            dimension -> axes(q, dimension) == Base.OneTo(size(q, dimension)),
+            1:2,
+        ) || throw(ArgumentError(
+            "INT8 quantized values must use one-based axes",
+        ))
+        axes(scale, 1) == Base.OneTo(length(scale)) || throw(ArgumentError(
+            "INT8 scales must use one-based axes",
+        ))
+        eltype(q) === Int8 || throw(ArgumentError(
+            "INT8 quantized values must contain Int8 values",
+        ))
+        eltype(scale) === Float32 || throw(ArgumentError(
+            "INT8 scales must contain Float32 values",
+        ))
+        size(q, 1) > 0 && size(q, 2) > 0 || throw(ArgumentError(
+            "INT8 quantized values must have positive dimensions",
+        ))
+        length(scale) == size(q, 1) || throw(DimensionMismatch(
+            "INT8 scale length must match the quantized output dimension",
+        ))
+        get_device(q) == get_device(scale) || throw(ArgumentError(
+            "INT8 quantized values and scales must reside on the same device",
+        ))
+        return new{typeof(q),typeof(scale)}(q, scale)
+    end
+
+    function Int8ChannelWeight(q, scale, ::_QuantizedWeightRowSlice)
+        return new{typeof(q),typeof(scale)}(q, scale)
+    end
 end
 Adapt.@adapt_structure Int8ChannelWeight
 
@@ -836,8 +878,11 @@ function _dequantize_bf16(weight::Int4GroupWeight)
     return reshape(stacked, out_dim, weight.in_dim)
 end
 
-_quant_row_slice(weight::Int8ChannelWeight, rows) =
-    Int8ChannelWeight(weight.q[rows, :], weight.scale[rows])
+_quant_row_slice(weight::Int8ChannelWeight, rows) = Int8ChannelWeight(
+    weight.q[rows, :],
+    weight.scale[rows],
+    _QuantizedWeightRowSlice(),
+)
 _quant_row_slice(weight::Int4GroupWeight, rows) = Int4GroupWeight(
     weight.packed[rows, :], weight.scale[rows, :], weight.group, weight.in_dim,
 )

@@ -301,6 +301,8 @@ Chapter 03 reproducible-training test.
      before resize arithmetic can overflow or produce an impossible geometry.
 150. Widen Qwen3-VL resize rounding for host-limit dimensions and verify every
      returned geometry exactly satisfies its factor and closed pixel budget.
+151. Seal Qwen3 INT8 weights behind rank, dtype, axes, shape, and device checks
+     while retaining a trace-safe internal row-slice construction path.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
