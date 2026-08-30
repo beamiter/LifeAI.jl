@@ -509,6 +509,8 @@ Generate from a reusable single-tree XLA session.
 
 `sample_uniforms` replaces the RNG draws with a fixed sequence, which is how
 the two sampling strategies are compared token by token.
+`on_token`, when supplied, is called as `on_token(token_id)` after the cache
+mutation for that generation stage has been committed to `session.position`.
 """
 function generate_hf_qwen3_bf16_xla!(
     session::HFQwen3BF16XLASession,
@@ -635,6 +637,7 @@ function generate_hf_qwen3_bf16_xla!(
                 key_positions,
             )
         end
+        session.position = last_index
     end
     first_output = if session.strategy === :sample
         logits = Array(output_state)
@@ -655,7 +658,7 @@ function generate_hf_qwen3_bf16_xla!(
     prefill_seconds = (time_ns() - prefill_started) / 1.0e9
 
     generated_ids = Int[first_output]
-    on_token === nothing || on_token(first_output, 1)
+    on_token === nothing || on_token(first_output)
     stop_reason = first_output in stops ? :eos : :length
 
     decode_started = time_ns()
@@ -691,6 +694,7 @@ function generate_hf_qwen3_bf16_xla!(
                 key_positions,
             )
         end
+        session.position += 1
         next_token = if session.strategy === :sample
             logits = Array(output_state)
             choice, _ = _qwen3_session_choice(
@@ -708,12 +712,15 @@ function generate_hf_qwen3_bf16_xla!(
             _qwen3_xla_host_token(output_state, session.model.vocab_size)
         end
         push!(generated_ids, next_token)
-        on_token === nothing || on_token(next_token, length(generated_ids))
+        on_token === nothing || on_token(next_token)
     end
     decode_seconds = (time_ns() - decode_started) / 1.0e9
     last(generated_ids) in stops && (stop_reason = :eos)
-    session.position =
+    expected_position =
         plan.prompt_bucket_tokens + length(generated_ids) - 1
+    session.position == expected_position || error(
+        "Qwen3 XLA session position disagrees with committed cache progress",
+    )
     allocator_after = _qwen3_xla_allocator_snapshot()
     completion = decode(
         session.tokenizer,

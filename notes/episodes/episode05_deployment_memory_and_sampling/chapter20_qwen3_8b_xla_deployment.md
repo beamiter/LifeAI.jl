@@ -95,6 +95,9 @@ planner 的 context/prompt/output/chunk 输入先严格归一为宿主 `Int`，�
 或 session mutation 前失败；stop-id 集合也与 dense session 共用同一预检。
 compiled greedy/device-sampling 输出回到 host 时必须恰好包含一个非 Bool、可表示且
 词表内的整数；host sampling 的 choice 也在进入结果/callback 前复用该标量合同。
+每次 compiled prefill/decode 成功返回后立即提交 host `session.position`；单参数
+`on_token(token_id)` 因而观察到与已写 cache 一致的位置，回调失败也不会留下
+“cache 已推进、host position 仍为零”的假状态。
 
 真实 65-token case 因而进入 128-token bucket、左补 63 slots，并与
 CUDA BF16 reference 的 32/32 tokens 一致；3,584+512 整窗最终是

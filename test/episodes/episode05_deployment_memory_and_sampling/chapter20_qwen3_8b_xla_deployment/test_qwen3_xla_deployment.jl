@@ -640,3 +640,84 @@ end
         )
     end
 end
+
+@testset "XLA callbacks observe committed cache positions" begin
+    prefill_calls = Ref(0)
+    decode_calls = Ref(0)
+    compiled_prefill = function (_...)
+        prefill_calls[] += 1
+        return Int[3], nothing
+    end
+    compiled_decode = function (_...)
+        decode_calls[] += 1
+        return Int[4], nothing
+    end
+    make_session() = HFQwen3BF16XLASession(
+        (; vocab_size=16),
+        nothing,
+        (; eos_ids=Int[]),
+        (; temperature=1.0f0, top_k=1, top_p=1.0f0),
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        compiled_prefill,
+        compiled_decode,
+        :greedy,
+        4,
+        2,
+        0,
+        7,
+        nothing,
+    )
+
+    first_session = make_session()
+    first_tokens = Int[]
+    first_positions = Int[]
+    first_failure = _qwen3_xla_captured_error() do
+        generate_hf_qwen3_bf16_xla!(
+            first_session,
+            [2];
+            max_new_tokens=2,
+            stop_token_ids=Int[],
+            on_token=function (token_id)
+                push!(first_tokens, token_id)
+                push!(first_positions, first_session.position)
+                error("injected first-token callback failure")
+            end,
+        )
+    end
+    @test first_failure isa ErrorException
+    @test first_tokens == [3]
+    @test first_positions == [2]
+    @test first_session.position == 2
+    @test prefill_calls[] == 1
+    @test decode_calls[] == 0
+
+    prefill_calls[] = 0
+    decode_calls[] = 0
+    second_session = make_session()
+    second_tokens = Int[]
+    second_positions = Int[]
+    second_failure = _qwen3_xla_captured_error() do
+        generate_hf_qwen3_bf16_xla!(
+            second_session,
+            [2];
+            max_new_tokens=2,
+            stop_token_ids=Int[],
+            on_token=function (token_id)
+                push!(second_tokens, token_id)
+                push!(second_positions, second_session.position)
+                length(second_tokens) == 2 &&
+                    error("injected second-token callback failure")
+            end,
+        )
+    end
+    @test second_failure isa ErrorException
+    @test second_tokens == [3, 4]
+    @test second_positions == [2, 3]
+    @test second_session.position == 3
+    @test prefill_calls[] == 1
+    @test decode_calls[] == 1
+    @test all(token -> token isa Int, second_tokens)
+end
