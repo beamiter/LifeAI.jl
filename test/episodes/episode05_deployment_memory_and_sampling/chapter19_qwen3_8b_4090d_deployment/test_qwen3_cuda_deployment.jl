@@ -995,6 +995,158 @@ end
         )
         @test_throws MethodError LifeAI.HFQwen3BF16Session(raw_fields...)
         @test_throws MethodError typeof(session)(raw_fields...)
+
+        cache_shape = (
+            session.model.head_dim,
+            session.model.num_kv_heads,
+            session.context_tokens,
+            1,
+        )
+        rope_shape = (session.model.head_dim ÷ 2, session.context_tokens)
+        cache_elements = prod(cache_shape)
+        rope_elements = prod(rope_shape)
+
+        cross_layer_parent = zeros(
+            BFloat16,
+            cache_elements + cache_elements ÷ 2,
+        )
+        cross_layer_caches = copy(session.caches)
+        cross_layer_caches[1] = LifeAI.BF16AStaticLayerCache(
+            reshape(view(cross_layer_parent, 1:cache_elements), cache_shape),
+            zeros(BFloat16, cache_shape),
+        )
+        cross_layer_caches[2] = LifeAI.BF16AStaticLayerCache(
+            reshape(
+                view(
+                    cross_layer_parent,
+                    (cache_elements ÷ 2 + 1):(cache_elements + cache_elements ÷ 2),
+                ),
+                cache_shape,
+            ),
+            zeros(BFloat16, cache_shape),
+        )
+        cross_layer_failure = _qwen3_deployment_captured_error() do
+            LifeAI._qwen3_validate_session_storage(
+                session.model,
+                session.parameters,
+                session.cos_table,
+                session.sin_table,
+                cross_layer_caches,
+                session.context_tokens,
+            )
+        end
+        @test cross_layer_failure isa ArgumentError
+        @test occursin(
+            "must use non-overlapping storage",
+            sprint(showerror, cross_layer_failure),
+        )
+
+        rope_cache_parent = zeros(BFloat16, cache_elements)
+        rope_cache_caches = copy(session.caches)
+        rope_cache_caches[1] = LifeAI.BF16AStaticLayerCache(
+            reshape(view(rope_cache_parent, 1:cache_elements), cache_shape),
+            zeros(BFloat16, cache_shape),
+        )
+        rope_cache_cos = reshape(
+            view(rope_cache_parent, 1:rope_elements),
+            rope_shape,
+        )
+        rope_cache_failure = _qwen3_deployment_captured_error() do
+            LifeAI._qwen3_validate_session_storage(
+                session.model,
+                session.parameters,
+                rope_cache_cos,
+                session.sin_table,
+                rope_cache_caches,
+                session.context_tokens,
+            )
+        end
+        @test rope_cache_failure isa ArgumentError
+        @test occursin(
+            "must use non-overlapping storage",
+            sprint(showerror, rope_cache_failure),
+        )
+
+        overlapping_rope_parent = zeros(
+            BFloat16,
+            rope_elements + rope_elements ÷ 2,
+        )
+        overlapping_cos = reshape(
+            view(overlapping_rope_parent, 1:rope_elements),
+            rope_shape,
+        )
+        overlapping_sin = reshape(
+            view(
+                overlapping_rope_parent,
+                (rope_elements ÷ 2 + 1):(rope_elements + rope_elements ÷ 2),
+            ),
+            rope_shape,
+        )
+        rope_overlap_failure = _qwen3_deployment_captured_error() do
+            LifeAI._qwen3_validate_session_storage(
+                session.model,
+                session.parameters,
+                overlapping_cos,
+                overlapping_sin,
+                session.caches,
+                session.context_tokens,
+            )
+        end
+        @test rope_overlap_failure isa ArgumentError
+        @test occursin(
+            "must use non-overlapping storage",
+            sprint(showerror, rope_overlap_failure),
+        )
+
+        disjoint_parent = zeros(
+            BFloat16,
+            2 * session.model.num_layers * cache_elements + 2 * rope_elements,
+        )
+        disjoint_storages = Any[]
+        disjoint_caches = Any[]
+        cursor = 0
+        for _ in 1:session.model.num_layers
+            keys = reshape(
+                view(disjoint_parent, (cursor + 1):(cursor + cache_elements)),
+                cache_shape,
+            )
+            cursor += cache_elements
+            values = reshape(
+                view(disjoint_parent, (cursor + 1):(cursor + cache_elements)),
+                cache_shape,
+            )
+            cursor += cache_elements
+            append!(disjoint_storages, (keys, values))
+            push!(
+                disjoint_caches,
+                LifeAI.BF16AStaticLayerCache(keys, values),
+            )
+        end
+        disjoint_cos = reshape(
+            view(disjoint_parent, (cursor + 1):(cursor + rope_elements)),
+            rope_shape,
+        )
+        cursor += rope_elements
+        disjoint_sin = reshape(
+            view(disjoint_parent, (cursor + 1):(cursor + rope_elements)),
+            rope_shape,
+        )
+        append!(disjoint_storages, (disjoint_cos, disjoint_sin))
+        @test cursor + rope_elements == length(disjoint_parent)
+        @test all(
+            !Base.mightalias(disjoint_storages[left], disjoint_storages[right])
+            for left in 1:(length(disjoint_storages) - 1)
+            for right in (left + 1):length(disjoint_storages)
+        )
+        @test LifeAI._qwen3_validate_session_storage(
+            session.model,
+            session.parameters,
+            disjoint_cos,
+            disjoint_sin,
+            disjoint_caches,
+            session.context_tokens,
+        ) === nothing
+
         @test prefill_hf_qwen3_bf16!(session, [1, 5]) !== nothing
         @test session.position == 2
 
@@ -1052,6 +1204,31 @@ end
             "cache layer 1 key storage must have shape",
             sprint(showerror, cache_failure),
         )
+        @test isequal(_qwen3_dense_session_state(session), preserved)
+        session.caches[1] = original_layer
+
+        overlapping_key_view = view(session.caches[2].keys, :, :, :, :)
+        @test overlapping_key_view !== session.caches[2].keys
+        @test Base.mightalias(overlapping_key_view, session.caches[2].keys)
+        session.caches[1] = LifeAI.BF16AStaticLayerCache(
+            overlapping_key_view,
+            original_layer.values,
+        )
+        preserved = _qwen3_dense_session_state(session)
+        reached_chunk = Ref(false)
+        alias_mutation_failure = _qwen3_deployment_captured_error() do
+            prefill_hf_qwen3_bf16!(
+                session,
+                [1, 5];
+                on_chunk=_ -> (reached_chunk[] = true),
+            )
+        end
+        @test alias_mutation_failure isa ArgumentError
+        @test occursin(
+            "cache layer source changed after initialization",
+            sprint(showerror, alias_mutation_failure),
+        )
+        @test !reached_chunk[]
         @test isequal(_qwen3_dense_session_state(session), preserved)
         session.caches[1] = original_layer
 

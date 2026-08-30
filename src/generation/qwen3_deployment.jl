@@ -679,6 +679,22 @@ function _qwen3_validate_session_tokenizer_source(
     return nothing
 end
 
+function _qwen3_record_bf16_session_storage!(
+    storages::Vector{Tuple{String,Any}},
+    label::AbstractString,
+    storage::AbstractArray,
+)
+    resolved_label = String(label)
+    for (existing_label, existing) in storages
+        Base.mightalias(storage, existing) && throw(ArgumentError(
+            "Qwen3 session $resolved_label and $existing_label must use " *
+            "non-overlapping storage",
+        ))
+    end
+    push!(storages, (resolved_label, storage))
+    return nothing
+end
+
 function _qwen3_validate_session_storage(
     model::GPTModel,
     parameters,
@@ -704,9 +720,6 @@ function _qwen3_validate_session_storage(
         "Qwen3 session sine table",
         device,
     )
-    cos_table === sin_table && throw(ArgumentError(
-        "Qwen3 session RoPE tables must use distinct storage",
-    ))
     caches isa Vector{Any} || throw(ArgumentError(
         "Qwen3 session caches must be a Vector{Any}",
     ))
@@ -714,7 +727,23 @@ function _qwen3_validate_session_storage(
         "Qwen3 session cache layer count must match model.num_layers",
     ))
     cache_shape = (model.head_dim, model.num_kv_heads, context_tokens, 1)
-    seen_storage = check_distinct ? IdDict{Any,Nothing}() : nothing
+    # The pairwise proof runs once before the session contract captures both
+    # RoPE tables, the cache vector, and every immutable cache wrapper. That
+    # freezes the storage topology: consumers can recheck those identities
+    # without an O(L^2) alias scan on every decode step.
+    storages = check_distinct ? Tuple{String,Any}[] : nothing
+    if check_distinct
+        _qwen3_record_bf16_session_storage!(
+            storages,
+            "cosine table",
+            cos_table,
+        )
+        _qwen3_record_bf16_session_storage!(
+            storages,
+            "sine table",
+            sin_table,
+        )
+    end
     for (index, cache) in enumerate(caches)
         cache isa BF16AStaticLayerCache || throw(ArgumentError(
             "Qwen3 session cache layer $index must be BF16AStaticLayerCache storage",
@@ -727,10 +756,11 @@ function _qwen3_validate_session_storage(
                 device,
             )
             if check_distinct
-                haskey(seen_storage, storage) && throw(ArgumentError(
-                    "Qwen3 session cache layers must use distinct storage",
-                ))
-                seen_storage[storage] = nothing
+                _qwen3_record_bf16_session_storage!(
+                    storages,
+                    "cache layer $index $kind storage",
+                    storage,
+                )
             end
         end
     end
