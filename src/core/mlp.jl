@@ -208,27 +208,65 @@ arrays use compact routes: the portable fallback is route-major
 gather/matmul/combine, while CUDA activates indexed kernels through a package
 extension. Grouped-GEMM/tensor-core tuning remains a separate concern.
 """
+function _mlp_positive_host_int(value, label::AbstractString)
+    value isa Integer && !(value isa Bool) || throw(ArgumentError(
+        "$label must be an integer",
+    ))
+    resolved = try
+        Int(value)
+    catch error
+        error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
+            rethrow()
+        throw(ArgumentError("$label is outside the host integer range"))
+    end
+    resolved > 0 || throw(ArgumentError("$label must be positive"))
+    return resolved
+end
+
 struct Qwen3SparseMoE <: AbstractLuxLayer
     d_model::Int
     hidden_dim::Int
     num_experts::Int
     experts_per_token::Int
     normalize_routing::Bool
+
+    function Qwen3SparseMoE(
+        d_model,
+        hidden_dim,
+        num_experts,
+        experts_per_token,
+        normalize_routing,
+    )
+        resolved_d_model = _mlp_positive_host_int(d_model, "d_model")
+        resolved_hidden_dim = _mlp_positive_host_int(hidden_dim, "hidden_dim")
+        resolved_num_experts = _mlp_positive_host_int(num_experts, "num_experts")
+        resolved_experts_per_token = _mlp_positive_host_int(
+            experts_per_token,
+            "experts_per_token",
+        )
+        resolved_experts_per_token <= resolved_num_experts || throw(ArgumentError(
+            "experts_per_token must be in 1:num_experts",
+        ))
+        normalize_routing isa Bool || throw(ArgumentError(
+            "normalize_routing must be Bool",
+        ))
+        return new(
+            resolved_d_model,
+            resolved_hidden_dim,
+            resolved_num_experts,
+            resolved_experts_per_token,
+            normalize_routing,
+        )
+    end
 end
 
 function Qwen3SparseMoE(
-    d_model::Int,
-    hidden_dim::Int,
-    num_experts::Int,
-    experts_per_token::Int;
-    normalize_routing::Bool=true,
+    d_model,
+    hidden_dim,
+    num_experts,
+    experts_per_token;
+    normalize_routing=true,
 )
-    d_model > 0 || throw(ArgumentError("d_model must be positive"))
-    hidden_dim > 0 || throw(ArgumentError("hidden_dim must be positive"))
-    num_experts > 0 || throw(ArgumentError("num_experts must be positive"))
-    1 <= experts_per_token <= num_experts || throw(ArgumentError(
-        "experts_per_token must be in 1:num_experts",
-    ))
     return Qwen3SparseMoE(
         d_model,
         hidden_dim,

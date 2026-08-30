@@ -38,3 +38,64 @@ using LifeAI: Qwen3SparseMoE, qwen3_topk_routing
     @test_throws ArgumentError Qwen3SparseMoE(4, 3, 0, 1)
     @test_throws ArgumentError Qwen3SparseMoE(4, 3, 4, 5)
 end
+
+@testset "Qwen3 sparse MoE construction validates every entry point" begin
+    layer = Qwen3SparseMoE(
+        Int32(4),
+        big(3),
+        UInt8(4),
+        Int128(2);
+        normalize_routing=false,
+    )
+    @test layer.d_model === 4
+    @test layer.hidden_dim === 3
+    @test layer.num_experts === 4
+    @test layer.experts_per_token === 2
+    @test layer.normalize_routing === false
+
+    positional = Qwen3SparseMoE(4, 3, 4, 2, true)
+    @test positional == Qwen3SparseMoE(4, 3, 4, 2)
+
+    oversized = big(typemax(Int)) + 1
+    for invalid_dimension in (true, 4.0, oversized)
+        @test_throws ArgumentError Qwen3SparseMoE(
+            invalid_dimension,
+            3,
+            4,
+            2,
+            false,
+        )
+        @test_throws ArgumentError Qwen3SparseMoE(
+            4,
+            invalid_dimension,
+            4,
+            2;
+            normalize_routing=false,
+        )
+        @test_throws ArgumentError Qwen3SparseMoE(4, 3, invalid_dimension, 2)
+        @test_throws ArgumentError Qwen3SparseMoE(4, 3, 4, invalid_dimension)
+    end
+
+    for invalid_normalize in (0, 1, :yes, nothing)
+        @test_throws ArgumentError Qwen3SparseMoE(
+            4,
+            3,
+            4,
+            2,
+            invalid_normalize,
+        )
+        @test_throws ArgumentError Qwen3SparseMoE(
+            4,
+            3,
+            4,
+            2;
+            normalize_routing=invalid_normalize,
+        )
+    end
+
+    @test_throws ArgumentError Qwen3SparseMoE(0, 3, 4, 2, false)
+    @test_throws ArgumentError Qwen3SparseMoE(4, 0, 4, 2, false)
+    @test_throws ArgumentError Qwen3SparseMoE(4, 3, 0, 2, false)
+    @test_throws ArgumentError Qwen3SparseMoE(4, 3, 4, 0, false)
+    @test_throws ArgumentError Qwen3SparseMoE(4, 3, 4, 5, false)
+end
