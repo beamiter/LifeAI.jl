@@ -369,7 +369,7 @@ function _qwen3_vl_causal_mask(reference, attention_mask::AbstractMatrix{Bool})
     ))
     values = zeros(Float32, sequence_length, sequence_length)
     minimum_value = eltype(reference) === BFloat16 ?
-        Float32(_BF16_MASK_MIN) : typemin(Float32)
+        Float32(_BF16_MASK_MIN) : -floatmax(Float32)
     @inbounds for query in 1:sequence_length, key in 1:sequence_length
         if key > query || !attention_mask[key, 1]
             values[query, key] = minimum_value
@@ -384,6 +384,75 @@ function _qwen3_vl_project_tied(embedding, hidden)
     hidden_size, token_count, batch_size = size(hidden)
     matrix = transpose(embedding) * reshape(hidden, hidden_size, :)
     return reshape(matrix, size(embedding, 2), token_count, batch_size)
+end
+
+function _qwen3_vl_cache_free_prompt_contract(
+    spec::Qwen3VLTextSpec,
+    tokens,
+    rope_layout::Qwen3VLRopeLayout,
+    max_prefill_tokens::Int,
+)
+    sequence_length, batch_size = size(tokens)
+    max_prefill_tokens > 0 || throw(ArgumentError(
+        "max_prefill_tokens must be positive",
+    ))
+    effective_limit = min(max_prefill_tokens, spec.max_position_embeddings)
+    0 < sequence_length <= effective_limit || throw(ArgumentError(
+        "Qwen3-VL prefill length must be in 1:$effective_limit",
+    ))
+
+    position_ids = rope_layout.position_ids
+    size(position_ids) == (3, sequence_length, batch_size) ||
+        throw(DimensionMismatch("Qwen3-VL rope layout does not match input_ids"))
+    (eltype(position_ids) <: Integer && !(eltype(position_ids) <: Bool)) ||
+        throw(ArgumentError("Qwen3-VL position_ids must contain integers"))
+    all(position -> 0 <= position < spec.max_position_embeddings, position_ids) ||
+        throw(ArgumentError(
+            "Qwen3-VL prompt mRoPE coordinates are outside the decoder context",
+        ))
+
+    visual_mask = rope_layout.visual_mask
+    size(visual_mask) == size(tokens) || throw(DimensionMismatch(
+        "Qwen3-VL visual mask does not match input_ids",
+    ))
+    eltype(visual_mask) <: Bool || throw(ArgumentError(
+        "Qwen3-VL visual_mask must contain Bool values",
+    ))
+
+    attention_mask = rope_layout.attention_mask
+    size(attention_mask) == size(tokens) || throw(DimensionMismatch(
+        "Qwen3-VL attention mask does not match input_ids",
+    ))
+    eltype(attention_mask) <: Bool || throw(ArgumentError(
+        "Qwen3-VL attention_mask must contain Bool values",
+    ))
+    all((.!visual_mask) .| attention_mask) || throw(ArgumentError(
+        "Qwen3-VL visual positions must be valid attention positions",
+    ))
+
+    rope_deltas = rope_layout.rope_deltas
+    size(rope_deltas) == (batch_size, 1) || throw(DimensionMismatch(
+        "Qwen3-VL rope_deltas must have shape (batch, 1)",
+    ))
+    (eltype(rope_deltas) <: Integer && !(eltype(rope_deltas) <: Bool)) ||
+        throw(ArgumentError("Qwen3-VL rope_deltas must contain integers"))
+    for batch in 1:batch_size
+        valid_positions = findall(view(attention_mask, :, batch))
+        isempty(valid_positions) && throw(ArgumentError(
+            "every Qwen3-VL batch item must contain a valid token",
+        ))
+        maximum_coordinate = maximum(view(
+            position_ids,
+            :,
+            valid_positions,
+            batch,
+        ))
+        expected_delta = maximum_coordinate + 1 - sequence_length
+        rope_deltas[batch, 1] == expected_delta || throw(ArgumentError(
+            "Qwen3-VL rope_delta is inconsistent with the prompt mRoPE positions",
+        ))
+    end
+    return nothing
 end
 
 """
@@ -413,17 +482,6 @@ function hf_qwen3_vl_text_prefill(
     batch_size == 1 || throw(ArgumentError(
         "Chapter 44 Qwen3-VL decoder prefill supports batch size one",
     ))
-    0 < sequence_length <= max_prefill_tokens || throw(ArgumentError(
-        "Qwen3-VL prefill length must be in 1:$max_prefill_tokens",
-    ))
-    size(rope_layout.position_ids) == (3, sequence_length, batch_size) ||
-        throw(DimensionMismatch("Qwen3-VL rope layout does not match input_ids"))
-    size(rope_layout.visual_mask) == size(tokens) || throw(DimensionMismatch(
-        "Qwen3-VL visual mask does not match input_ids",
-    ))
-    size(rope_layout.attention_mask) == size(tokens) || throw(DimensionMismatch(
-        "Qwen3-VL attention mask does not match input_ids",
-    ))
     spec = parameters.spec
     length(parameters.blocks) == spec.num_hidden_layers || throw(DimensionMismatch(
         "Qwen3-VL decoder parameter layer count is invalid",
@@ -431,6 +489,12 @@ function hf_qwen3_vl_text_prefill(
     all(id -> 1 <= id <= spec.vocab_size, tokens) || throw(ArgumentError(
         "Qwen3-VL input_ids contain an out-of-vocabulary id",
     ))
+    _qwen3_vl_cache_free_prompt_contract(
+        spec,
+        tokens,
+        rope_layout,
+        max_prefill_tokens,
+    )
     0 <= logits_to_keep <= sequence_length || throw(ArgumentError(
         "logits_to_keep must be between zero and the prefill length",
     ))

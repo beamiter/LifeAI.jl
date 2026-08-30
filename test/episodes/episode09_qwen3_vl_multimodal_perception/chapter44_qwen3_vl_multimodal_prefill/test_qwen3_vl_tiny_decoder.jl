@@ -176,3 +176,155 @@ end
     predicted = [argmax(view(result.logits, :, token, 1)) for token in 1:8]
     @test predicted == [1, 2, 13, 14, 15, 7, 32, 8]
 end
+
+@testset "Chapter 44 — cache-free prompt layout contract" begin
+    parameters = _ch44_tiny_text_parameters()
+    inputs = _ch44_tiny_prefill_inputs()
+    call_prefill = function (rope_layout; input_ids=inputs.input_ids, kwargs...)
+        return hf_qwen3_vl_text_prefill(
+            parameters,
+            input_ids,
+            rope_layout;
+            vision_features=inputs.vision_features,
+            logits_to_keep=1,
+            kwargs...,
+        )
+    end
+
+    @test_throws ArgumentError call_prefill(
+        inputs.rope_layout;
+        max_prefill_tokens=0,
+    )
+    @test_throws ArgumentError call_prefill(
+        inputs.rope_layout;
+        max_prefill_tokens=length(inputs.input_ids) - 1,
+    )
+    unlimited = call_prefill(
+        inputs.rope_layout;
+        max_prefill_tokens=typemax(Int),
+    )
+    @test size(unlimited.logits) == (parameters.spec.vocab_size, 1, 1)
+
+    negative_positions = copy(inputs.rope_layout.position_ids)
+    negative_positions[1, 1, 1] = -1
+    @test_throws ArgumentError call_prefill(Qwen3VLRopeLayout(
+        negative_positions,
+        inputs.rope_layout.rope_deltas,
+        inputs.rope_layout.visual_mask,
+        inputs.rope_layout.attention_mask,
+    ))
+
+    context_positions = copy(inputs.rope_layout.position_ids)
+    context_positions[1, 1, 1] = parameters.spec.max_position_embeddings
+    @test_throws ArgumentError call_prefill(Qwen3VLRopeLayout(
+        context_positions,
+        inputs.rope_layout.rope_deltas,
+        inputs.rope_layout.visual_mask,
+        inputs.rope_layout.attention_mask,
+    ))
+    @test_throws ArgumentError call_prefill(Qwen3VLRopeLayout(
+        Float32.(inputs.rope_layout.position_ids),
+        inputs.rope_layout.rope_deltas,
+        inputs.rope_layout.visual_mask,
+        inputs.rope_layout.attention_mask,
+    ))
+    @test_throws DimensionMismatch call_prefill(Qwen3VLRopeLayout(
+        inputs.rope_layout.position_ids,
+        Int[-2],
+        inputs.rope_layout.visual_mask,
+        inputs.rope_layout.attention_mask,
+    ))
+    @test_throws ArgumentError call_prefill(Qwen3VLRopeLayout(
+        inputs.rope_layout.position_ids,
+        reshape(Int[-1], 1, 1),
+        inputs.rope_layout.visual_mask,
+        inputs.rope_layout.attention_mask,
+    ))
+    @test_throws ArgumentError call_prefill(Qwen3VLRopeLayout(
+        inputs.rope_layout.position_ids,
+        inputs.rope_layout.rope_deltas,
+        Int.(inputs.rope_layout.visual_mask),
+        inputs.rope_layout.attention_mask,
+    ))
+    @test_throws ArgumentError call_prefill(Qwen3VLRopeLayout(
+        inputs.rope_layout.position_ids,
+        inputs.rope_layout.rope_deltas,
+        inputs.rope_layout.visual_mask,
+        Int.(inputs.rope_layout.attention_mask),
+    ))
+
+    empty_attention = falses(length(inputs.input_ids), 1)
+    @test_throws ArgumentError call_prefill(Qwen3VLRopeLayout(
+        inputs.rope_layout.position_ids,
+        inputs.rope_layout.rope_deltas,
+        falses(length(inputs.input_ids), 1),
+        empty_attention,
+    ))
+
+    padded_ids = Int[1, 1, 11, 12]
+    padded_positions = repeat(reshape(Int[1, 1, 0, 1], 1, 4, 1), 3, 1, 1)
+    padded_layout = Qwen3VLRopeLayout(
+        padded_positions,
+        reshape(Int[-2], 1, 1),
+        falses(4, 1),
+        reshape(Bool[false, false, true, true], 4, 1),
+    )
+    padded = hf_qwen3_vl_text_prefill(
+        parameters,
+        padded_ids,
+        padded_layout;
+        logits_to_keep=1,
+    )
+    @test size(padded.logits) == (parameters.spec.vocab_size, 1, 1)
+    @test all(isfinite, padded.logits)
+
+    singleton_ids = Int[1, 11]
+    singleton_layout = Qwen3VLRopeLayout(
+        repeat(reshape(Int[1, 0], 1, 2, 1), 3, 1, 1),
+        reshape(Int[-1], 1, 1),
+        falses(2, 1),
+        reshape(Bool[false, true], 2, 1),
+    )
+    singleton = hf_qwen3_vl_text_prefill(
+        parameters,
+        singleton_ids,
+        singleton_layout;
+        logits_to_keep=1,
+    )
+    @test all(isfinite, singleton.logits)
+
+    invalid_visual_mask = copy(padded_layout.visual_mask)
+    invalid_visual_mask[1, 1] = true
+    @test_throws ArgumentError hf_qwen3_vl_text_prefill(
+        parameters,
+        padded_ids,
+        Qwen3VLRopeLayout(
+            padded_positions,
+            reshape(Int[-2], 1, 1),
+            invalid_visual_mask,
+            padded_layout.attention_mask,
+        );
+        logits_to_keep=1,
+    )
+
+    long_ids = fill(1, parameters.spec.max_position_embeddings + 1)
+    long_positions = repeat(
+        reshape(collect(0:(length(long_ids) - 1)), 1, length(long_ids), 1),
+        3,
+        1,
+        1,
+    )
+    long_layout = Qwen3VLRopeLayout(
+        long_positions,
+        reshape(Int[0], 1, 1),
+        falses(length(long_ids), 1),
+        trues(length(long_ids), 1),
+    )
+    @test_throws ArgumentError hf_qwen3_vl_text_prefill(
+        parameters,
+        long_ids,
+        long_layout;
+        logits_to_keep=1,
+        max_prefill_tokens=length(long_ids),
+    )
+end

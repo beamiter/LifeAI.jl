@@ -160,6 +160,15 @@ video 和 batch 边界。
    `5 / 11 / 17` 对应的 merge 后 DeepStack features，且只改 visual rows；
 6. final RMSNorm 后使用 tied embedding 投影 vocabulary logits。
 
+cache-free prefill 会在 embedding 或 attention 计算前验证完整 prompt layout：实际
+长度同时受调用方 `max_prefill_tokens` 与模型上下文上限约束，mRoPE coordinates
+必须是上下文内的整数，两个 mask 必须是严格 Bool，且每个样本至少保留一个有效
+token。`rope_deltas` 必须具有 `(batch, 1)` shape，并按 attention 有效位置的最大
+coordinate 核对；padding 的 sentinel position 不参与 delta，因此左填充仍保持与
+processor/decode 坐标合同一致。Float32 causal mask 使用有限最小值，避免全遮蔽
+padding query 的 softmax 产生 NaN 后污染有效 token。大于模型上限的正数
+`max_prefill_tokens` 仍可作为“不额外限长”的调用方 cap，不能绕过模型自身上限。
+
 capture 使用官方 0-based decoder layer index，并分别保存 raw block output 与
 post-DeepStack layer output。HF `_deepstack_process` 会原地修改 hidden，因此 Python
 hook 在捕获时立即 `detach().clone().cpu().contiguous()`；否则所谓 raw oracle 会被
