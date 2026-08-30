@@ -48,6 +48,34 @@ const QWEN3_MOE_TINY_OFFLOAD_FIXTURE = joinpath(
         40_960;
         max_active_experts=129,
     )
+
+    overflow_width = isqrt(typemax(Int)) + 1
+    isodd(overflow_width) && (overflow_width += 1)
+    overflow_model = GPTModel(
+        1,
+        overflow_width,
+        overflow_width ÷ 2,
+        1;
+        num_kv_heads=1,
+        head_dim=2,
+        mlp_hidden_dim=2,
+        use_bias=false,
+        lm_head_bias=false,
+        use_rope=true,
+        use_qk_norm=true,
+        max_seq_len=1,
+        rope_style=:rotate_half,
+        norm_type=:rmsnorm,
+        mlp_type=:qwen3_moe,
+        num_experts=2,
+        experts_per_token=1,
+    )
+    @test_throws ArgumentError qwen3_moe_offload_plan(overflow_model, 1)
+    @test_throws ArgumentError qwen3_moe_offload_plan(
+        model,
+        1;
+        dtype_bytes=typemax(Int),
+    )
     @test_throws ArgumentError LifeAI._qwen3_local_expert_routes(
         Int32[0 1],
         8,

@@ -43,49 +43,79 @@ function qwen3_moe_offload_plan(
     ))
     bytes > 0 || throw(ArgumentError("dtype_bytes must be positive"))
 
-    d_model = model.d_model
-    query_dim = model.num_heads * model.head_dim
-    kv_dim = model.num_kv_heads * model.head_dim
-    attention_elements =
-        query_dim * d_model +
-        2 * kv_dim * d_model +
-        d_model * query_dim
-    layer_resident_elements =
-        attention_elements +
-        model.num_experts * d_model +
-        2 * d_model +
-        2 * model.head_dim
-    resident_parameter_elements =
-        model.num_layers * layer_resident_elements +
-        d_model +
-        model.vocab_size * d_model
-    active_expert_elements =
-        active * 3 * d_model * model.mlp_hidden_dim
-    resident_parameter_bytes = Base.checked_mul(
-        resident_parameter_elements,
-        bytes,
-    )
-    active_expert_layer_bytes = Base.checked_mul(active_expert_elements, bytes)
-    kv_cache_bytes = qwen3_kv_cache_bytes(
-        model,
-        context;
-        batch_size=batch,
-        dtype_bytes=bytes,
-    )
-    working_set_floor_bytes = Base.checked_add(
-        Base.checked_add(resident_parameter_bytes, active_expert_layer_bytes),
-        kv_cache_bytes,
-    )
-    return (;
-        context_tokens=context,
-        batch_size=batch,
-        max_active_experts=active,
-        dtype_bytes=bytes,
-        resident_parameter_bytes,
-        active_expert_layer_bytes,
-        kv_cache_bytes,
-        working_set_floor_bytes,
-    )
+    return _qwen3_moe_checked_size("Qwen3 MoE offload plan") do
+        d_model = model.d_model
+        query_dim = Base.Checked.checked_mul(model.num_heads, model.head_dim)
+        kv_dim = Base.Checked.checked_mul(model.num_kv_heads, model.head_dim)
+
+        query_projection = Base.Checked.checked_mul(query_dim, d_model)
+        kv_projection = Base.Checked.checked_mul(kv_dim, d_model)
+        kv_projections = Base.Checked.checked_mul(2, kv_projection)
+        output_projection = Base.Checked.checked_mul(d_model, query_dim)
+        attention_elements = Base.Checked.checked_add(
+            Base.Checked.checked_add(query_projection, kv_projections),
+            output_projection,
+        )
+
+        router_elements = Base.Checked.checked_mul(model.num_experts, d_model)
+        block_norm_elements = Base.Checked.checked_mul(2, d_model)
+        qk_norm_elements = Base.Checked.checked_mul(2, model.head_dim)
+        layer_resident_elements = Base.Checked.checked_add(
+            Base.Checked.checked_add(attention_elements, router_elements),
+            Base.Checked.checked_add(block_norm_elements, qk_norm_elements),
+        )
+
+        block_elements = Base.Checked.checked_mul(
+            model.num_layers,
+            layer_resident_elements,
+        )
+        output_elements = Base.Checked.checked_mul(model.vocab_size, d_model)
+        resident_parameter_elements = Base.Checked.checked_add(
+            Base.Checked.checked_add(block_elements, d_model),
+            output_elements,
+        )
+
+        expert_matrix_elements = Base.Checked.checked_mul(
+            d_model,
+            model.mlp_hidden_dim,
+        )
+        per_expert_elements = Base.Checked.checked_mul(3, expert_matrix_elements)
+        active_expert_elements = Base.Checked.checked_mul(
+            active,
+            per_expert_elements,
+        )
+        resident_parameter_bytes = Base.Checked.checked_mul(
+            resident_parameter_elements,
+            bytes,
+        )
+        active_expert_layer_bytes = Base.Checked.checked_mul(
+            active_expert_elements,
+            bytes,
+        )
+        kv_cache_bytes = qwen3_kv_cache_bytes(
+            model,
+            context;
+            batch_size=batch,
+            dtype_bytes=bytes,
+        )
+        working_set_floor_bytes = Base.Checked.checked_add(
+            Base.Checked.checked_add(
+                resident_parameter_bytes,
+                active_expert_layer_bytes,
+            ),
+            kv_cache_bytes,
+        )
+        return (;
+            context_tokens=context,
+            batch_size=batch,
+            max_active_experts=active,
+            dtype_bytes=bytes,
+            resident_parameter_bytes,
+            active_expert_layer_bytes,
+            kv_cache_bytes,
+            working_set_floor_bytes,
+        )
+    end
 end
 
 function _qwen3_local_expert_routes(

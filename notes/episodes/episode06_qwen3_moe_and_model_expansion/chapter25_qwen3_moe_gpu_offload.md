@@ -47,6 +47,10 @@ Qwen3-30B-A3B session，而不把 61 GB BF16 权重树假装成能常驻 24 GB �
 - **生命周期比 dtype 更关键**：30.5B 参数即使全部 BF16 仍约 61 GB；可部署
   性来自非 expert 常驻、expert 稀疏读取和单层上传，而不是只把 Float32 改成
   BF16。
+- **容量估算必须逐级检查整数范围**：维度乘积一旦在中间步骤回绕，末端再检查
+  byte 乘法也无法发现错误；planner 因此对 attention、router、expert、cache
+  与最终工作集的每一级乘加都采用 checked arithmetic，并统一拒绝超出宿主
+  `Int` 范围的模型元数据。
 - **路由编号必须重映射**：磁盘上的 global expert id 不能直接索引只包含
   active experts 的局部三维参数张量；session 在宿主读取极小的 top-k route
   table，排序 active ids 后构造 local ids，再把小表传回设备。
