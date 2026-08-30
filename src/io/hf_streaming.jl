@@ -657,6 +657,15 @@ function stream_hf_qwen3_forward(
     max_seq_len=64,
     variant=nothing,
 )
+    token_matrix = _strict_host_int_array(tokens, "`tokens`")
+    seq_len, batch_size = size(token_matrix)
+    seq_len > 0 || throw(ArgumentError("`tokens` must contain at least one token"))
+    batch_size > 0 || throw(ArgumentError(
+        "`tokens` must contain at least one batch item",
+    ))
+    decode_matrix = decode_token === nothing ?
+        nothing : _decode_token_matrix(decode_token, batch_size)
+
     isdir(model_dir) || throw(ArgumentError("model directory does not exist: $model_dir"))
     config = load_hf_qwen3_config(
         joinpath(model_dir, "config.json");
@@ -666,15 +675,9 @@ function stream_hf_qwen3_forward(
     model = GPTModel(config)
     _qwen3_validate_semantics(model)
 
-    seq_len, batch_size = size(tokens)
-    seq_len > 0 || throw(ArgumentError("`tokens` must contain at least one token"))
-    decode_matrix = if decode_token === nothing
-        nothing
-    else
-        matrix = _decode_token_matrix(decode_token, batch_size)
-        _validate_generation_ids(matrix, model.vocab_size)
-        matrix
-    end
+    _validate_generation_ids(token_matrix, model.vocab_size)
+    decode_matrix === nothing ||
+        _validate_generation_ids(decode_matrix, model.vocab_size)
     seq_len + (decode_matrix === nothing ? 0 : 1) <= model.max_seq_len ||
         throw(ArgumentError("prompt plus decode token exceeds model.max_seq_len"))
 
@@ -702,8 +705,6 @@ function stream_hf_qwen3_forward(
     end
 
     st = Lux.initialstates(Xoshiro(0), model)
-    token_matrix = Int.(collect(tokens))
-    _validate_generation_ids(token_matrix, model.vocab_size)
 
     x = _read_embedding_rows(
         reader,
@@ -1245,6 +1246,17 @@ function stream_hf_qwen3_moe_forward(
     compute_dtype in (Float32, BFloat16) || throw(ArgumentError(
         "Qwen3 MoE streaming only supports Float32 or BFloat16 compute",
     ))
+    token_matrix = _strict_host_int_array(tokens, "`tokens`")
+    seq_len, batch_size = size(token_matrix)
+    seq_len > 0 || throw(ArgumentError(
+        "`tokens` must contain at least one token",
+    ))
+    batch_size > 0 || throw(ArgumentError(
+        "`tokens` must contain at least one batch item",
+    ))
+    decode_matrix = decode_token === nothing ?
+        nothing : _decode_token_matrix(decode_token, batch_size)
+
     isdir(model_dir) || throw(ArgumentError(
         "model directory does not exist: $model_dir",
     ))
@@ -1255,17 +1267,9 @@ function stream_hf_qwen3_moe_forward(
     model = GPTModel(config)
     _qwen3_validate_moe_semantics(model)
 
-    seq_len, batch_size = size(tokens)
-    seq_len > 0 || throw(ArgumentError(
-        "`tokens` must contain at least one token",
-    ))
-    decode_matrix = if decode_token === nothing
-        nothing
-    else
-        matrix = _decode_token_matrix(decode_token, batch_size)
-        _validate_generation_ids(matrix, model.vocab_size)
-        matrix
-    end
+    _validate_generation_ids(token_matrix, model.vocab_size)
+    decode_matrix === nothing ||
+        _validate_generation_ids(decode_matrix, model.vocab_size)
     seq_len + (decode_matrix === nothing ? 0 : 1) <= model.max_seq_len ||
         throw(ArgumentError(
             "prompt plus decode token exceeds model.max_seq_len",
@@ -1276,8 +1280,6 @@ function stream_hf_qwen3_moe_forward(
         model,
         Set(String.(collect(keys(reader)))),
     )
-    token_matrix = Int.(collect(tokens))
-    _validate_generation_ids(token_matrix, model.vocab_size)
     if compute_dtype === BFloat16
         model.tie_embeddings && throw(ArgumentError(
             "native BF16 MoE streaming currently requires an untied LM head",

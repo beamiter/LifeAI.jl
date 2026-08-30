@@ -233,6 +233,44 @@ end
         config_path = joinpath(directory, "config.json")
         too_large = big(typemax(Int)) + 1
 
+        for (tokens, decode_token, message) in (
+            (
+                reshape(Bool[true], 1, 1),
+                nothing,
+                "`tokens` must be an integer",
+            ),
+            (
+                reshape(BigInt[too_large], 1, 1),
+                nothing,
+                "`tokens` is outside the host integer range",
+            ),
+            (
+                Matrix{Int}(undef, 0, 1),
+                nothing,
+                "`tokens` must contain at least one token",
+            ),
+            (
+                Matrix{Int}(undef, 1, 0),
+                nothing,
+                "`tokens` must contain at least one batch item",
+            ),
+            (
+                reshape(Int[1], 1, 1),
+                true,
+                "`token` must be an integer",
+            ),
+        )
+            failure = _qwen3_moe_weight_loading_captured_error() do
+                stream_hf_qwen3_moe_forward(
+                    directory,
+                    tokens;
+                    decode_token,
+                )
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+
         huge_vocabulary = typemax(Int) ÷ 4
         wrapped_tensor_bytes = typemin(Int) + 34
         overflow_spec = Qwen3MoECheckpointSpec(

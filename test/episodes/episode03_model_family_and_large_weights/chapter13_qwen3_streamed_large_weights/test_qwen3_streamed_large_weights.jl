@@ -35,6 +35,15 @@ const _QWEN3_FAMILY_SPECS_PATH_FOR_QWEN3_STREAMING = joinpath(
     "specs.json",
 )
 
+function _qwen3_streaming_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected streamed Qwen3 call to fail")
+end
+
 function _qwen3_streaming_row_major_values(array)
     values = Float32.(array)
     ndims(values) <= 1 && return vec(values)
@@ -199,6 +208,43 @@ function _qwen3_streaming_fixture_dir(directory; tie=false, dtype="BF16")
     tensors = _qwen3_streaming_qwen_tensors(model)
     _qwen3_streaming_write_sharded(directory, tensors; dtype)
     return model, tensors
+end
+
+@testset "streamed token inputs fail before checkpoint I/O" begin
+    missing_model = joinpath(@__DIR__, "missing-streamed-model")
+    too_large = big(typemax(Int)) + 1
+    for (tokens, message) in (
+        (reshape(Bool[true], 1, 1), "`tokens` must be an integer"),
+        (
+            reshape(BigInt[too_large], 1, 1),
+            "`tokens` is outside the host integer range",
+        ),
+        (
+            Matrix{Int}(undef, 0, 1),
+            "`tokens` must contain at least one token",
+        ),
+        (
+            Matrix{Int}(undef, 1, 0),
+            "`tokens` must contain at least one batch item",
+        ),
+    )
+        failure = _qwen3_streaming_captured_error() do
+            stream_hf_qwen3_forward(missing_model, tokens)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
+    end
+
+    decode_failure = _qwen3_streaming_captured_error() do
+        stream_hf_qwen3_forward(
+            missing_model,
+            reshape(Int[1], 1, 1);
+            decode_token=true,
+        )
+    end
+    @test decode_failure isa ArgumentError
+    @test sprint(showerror, decode_failure) ==
+        "ArgumentError: `token` must be an integer"
 end
 
 @testset "streamed safetensors reader strictness" begin
