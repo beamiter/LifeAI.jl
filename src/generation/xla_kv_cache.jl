@@ -55,11 +55,150 @@ underlying arrays, so one XLA executable can be reused for every token position.
 is an `Int32`; XLA uses a tracked `Reactant.ConcreteRNumber{Int32}` so the value
 can change without changing the compiled program.
 """
+struct _StaticGPTKVCacheValidated end
+const _STATIC_GPT_KV_CACHE_VALIDATED = _StaticGPTKVCacheValidated()
+
 struct StaticGPTKVCache{C,P}
     layers::C
     position::P
     batch_size::Int
     max_seq_len::Int
+
+    function StaticGPTKVCache(
+        ::_StaticGPTKVCacheValidated,
+        layers::C,
+        position::P,
+        batch_size::Int,
+        max_seq_len::Int,
+    ) where {C,P}
+        return new{C,P}(layers, position, batch_size, max_seq_len)
+    end
+end
+
+function _validate_static_gpt_kv_cache_layers(
+    layers,
+    batch_size::Int,
+    max_seq_len::Int,
+)
+    layers isa Tuple || throw(ArgumentError(
+        "static GPT KV cache layers must be a tuple",
+    ))
+    isempty(layers) && throw(ArgumentError(
+        "static GPT KV cache layers must not be empty",
+    ))
+
+    expected_shape = nothing
+    expected_dtype = nothing
+    expected_device = nothing
+    seen_storage = IdDict{Any,Nothing}()
+    for (layer_index, layer) in enumerate(layers)
+        layer isa StaticLayerKVCache || throw(ArgumentError(
+            "static GPT KV cache layer $layer_index must be StaticLayerKVCache storage",
+        ))
+        keys = layer.keys
+        values = layer.values
+        keys isa AbstractArray && values isa AbstractArray || throw(ArgumentError(
+            "static GPT KV cache keys and values must be arrays",
+        ))
+        _validate_layer_kv_arrays(keys, values)
+        eltype(keys) <: AbstractFloat || throw(ArgumentError(
+            "static GPT KV cache storage must contain floating-point values",
+        ))
+        get_device(keys) == get_device(values) || throw(ArgumentError(
+            "static GPT KV cache keys and values must use the same device",
+        ))
+        size(keys, 3) == max_seq_len || throw(DimensionMismatch(
+            "static GPT KV cache token capacity must match max_seq_len",
+        ))
+        size(keys, 4) == batch_size || throw(DimensionMismatch(
+            "static GPT KV cache batch dimension must match batch_size",
+        ))
+
+        shape = size(keys)
+        dtype = eltype(keys)
+        device = get_device(keys)
+        if expected_shape === nothing
+            expected_shape = shape
+            expected_dtype = dtype
+            expected_device = device
+        else
+            shape == expected_shape || throw(DimensionMismatch(
+                "static GPT KV cache layer shapes must match",
+            ))
+            dtype == expected_dtype || throw(ArgumentError(
+                "static GPT KV cache layer dtypes must match",
+            ))
+            device == expected_device || throw(ArgumentError(
+                "static GPT KV cache layer devices must match",
+            ))
+        end
+        for storage in (keys, values)
+            haskey(seen_storage, storage) && throw(ArgumentError(
+                "static GPT KV cache layers must use distinct storage",
+            ))
+            seen_storage[storage] = nothing
+        end
+    end
+    return nothing
+end
+
+function _static_gpt_kv_cache_max_seq_len(max_seq_len)
+    resolved = _strict_host_int(
+        max_seq_len,
+        "static GPT KV cache max_seq_len",
+    )
+    resolved > 0 || throw(ArgumentError(
+        "static GPT KV cache max_seq_len must be positive",
+    ))
+    resolved <= typemax(Int32) || throw(ArgumentError(
+        "static GPT KV cache max_seq_len exceeds Int32 position capacity",
+    ))
+    return resolved
+end
+
+function _static_gpt_kv_cache_position(position, max_seq_len::Int)
+    if position isa Reactant.ConcreteRNumber{Int32}
+        host_position = Int(position)
+        0 <= host_position <= max_seq_len || throw(ArgumentError(
+            "static GPT KV cache position must be in 0:max_seq_len",
+        ))
+        return position
+    end
+    position isa Reactant.ConcreteRNumber && throw(ArgumentError(
+        "static GPT KV cache tracked position must contain Int32 values",
+    ))
+    host_position = _strict_host_int(position, "static GPT KV cache position")
+    0 <= host_position <= max_seq_len || throw(ArgumentError(
+        "static GPT KV cache position must be in 0:max_seq_len",
+    ))
+    return Int32(host_position)
+end
+
+function StaticGPTKVCache(layers, position, batch_size, max_seq_len)
+    resolved_batch = _strict_host_int(
+        batch_size,
+        "static GPT KV cache batch_size",
+    )
+    resolved_max_seq_len = _static_gpt_kv_cache_max_seq_len(max_seq_len)
+    resolved_batch > 0 || throw(ArgumentError(
+        "static GPT KV cache batch_size must be positive",
+    ))
+    resolved_position = _static_gpt_kv_cache_position(
+        position,
+        resolved_max_seq_len,
+    )
+    _validate_static_gpt_kv_cache_layers(
+        layers,
+        resolved_batch,
+        resolved_max_seq_len,
+    )
+    return StaticGPTKVCache(
+        _STATIC_GPT_KV_CACHE_VALIDATED,
+        layers,
+        resolved_position,
+        resolved_batch,
+        resolved_max_seq_len,
+    )
 end
 
 function Base.length(cache::StaticGPTKVCache)
@@ -87,18 +226,20 @@ the backing storage for `XLAKVDecoder`.
 """
 function init_static_kv_cache(
     model::GPTModel;
-    batch_size::Int=1,
+    batch_size::Integer=1,
     dtype::Type{<:AbstractFloat}=Float32,
     device=Lux.cpu_device(),
 )
-    batch_size > 0 || throw(ArgumentError("`batch_size` must be positive"))
+    resolved_batch = _strict_host_int(batch_size, "`batch_size`")
+    resolved_batch > 0 || throw(ArgumentError("`batch_size` must be positive"))
+    _static_gpt_kv_cache_max_seq_len(model.max_seq_len)
 
     layers = map(_model_blocks(model)) do block
         shape = (
             block.attn.head_dim,
             block.attn.num_kv_heads,
             model.max_seq_len,
-            batch_size,
+            resolved_batch,
         )
         return StaticLayerKVCache(
             device(zeros(dtype, shape)),
@@ -107,25 +248,61 @@ function init_static_kv_cache(
     end
 
     return StaticGPTKVCache(
+        _STATIC_GPT_KV_CACHE_VALIDATED,
         layers,
         Int32(0),
-        batch_size,
+        resolved_batch,
         model.max_seq_len,
     )
 end
 
-function _validate_static_kv_cache(model::GPTModel, cache::StaticGPTKVCache)
+function _validate_static_kv_cache(
+    model::GPTModel,
+    cache::StaticGPTKVCache;
+    host_position=nothing,
+)
+    _validate_static_gpt_kv_cache_layers(
+        cache.layers,
+        cache.batch_size,
+        cache.max_seq_len,
+    )
     length(cache.layers) == model.num_layers ||
         throw(DimensionMismatch("cache layer count does not match model.num_layers"))
     cache.max_seq_len == model.max_seq_len ||
         throw(DimensionMismatch("cache capacity does not match model.max_seq_len"))
     cache.batch_size > 0 || throw(ArgumentError("cache batch size must be positive"))
 
-    position = length(cache)
+    cache.position isa Int32 ||
+        cache.position isa Reactant.ConcreteRNumber{Int32} || throw(ArgumentError(
+            "static GPT KV cache position must be Int32 or a tracked Int32 scalar",
+        ))
+    # XLA callers maintain this mirror explicitly, so structural/model preflight
+    # does not materialize the tracked device scalar once per decoded token.
+    position = if host_position === nothing
+        Int(cache.position)
+    else
+        resolved = _strict_host_int(
+            host_position,
+            "static GPT KV cache host_position",
+        )
+        if cache.position isa Int32
+            Int(cache.position) == resolved || throw(ArgumentError(
+                "static GPT KV cache host position does not match position",
+            ))
+        elseif !(cache.position isa Reactant.ConcreteRNumber{Int32})
+            throw(ArgumentError(
+                "static GPT KV cache position must be Int32 or a tracked Int32 scalar",
+            ))
+        end
+        resolved
+    end
     0 <= position <= cache.max_seq_len ||
         throw(ArgumentError("cache position is outside 0:max_seq_len"))
 
-    for (block, layer_cache) in zip(_model_blocks(model), cache.layers)
+    for (layer_index, (block, layer_cache)) in enumerate(zip(
+        _model_blocks(model),
+        cache.layers,
+    ))
         expected_shape = (
             block.attn.head_dim,
             block.attn.num_kv_heads,
@@ -133,12 +310,16 @@ function _validate_static_kv_cache(model::GPTModel, cache::StaticGPTKVCache)
             cache.batch_size,
         )
         size(layer_cache.keys) == expected_shape ||
-            throw(DimensionMismatch("static key cache has an invalid shape"))
+            throw(DimensionMismatch(
+                "static layer $layer_index key cache has an invalid model shape",
+            ))
         size(layer_cache.values) == expected_shape ||
-            throw(DimensionMismatch("static value cache has an invalid shape"))
+            throw(DimensionMismatch(
+                "static layer $layer_index value cache has an invalid model shape",
+            ))
     end
 
-    return nothing
+    return position
 end
 
 function _apply_rope_single_position(
@@ -528,6 +709,7 @@ function _static_gpt_prefill_kernel!(
         lm_head=st_lm_head,
     )
     new_cache = StaticGPTKVCache(
+        _STATIC_GPT_KV_CACHE_VALIDATED,
         layer_caches,
         cache.position + Int32(seq_len),
         cache.batch_size,
@@ -576,6 +758,7 @@ function _static_gpt_decode_kernel!(
         lm_head=st_lm_head,
     )
     new_cache = StaticGPTKVCache(
+        _STATIC_GPT_KV_CACHE_VALIDATED,
         layer_caches,
         cache.position + one(cache.position),
         cache.batch_size,
@@ -593,8 +776,8 @@ function prefill(
     cache::StaticGPTKVCache;
     device=get_device(ps),
 )
-    _validate_static_kv_cache(model, cache)
-    isempty(cache) || throw(ArgumentError("`prefill` requires an empty cache"))
+    position = _validate_static_kv_cache(model, cache)
+    position == 0 || throw(ArgumentError("`prefill` requires an empty cache"))
 
     tokens = _prefill_token_matrix(prompt_tokens)
     size(tokens, 2) == cache.batch_size ||
@@ -620,9 +803,9 @@ function decode_step(
     cache::StaticGPTKVCache;
     device=get_device(ps),
 )
-    _validate_static_kv_cache(model, cache)
-    isempty(cache) && throw(ArgumentError("call `prefill` before `decode_step`"))
-    length(cache) < cache.max_seq_len ||
+    position = _validate_static_kv_cache(model, cache)
+    position == 0 && throw(ArgumentError("call `prefill` before `decode_step`"))
+    position < cache.max_seq_len ||
         throw(ArgumentError("KV cache has reached model.max_seq_len"))
 
     tokens = _decode_token_matrix(token, cache.batch_size)
@@ -680,6 +863,7 @@ function _xla_static_cache(
         device,
     )
     return StaticGPTKVCache(
+        _STATIC_GPT_KV_CACHE_VALIDATED,
         cache.layers,
         _tracked_zero_position(),
         cache.batch_size,
@@ -708,6 +892,7 @@ function XLAKVDecoder(
         throw(ArgumentError("`cache_eltype` must be an AbstractFloat type"))
 
     cache = _xla_static_cache(model, batch_size, dtype, device)
+    _validate_static_kv_cache(model, cache; host_position=0)
 
     return XLAKVDecoder(
         model,
@@ -726,6 +911,7 @@ end
 function _reset_xla_cache!(decoder::XLAKVDecoder)
     Reactant.set_default_backend(decoder.xla_backend)
     decoder.cache = StaticGPTKVCache(
+        _STATIC_GPT_KV_CACHE_VALIDATED,
         decoder.cache.layers,
         _tracked_zero_position(),
         decoder.cache.batch_size,
@@ -742,6 +928,11 @@ Compile or reuse a prompt-shape-specific XLA prefill executable, reset the
 logical cache, and process the complete prompt.
 """
 function xla_prefill!(decoder::XLAKVDecoder, prompt_tokens)
+    _validate_static_kv_cache(
+        decoder.model,
+        decoder.cache;
+        host_position=decoder.host_position,
+    )
     tokens = _prefill_token_matrix(prompt_tokens)
     size(tokens, 2) == decoder.cache.batch_size ||
         throw(DimensionMismatch("prompt batch size does not match decoder batch size"))
@@ -786,6 +977,11 @@ Append one token per batch item. The first invocation compiles the fixed-shape
 decode step; every later position reuses the same executable.
 """
 function xla_decode_step!(decoder::XLAKVDecoder, token)
+    _validate_static_kv_cache(
+        decoder.model,
+        decoder.cache;
+        host_position=decoder.host_position,
+    )
     decoder.host_position > 0 ||
         throw(ArgumentError("call `xla_prefill!` before `xla_decode_step!`"))
     decoder.host_position < decoder.cache.max_seq_len ||

@@ -7,6 +7,7 @@ using LifeAI:
     GPTModel,
     GPTKVCache,
     LayerKVCache,
+    StaticGPTKVCache,
     StaticLayerKVCache,
     _append_kv,
     decode_step,
@@ -225,6 +226,122 @@ end
         _Ch02ForeignDeviceArray(values),
     )
     @test_throws ArgumentError StaticLayerKVCache(keys, keys)
+end
+
+@testset "StaticGPTKVCache seals fixed container invariants" begin
+    shape = (2, 3, 4, 2)
+    first_layer = StaticLayerKVCache(
+        zeros(Float32, shape),
+        ones(Float32, shape),
+    )
+    second_layer = StaticLayerKVCache(
+        fill(2.0f0, shape),
+        fill(3.0f0, shape),
+    )
+    layers = (first_layer, second_layer)
+    cache = StaticGPTKVCache(layers, Int16(2), UInt8(2), Int128(4))
+    @test cache.layers === layers
+    @test cache.position === Int32(2)
+    @test cache.batch_size === 2
+    @test cache.max_seq_len === 4
+    @test length(cache) == 2
+    @test !isempty(cache)
+
+    empty_cache = StaticGPTKVCache((first_layer,), UInt128(0), 2, 4)
+    @test empty_cache.position === Int32(0)
+    @test isempty(empty_cache)
+
+    @test_throws MethodError StaticGPTKVCache{
+        typeof(layers),
+        Int32,
+    }(layers, Int32(2), 2, 4)
+
+    overflow = big(typemax(Int)) + 1
+    invalid_metadata_cases = (
+        () -> StaticGPTKVCache(layers, true, 2, 4),
+        () -> StaticGPTKVCache(layers, 1.5, 2, 4),
+        () -> StaticGPTKVCache(layers, overflow, 2, 4),
+        () -> StaticGPTKVCache(layers, -1, 2, 4),
+        () -> StaticGPTKVCache(layers, 5, 2, 4),
+        () -> StaticGPTKVCache(layers, 0, false, 4),
+        () -> StaticGPTKVCache(layers, 0, 1.5, 4),
+        () -> StaticGPTKVCache(layers, 0, overflow, 4),
+        () -> StaticGPTKVCache(layers, 0, 0, 4),
+        () -> StaticGPTKVCache(layers, 0, 2, false),
+        () -> StaticGPTKVCache(layers, 0, 2, 1.5),
+        () -> StaticGPTKVCache(layers, 0, 2, overflow),
+        () -> StaticGPTKVCache(layers, 0, 2, 0),
+        () -> StaticGPTKVCache(layers, 0, 2, big(typemax(Int32)) + 1),
+    )
+    for build in invalid_metadata_cases
+        @test_throws ArgumentError build()
+    end
+
+    @test_throws ArgumentError StaticGPTKVCache(collect(layers), 0, 2, 4)
+    @test_throws ArgumentError StaticGPTKVCache((), 0, 2, 4)
+    @test_throws ArgumentError StaticGPTKVCache((1,), 0, 2, 4)
+
+    wrong_capacity = StaticLayerKVCache(
+        zeros(Float32, 2, 3, 3, 2),
+        ones(Float32, 2, 3, 3, 2),
+    )
+    @test_throws DimensionMismatch StaticGPTKVCache(
+        (wrong_capacity,),
+        0,
+        2,
+        4,
+    )
+    wrong_batch = StaticLayerKVCache(
+        zeros(Float32, 2, 3, 4, 1),
+        ones(Float32, 2, 3, 4, 1),
+    )
+    @test_throws DimensionMismatch StaticGPTKVCache((wrong_batch,), 0, 2, 4)
+    wrong_shape = StaticLayerKVCache(
+        zeros(Float32, 3, 3, 4, 2),
+        ones(Float32, 3, 3, 4, 2),
+    )
+    @test_throws DimensionMismatch StaticGPTKVCache(
+        (first_layer, wrong_shape),
+        0,
+        2,
+        4,
+    )
+    float64_layer = StaticLayerKVCache(
+        zeros(Float64, shape),
+        ones(Float64, shape),
+    )
+    @test_throws ArgumentError StaticGPTKVCache(
+        (first_layer, float64_layer),
+        0,
+        2,
+        4,
+    )
+    foreign_layer = StaticLayerKVCache(
+        _Ch02ForeignDeviceArray(zeros(Float32, shape)),
+        _Ch02ForeignDeviceArray(ones(Float32, shape)),
+    )
+    @test_throws ArgumentError StaticGPTKVCache(
+        (first_layer, foreign_layer),
+        0,
+        2,
+        4,
+    )
+    @test_throws ArgumentError StaticGPTKVCache(
+        (first_layer, first_layer),
+        0,
+        2,
+        4,
+    )
+    reused_key_layer = StaticLayerKVCache(
+        first_layer.keys,
+        fill(4.0f0, shape),
+    )
+    @test_throws ArgumentError StaticGPTKVCache(
+        (first_layer, reused_key_layer),
+        0,
+        2,
+        4,
+    )
 end
 
 @testset "GPTKVCache seals dynamic container invariants" begin
@@ -719,6 +836,59 @@ end
     model = GPTModel(11, 8, 2, 1; max_seq_len=3, use_rope=true)
     ps, st = Lux.setup(rng, model)
     cache = init_static_kv_cache(model)
+    wide_batch_cache = init_static_kv_cache(model; batch_size=Int128(1))
+    @test wide_batch_cache.batch_size === 1
+    @test_throws ArgumentError init_static_kv_cache(model; batch_size=true)
+    @test_throws ArgumentError init_static_kv_cache(
+        model;
+        batch_size=big(typemax(Int)) + 1,
+    )
+
+    wrong_geometry_layer = StaticLayerKVCache(
+        zeros(Float32, 2, 2, 3, 1),
+        zeros(Float32, 2, 2, 3, 1),
+    )
+    wrong_geometry = StaticGPTKVCache((wrong_geometry_layer,), 0, 1, 3)
+    @test_throws DimensionMismatch prefill(
+        model,
+        ps,
+        st,
+        [1],
+        wrong_geometry,
+    )
+    @test all(iszero, wrong_geometry_layer.keys)
+    @test all(iszero, wrong_geometry_layer.values)
+
+    extra_layer = StaticLayerKVCache(
+        ones(Float32, 2, 2, 3, 1),
+        fill(2.0f0, 2, 2, 3, 1),
+    )
+    wrong_layer_count = StaticGPTKVCache(
+        (wrong_geometry_layer, extra_layer),
+        0,
+        1,
+        3,
+    )
+    @test_throws DimensionMismatch prefill(
+        model,
+        ps,
+        st,
+        [1],
+        wrong_layer_count,
+    )
+
+    wrong_capacity_layer = StaticLayerKVCache(
+        zeros(Float32, 4, 2, 2, 1),
+        ones(Float32, 4, 2, 2, 1),
+    )
+    wrong_capacity = StaticGPTKVCache((wrong_capacity_layer,), 0, 1, 2)
+    @test_throws DimensionMismatch prefill(
+        model,
+        ps,
+        st,
+        [1],
+        wrong_capacity,
+    )
 
     @test_throws ArgumentError decode_step(model, ps, st, 1, cache)
     _, cache, cached_state = prefill(model, ps, st, [1, 2, 3], cache)

@@ -463,6 +463,9 @@ Chapter 03 reproducible-training test.
 227. Seal the resident Qwen3 XLA HTTP service behind validated keyword
      construction while preserving injectable callable doubles, independent
      locks, and mutable runtime counters.
+228. Seal static Qwen GPT cache containers behind coherent layer tuples,
+     Int32 or tracked positions, fixed batch/capacity geometry, shared
+     dtype/device, distinct storage, and trace-safe private reconstruction.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

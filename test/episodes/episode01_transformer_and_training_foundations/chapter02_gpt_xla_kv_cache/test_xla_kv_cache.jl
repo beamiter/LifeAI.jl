@@ -5,6 +5,7 @@ import Reactant
 import LifeAI
 using LifeAI:
     GPTModel,
+    StaticGPTKVCache,
     StaticLayerKVCache,
     TrainerGPT,
     XLAKVDecoder,
@@ -22,6 +23,16 @@ function _ch02_xla_rebuild_static_layer(cache)
     )
 end
 
+function _ch02_xla_advance_static_cache(cache)
+    return LifeAI.StaticGPTKVCache(
+        LifeAI._STATIC_GPT_KV_CACHE_VALIDATED,
+        cache.layers,
+        cache.position + one(cache.position),
+        cache.batch_size,
+        cache.max_seq_len,
+    )
+end
+
 @testset "StaticLayerKVCache remains reconstructible while tracing" begin
     Reactant.set_default_backend("cpu")
     keys = Reactant.to_rarray(zeros(Float32, 2, 1, 3, 1))
@@ -35,6 +46,49 @@ end
     @test rebuilt isa StaticLayerKVCache
     @test Array(rebuilt.keys) == ones(Float32, 2, 1, 3, 1)
     @test Array(rebuilt.values) == fill(3.0f0, 2, 1, 3, 1)
+
+    tracked_position = Reactant.to_rarray(Int32(0); track_numbers=true)
+    tracked_layers = (cache,)
+    tracked_cache = StaticGPTKVCache(
+        tracked_layers,
+        tracked_position,
+        1,
+        3,
+    )
+    @test tracked_cache.layers === tracked_layers
+    @test tracked_cache.position === tracked_position
+    @test Int(tracked_cache.position) == 0
+
+    tracked_negative = Reactant.to_rarray(Int32(-1); track_numbers=true)
+    tracked_overflow = Reactant.to_rarray(Int32(4); track_numbers=true)
+    tracked_int64 = Reactant.to_rarray(Int64(0); track_numbers=true)
+    @test_throws ArgumentError StaticGPTKVCache(
+        (cache,),
+        tracked_negative,
+        1,
+        3,
+    )
+    @test_throws ArgumentError StaticGPTKVCache(
+        (cache,),
+        tracked_overflow,
+        1,
+        3,
+    )
+    @test_throws ArgumentError StaticGPTKVCache(
+        (cache,),
+        tracked_int64,
+        1,
+        3,
+    )
+
+    compiled_advance = Reactant.@compile _ch02_xla_advance_static_cache(
+        tracked_cache,
+    )
+    advanced = compiled_advance(tracked_cache)
+    @test advanced isa StaticGPTKVCache
+    @test Int(advanced.position) == 1
+    @test Array(advanced.layers[1].keys) == zeros(Float32, 2, 1, 3, 1)
+    @test Array(advanced.layers[1].values) == ones(Float32, 2, 1, 3, 1)
 end
 
 @testset "Reactant/XLA fixed-shape KV decoding" begin
@@ -48,6 +102,8 @@ end
         batch_size=1,
         xla_backend="cpu",
     )
+    @test decoder.cache.position isa Reactant.ConcreteRNumber{Int32}
+    @test Int(decoder.cache.position) == decoder.host_position == 0
 
     prompt = reshape([1, 3, 5], 3, 1)
     reference_logits, _ = model(prompt, ps, st)
@@ -60,6 +116,8 @@ end
         rtol=1.0f-4,
     )
     @test decoder.host_position == 3
+    @test decoder.cache.position isa Reactant.ConcreteRNumber{Int32}
+    @test Int(decoder.cache.position) == decoder.host_position
     @test length(decoder.prefill_thunks) == 1
 
     context = vec(prompt)
@@ -83,14 +141,22 @@ end
             rtol=1.0f-4,
         )
         @test map(layer -> size(layer.keys), decoder.cache.layers) == cache_shapes
+        @test decoder.cache.position isa Reactant.ConcreteRNumber{Int32}
+        @test Int(decoder.cache.position) == decoder.host_position
     end
 
     @test decoder.decode_thunk === compiled_decode
     @test decoder.host_position == 6
 
+    LifeAI._reset_xla_cache!(decoder)
+    @test decoder.host_position == 0
+    @test decoder.cache.position isa Reactant.ConcreteRNumber{Int32}
+    @test Int(decoder.cache.position) == 0
+
     # Matching prompt shapes reuse the existing prefill executable.
     xla_prefill!(decoder, reshape([2, 4, 6], 3, 1))
     @test length(decoder.prefill_thunks) == 1
+    @test Int(decoder.cache.position) == decoder.host_position == 3
 
     modes = benchmark_xla_cache_modes(
         model,
