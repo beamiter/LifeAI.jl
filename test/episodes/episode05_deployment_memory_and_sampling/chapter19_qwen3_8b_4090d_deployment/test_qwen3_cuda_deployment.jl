@@ -395,7 +395,14 @@ end
         @test logits == baseline.logits[:, end:end, :]
         @test chunk_positions == [3, 5]
         @test session.position == length(tokens)
-        @test decode_hf_qwen3_bf16!(session, 7) == baseline.decode_logits
+        for invalid_token in (true, too_large)
+            @test_throws ArgumentError decode_hf_qwen3_bf16!(
+                session,
+                invalid_token,
+            )
+            @test session.position == length(tokens)
+        end
+        @test decode_hf_qwen3_bf16!(session, Int128(7)) == baseline.decode_logits
         @test session.position == length(tokens) + 1
 
         first_run = generate_hf_qwen3_bf16!(

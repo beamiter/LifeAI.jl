@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the seventy follow-up rounds implemented on top of the
+This ledger records the seventy-one follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -139,6 +139,8 @@ Chapter 03 reproducible-training test.
     helper and public generation entry before compiled execution.
 70. Strictly normalize reusable Qwen3 BF16 session prompt tokens before reset
     or cache mutation while preserving valid integer widths.
+71. Strictly normalize reusable Qwen3 BF16 single-step decode tokens before
+    model execution or session-position mutation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

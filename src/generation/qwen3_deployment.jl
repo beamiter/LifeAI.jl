@@ -603,7 +603,7 @@ function decode_hf_qwen3_bf16!(
     session.position < session.context_tokens || throw(ArgumentError(
         "Qwen3 session context is full",
     ))
-    token_id = Int(token)
+    token_id = _strict_host_int(token, "Qwen3 session decode token")
     _validate_generation_ids([token_id], session.model.vocab_size)
     result = _bf16a_forward_pass(
         session.model,
