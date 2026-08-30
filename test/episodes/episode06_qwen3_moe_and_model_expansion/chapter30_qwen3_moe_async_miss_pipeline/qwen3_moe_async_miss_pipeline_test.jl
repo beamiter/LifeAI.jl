@@ -160,8 +160,36 @@ end
         expert_cache_dispatch=:scattered,
         expert_gc_interval_layers=0,
     )
+    normalized = configure_hf_qwen3_moe_expert_cache!(
+        session;
+        budget_bytes=Int128(8 * 144),
+        gc_interval_layers=big(0),
+        read_workers=Int16(1),
+    )
+    @test normalized.expert_cache_budget_bytes isa Int
+    @test normalized.expert_gc_interval_layers isa Int
+    @test normalized.expert_read_workers isa Int
     prefill_hf_qwen3_moe_offload!(session, [2, 3])
     entries = qwen3_moe_expert_cache_stats(session).entries
+    too_large = big(typemax(Int)) + 1
+    for invalid_budget in (true, too_large)
+        @test_throws ArgumentError configure_hf_qwen3_moe_expert_cache!(
+            session;
+            budget_bytes=invalid_budget,
+        )
+    end
+    for invalid_interval in (true, too_large)
+        @test_throws ArgumentError configure_hf_qwen3_moe_expert_cache!(
+            session;
+            gc_interval_layers=invalid_interval,
+        )
+    end
+    for invalid_workers in (true, too_large)
+        @test_throws ArgumentError configure_hf_qwen3_moe_expert_cache!(
+            session;
+            read_workers=invalid_workers,
+        )
+    end
     @test_throws ArgumentError configure_hf_qwen3_moe_expert_cache!(
         session;
         miss_pipeline=:speculative,

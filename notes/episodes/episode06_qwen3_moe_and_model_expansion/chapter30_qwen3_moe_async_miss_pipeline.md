@@ -33,6 +33,10 @@ router、cache policy、LRU 顺序和 logits 的前提下隐藏 miss I/O。
 会 fail closed。请求统计新增 host-read 累计时间、miss-stage wall time、上传等待、
 read jobs、并行层数与 pinned bytes。
 
+运行时 cache 重配置对 budget、GC interval 和 reader workers 使用严格宿主整数
+边界：可表示的窄整数与 BigInt 会归一为 `Int`，Bool 和越界值在清空已有 cache
+或重建 buffer pool 前失败。
+
 ## 真实实验
 
 命令：

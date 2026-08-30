@@ -707,7 +707,7 @@ function configure_hf_qwen3_moe_expert_cache!(
     read_workers::Integer=session.expert_read_workers,
     pinned_upload::Bool=session.expert_pinned_upload,
 )
-    budget = Int(budget_bytes)
+    budget = _strict_host_int(budget_bytes, "expert cache budget_bytes")
     budget >= 0 || throw(ArgumentError(
         "expert cache budget_bytes must be non-negative",
     ))
@@ -717,8 +717,11 @@ function configure_hf_qwen3_moe_expert_cache!(
     validated_pipeline = _qwen3_moe_validate_expert_miss_pipeline(
         miss_pipeline,
     )
-    gc_interval = Int(gc_interval_layers)
-    workers = Int(read_workers)
+    gc_interval = _strict_host_int(
+        gc_interval_layers,
+        "expert cache gc_interval_layers",
+    )
+    workers = _strict_host_int(read_workers, "expert read_workers")
     gc_interval >= 0 || throw(ArgumentError(
         "expert cache gc_interval_layers must be non-negative",
     ))

@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the fifty-nine follow-up rounds implemented on top of the
+This ledger records the sixty follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -117,6 +117,8 @@ Chapter 03 reproducible-training test.
     model-weight, or device work, and reuse the same validation during init.
 59. Preflight Qwen3 MoE streamed-session numeric, strategy, and cross-option
     contracts before config I/O, RoPE construction, or resident tensor loading.
+60. Harden live Qwen3 MoE expert-cache reconfiguration integers so invalid
+    Boolean or oversized values fail before cache or buffer-pool mutation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
