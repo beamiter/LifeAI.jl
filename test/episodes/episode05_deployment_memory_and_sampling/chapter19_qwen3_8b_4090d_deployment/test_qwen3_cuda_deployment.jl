@@ -342,6 +342,24 @@ end
             context_tokens=16,
             prefill_chunk_tokens=3,
         )
+        too_large = big(typemax(Int)) + 1
+        session.position = 7
+        for invalid_prompt in (Bool[true], BigInt[too_large])
+            @test_throws ArgumentError prefill_hf_qwen3_bf16!(
+                session,
+                invalid_prompt,
+            )
+            @test session.position == 7
+        end
+        for integer_type in (Int8, Int32, Int128, BigInt)
+            normalized_tokens = LifeAI._qwen3_session_token_vector(
+                session,
+                integer_type.([1, 2]),
+            )
+            @test normalized_tokens == [1, 2]
+            @test eltype(normalized_tokens) === Int
+        end
+        reset_hf_qwen3_bf16_session!(session)
         tokens = [1, 5, 8, 3, 12]
         skipped = LifeAI._bf16a_forward_pass(
             session.model,

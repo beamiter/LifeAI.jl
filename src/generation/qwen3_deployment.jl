@@ -529,7 +529,10 @@ function reset_hf_qwen3_bf16_session!(session::HFQwen3BF16Session)
 end
 
 function _qwen3_session_token_vector(session, tokens)
-    values = Int.(vec(collect(tokens)))
+    values = vec(_strict_host_int_array(
+        tokens,
+        "Qwen3 session prompt token",
+    ))
     isempty(values) && throw(ArgumentError("prompt must contain at least one token"))
     _validate_generation_ids(values, session.model.vocab_size)
     return values
