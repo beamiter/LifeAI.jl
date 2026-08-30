@@ -3,6 +3,7 @@ using JSON3
 using SHA: sha256
 using LifeAI:
     Qwen3MoECheckpointSpec,
+    Qwen3MoEShardSpec,
     load_hf_qwen3_moe_config,
     qwen3_moe_checkpoint_spec,
     qwen3_moe_parameter_count,
@@ -21,6 +22,31 @@ function _qwen3_moe_contract_captured_error(thunk)
         return error
     end
     error("expected Qwen3 MoE checkpoint specification to fail")
+end
+
+function _qwen3_moe_contract_with_shards(spec, shard_payload_bytes, shards)
+    return Qwen3MoECheckpointSpec(
+        spec.variant,
+        spec.model_id,
+        spec.revision,
+        spec.config_sha256,
+        spec.index_sha256,
+        spec.index_tensor_count,
+        spec.tensor_bytes,
+        shard_payload_bytes,
+        spec.vocab_size,
+        spec.d_model,
+        spec.dense_mlp_hidden_dim,
+        spec.moe_hidden_dim,
+        spec.num_layers,
+        spec.num_heads,
+        spec.num_kv_heads,
+        spec.head_dim,
+        spec.num_experts,
+        spec.experts_per_token,
+        spec.max_position_embeddings,
+        shards,
+    )
 end
 
 @testset "Qwen3 MoE checkpoint specifications are strict" begin
@@ -107,6 +133,45 @@ end
         @test failure isa ArgumentError
         @test sprint(showerror, failure) ==
             "ArgumentError: Qwen3 MoE checkpoint $message"
+    end
+end
+
+@testset "Qwen3 MoE shard byte totals are exact and preflighted" begin
+    base = qwen3_moe_checkpoint_spec()
+    cases = (
+        (
+            _qwen3_moe_contract_with_shards(
+                base,
+                0,
+                (
+                    Qwen3MoEShardSpec("first", typemax(Int), "hash"),
+                    Qwen3MoEShardSpec("second", 1, "hash"),
+                ),
+            ),
+            "Qwen3 MoE shard payload byte count exceeds the host integer range",
+        ),
+        (
+            _qwen3_moe_contract_with_shards(
+                base,
+                2,
+                (Qwen3MoEShardSpec("only", 1, "hash"),),
+            ),
+            "frozen Qwen3 MoE shard sizes do not match payload byte total",
+        ),
+    )
+    mktempdir() do directory
+        for (spec, message) in cases
+            failure = _qwen3_moe_contract_captured_error() do
+                verify_qwen3_moe_checkpoint(
+                    directory;
+                    spec,
+                    verify_shard_checksums=false,
+                )
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+            @test !occursin("config.json", sprint(showerror, failure))
+        end
     end
 end
 

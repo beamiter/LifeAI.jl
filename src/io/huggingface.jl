@@ -1412,6 +1412,16 @@ function verify_qwen3_moe_checkpoint(
     expected_tensor_bytes == spec.tensor_bytes || throw(ArgumentError(
         "frozen Qwen3 MoE parameter count does not match BF16 tensor bytes",
     ))
+    expected_shard_payload_bytes = _qwen3_parameter_count_int(
+        sum(
+            (BigInt(shard.bytes) for shard in spec.shards);
+            init=BigInt(0),
+        ),
+        "Qwen3 MoE shard payload byte count",
+    )
+    expected_shard_payload_bytes == spec.shard_payload_bytes || throw(ArgumentError(
+        "frozen Qwen3 MoE shard sizes do not match payload byte total",
+    ))
     config_path = joinpath(model_dir, "config.json")
     index_path = joinpath(model_dir, "model.safetensors.index.json")
     isfile(config_path) || throw(ArgumentError(
@@ -1499,11 +1509,6 @@ function verify_qwen3_moe_checkpoint(
             sha256=actual_sha256,
         ))
     end
-    sum(shard.bytes for shard in spec.shards) == spec.shard_payload_bytes ||
-        throw(ArgumentError(
-            "frozen Qwen3 MoE shard sizes do not match payload byte total",
-        ))
-
     return (;
         spec,
         source=abspath(model_dir),
@@ -1512,7 +1517,7 @@ function verify_qwen3_moe_checkpoint(
         index_sha256,
         tensor_count=length(weight_map),
         tensor_bytes=Int(total_size),
-        shard_payload_bytes=sum(shard.bytes for shard in spec.shards),
+        shard_payload_bytes=expected_shard_payload_bytes,
         shard_checksums_verified=verify_shard_checksums,
         shards=Tuple(verified_shards),
     )

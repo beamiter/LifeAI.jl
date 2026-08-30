@@ -213,6 +213,8 @@ Chapter 03 reproducible-training test.
      negative sizes, and host-range overflow at the public boundary.
 106. Strictly normalize Qwen3 MoE checkpoint provenance, counts, dimensions,
      and shard collections before immutable specifications are created.
+107. Preflight Qwen3 MoE shard payload totals with exact arithmetic, rejecting
+     host overflow or frozen-contract mismatches before checkpoint file I/O.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
