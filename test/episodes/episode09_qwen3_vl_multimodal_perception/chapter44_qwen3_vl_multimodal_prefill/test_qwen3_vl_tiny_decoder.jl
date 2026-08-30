@@ -130,7 +130,7 @@ end
         inputs.rope_layout;
         vision_features=inputs.vision_features,
         logits_to_keep=Int128(0),
-        capture_layers=(0, 1, 2, 3),
+        capture_layers=(Int128(0), big(1), Int16(2), UInt8(3)),
         capture_input_embeddings=true,
         max_prefill_tokens=big(8),
     )
@@ -244,6 +244,87 @@ end
         @test combined_error isa ArgumentError
         @test occursin(case.needle, sprint(showerror, combined_error))
     end
+
+    capture_cases = (
+        (value=(true,), message="capture layer must be an integer"),
+        (value=(1.0,), message="capture layer must be an integer"),
+        (
+            value=(overflow_integer,),
+            message="capture layer is outside the host integer range",
+        ),
+        (value=(-1,), message="capture layer is outside the decoder"),
+        (
+            value=(parameters.spec.num_hidden_layers,),
+            message="capture layer is outside the decoder",
+        ),
+    )
+    for case in capture_cases
+        text_error = try
+            call_prefill(
+                inputs.rope_layout;
+                capture_layers=case.value,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test text_error isa ArgumentError
+        @test text_error isa Exception &&
+            occursin(case.message, sprint(showerror, text_error))
+
+        combined_error = try
+            hf_qwen3_vl_prefill(
+                42,
+                parameters,
+                vision_input,
+                inputs.input_ids;
+                rope_layout=inputs.rope_layout,
+                capture_layers=case.value,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test combined_error isa ArgumentError
+        @test combined_error isa Exception &&
+            occursin(case.message, sprint(showerror, combined_error))
+    end
+
+    text_capture_preflight = try
+        hf_qwen3_vl_text_prefill(
+            42,
+            42,
+            inputs.rope_layout;
+            capture_layers=(true,),
+        )
+        nothing
+    catch caught
+        caught
+    end
+    @test text_capture_preflight isa ArgumentError
+    @test text_capture_preflight isa Exception && occursin(
+        "capture layer must be an integer",
+        sprint(showerror, text_capture_preflight),
+    )
+
+    combined_capture_preflight = try
+        hf_qwen3_vl_prefill(
+            42,
+            42,
+            vision_input,
+            42;
+            rope_layout=inputs.rope_layout,
+            capture_layers=(true,),
+        )
+        nothing
+    catch caught
+        caught
+    end
+    @test combined_capture_preflight isa ArgumentError
+    @test combined_capture_preflight isa Exception && occursin(
+        "capture layer must be an integer",
+        sprint(showerror, combined_capture_preflight),
+    )
 
     @test_throws ArgumentError call_prefill(
         inputs.rope_layout;

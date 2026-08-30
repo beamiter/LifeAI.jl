@@ -197,6 +197,8 @@ Chapter 03 reproducible-training test.
     dynamic, and static prefill without unsigned wraparound or cache mutation.
 98. Check dynamic and static Qwen3-VL decode-coordinate addition before token,
     profiling, embedding, or cache-write work.
+99. Strictly normalize Qwen3-VL vision/text capture layers and reject malformed
+    requests before input validation, vision compute, or decoder work.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

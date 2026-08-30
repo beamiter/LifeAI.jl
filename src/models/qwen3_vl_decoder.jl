@@ -532,12 +532,18 @@ function hf_qwen3_vl_text_prefill(
         logits_to_keep;
         max_prefill_tokens,
     )
+    requested = Set(_strict_host_int_array(
+        capture_layers,
+        "Qwen3-VL capture layer",
+    ))
+    spec = parameters.spec
+    all(layer -> 0 <= layer < spec.num_hidden_layers, requested) ||
+        throw(ArgumentError("Qwen3-VL capture layer is outside the decoder"))
     tokens = _qwen3_vl_token_matrix(input_ids)
     sequence_length, batch_size = size(tokens)
     batch_size == 1 || throw(ArgumentError(
         "Chapter 44 Qwen3-VL decoder prefill supports batch size one",
     ))
-    spec = parameters.spec
     length(parameters.blocks) == spec.num_hidden_layers || throw(DimensionMismatch(
         "Qwen3-VL decoder parameter layer count is invalid",
     ))
@@ -553,10 +559,6 @@ function hf_qwen3_vl_text_prefill(
     options.logits_to_keep <= sequence_length || throw(ArgumentError(
         "logits_to_keep must be between zero and the prefill length",
     ))
-    requested = Set(Int.(collect(capture_layers)))
-    all(layer -> 0 <= layer < spec.num_hidden_layers, requested) ||
-        throw(ArgumentError("Qwen3-VL capture layer is outside the decoder"))
-
     x = reshape(
         gather(parameters.embedding, tokens),
         spec.hidden_size, sequence_length, batch_size,
@@ -635,12 +637,20 @@ function hf_qwen3_vl_prefill(
     rope_layout=nothing,
     logits_to_keep::Integer=1,
     max_prefill_tokens::Integer=2_048,
+    capture_layers=(),
     kwargs...,
 )
     options = _qwen3_vl_prefill_options(
         logits_to_keep;
         max_prefill_tokens,
     )
+    requested = Set(_strict_host_int_array(
+        capture_layers,
+        "Qwen3-VL capture layer",
+    ))
+    text_spec = text_parameters.spec
+    all(layer -> 0 <= layer < text_spec.num_hidden_layers, requested) ||
+        throw(ArgumentError("Qwen3-VL capture layer is outside the decoder"))
     resolved_rope_layout = rope_layout === nothing ?
         qwen3_vl_rope_layout(input_ids, vision_input.grid_thw) : rope_layout
     features = hf_qwen3_vl_vision_forward(vision_parameters, vision_input)
@@ -651,6 +661,7 @@ function hf_qwen3_vl_prefill(
         vision_features=features,
         logits_to_keep=options.logits_to_keep,
         max_prefill_tokens=options.max_prefill_tokens,
+        capture_layers=requested,
         kwargs...,
     )
     return (; vision=features, text)

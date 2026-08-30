@@ -125,7 +125,7 @@ function _ch43_assert_tiny_forward(::Type{T}) where {T}
     first_run = hf_qwen3_vl_vision_forward(
         parameters,
         input;
-        capture_layers=(0, 1, 2, 3),
+        capture_layers=(Int128(0), big(1), Int16(2), UInt8(3)),
     )
     second_run = hf_qwen3_vl_vision_forward(
         parameters,
@@ -153,6 +153,31 @@ function _ch43_assert_tiny_forward(::Type{T}) where {T}
         0:3,
     )
     @test first_run.checkpoints[0] != first_run.checkpoints[3]
+
+    overflow_integer = big(typemax(Int)) + 1
+    invalid_capture_layers = (
+        (value=(true,), message="capture layer must be an integer"),
+        (value=(1.0,), message="capture layer must be an integer"),
+        (
+            value=(overflow_integer,),
+            message="capture layer is outside the host integer range",
+        ),
+    )
+    for case in invalid_capture_layers
+        capture_error = try
+            hf_qwen3_vl_vision_forward(
+                42,
+                input;
+                capture_layers=case.value,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test capture_error isa ArgumentError
+        @test capture_error isa Exception &&
+            occursin(case.message, sprint(showerror, capture_error))
+    end
 
     @test_throws ArgumentError hf_qwen3_vl_vision_forward(
         parameters,

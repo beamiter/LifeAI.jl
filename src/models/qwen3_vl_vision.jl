@@ -674,16 +674,19 @@ function hf_qwen3_vl_vision_forward(
     input::Qwen3VLVisionInput;
     capture_layers=(),
 )
+    requested = Set(_strict_host_int_array(
+        capture_layers,
+        "Qwen3-VL capture layer",
+    ))
     spec = parameters.spec
+    all(layer -> 0 <= layer < spec.depth, requested) || throw(ArgumentError(
+        "Qwen3-VL capture layer is outside 0:$(spec.depth - 1)",
+    ))
     # Revalidate even explicitly constructed field values; callers must not be
     # able to bypass the public constructor's grid/patch safety boundary.
     validated = Qwen3VLVisionInput(
         input.pixel_values, input.grid_thw; spec,
     )
-    requested = Set(Int.(collect(capture_layers)))
-    all(layer -> 0 <= layer < spec.depth, requested) || throw(ArgumentError(
-        "Qwen3-VL capture layer is outside 0:$(spec.depth - 1)",
-    ))
     eltype(validated.pixel_values) == eltype(parameters.patch_weight) ||
         throw(ArgumentError(
             "Qwen3-VL pixel_values dtype must match loaded vision weights",
