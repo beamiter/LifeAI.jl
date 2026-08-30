@@ -283,6 +283,34 @@ end
         end
     end
 
+    pipeline_object_field_mutations = (
+        (
+            payloads -> (
+                payloads.tokenizer["normalizer"]["future_behavior"] = "enabled"
+            ),
+            "unsupported tokenizer.json normalizer fields: future_behavior",
+        ),
+        (
+            payloads -> delete!(payloads.tokenizer["normalizer"], "type"),
+            "missing `type` in tokenizer.json normalizer",
+        ),
+    )
+    for (mutate!, message) in pipeline_object_field_mutations
+        mktempdir() do directory
+            payloads = qwen3_tokenizer_fixture_payloads()
+            mutate!(payloads)
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            failure = try
+                load_hf_qwen3_tokenizer(directory)
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+    end
+
     byte_level_field_mutations = (
         (
             payloads -> (

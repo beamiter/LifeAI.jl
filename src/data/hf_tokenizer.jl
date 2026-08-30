@@ -483,6 +483,11 @@ function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
 
     normalizer = _hf_required(tokenizer_json, "normalizer", "tokenizer.json")
     normalizer isa JSON3.Object || throw(ArgumentError("normalizer must be an object"))
+    _hf_reject_unknown_fields(
+        normalizer,
+        ("type",),
+        "tokenizer.json normalizer",
+    )
     _hf_exact_value(normalizer, "type", "NFC", "tokenizer.json normalizer")
 
     pretokenizer = _hf_required(tokenizer_json, "pre_tokenizer", "tokenizer.json")

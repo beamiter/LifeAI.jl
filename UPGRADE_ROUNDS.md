@@ -405,6 +405,8 @@ Chapter 03 reproducible-training test.
      coercion evidence against aliases retained by tool handlers.
 202. Bind Qwen3-VL dynamic cache tuples to coherent lazy or populated layer
      storage, shared geometry/dtype/device, and non-aliasing decode snapshots.
+203. Reject unknown Qwen3 tokenizer normalizer fields across all profiles while
+     preserving the exact NFC and required-type contracts.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
