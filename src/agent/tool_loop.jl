@@ -45,6 +45,24 @@ struct AgentLoopToolCall
     end
 end
 
+function _agent_loop_step_seconds(value, name::AbstractString)
+    value isa Real && !(value isa Bool) || throw(ArgumentError(
+        "agent loop step $name must be a real number",
+    ))
+    seconds = try
+        Float64(value)
+    catch error
+        error isa Union{InexactError,OverflowError,DomainError,MethodError} || rethrow()
+        throw(ArgumentError(
+            "agent loop step $name is outside the Float64 range",
+        ))
+    end
+    isfinite(seconds) && seconds >= 0 || throw(ArgumentError(
+        "agent loop step $name must be finite and nonnegative",
+    ))
+    return seconds
+end
+
 """One model turn: the prompt it saw, what it produced and what that triggered."""
 struct AgentLoopStep
     turn::Int
@@ -59,6 +77,138 @@ struct AgentLoopStep
     invalid_blocks::Vector{NamedTuple{(:raw, :reason),Tuple{String,String}}}
     prefill_seconds::Float64
     decode_seconds::Float64
+
+    function AgentLoopStep(
+        turn,
+        prompt,
+        prompt_sha256,
+        prompt_token_count,
+        generated_ids,
+        completion,
+        stop_reason,
+        validity,
+        tool_calls,
+        invalid_blocks,
+        prefill_seconds,
+        decode_seconds,
+    )
+        resolved_turn = _strict_host_int(turn, "agent loop step turn")
+        resolved_turn > 0 || throw(ArgumentError(
+            "agent loop step turn must be positive",
+        ))
+        prompt isa AbstractString || throw(ArgumentError(
+            "agent loop step prompt must be a string",
+        ))
+        prompt_value = String(prompt)
+        prompt_sha256 isa AbstractString || throw(ArgumentError(
+            "agent loop step prompt_sha256 must be a string",
+        ))
+        digest = String(prompt_sha256)
+        occursin(r"^[0-9a-f]{64}$", digest) || throw(ArgumentError(
+            "agent loop step prompt_sha256 must be a lowercase SHA-256 digest",
+        ))
+        token_count = _strict_host_int(
+            prompt_token_count,
+            "agent loop step prompt_token_count",
+        )
+        token_count >= 0 || throw(ArgumentError(
+            "agent loop step prompt_token_count must be nonnegative",
+        ))
+        if isempty(prompt_value)
+            token_count == 0 && digest != _sha256_hex("") && throw(ArgumentError(
+                "agent loop step prompt digest does not match prompt",
+            ))
+        else
+            token_count > 0 || throw(ArgumentError(
+                "agent loop step nonempty prompt must have a positive token count",
+            ))
+            digest == _sha256_hex(prompt_value) || throw(ArgumentError(
+                "agent loop step prompt digest does not match prompt",
+            ))
+        end
+
+        applicable(iterate, generated_ids) || throw(ArgumentError(
+            "agent loop step generated_ids must be iterable",
+        ))
+        normalized_ids = Int[]
+        for raw_id in generated_ids
+            id = _strict_host_int(raw_id, "agent loop step generated id")
+            id > 0 || throw(ArgumentError(
+                "agent loop step generated ids must be positive",
+            ))
+            push!(normalized_ids, id)
+        end
+        completion isa AbstractString || throw(ArgumentError(
+            "agent loop step completion must be a string",
+        ))
+        stop_reason isa Symbol || throw(ArgumentError(
+            "agent loop step stop_reason must be a Symbol",
+        ))
+        stop_reason in (:eos, :length, :stop_token) || throw(ArgumentError(
+            "unsupported agent loop step stop_reason: $(repr(stop_reason))",
+        ))
+        isempty(normalized_ids) && stop_reason !== :length && throw(ArgumentError(
+            "agent loop step without generated ids must use :length stop_reason",
+        ))
+        validity isa Symbol || throw(ArgumentError(
+            "agent loop step validity must be a Symbol",
+        ))
+        validity in (:none, :valid, :invalid) || throw(ArgumentError(
+            "unsupported agent loop step validity: $(repr(validity))",
+        ))
+
+        applicable(iterate, tool_calls) || throw(ArgumentError(
+            "agent loop step tool_calls must be iterable",
+        ))
+        normalized_calls = AgentLoopToolCall[]
+        for call in tool_calls
+            call isa AgentLoopToolCall || throw(ArgumentError(
+                "agent loop step tool_calls must contain AgentLoopToolCall values",
+            ))
+            push!(normalized_calls, AgentLoopToolCall(
+                call.name,
+                call.arguments_json,
+                call.ok,
+                call.output,
+                call.error,
+                call.coerced_arguments,
+            ))
+        end
+        normalized_invalid = Qwen3ToolCallParse((), invalid_blocks).invalid
+        if validity === :none
+            isempty(normalized_calls) && isempty(normalized_invalid) ||
+                throw(ArgumentError(
+                    "agent loop step :none validity requires no tool-call evidence",
+                ))
+        elseif validity === :valid
+            !isempty(normalized_calls) && isempty(normalized_invalid) ||
+                throw(ArgumentError(
+                    "agent loop step :valid validity requires calls and no invalid blocks",
+                ))
+        else
+            !isempty(normalized_calls) || !isempty(normalized_invalid) ||
+                throw(ArgumentError(
+                    "agent loop step :invalid validity requires tool-call evidence",
+                ))
+        end
+
+        prefill = _agent_loop_step_seconds(prefill_seconds, "prefill_seconds")
+        decode = _agent_loop_step_seconds(decode_seconds, "decode_seconds")
+        return new(
+            resolved_turn,
+            prompt_value,
+            digest,
+            token_count,
+            normalized_ids,
+            String(completion),
+            stop_reason,
+            validity,
+            normalized_calls,
+            normalized_invalid,
+            prefill,
+            decode,
+        )
+    end
 end
 
 """Full trace of one loop run."""

@@ -423,6 +423,8 @@ Chapter 03 reproducible-training test.
      coercion evidence so raw construction cannot falsify replay history.
 211. Preflight text-consumed Qwen3-VL vision feature dtypes and devices before
      embedding gather or cache writes while ignoring unused DeepStack entries.
+212. Seal Qwen3 agent-loop step evidence behind strict counters, digests, token
+     ids, states, timings, and owned nested snapshots for stable replay history.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
