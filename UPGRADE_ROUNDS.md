@@ -215,6 +215,8 @@ Chapter 03 reproducible-training test.
      and shard collections before immutable specifications are created.
 107. Preflight Qwen3 MoE shard payload totals with exact arithmetic, rejecting
      host overflow or frozen-contract mismatches before checkpoint file I/O.
+108. Derive Qwen3 MoE index tensor counts exactly from layers and experts,
+     rejecting overflow or inconsistent frozen metadata before checkpoint I/O.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -216,7 +216,7 @@ end
             "test-revision",
             "config-sha256",
             "index-sha256",
-            0,
+            15,
             0,
             0,
             huge_vocabulary,

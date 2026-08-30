@@ -24,25 +24,33 @@ function _qwen3_moe_contract_captured_error(thunk)
     error("expected Qwen3 MoE checkpoint specification to fail")
 end
 
-function _qwen3_moe_contract_with_shards(spec, shard_payload_bytes, shards)
+function _qwen3_moe_contract_copy(
+    spec;
+    index_sha256=spec.index_sha256,
+    index_tensor_count=spec.index_tensor_count,
+    shard_payload_bytes=spec.shard_payload_bytes,
+    num_layers=spec.num_layers,
+    num_experts=spec.num_experts,
+    shards=spec.shards,
+)
     return Qwen3MoECheckpointSpec(
         spec.variant,
         spec.model_id,
         spec.revision,
         spec.config_sha256,
-        spec.index_sha256,
-        spec.index_tensor_count,
+        index_sha256,
+        index_tensor_count,
         spec.tensor_bytes,
         shard_payload_bytes,
         spec.vocab_size,
         spec.d_model,
         spec.dense_mlp_hidden_dim,
         spec.moe_hidden_dim,
-        spec.num_layers,
+        num_layers,
         spec.num_heads,
         spec.num_kv_heads,
         spec.head_dim,
-        spec.num_experts,
+        num_experts,
         spec.experts_per_token,
         spec.max_position_embeddings,
         shards,
@@ -136,14 +144,47 @@ end
     end
 end
 
+@testset "Qwen3 MoE index tensor counts are exact and preflighted" begin
+    base = qwen3_moe_checkpoint_spec()
+    cases = (
+        (
+            _qwen3_moe_contract_copy(base; index_tensor_count=0),
+            "frozen Qwen3 MoE architecture does not match index tensor count",
+        ),
+        (
+            _qwen3_moe_contract_copy(
+                base;
+                index_tensor_count=0,
+                num_layers=typemax(Int),
+                num_experts=typemax(Int),
+            ),
+            "Qwen3 MoE index tensor count exceeds the host integer range",
+        ),
+    )
+    mktempdir() do directory
+        for (spec, message) in cases
+            failure = _qwen3_moe_contract_captured_error() do
+                verify_qwen3_moe_checkpoint(
+                    directory;
+                    spec,
+                    verify_shard_checksums=false,
+                )
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+            @test !occursin("config.json", sprint(showerror, failure))
+        end
+    end
+end
+
 @testset "Qwen3 MoE shard byte totals are exact and preflighted" begin
     base = qwen3_moe_checkpoint_spec()
     cases = (
         (
-            _qwen3_moe_contract_with_shards(
-                base,
-                0,
-                (
+            _qwen3_moe_contract_copy(
+                base;
+                shard_payload_bytes=0,
+                shards=(
                     Qwen3MoEShardSpec("first", typemax(Int), "hash"),
                     Qwen3MoEShardSpec("second", 1, "hash"),
                 ),
@@ -151,10 +192,10 @@ end
             "Qwen3 MoE shard payload byte count exceeds the host integer range",
         ),
         (
-            _qwen3_moe_contract_with_shards(
-                base,
-                2,
-                (Qwen3MoEShardSpec("only", 1, "hash"),),
+            _qwen3_moe_contract_copy(
+                base;
+                shard_payload_bytes=2,
+                shards=(Qwen3MoEShardSpec("only", 1, "hash"),),
             ),
             "frozen Qwen3 MoE shard sizes do not match payload byte total",
         ),

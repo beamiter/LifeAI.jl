@@ -1383,6 +1383,14 @@ function _qwen3_moe_config_matches(config, spec::Qwen3MoECheckpointSpec)
         !config.tie_embeddings
 end
 
+function _qwen3_moe_index_tensor_count(spec::Qwen3MoECheckpointSpec)
+    per_layer = BigInt(9) + 3 * BigInt(spec.num_experts)
+    return _qwen3_parameter_count_int(
+        BigInt(3) + BigInt(spec.num_layers) * per_layer,
+        "Qwen3 MoE index tensor count",
+    )
+end
+
 """
     verify_qwen3_moe_checkpoint(
         model_dir;
@@ -1404,6 +1412,10 @@ function verify_qwen3_moe_checkpoint(
 )
     isdir(model_dir) || throw(ArgumentError(
         "model directory does not exist: $model_dir",
+    ))
+    expected_index_tensor_count = _qwen3_moe_index_tensor_count(spec)
+    expected_index_tensor_count == spec.index_tensor_count || throw(ArgumentError(
+        "frozen Qwen3 MoE architecture does not match index tensor count",
     ))
     expected_tensor_bytes = _qwen3_parameter_count_int(
         2 * BigInt(qwen3_moe_parameter_count(spec)),
