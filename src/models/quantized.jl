@@ -618,6 +618,14 @@ _resolve_quantization_plan(
 
 struct _QuantizedWeightRowSlice end
 
+function _validate_quantized_weight_scales(scale, label::AbstractString)
+    values = Array(scale)
+    all(value -> isfinite(value) && value > 0, values) || throw(ArgumentError(
+        "$label must contain only finite positive values",
+    ))
+    return nothing
+end
+
 """
     Int8ChannelWeight(q, scale)
 
@@ -660,6 +668,7 @@ struct Int8ChannelWeight{Q,S}
         get_device(q) == get_device(scale) || throw(ArgumentError(
             "INT8 quantized values and scales must reside on the same device",
         ))
+        _validate_quantized_weight_scales(scale, "INT8 scales")
         return new{typeof(q),typeof(scale)}(q, scale)
     end
 
@@ -667,7 +676,11 @@ struct Int8ChannelWeight{Q,S}
         return new{typeof(q),typeof(scale)}(q, scale)
     end
 end
-Adapt.@adapt_structure Int8ChannelWeight
+Adapt.Adapt.adapt_structure(to, w::Int8ChannelWeight) = Int8ChannelWeight(
+    Adapt.adapt(to, w.q),
+    Adapt.adapt(to, w.scale),
+    _QuantizedWeightRowSlice(),
+)
 
 """
     Int4GroupWeight(packed, scale, group, in_dim)
@@ -746,6 +759,7 @@ struct Int4GroupWeight{Q,S}
         get_device(packed) == get_device(scale) || throw(ArgumentError(
             "INT4 packed values and scales must reside on the same device",
         ))
+        _validate_quantized_weight_scales(scale, "INT4 scales")
         return new{typeof(packed),typeof(scale)}(
             packed,
             scale,
@@ -774,6 +788,7 @@ Adapt.Adapt.adapt_structure(to, w::Int4GroupWeight) = Int4GroupWeight(
     Adapt.adapt(to, w.scale),
     w.group,
     w.in_dim,
+    _QuantizedWeightRowSlice(),
 )
 
 function _quantize_int8_channel(weight::AbstractMatrix)

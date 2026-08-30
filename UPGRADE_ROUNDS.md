@@ -514,6 +514,9 @@ Chapter 03 reproducible-training test.
 244. Normalize Qwen3 MoE route matrices once across strict host-integer
      boundaries and replace the dense global expert remap with an active-only
      dictionary while preserving Int32 local indices and input geometry.
+245. Require finite positive INT8 channel and INT4 group scales at public
+     quantized-weight construction while preserving trusted Adapt and row-slice
+     reconstruction for device and Reactant paths.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -120,6 +120,14 @@ MLDataDevices.get_device(::_Ch17ForeignDeviceMatrix) = _Ch17ForeignDevice()
             Int8ChannelWeight(reshape(Int8[1], 1, 1), values)
         end == message
     end
+    for invalid_scale in (0.0f0, -1.0f0, NaN32, Inf32, -Inf32)
+        @test _quantization_argument_error_message() do
+            Int8ChannelWeight(
+                reshape(Int8[1], 1, 1),
+                Float32[invalid_scale],
+            )
+        end == "INT8 scales must contain only finite positive values"
+    end
     for invalid_scales in (Float32[1], Float32[1, 1, 1])
         @test_throws DimensionMismatch Int8ChannelWeight(
             reshape(Int8[1, 2, 3, 4], 2, 2),
@@ -190,6 +198,16 @@ end
         @test _quantization_argument_error_message() do
             Int4GroupWeight(valid_packed, values, 4, 8)
         end == message
+    end
+    for invalid_scale in (0.0f0, -1.0f0, NaN32, Inf32, -Inf32)
+        @test _quantization_argument_error_message() do
+            Int4GroupWeight(
+                valid_packed,
+                fill(invalid_scale, 2, 2),
+                4,
+                8,
+            )
+        end == "INT4 scales must contain only finite positive values"
     end
 
     for invalid_packed in (zeros(UInt8, 2, 3), zeros(UInt8, 2, 5))
