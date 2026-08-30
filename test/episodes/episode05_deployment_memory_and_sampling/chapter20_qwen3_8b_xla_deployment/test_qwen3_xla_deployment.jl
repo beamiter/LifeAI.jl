@@ -2,6 +2,7 @@ using Test
 using BFloat16s: BFloat16
 using JSON3
 using SHA: sha256
+import Reactant
 using LifeAI:
     HFQwen3BF16XLASession,
     Qwen3XLAWindowPlan,
@@ -836,6 +837,55 @@ end
     @test device_session.strategy === :device_sample
     @test device_session.sample_top_k == 5
 
+    cache_view(parent, range) = reshape(
+        view(parent, range),
+        2,
+        1,
+        16,
+        1,
+    )
+    rope_view(parent, range) = reshape(view(parent, range), 1, 16)
+
+    disjoint_parent = zeros(BFloat16, 160)
+    disjoint_fields = merge(fields, (;
+        key_caches=(
+            cache_view(disjoint_parent, 1:32),
+            cache_view(disjoint_parent, 65:96),
+        ),
+        value_caches=(
+            cache_view(disjoint_parent, 33:64),
+            cache_view(disjoint_parent, 97:128),
+        ),
+        cos_table=rope_view(disjoint_parent, 129:144),
+        sin_table=rope_view(disjoint_parent, 145:160),
+    ))
+    disjoint_session = HFQwen3BF16XLASession(; disjoint_fields...)
+    @test disjoint_session.key_caches === disjoint_fields.key_caches
+    disjoint_storage = (
+        disjoint_fields.key_caches...,
+        disjoint_fields.value_caches...,
+        disjoint_fields.cos_table,
+        disjoint_fields.sin_table,
+    )
+    @test all(
+        !Base.mightalias(disjoint_storage[left], disjoint_storage[right])
+        for left in eachindex(disjoint_storage)
+        for right in (left + 1):length(disjoint_storage)
+    )
+
+    reactant_fields = merge(fields, (;
+        key_caches=map(Reactant.to_rarray, fields.key_caches),
+        value_caches=map(Reactant.to_rarray, fields.value_caches),
+        cos_table=Reactant.to_rarray(fields.cos_table),
+        sin_table=Reactant.to_rarray(fields.sin_table),
+    ))
+    reactant_session = HFQwen3BF16XLASession(; reactant_fields...)
+    @test reactant_session.key_caches === reactant_fields.key_caches
+    @test !Base.mightalias(
+        reactant_session.key_caches[1],
+        reactant_session.value_caches[1],
+    )
+
     raw_fields = ntuple(
         index -> getfield(session, index),
         fieldcount(typeof(session)),
@@ -847,6 +897,10 @@ end
         Core.apply_type(HFQwen3BF16XLASession, typeof(session.model))
     end isa TypeError
 
+    within_layer_parent = zeros(BFloat16, 48)
+    cross_layer_parent = zeros(BFloat16, 48)
+    rope_parent = zeros(BFloat16, 24)
+    rope_cache_parent = zeros(BFloat16, 48)
     invalid_cases = (
         (
             override=(strategy=:invalid,),
@@ -924,7 +978,44 @@ end
             override=(
                 key_caches=(first(fields.key_caches), first(fields.key_caches)),
             ),
-            message="cache layers must use distinct storage",
+            message="must use non-overlapping storage",
+        ),
+        (
+            override=(;
+                key_caches=(
+                    cache_view(within_layer_parent, 1:32),
+                    fields.key_caches[2],
+                ),
+                value_caches=(
+                    cache_view(within_layer_parent, 17:48),
+                    fields.value_caches[2],
+                ),
+            ),
+            message="must use non-overlapping storage",
+        ),
+        (
+            override=(key_caches=(
+                cache_view(cross_layer_parent, 1:32),
+                cache_view(cross_layer_parent, 17:48),
+            ),),
+            message="must use non-overlapping storage",
+        ),
+        (
+            override=(;
+                cos_table=rope_view(rope_parent, 1:16),
+                sin_table=rope_view(rope_parent, 9:24),
+            ),
+            message="must use non-overlapping storage",
+        ),
+        (
+            override=(;
+                key_caches=(
+                    cache_view(rope_cache_parent, 1:32),
+                    fields.key_caches[2],
+                ),
+                cos_table=rope_view(rope_cache_parent, 17:32),
+            ),
+            message="must use non-overlapping storage",
         ),
         (
             override=(

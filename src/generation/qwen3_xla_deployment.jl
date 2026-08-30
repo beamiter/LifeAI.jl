@@ -425,6 +425,22 @@ function _qwen3_xla_session_array(
     return nothing
 end
 
+function _qwen3_xla_record_session_storage!(
+    storages::Vector{Tuple{String,Any}},
+    label::AbstractString,
+    storage::AbstractArray,
+)
+    resolved_label = String(label)
+    for (existing_label, existing) in storages
+        Base.mightalias(storage, existing) && throw(ArgumentError(
+            "Qwen3 XLA session $resolved_label and $existing_label " *
+            "must use non-overlapping storage",
+        ))
+    end
+    push!(storages, (resolved_label, storage))
+    return nothing
+end
+
 function _qwen3_xla_validate_session_storage(
     model,
     cos_table,
@@ -461,7 +477,9 @@ function _qwen3_xla_validate_session_storage(
     num_kv_heads = _qwen3_xla_session_model_integer(model, :num_kv_heads)
     cache_shape = (head_dim, num_kv_heads, context_tokens, 1)
     device = get_device(first_keys)
-    seen_storage = IdDict{Any,Nothing}()
+    # Pairwise alias checks are intentionally confined to construction and
+    # full request/reset preflight. Per-chunk contract validation remains O(1).
+    storages = Tuple{String,Any}[]
     for index in eachindex(key_caches)
         for (kind, storage) in (
             ("key", key_caches[index]),
@@ -473,10 +491,11 @@ function _qwen3_xla_validate_session_storage(
                 "Qwen3 XLA session layer $index $kind cache",
                 device,
             )
-            haskey(seen_storage, storage) && throw(ArgumentError(
-                "Qwen3 XLA session cache layers must use distinct storage",
-            ))
-            seen_storage[storage] = nothing
+            _qwen3_xla_record_session_storage!(
+                storages,
+                "layer $index $kind cache",
+                storage,
+            )
         end
     end
 
@@ -493,9 +512,16 @@ function _qwen3_xla_validate_session_storage(
         "Qwen3 XLA session sine table",
         device,
     )
-    cos_table === sin_table && throw(ArgumentError(
-        "Qwen3 XLA session RoPE tables must use distinct storage",
-    ))
+    _qwen3_xla_record_session_storage!(
+        storages,
+        "cosine table",
+        cos_table,
+    )
+    _qwen3_xla_record_session_storage!(
+        storages,
+        "sine table",
+        sin_table,
+    )
     return nothing
 end
 

@@ -508,6 +508,9 @@ Chapter 03 reproducible-training test.
 242. Reject empty Qwen3 model ids, revisions, hashes, asset/shard names,
      activation names, and processor identities at frozen-spec construction
      instead of deferring impossible provenance contracts to checkpoint I/O.
+243. Reject overlapping Qwen3 XLA K/V layers, RoPE tables, and cache/table
+     views with full-entry alias preflight while retaining constant-size
+     per-chunk compiled-session validation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
