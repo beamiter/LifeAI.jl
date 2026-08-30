@@ -616,3 +616,27 @@ end
     @test !prefill_reached[]
     @test !decode_reached[]
 end
+
+@testset "XLA generated tokens cross a strict scalar host boundary" begin
+    for integer_type in (Int8, Int32, Int128, BigInt)
+        token = LifeAI._qwen3_xla_host_token(integer_type[2], 16)
+        @test token === 2
+        @test token isa Int
+    end
+
+    too_large = big(typemax(Int)) + 1
+    for invalid_output in (
+        Bool[true],
+        Float64[2.0],
+        Char['\x02'],
+        BigInt[too_large],
+        Int[0],
+        Int[17],
+        Int[2, 3],
+    )
+        @test_throws ArgumentError LifeAI._qwen3_xla_host_token(
+            invalid_output,
+            16,
+        )
+    end
+end

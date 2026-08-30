@@ -106,6 +106,20 @@ function qwen3_xla_key_positions(plan::Qwen3XLAWindowPlan)
     return positions
 end
 
+function _qwen3_xla_generated_token(value, vocab_size::Int)
+    token = _strict_host_int(value, "Qwen3 XLA generated token")
+    _validate_generation_ids((token,), vocab_size)
+    return token
+end
+
+function _qwen3_xla_host_token(output_state, vocab_size::Int)
+    values = vec(Array(output_state))
+    length(values) == 1 || throw(ArgumentError(
+        "Qwen3 XLA generated-token output must contain exactly one value",
+    ))
+    return _qwen3_xla_generated_token(only(values), vocab_size)
+end
+
 _qwen3_xla_tensor_bytes(x::AbstractArray) =
     length(x) * sizeof(eltype(x))
 _qwen3_xla_tensor_bytes(x::NamedTuple) =
@@ -634,9 +648,9 @@ function generate_hf_qwen3_bf16_xla!(
             top_p=resolved_top_p,
             sample_uniform=uniforms === nothing ? nothing : uniforms[1],
         )
-        choice
+        _qwen3_xla_generated_token(choice, session.model.vocab_size)
     else
-        Int(Array(output_state)[1])
+        _qwen3_xla_host_token(output_state, session.model.vocab_size)
     end
     prefill_seconds = (time_ns() - prefill_started) / 1.0e9
 
@@ -689,9 +703,9 @@ function generate_hf_qwen3_bf16_xla!(
                 top_p=resolved_top_p,
                 sample_uniform=uniforms === nothing ? nothing : uniforms[step],
             )
-            choice
+            _qwen3_xla_generated_token(choice, session.model.vocab_size)
         else
-            Int(Array(output_state)[1])
+            _qwen3_xla_host_token(output_state, session.model.vocab_size)
         end
         push!(generated_ids, next_token)
         on_token === nothing || on_token(next_token, length(generated_ids))

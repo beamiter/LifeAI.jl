@@ -93,6 +93,8 @@ planner 的 context/prompt/output/chunk 输入先严格归一为宿主 `Int`，�
 采用 checked arithmetic，避免跨宿主字宽时回绕。padding helper 与公开生成入口
 对 prompt/pad id 复用同一严格整数合同，非法 id 会在任何 compiled prefill/decode
 或 session mutation 前失败；stop-id 集合也与 dense session 共用同一预检。
+compiled greedy/device-sampling 输出回到 host 时必须恰好包含一个非 Bool、可表示且
+词表内的整数；host sampling 的 choice 也在进入结果/callback 前复用该标量合同。
 
 真实 65-token case 因而进入 128-token bucket、左补 63 slots，并与
 CUDA BF16 reference 的 32/32 tokens 一致；3,584+512 整窗最终是
