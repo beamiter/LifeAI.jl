@@ -327,6 +327,14 @@ end
     @test size(decode.logits) == (17, 1, 1)
     @test decode.expert_bytes_read > 0
 
+    # Unused preallocated cache slots may legitimately contain NaNs.  Seed that
+    # state explicitly so invalid-input atomicity cannot regress to `==`, which
+    # reports identical NaN-bearing snapshots as unequal.
+    for layer in session.caches
+        tail = (session.position + 1):session.context_tokens
+        fill!(@view(layer.keys[:, :, tail, :]), BFloat16(NaN))
+        fill!(@view(layer.values[:, :, tail, :]), BFloat16(NaN))
+    end
     preserved = _qwen3_offload_session_state(session)
     too_large = big(typemax(Int)) + 1
     for invalid_prompt in (
@@ -343,7 +351,7 @@ end
             "Qwen3 MoE offload prompt token",
             sprint(showerror, failure),
         )
-        @test _qwen3_offload_session_state(session) == preserved
+        @test isequal(_qwen3_offload_session_state(session), preserved)
     end
     for invalid_token in (true, 4.0, Char(4), too_large)
         failure = _qwen3_offload_captured_error() do
@@ -354,7 +362,7 @@ end
             "Qwen3 MoE offload decode token",
             sprint(showerror, failure),
         )
-        @test _qwen3_offload_session_state(session) == preserved
+        @test isequal(_qwen3_offload_session_state(session), preserved)
     end
     @test reset_hf_qwen3_moe_offload_session!(session).position == 0
 end

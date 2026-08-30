@@ -454,6 +454,9 @@ Chapter 03 reproducible-training test.
 224. Seal static Qwen K/V layers behind positive four-dimensional floating,
      same-shape/dtype/device, distinct zero-copy storage while preserving
      private-token Reactant reconstruction.
+225. Make Qwen3 MoE invalid-input cache atomicity checks NaN-stable and seed
+     untouched preallocated BF16 tails so allocator contents cannot make the
+     integration result nondeterministic.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
