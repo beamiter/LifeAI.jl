@@ -59,6 +59,26 @@ end
     @test length(stringified.calls) == 1
     @test invoke_agent_tool(registry, stringified.calls[1]).output == "3"
 
+    duplicate_fields = parse_qwen3_tool_calls(
+        "<tool_call>\n{\"name\": \"nope\", \"name\": \"add_integers\", " *
+        "\"arguments\": {\"a\": 0}, \"arguments\": {\"a\": 2, \"b\": 3}}\n" *
+        "</tool_call>",
+    )
+    @test isempty(duplicate_fields.invalid)
+    @test only(duplicate_fields.calls).name == "add_integers"
+    @test invoke_agent_tool(registry, only(duplicate_fields.calls)).output == "5"
+
+    duplicate_stringified = parse_qwen3_tool_calls(
+        "<tool_call>\n{\"name\": \"add_integers\", " *
+        "\"arguments\": \"{\\\"a\\\": 1, \\\"a\\\": 4, \\\"b\\\": 2}\"}\n" *
+        "</tool_call>",
+    )
+    @test isempty(duplicate_stringified.invalid)
+    @test invoke_agent_tool(
+        registry,
+        only(duplicate_stringified.calls),
+    ).output == "6"
+
     @test agent_tool_call_validity(registry, parse_qwen3_tool_calls("no tools here")) === :none
 
     for (text, reason_fragment) in [

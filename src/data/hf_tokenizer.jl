@@ -1255,8 +1255,41 @@ type instead.
 struct _OrderedJSONMissing end
 const _ORDERED_JSON_MISSING = _OrderedJSONMissing()
 
+function _canonical_ordered_json_entries(entries)
+    entries isa AbstractDict && throw(ArgumentError(
+        "unordered dictionaries cannot initialize an OrderedJSONObject",
+    ))
+    applicable(iterate, entries) || throw(ArgumentError(
+        "JSON object entries must be an iterable of key-value pairs",
+    ))
+    canonical = Pair{String,Any}[]
+    positions = Dict{String,Int}()
+    for entry in entries
+        (entry isa Pair || entry isa Tuple && length(entry) == 2) ||
+            throw(ArgumentError("JSON object entries must be key-value pairs"))
+        key = first(entry)
+        key isa AbstractString || key isa Symbol || throw(ArgumentError(
+            "JSON object keys must be strings or symbols, got $(typeof(key))",
+        ))
+        name = String(key)
+        value = last(entry)
+        position = get(positions, name, 0)
+        if iszero(position)
+            push!(canonical, name => value)
+            positions[name] = length(canonical)
+        else
+            canonical[position] = name => value
+        end
+    end
+    return canonical
+end
+
 struct OrderedJSONObject <: AbstractDict{String,Any}
     entries::Vector{Pair{String,Any}}
+
+    function OrderedJSONObject(entries)
+        return new(_canonical_ordered_json_entries(entries))
+    end
 end
 
 OrderedJSONObject() = OrderedJSONObject(Pair{String,Any}[])
@@ -1388,16 +1421,11 @@ end
 
 function _python_json_object(io::IO, entries)
     print(io, "{")
-    first_entry = true
-    for (key, value) in entries
-        key isa AbstractString || key isa Symbol || throw(ArgumentError(
-            "JSON object keys must be strings or symbols, got $(typeof(key))",
-        ))
-        first_entry || print(io, ", ")
-        first_entry = false
-        _python_json_string(io, String(key))
+    for (position, entry) in enumerate(_canonical_ordered_json_entries(entries))
+        position == 1 || print(io, ", ")
+        _python_json_string(io, first(entry))
         print(io, ": ")
-        _python_json(io, value)
+        _python_json(io, last(entry))
     end
     print(io, "}")
     return io
@@ -1443,7 +1471,8 @@ end
 Parse JSON while preserving the distinction CPython preserves and `JSON3.read` does
 not: a number written with a fraction or an exponent is a float, everything else is an
 integer of arbitrary precision. Objects become [`OrderedJSONObject`](@ref) so key order
-survives, arrays become `Vector{Any}`.
+survives, arrays become `Vector{Any}`. Duplicate object keys follow CPython's default
+`json.loads` behavior: the last value wins without moving the key's first position.
 
 This is the parser tool declarations and model-emitted `<tool_call>` arguments go
 through, because both are re-serialized into a prompt that must match the reference

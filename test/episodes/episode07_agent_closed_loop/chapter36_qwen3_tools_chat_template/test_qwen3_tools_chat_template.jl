@@ -3,6 +3,7 @@ using JSON3
 using SHA: sha256
 using LifeAI
 using LifeAI:
+    OrderedJSONObject,
     apply_qwen3_chat_template,
     encode,
     load_hf_qwen3_tokenizer,
@@ -165,6 +166,26 @@ end
           "{\"z\": 1, \"a\": {\"y\": [], \"x\": 2}}"
     @test render(parse_qwen3_json("{}")) == "{}"
     @test render(parse_qwen3_json("[]")) == "[]"
+    duplicate = parse_qwen3_json("{\"a\": 1, \"b\": 2, \"a\": 3}")
+    @test length(duplicate) == 2
+    @test collect(keys(duplicate)) == ["a", "b"]
+    @test duplicate["a"] == 3
+    @test render(duplicate) == "{\"a\": 3, \"b\": 2}"
+    @test render(parse_qwen3_json(
+        "{\"outer\": {\"a\": 1, \"b\": 2, \"a\": 4}}",
+    )) == "{\"outer\": {\"a\": 4, \"b\": 2}}"
+    direct_entries = Pair{String,Any}[
+        "a" => 1,
+        "b" => 2,
+        "a" => 5,
+    ]
+    direct = OrderedJSONObject(direct_entries)
+    @test collect(keys(direct)) == ["a", "b"]
+    @test direct["a"] == 5
+    direct_entries[1] = "a" => 99
+    @test direct["a"] == 5
+    @test render(["a" => 1, :b => 2, :a => 6]) ==
+        "{\"a\": 6, \"b\": 2}"
     # Byte-stable output is impossible for an unordered Dict.
     @test_throws ArgumentError render(Dict("a" => 1, "b" => 2))
     # JSON3 narrows whole-valued floats, so it is refused outright rather than
