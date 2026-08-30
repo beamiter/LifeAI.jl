@@ -103,6 +103,24 @@ end
     @test all(alphabet.char_to_byte[alphabet.byte_to_char[UInt8(byte)]] == byte for byte in 0:255)
 
     mktempdir() do directory
+        payloads = qwen3_tokenizer_fixture_payloads()
+        vocabulary = payloads.tokenizer["model"]["vocab"]
+        missing_id = pop!(vocabulary, "A")
+        vocabulary["AA"] = missing_id
+        write_qwen3_tokenizer_fixture(directory; payloads)
+        failure = try
+            load_hf_qwen3_tokenizer(directory)
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: BPE vocabulary must contain all 256 " *
+            "byte-alphabet tokens when byte_fallback=false"
+    end
+
+    mktempdir() do directory
         write_qwen3_tokenizer_fixture(directory)
         tokenizer = load_hf_qwen3_tokenizer(directory; revision="qwen3_tokenizer-test")
         @test tokenizer isa HFQwen3Tokenizer

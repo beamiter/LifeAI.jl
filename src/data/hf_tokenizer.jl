@@ -689,6 +689,13 @@ function _hf_parse_model(tokenizer_json, char_to_byte, profile::Symbol)
     seen_ids == Set(0:(model_vocabulary_size - 1)) || throw(ArgumentError(
         "BPE vocabulary ids must be contiguous from zero",
     ))
+    all(
+        character -> haskey(vocabulary, string(character)),
+        keys(char_to_byte),
+    ) || throw(ArgumentError(
+        "BPE vocabulary must contain all 256 byte-alphabet tokens when " *
+        "byte_fallback=false",
+    ))
 
     raw_merges = _hf_required(model, "merges", "tokenizer.json model")
     raw_merges isa JSON3.Array || throw(ArgumentError("BPE merges must be an array"))
