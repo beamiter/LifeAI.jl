@@ -492,6 +492,11 @@ function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
 
     pretokenizer = _hf_required(tokenizer_json, "pre_tokenizer", "tokenizer.json")
     pretokenizer isa JSON3.Object || throw(ArgumentError("pre_tokenizer must be an object"))
+    _hf_reject_unknown_fields(
+        pretokenizer,
+        ("type", "pretokenizers"),
+        "tokenizer.json pre_tokenizer",
+    )
     _hf_exact_value(pretokenizer, "type", "Sequence", "tokenizer.json pre_tokenizer")
     components = _hf_required(pretokenizer, "pretokenizers", "tokenizer.json pre_tokenizer")
     components isa JSON3.Array && length(components) == 2 || throw(ArgumentError(
@@ -500,11 +505,21 @@ function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
 
     split_component = components[1]
     split_component isa JSON3.Object || throw(ArgumentError("Split pre-tokenizer must be an object"))
+    _hf_reject_unknown_fields(
+        split_component,
+        ("type", "pattern", "behavior", "invert"),
+        "tokenizer.json Split",
+    )
     _hf_exact_value(split_component, "type", "Split", "tokenizer.json Split")
     _hf_exact_value(split_component, "behavior", "Isolated", "tokenizer.json Split")
     _hf_exact_bool(split_component, "invert", false, "tokenizer.json Split")
     pattern_object = _hf_required(split_component, "pattern", "tokenizer.json Split")
     pattern_object isa JSON3.Object || throw(ArgumentError("Split pattern must be an object"))
+    _hf_reject_unknown_fields(
+        pattern_object,
+        ("Regex",),
+        "tokenizer.json Split pattern",
+    )
     pattern = _hf_required(pattern_object, "Regex", "tokenizer.json Split pattern")
     pattern isa AbstractString || throw(ArgumentError("Split Regex must be a string"))
     String(pattern) == _QWEN3_TOKENIZER_REGEX || throw(ArgumentError(

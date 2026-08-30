@@ -407,6 +407,8 @@ Chapter 03 reproducible-training test.
      storage, shared geometry/dtype/device, and non-aliasing decode snapshots.
 203. Reject unknown Qwen3 tokenizer normalizer fields across all profiles while
      preserving the exact NFC and required-type contracts.
+204. Reject unknown fields in the Qwen3 Sequence, Split, and Regex pre-tokenizer
+     control chain while retaining each nested required-field diagnostic.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

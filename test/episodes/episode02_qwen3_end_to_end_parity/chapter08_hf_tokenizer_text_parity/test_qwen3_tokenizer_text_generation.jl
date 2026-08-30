@@ -311,6 +311,69 @@ end
         end
     end
 
+    pretokenizer_field_mutations = (
+        (
+            payloads -> (
+                payloads.tokenizer["pre_tokenizer"]["future_behavior"] = true
+            ),
+            "unsupported tokenizer.json pre_tokenizer fields: future_behavior",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer["pre_tokenizer"]["pretokenizers"][1][
+                    "future_behavior"
+                ] = true
+            ),
+            "unsupported tokenizer.json Split fields: future_behavior",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer["pre_tokenizer"]["pretokenizers"][1][
+                    "pattern"
+                ]["future_behavior"] = "enabled"
+            ),
+            "unsupported tokenizer.json Split pattern fields: future_behavior",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer["pre_tokenizer"],
+                "pretokenizers",
+            ),
+            "missing `pretokenizers` in tokenizer.json pre_tokenizer",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer["pre_tokenizer"]["pretokenizers"][1],
+                "behavior",
+            ),
+            "missing `behavior` in tokenizer.json Split",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer["pre_tokenizer"]["pretokenizers"][1][
+                    "pattern"
+                ],
+                "Regex",
+            ),
+            "missing `Regex` in tokenizer.json Split pattern",
+        ),
+    )
+    for (mutate!, message) in pretokenizer_field_mutations
+        mktempdir() do directory
+            payloads = qwen3_tokenizer_fixture_payloads()
+            mutate!(payloads)
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            failure = try
+                load_hf_qwen3_tokenizer(directory)
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+    end
+
     byte_level_field_mutations = (
         (
             payloads -> (
