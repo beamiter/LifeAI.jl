@@ -433,6 +433,8 @@ Chapter 03 reproducible-training test.
      size boundaries before semantic values or asset checksums are trusted.
 216. Seal Qwen3 agent-loop traces behind owned step, message, and memory
      snapshots plus contiguous turns and coherent terminal answer states.
+217. Reject duplicate root fields in all three Qwen3 tokenizer JSON files and
+     profiles before ambiguous last-value semantics can reach validation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -127,3 +127,30 @@ function write_qwen3_tokenizer_fixture(directory; payloads=qwen3_tokenizer_fixtu
     end
     return directory
 end
+
+function shadow_qwen3_tokenizer_fixture_root_field(
+    directory,
+    document::Symbol,
+    field::AbstractString,
+    value,
+)
+    filename = document === :tokenizer ? "tokenizer.json" :
+        document === :tokenizer_config ? "tokenizer_config.json" :
+        document === :generation_config ? "generation_config.json" :
+        throw(ArgumentError("unsupported tokenizer fixture document: $document"))
+    path = joinpath(directory, filename)
+    raw = read(path, String)
+    startswith(raw, "{") || throw(ArgumentError("$filename root must be an object"))
+    shadowed = string(
+        '{',
+        JSON3.write(String(field)),
+        ':',
+        JSON3.write(value),
+        ',',
+        SubString(raw, nextind(raw, firstindex(raw))),
+    )
+    open(path, "w") do io
+        write(io, shadowed)
+    end
+    return path
+end

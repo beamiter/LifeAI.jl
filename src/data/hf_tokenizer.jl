@@ -274,6 +274,19 @@ function _hf_reject_unknown_fields(object, allowed_fields, label::AbstractString
     return nothing
 end
 
+function _hf_reject_duplicate_fields(object, label::AbstractString)
+    seen_fields = Set{String}()
+    duplicate_fields = Set{String}()
+    for raw_name in keys(object)
+        name = String(raw_name)
+        name in seen_fields ? push!(duplicate_fields, name) : push!(seen_fields, name)
+    end
+    isempty(duplicate_fields) || throw(ArgumentError(
+        "duplicate $label field(s): $(join(sort!(collect(duplicate_fields)), ", "))",
+    ))
+    return nothing
+end
+
 function _hf_strict_host_int(value, label::AbstractString)
     value isa Integer && !(value isa Bool) || throw(ArgumentError(
         "$label must be an integer",
@@ -479,6 +492,7 @@ function _hf_validate_embedding_post_processor(post_processor)
 end
 
 function _hf_validate_pipeline(tokenizer_json, profile::Symbol)
+    _hf_reject_duplicate_fields(tokenizer_json, "tokenizer.json")
     _hf_reject_unknown_fields(
         tokenizer_json,
         (
@@ -729,6 +743,7 @@ function _hf_validate_tokenizer_config(
     model_vocabulary_size::Int,
     profile::Symbol,
 )
+    _hf_reject_duplicate_fields(config, "tokenizer_config.json")
     _hf_reject_unknown_fields(
         config,
         (
@@ -841,6 +856,7 @@ function _hf_validate_generation_config(
     total_vocabulary::Int;
     qwen3_vl::Bool=false,
 )
+    _hf_reject_duplicate_fields(config, "generation_config.json")
     allowed_fields = Set([
         "bos_token_id",
         "do_sample",
@@ -930,6 +946,7 @@ function _hf_validate_embedding_generation_config(
     total_vocabulary::Int,
     pad_id::Int,
 )
+    _hf_reject_duplicate_fields(config, "generation_config.json")
     allowed_fields = Set([
         "bos_token_id",
         "eos_token_id",

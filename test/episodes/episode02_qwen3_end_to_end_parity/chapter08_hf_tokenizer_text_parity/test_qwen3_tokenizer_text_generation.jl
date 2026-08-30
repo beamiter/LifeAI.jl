@@ -222,6 +222,96 @@ end
         @test_throws ArgumentError load_hf_qwen3_tokenizer(directory)
     end
 
+    duplicate_error = directory -> begin
+        failure = try
+            load_hf_qwen3_tokenizer(directory)
+            nothing
+        catch caught
+            caught
+        end
+        @test failure isa ArgumentError
+        return sprint(showerror, failure)
+    end
+    duplicate_root_cases = (
+        (
+            :tokenizer,
+            "version",
+            "shadow-version",
+            "duplicate tokenizer.json field(s): version",
+        ),
+        (
+            :tokenizer_config,
+            "tokenizer_class",
+            "ShadowTokenizer",
+            "duplicate tokenizer_config.json field(s): tokenizer_class",
+        ),
+        (
+            :generation_config,
+            "do_sample",
+            false,
+            "duplicate generation_config.json field(s): do_sample",
+        ),
+    )
+    for (document, field, value, message) in duplicate_root_cases
+        mktempdir() do directory
+            write_qwen3_tokenizer_fixture(directory)
+            shadow_qwen3_tokenizer_fixture_root_field(
+                directory,
+                document,
+                field,
+                value,
+            )
+            @test duplicate_error(directory) == "ArgumentError: $message"
+        end
+    end
+
+    mktempdir() do directory
+        payloads = qwen3_tokenizer_fixture_payloads()
+        payloads.tokenizer["z_future"] = true
+        payloads.tokenizer["a_future"] = true
+        write_qwen3_tokenizer_fixture(directory; payloads)
+        shadow_qwen3_tokenizer_fixture_root_field(
+            directory,
+            :tokenizer,
+            "z_future",
+            false,
+        )
+        shadow_qwen3_tokenizer_fixture_root_field(
+            directory,
+            :tokenizer,
+            "a_future",
+            false,
+        )
+        @test duplicate_error(directory) ==
+            "ArgumentError: duplicate tokenizer.json field(s): a_future, z_future"
+    end
+
+    mktempdir() do directory
+        write_qwen3_tokenizer_fixture(directory)
+        shadow_qwen3_tokenizer_fixture_root_field(
+            directory,
+            :generation_config,
+            "do_sample",
+            false,
+        )
+        shadow_qwen3_tokenizer_fixture_root_field(
+            directory,
+            :tokenizer_config,
+            "tokenizer_class",
+            "ShadowTokenizer",
+        )
+        @test duplicate_error(directory) ==
+            "ArgumentError: duplicate tokenizer_config.json field(s): tokenizer_class"
+        shadow_qwen3_tokenizer_fixture_root_field(
+            directory,
+            :tokenizer,
+            "version",
+            "shadow-version",
+        )
+        @test duplicate_error(directory) ==
+            "ArgumentError: duplicate tokenizer.json field(s): version"
+    end
+
     mutations = [
         payloads -> (payloads.tokenizer["normalizer"]["type"] = "NFKC"),
         payloads -> (payloads.tokenizer["pre_tokenizer"]["pretokenizers"][1]["pattern"]["Regex"] = "\\w+"),

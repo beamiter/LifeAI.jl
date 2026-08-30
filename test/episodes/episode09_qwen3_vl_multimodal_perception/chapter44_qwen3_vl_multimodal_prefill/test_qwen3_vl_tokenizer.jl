@@ -49,6 +49,49 @@ end
 end
 
 @testset "Chapter 44 — Qwen3-VL tokenizer fields fail closed" begin
+    duplicate_root_cases = (
+        (
+            :tokenizer,
+            "version",
+            "shadow-version",
+            "duplicate tokenizer.json field(s): version",
+        ),
+        (
+            :tokenizer_config,
+            "tokenizer_class",
+            "ShadowTokenizer",
+            "duplicate tokenizer_config.json field(s): tokenizer_class",
+        ),
+        (
+            :generation_config,
+            "repetition_penalty",
+            2.0,
+            "duplicate generation_config.json field(s): repetition_penalty",
+        ),
+    )
+    for (document, field, value, message) in duplicate_root_cases
+        mktempdir() do directory
+            write_qwen3_tokenizer_fixture(
+                directory;
+                payloads=_ch44_vl_tokenizer_payloads(),
+            )
+            shadow_qwen3_tokenizer_fixture_root_field(
+                directory,
+                document,
+                field,
+                value,
+            )
+            failure = try
+                load_hf_qwen3_vl_tokenizer(directory)
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+    end
+
     mutations = [
         payloads -> (payloads.tokenizer["model"]["ignore_merges"] = false),
         payloads -> (payloads.tokenizer["model"]["merges"] = [["h", "i"]]),

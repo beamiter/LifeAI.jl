@@ -355,6 +355,41 @@ end
 end
 
 @testset "embedding tokenizer profile and padding" begin
+    duplicate_root_cases = (
+        (
+            :tokenizer,
+            "version",
+            "shadow-version",
+            "duplicate tokenizer.json field(s): version",
+        ),
+        (
+            :tokenizer_config,
+            "tokenizer_class",
+            "ShadowTokenizer",
+            "duplicate tokenizer_config.json field(s): tokenizer_class",
+        ),
+        (
+            :generation_config,
+            "max_new_tokens",
+            1,
+            "duplicate generation_config.json field(s): max_new_tokens",
+        ),
+    )
+    for (document, field, value, message) in duplicate_root_cases
+        mktempdir() do directory
+            _embedding_tokenizer_fixture(directory)
+            shadow_qwen3_tokenizer_fixture_root_field(
+                directory,
+                document,
+                field,
+                value,
+            )
+            @test _embedding_argument_error_message() do
+                load_hf_qwen3_embedding_tokenizer(directory)
+            end == message
+        end
+    end
+
     mktempdir() do directory
         _embedding_tokenizer_fixture(directory)
         tokenizer = load_hf_qwen3_embedding_tokenizer(
