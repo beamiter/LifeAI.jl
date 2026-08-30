@@ -186,6 +186,42 @@ end
         7,
         1,
     )
+    raw = SwiGLU(
+        mlp.gate_proj,
+        mlp.up_proj,
+        mlp.down_proj,
+        Int32(4),
+        BigInt(7),
+        true,
+    )
+    @test raw.d_model === 4
+    @test raw.hidden_dim === 7
+    for (gate, up, down, d_model, hidden_dim, use_bias) in (
+        (Dense(5, 7; use_bias=true), mlp.up_proj, mlp.down_proj, 4, 7, true),
+        (mlp.gate_proj, Dense(4, 8; use_bias=true), mlp.down_proj, 4, 7, true),
+        (mlp.gate_proj, mlp.up_proj, Dense(8, 4; use_bias=true), 4, 7, true),
+        (
+            Dense(4, 7, tanh; use_bias=true),
+            mlp.up_proj,
+            mlp.down_proj,
+            4,
+            7,
+            true,
+        ),
+        (mlp.gate_proj, mlp.up_proj, mlp.down_proj, 5, 7, true),
+        (mlp.gate_proj, mlp.up_proj, mlp.down_proj, 4, 8, true),
+        (mlp.gate_proj, mlp.up_proj, mlp.down_proj, 4, 7, false),
+        (identity, mlp.up_proj, mlp.down_proj, 4, 7, true),
+    )
+        @test_throws ArgumentError SwiGLU(
+            gate,
+            up,
+            down,
+            d_model,
+            hidden_dim,
+            use_bias,
+        )
+    end
 
     default_swiglu = GPTModel(13, 16, 2, 1; mlp_type=:swiglu)
     explicit_swiglu = GPTModel(

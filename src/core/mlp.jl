@@ -41,6 +41,29 @@ y    = W_down * (SiLU(gate) .* up)
 
 `hidden_dim` is the shared width of the gate and up projections.
 """
+function _swiglu_projection_contract(
+    projection,
+    label::AbstractString,
+    input_dim::Int,
+    output_dim::Int,
+    use_bias::Bool,
+)
+    projection isa Dense || throw(ArgumentError(
+        "$label must be a Lux Dense layer",
+    ))
+    projection.in_dims == input_dim && projection.out_dims == output_dim ||
+        throw(ArgumentError(
+            "$label must map $input_dim inputs to $output_dim outputs",
+        ))
+    projection.activation === identity || throw(ArgumentError(
+        "$label must use the identity activation",
+    ))
+    Lux.has_bias(projection) == use_bias || throw(ArgumentError(
+        "$label bias must match use_bias",
+    ))
+    return projection
+end
+
 struct SwiGLU{G,U,D} <: AbstractLuxContainerLayer{(
     :gate_proj,
     :up_proj,
@@ -65,6 +88,27 @@ struct SwiGLU{G,U,D} <: AbstractLuxContainerLayer{(
         resolved_model_dim = _mlp_positive_host_int(d_model, "d_model")
         resolved_hidden_dim = _mlp_positive_host_int(hidden_dim, "hidden_dim")
         use_bias isa Bool || throw(ArgumentError("use_bias must be Bool"))
+        _swiglu_projection_contract(
+            gate_proj,
+            "gate_proj",
+            resolved_model_dim,
+            resolved_hidden_dim,
+            use_bias,
+        )
+        _swiglu_projection_contract(
+            up_proj,
+            "up_proj",
+            resolved_model_dim,
+            resolved_hidden_dim,
+            use_bias,
+        )
+        _swiglu_projection_contract(
+            down_proj,
+            "down_proj",
+            resolved_hidden_dim,
+            resolved_model_dim,
+            use_bias,
+        )
         return new{
             typeof(gate_proj),
             typeof(up_proj),

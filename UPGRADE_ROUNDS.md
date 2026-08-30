@@ -357,6 +357,8 @@ Chapter 03 reproducible-training test.
      bounds so wrapped host arithmetic cannot admit corrupted layouts.
 178. Seal Qwen3-VL RoPE layouts behind rank, element-type, and cross-field shape
      invariants while preserving caller-owned host and device array storage.
+179. Bind SwiGLU metadata to identity-activated Dense projection dimensions and
+     bias state so malformed raw construction cannot corrupt Qwen MLP semantics.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
