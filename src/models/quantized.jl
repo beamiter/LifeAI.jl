@@ -1291,42 +1291,32 @@ function _estimate_qwen3_quantized_bytes(
         2 * BigInt(d_model) + 2 * BigInt(head_dim)
     )
 
-    for layer in 1:Int(num_layers)
-        bytes += _linear_quantized_bytes(
-            q_dim,
-            d_model,
-            quantization_spec(plan, :q_proj; layer),
-        )
-        bytes += _linear_quantized_bytes(
-            kv_dim,
-            d_model,
-            quantization_spec(plan, :k_proj; layer),
-        )
-        bytes += _linear_quantized_bytes(
-            kv_dim,
-            d_model,
-            quantization_spec(plan, :v_proj; layer),
-        )
-        bytes += _linear_quantized_bytes(
-            d_model,
-            q_dim,
-            quantization_spec(plan, :o_proj; layer),
-        )
-        bytes += _linear_quantized_bytes(
-            hidden_dim,
-            d_model,
-            quantization_spec(plan, :gate_proj; layer),
-        )
-        bytes += _linear_quantized_bytes(
-            hidden_dim,
-            d_model,
-            quantization_spec(plan, :up_proj; layer),
-        )
-        bytes += _linear_quantized_bytes(
-            d_model,
-            hidden_dim,
-            quantization_spec(plan, :down_proj; layer),
-        )
+    layer_shapes = (;
+        q_proj=(q_dim, d_model),
+        k_proj=(kv_dim, d_model),
+        v_proj=(kv_dim, d_model),
+        o_proj=(d_model, q_dim),
+        gate_proj=(hidden_dim, d_model),
+        up_proj=(hidden_dim, d_model),
+        down_proj=(d_model, hidden_dim),
+    )
+    override_counts = Dict{Symbol,Int}()
+    for ((_, projection), override_spec) in plan.layer_overrides
+        out_dim, in_dim = getproperty(layer_shapes, projection)
+        bytes += _linear_quantized_bytes(out_dim, in_dim, override_spec)
+        override_counts[projection] = get(override_counts, projection, 0) + 1
+    end
+    for (projection, (out_dim, in_dim)) in pairs(layer_shapes)
+        baseline_layers = num_layers - get(override_counts, projection, 0)
+        if baseline_layers > 0
+            baseline_spec = get(
+                plan.projection_overrides,
+                projection,
+                plan.default,
+            )
+            bytes += BigInt(baseline_layers) *
+                _linear_quantized_bytes(out_dim, in_dim, baseline_spec)
+        end
     end
     if !tie_embeddings
         bytes += _linear_quantized_bytes(

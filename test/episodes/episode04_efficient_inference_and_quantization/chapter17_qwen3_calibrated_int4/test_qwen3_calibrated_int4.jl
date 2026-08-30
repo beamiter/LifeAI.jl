@@ -125,6 +125,57 @@ end
         bf16_plan,
     )
 
+    huge_depth_spec = Qwen3DenseSpec(
+        :huge_depth,
+        "huge-depth",
+        "huge-depth",
+        "huge-depth",
+        1,
+        2,
+        2,
+        maximum_count,
+        1,
+        1,
+        2,
+        1.0f-6,
+        1.0f4,
+        1,
+        true,
+    )
+    @test _quantization_argument_error_message() do
+        estimate_qwen3_quantized_bytes(huge_depth_spec, bf16_plan)
+    end == "Qwen3 quantized parameter byte estimate exceeds the host integer range"
+
+    two_layer_spec = Qwen3DenseSpec(
+        :two_layer,
+        "two-layer",
+        "two-layer",
+        "two-layer",
+        2,
+        2,
+        2,
+        2,
+        1,
+        1,
+        2,
+        1.0f-6,
+        1.0f4,
+        2,
+        true,
+    )
+    fully_overridden = QuantizationPlan(
+        default=LinearQuantizationSpec(:bf16),
+        projection_overrides=Dict(
+            :q_proj => LinearQuantizationSpec(:int4; group=4),
+        ),
+        layer_overrides=Dict(
+            (1, :q_proj) => LinearQuantizationSpec(:bf16),
+            (2, :q_proj) => LinearQuantizationSpec(:bf16),
+        ),
+    )
+    @test estimate_qwen3_quantized_bytes(two_layer_spec, fully_overridden) ==
+        estimate_qwen3_quantized_bytes(two_layer_spec, bf16_plan)
+
     single_length = 2 * (maximum_count ÷ sizeof(Int)) + 3
     @test_throws ArgumentError quantized_parameter_bytes(
         Base.OneTo(single_length),
