@@ -106,6 +106,7 @@ function _qwen3_resident_service_payload(;
     repeat_last_n=0,
     num_predict=4,
     num_ctx=64,
+    keep_alive="10m",
     extra=Dict{String,Any}(),
 )
     object = Dict{String,Any}(
@@ -114,7 +115,7 @@ function _qwen3_resident_service_payload(;
         "raw" => raw,
         "stream" => stream,
         "think" => think,
-        "keep_alive" => "10m",
+        "keep_alive" => keep_alive,
         "options" => Dict{String,Any}(
             "temperature" => temperature,
             "repeat_penalty" => repeat_penalty,
@@ -757,6 +758,36 @@ end
     response = qwen3_xla_http_handler(
         fixture.service,
         _qwen3_resident_service_generate_request(num_predict=true),
+    )
+    @test response.status == 400
+    @test _qwen3_resident_service_error_code(response) == "invalid_option"
+    @test _qwen3_resident_service_request_metrics(fixture.service) ==
+        (0, 0, 0, 0, 0, 0)
+    @test fixture.load_calls[] == 1
+end
+
+@testset "request real options must remain finite" begin
+    for invalid in (Inf, -Inf, NaN, big(10)^400)
+        failure = _qwen3_resident_service_capture_failure() do
+            LifeAI._qwen3_service_real(invalid, "option")
+        end
+        @test failure isa LifeAI.Qwen3XLAServiceError
+        @test (
+            failure.status,
+            failure.code,
+            failure.message,
+        ) == (400, "invalid_option", "option must be finite")
+    end
+
+    normalized = LifeAI._qwen3_service_real(Float32(0.5), "option")
+    @test normalized === 0.5
+
+    fixture = _qwen3_resident_service_fake_service()
+    response = qwen3_xla_http_handler(
+        fixture.service,
+        _qwen3_resident_service_generate_request(
+            keep_alive=big(10)^400,
+        ),
     )
     @test response.status == 400
     @test _qwen3_resident_service_error_code(response) == "invalid_option"

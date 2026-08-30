@@ -297,7 +297,13 @@ function _qwen3_service_real(value, label)
     value isa Real && !(value isa Bool) || throw(
         _qwen3_service_error(400, "invalid_option", "$label must be a number"),
     )
-    return Float64(value)
+    resolved = Float64(value)
+    isfinite(resolved) || throw(_qwen3_service_error(
+        400,
+        "invalid_option",
+        "$label must be finite",
+    ))
+    return resolved
 end
 
 function _qwen3_service_prepare_generate(
@@ -391,6 +397,7 @@ function _qwen3_service_prepare_generate(
             "invalid_keep_alive",
             "keep_alive must be a string or number",
         ))
+        keep_alive isa Real && _qwen3_service_real(keep_alive, "keep_alive")
     end
 
     options = get(object, "options", Dict{String,Any}())
