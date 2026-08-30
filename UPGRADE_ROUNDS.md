@@ -279,6 +279,8 @@ Chapter 03 reproducible-training test.
      accounting can undercount object payloads or leak `sizeof` exceptions.
 139. Normalize Qwen3 activation-calibration tokens and sequence limits before
      checkpoint I/O, rejecting Bool, non-integers, and host-range overflow.
+140. Enforce positive, even, divisible Qwen3 INT4 weight metadata through its
+     exported constructor before dequantization or row slicing.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

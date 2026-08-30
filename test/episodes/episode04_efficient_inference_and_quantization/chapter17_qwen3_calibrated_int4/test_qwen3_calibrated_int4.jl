@@ -199,6 +199,49 @@ end
     end
 end
 
+@testset "INT4 weight metadata is strict" begin
+    packed = zeros(UInt8, 2, 4)
+    scale = ones(Float32, 2, 2)
+    weight = Int4GroupWeight(packed, scale, Int128(4), big(8))
+    @test weight.group === 4
+    @test weight.in_dim === 8
+
+    too_large = big(typemax(Int)) + 1
+    for (group, message) in (
+        (true, "INT4 weight group must be an integer"),
+        (1.0, "INT4 weight group must be an integer"),
+        (1 + 0im, "INT4 weight group must be an integer"),
+        (
+            too_large,
+            "INT4 weight group is outside the host integer range",
+        ),
+        (0, "INT4 weight group must be positive"),
+        (-2, "INT4 weight group must be positive"),
+        (3, "INT4 weight group must be even"),
+        (6, "INT4 weight input dimension must be divisible by its group"),
+    )
+        @test _quantization_argument_error_message() do
+            Int4GroupWeight(packed, scale, group, 8)
+        end == message
+    end
+    for (in_dim, message) in (
+        (true, "INT4 weight input dimension must be an integer"),
+        (1.0, "INT4 weight input dimension must be an integer"),
+        (1 + 0im, "INT4 weight input dimension must be an integer"),
+        (
+            too_large,
+            "INT4 weight input dimension is outside the host integer range",
+        ),
+        (0, "INT4 weight input dimension must be positive"),
+        (-2, "INT4 weight input dimension must be positive"),
+        (7, "INT4 weight input dimension must be even"),
+    )
+        @test _quantization_argument_error_message() do
+            Int4GroupWeight(packed, scale, 4, in_dim)
+        end == message
+    end
+end
+
 @testset "quantization plan validation and precedence" begin
     int4_mse = LinearQuantizationSpec(:int4; group=128, calibration=:mse)
     int8 = LinearQuantizationSpec(:int8)

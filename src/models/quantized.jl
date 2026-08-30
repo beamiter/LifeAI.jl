@@ -639,6 +639,35 @@ struct Int4GroupWeight{Q,S}
     scale::S
     group::Int
     in_dim::Int
+
+    function Int4GroupWeight(packed, scale, group, in_dim)
+        resolved_group = _strict_host_int(group, "INT4 weight group")
+        resolved_group > 0 || throw(ArgumentError(
+            "INT4 weight group must be positive",
+        ))
+        iseven(resolved_group) || throw(ArgumentError(
+            "INT4 weight group must be even",
+        ))
+        resolved_in_dim = _strict_host_int(
+            in_dim,
+            "INT4 weight input dimension",
+        )
+        resolved_in_dim > 0 || throw(ArgumentError(
+            "INT4 weight input dimension must be positive",
+        ))
+        iseven(resolved_in_dim) || throw(ArgumentError(
+            "INT4 weight input dimension must be even",
+        ))
+        resolved_in_dim % resolved_group == 0 || throw(ArgumentError(
+            "INT4 weight input dimension must be divisible by its group",
+        ))
+        return new{typeof(packed),typeof(scale)}(
+            packed,
+            scale,
+            resolved_group,
+            resolved_in_dim,
+        )
+    end
 end
 Adapt.Adapt.adapt_structure(to, w::Int4GroupWeight) = Int4GroupWeight(
     Adapt.adapt(to, w.packed),
