@@ -554,6 +554,25 @@ end
         dimension=Int128(32),
         minimum_dimension=big(32),
     ) == pooled
+    @test qwen3_last_token_pool(
+        hidden,
+        Int8.(mask);
+        dimension=32,
+        minimum_dimension=32,
+    ) == pooled
+
+    missing_mask = Matrix{Any}(mask)
+    missing_mask[1, 1] = missing
+    for invalid_mask in (
+        Float64.(mask),
+        ComplexF64.(mask),
+        missing_mask,
+        fill(2, size(mask)),
+    )
+        @test _embedding_argument_error_message() do
+            qwen3_last_token_pool(hidden, invalid_mask; dimension=32)
+        end == "attention_mask values must be Bool or integer zero/one"
+    end
 
     too_large = big(typemax(Int)) + 1
     for (options, message) in (

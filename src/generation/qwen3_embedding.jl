@@ -110,8 +110,13 @@ function _qwen3_embedding_bool_mask(attention_mask, sequence_length, batch_size)
             "attention_mask must have shape ($sequence_length, $batch_size)",
         ),
     )
-    all(value -> value isa Bool || value == 0 || value == 1, attention_mask) ||
-        throw(ArgumentError("attention_mask values must be Bool or zero/one"))
+    all(
+        value -> value isa Bool ||
+            (value isa Integer && (value == 0 || value == 1)),
+        attention_mask,
+    ) || throw(ArgumentError(
+        "attention_mask values must be Bool or integer zero/one",
+    ))
     mask = Bool.(attention_mask)
     for batch in 1:batch_size
         indices = findall(view(mask, :, batch))
