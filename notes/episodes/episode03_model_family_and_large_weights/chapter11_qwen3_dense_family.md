@@ -45,6 +45,8 @@
 - 新增 `Qwen3DenseSpec`、`qwen3_dense_specs()`、`qwen3_dense_spec(...)` 和
   `qwen3_dense_parameter_count(...)`，公开六个尺寸的不可变规格、revision 与
   config checksum。
+- 参数量公式使用任意精度中间值并在公开 `Int` 返回边界统一检查；畸形超宽
+  metadata 不会先发生机器整数回绕再伪装成可信的小参数量。
 - `load_hf_qwen3_config` 自动识别官方尺寸，并返回 `qwen3_variant` 与
   `source_max_seq_len`；传入 `variant` 时，shape、RoPE 或 norm 语义不完全
   匹配立即失败。

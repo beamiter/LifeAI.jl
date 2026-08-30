@@ -7,6 +7,13 @@ using SHA: sha256
 const _SAFETENSORS_MAX_HEADER_BYTES = 100_000_000
 const _SAFETENSORS_DTYPES = Dict("BF16" => 2, "F32" => 4)
 
+function _qwen3_parameter_count_int(count::BigInt, label::AbstractString)
+    0 <= count <= typemax(Int) || throw(ArgumentError(
+        "$label exceeds the host integer range",
+    ))
+    return Int(count)
+end
+
 """
     Qwen3DenseSpec
 
@@ -380,20 +387,22 @@ Return the exact number of trainable scalar parameters implied by an official
 Qwen3 dense specification, including an untied LM head when present.
 """
 function qwen3_dense_parameter_count(spec::Qwen3DenseSpec)
-    query_dim = spec.num_heads * spec.head_dim
-    kv_dim = spec.num_kv_heads * spec.head_dim
-    embedding = spec.vocab_size * spec.d_model
+    d_model = BigInt(spec.d_model)
+    query_dim = BigInt(spec.num_heads) * spec.head_dim
+    kv_dim = BigInt(spec.num_kv_heads) * spec.head_dim
+    embedding = BigInt(spec.vocab_size) * d_model
     attention = 2 * query_dim * spec.d_model +
         2 * kv_dim * spec.d_model +
-        2 * spec.head_dim
-    mlp = 3 * spec.d_model * spec.mlp_hidden_dim
-    norms = 2 * spec.d_model
-    final_norm = spec.d_model
+        2 * BigInt(spec.head_dim)
+    mlp = 3 * d_model * spec.mlp_hidden_dim
+    norms = 2 * d_model
+    final_norm = d_model
     lm_head = spec.tie_embeddings ? 0 : embedding
-    return embedding +
+    count = embedding +
         spec.num_layers * (attention + mlp + norms) +
         final_norm +
         lm_head
+    return _qwen3_parameter_count_int(count, "Qwen3 dense parameter count")
 end
 
 function _json_object(path::AbstractString)

@@ -4,6 +4,7 @@ using Lux
 using Random: Xoshiro
 using LifeAI:
     GPTModel,
+    Qwen3DenseSpec,
     decode_step,
     init_kv_cache,
     init_static_kv_cache,
@@ -83,6 +84,25 @@ end
     @test length(entries) == length(specs) == 6
     @test count(spec -> spec.tie_embeddings, specs) == 3
     @test count(spec -> !spec.tie_embeddings, specs) == 3
+
+    overflow_spec = Qwen3DenseSpec(
+        :overflow,
+        "overflow",
+        "overflow",
+        "overflow",
+        typemax(Int),
+        2,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1.0f-6,
+        10_000.0f0,
+        1,
+        true,
+    )
+    @test_throws ArgumentError qwen3_dense_parameter_count(overflow_spec)
 
     mktempdir() do directory
         for (index, entry) in enumerate(entries)

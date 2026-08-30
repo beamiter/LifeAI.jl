@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the forty-nine follow-up rounds implemented on top of the
+This ledger records the fifty follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -97,6 +97,8 @@ Chapter 03 reproducible-training test.
     per-token routing width, preventing impossible top-k working-set estimates.
 49. Align the Qwen3 MoE offload planner with its executable session contract by
     rejecting unsupported multi-batch estimates instead of advertising them.
+50. Compute Qwen3 dense parameter counts with arbitrary-precision intermediates
+    and reject totals that cannot be represented by the public host `Int` API.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
