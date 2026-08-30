@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the eighty-two follow-up rounds implemented on top of the
+This ledger records the eighty-three follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -164,6 +164,8 @@ Chapter 03 reproducible-training test.
 82. Strictly normalize Qwen3 XLA service capacity integers before invoking its
     expensive session loader, including its Int32 device-position limit, while
     preserving valid cross-width inputs.
+83. Translate Qwen3 XLA request-option integer overflow into stable 400 errors
+    before prompt encoding, request metrics, or generation work.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

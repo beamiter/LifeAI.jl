@@ -230,7 +230,17 @@ function _qwen3_service_integer(value, label)
     value isa Integer && !(value isa Bool) || throw(
         _qwen3_service_error(400, "invalid_option", "$label must be an integer"),
     )
-    return Int(value)
+    return try
+        Int(value)
+    catch error
+        error isa Union{InexactError,OverflowError,DomainError,MethodError} ||
+            rethrow()
+        throw(_qwen3_service_error(
+            400,
+            "invalid_option",
+            "$label is outside the host integer range",
+        ))
+    end
 end
 
 function _qwen3_service_real(value, label)

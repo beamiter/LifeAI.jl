@@ -71,6 +71,9 @@ generation lock，下一请求可以继续执行。
   规范化：拒绝 Boolean 和超出宿主范围的整数，合法多宽度整数
   统一存为 `Int`，context 额外不得超过 XLA 设备位置的 `Int32`
   上限。
+- JSON 请求的 `repeat_last_n/num_predict/num_ctx/seed` 整数转换在
+  prompt encoder 前完成；类型错误或宿主范围溢出统一是 400
+  `invalid_option`，不会被误归类为生成失败。
 
 公共 `serve_qwen3_xla_http!` 默认 `127.0.0.1:11435`。日常 launcher 对
 非 loopback 地址再加一道 `--allow-non-loopback` 门禁；这个开关只代表调用
@@ -183,8 +186,8 @@ SHA256 e006940214ecabb3802dda178faaad994491cfeae2fc2cfd3425a0d71c2d960b
 
 ## 测试与关闭
 
-- Chapter 21 专项：`204 / 204`；
-- 加真实 loopback socket opt-in：`211 / 211`；
+- Chapter 21 专项：`232 / 232`；
+- 加真实 loopback socket opt-in：`239 / 239`；
 - 默认完整套件：`5,489 / 5,489`；
 - Reactant CPU compiled prefill smoke：`5 / 5`；
 - 真机 acceptance：所有 `_passed` 字段为 true，顶层 `closed=true`。

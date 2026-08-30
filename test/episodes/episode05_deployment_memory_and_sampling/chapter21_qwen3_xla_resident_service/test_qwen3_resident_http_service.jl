@@ -2,6 +2,7 @@ using HTTP
 using JSON3
 using SHA: sha256
 using Sockets
+import LifeAI
 using LifeAI:
     Qwen3XLAHTTPService,
     qwen3_xla_http_handler,
@@ -583,6 +584,55 @@ end
     @test capacities == (64, 8, 16, 1024)
     @test all(value -> value isa Int, capacities)
     @test load_calls[] == 1
+end
+
+@testset "request option integer preflight" begin
+    too_large = big(typemax(Int)) + 1
+    for label in (
+        "options.repeat_last_n",
+        "options.num_predict",
+        "options.num_ctx",
+        "options.seed",
+    )
+        type_failure = _qwen3_resident_service_capture_failure() do
+            LifeAI._qwen3_service_integer(true, label)
+        end
+        @test type_failure isa LifeAI.Qwen3XLAServiceError
+        @test (
+            type_failure.status,
+            type_failure.code,
+            type_failure.message,
+        ) == (400, "invalid_option", "$label must be an integer")
+
+        range_failure = _qwen3_resident_service_capture_failure() do
+            LifeAI._qwen3_service_integer(too_large, label)
+        end
+        @test range_failure isa LifeAI.Qwen3XLAServiceError
+        @test (
+            range_failure.status,
+            range_failure.code,
+            range_failure.message,
+        ) == (
+            400,
+            "invalid_option",
+            "$label is outside the host integer range",
+        )
+
+        normalized = LifeAI._qwen3_service_integer(Int128(7), label)
+        @test normalized == 7
+        @test normalized isa Int
+    end
+
+    fixture = _qwen3_resident_service_fake_service()
+    response = qwen3_xla_http_handler(
+        fixture.service,
+        _qwen3_resident_service_generate_request(num_predict=true),
+    )
+    @test response.status == 400
+    @test _qwen3_resident_service_error_code(response) == "invalid_option"
+    @test _qwen3_resident_service_request_metrics(fixture.service) ==
+        (0, 0, 0, 0, 0, 0)
+    @test fixture.load_calls[] == 1
 end
 
 @testset "server defaults remain loopback-only" begin
