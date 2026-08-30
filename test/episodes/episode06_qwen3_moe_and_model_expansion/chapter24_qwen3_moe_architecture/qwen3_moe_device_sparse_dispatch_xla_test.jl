@@ -73,7 +73,7 @@ using LifeAI: Qwen3SparseMoE, qwen3_moe_device_forward
         Reactant.to_rarray(underflow_up),
         Reactant.to_rarray(underflow_down),
     ))
-    @test vec(underflow_reference.expert_indices[:, 1]) == Int32[1, 8]
+    @test vec(underflow_reference.expert_indices[:, 1]) == Int32[1, 2]
     @test vec(underflow_reference.routing_weights[:, 1]) == Float32[1, 0]
     @test all(isfinite, underflow_actual)
     @test underflow_actual ≈ underflow_reference.output atol = 3.0f-6 rtol = 3.0f-5

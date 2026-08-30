@@ -18,6 +18,39 @@ CUDA.functional() || error(
 CUDA.allowscalar(false)
 const _QWEN3_MOE_CUDA_EXT = Base.get_extension(LifeAI, :LifeAICUDAExt)
 
+@testset "Qwen3 MoE CUDA canonicalizes extreme routing probabilities" begin
+    for normalize in (true, false)
+        underflow_logits = reshape(Float32[0, -90, -91, -92], :, 1)
+        reference = qwen3_device_topk_routing(
+            underflow_logits,
+            2;
+            normalize,
+        )
+        actual = qwen3_device_topk_routing(
+            CUDA.cu(underflow_logits),
+            2;
+            normalize,
+        )
+        @test Array(actual.expert_indices) == reference.expert_indices ==
+            reshape(Int32[1, 2], 2, 1)
+        @test Array(actual.routing_weights) == reference.routing_weights ==
+            reshape(Float32[1, 0], 2, 1)
+    end
+
+    normal_logits = reshape(Float32[0, -80, -81, -82], :, 1)
+    reference = qwen3_device_topk_routing(normal_logits, 2; normalize=false)
+    actual = qwen3_device_topk_routing(
+        CUDA.cu(normal_logits),
+        2;
+        normalize=false,
+    )
+    @test Array(actual.expert_indices) == reference.expert_indices ==
+        reshape(Int32[1, 2], 2, 1)
+    actual_weights = Array(actual.routing_weights)
+    @test actual_weights ≈ reference.routing_weights rtol = 2.0f-6
+    @test actual_weights[2, 1] >= floatmin(Float32)
+end
+
 @testset "Qwen3 MoE CUDA route bucketing is stable and device resident" begin
     expert_indices = CUDA.cu(Int32[
         3 2 3 1;

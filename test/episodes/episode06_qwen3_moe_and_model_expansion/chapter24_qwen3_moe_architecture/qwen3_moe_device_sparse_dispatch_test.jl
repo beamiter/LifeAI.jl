@@ -121,6 +121,26 @@ end
     )
 end
 
+@testset "Qwen3 extreme routing logits have backend-stable candidates" begin
+    underflow_logits = reshape(Float32[0, -90, -91, -92], :, 1)
+    for normalize in (true, false)
+        compact = qwen3_device_topk_routing(
+            underflow_logits,
+            2;
+            normalize,
+        )
+        dense = qwen3_topk_routing(underflow_logits, 2; normalize)
+        @test vec(compact.expert_indices) == Int32[1, 2]
+        @test vec(compact.routing_weights) == Float32[1, 0]
+        @test vec(dense) == Float32[1, 0, 0, 0]
+    end
+
+    normal_logits = reshape(Float32[0, -80, -81, -82], :, 1)
+    compact = qwen3_device_topk_routing(normal_logits, 2; normalize=false)
+    @test vec(compact.expert_indices) == Int32[1, 2]
+    @test compact.routing_weights[2, 1] >= floatmin(Float32)
+end
+
 @testset "Qwen3 compact dispatch masks underflowed zero-weight routes" begin
     layer = Qwen3SparseMoE(1, 1, 4, 2)
     poisoned_experts = reshape(Float32[1, NaN, NaN, NaN], 1, 1, 4)
@@ -141,7 +161,7 @@ end
         host.routing,
         parameters.experts,
     )
-    @test vec(device.expert_indices) == Int32[1, 4]
+    @test vec(device.expert_indices) == Int32[1, 2]
     @test vec(device.routing_weights) == Float32[1, 0]
     @test host.stats.routed_token_expert_pairs == 1
     @test all(isfinite, host.output)
