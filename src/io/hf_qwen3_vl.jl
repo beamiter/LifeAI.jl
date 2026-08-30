@@ -1,6 +1,31 @@
 using JSON3
 using SHA: sha256
 
+function _qwen3_vl_spec_positive_float64(value, label::AbstractString)
+    value isa Real && !(value isa Bool) || throw(ArgumentError(
+        "$label must be a real number",
+    ))
+    resolved = try
+        Float64(value)
+    catch error
+        error isa InterruptException && rethrow()
+        throw(ArgumentError("$label must be positive and finite"))
+    end
+    isfinite(resolved) && resolved > 0 || throw(ArgumentError(
+        "$label must be positive and finite",
+    ))
+    return resolved
+end
+
+function _qwen3_vl_spec_int3(value, label::AbstractString)
+    value isa Tuple && length(value) == 3 || throw(ArgumentError(
+        "$label must be a tuple of three integers",
+    ))
+    return ntuple(3) do index
+        _qwen3_spec_nonnegative_int(value[index], "$label[$index]")
+    end
+end
+
 """One immutable file in the frozen Qwen3-VL checkpoint."""
 struct Qwen3VLAssetSpec
     name::String
@@ -24,6 +49,62 @@ struct Qwen3VLTextSpec
     mrope_section::NTuple{3,Int}
     tie_word_embeddings::Bool
     hidden_act::String
+
+    function Qwen3VLTextSpec(
+        vocab_size,
+        hidden_size,
+        intermediate_size,
+        num_hidden_layers,
+        num_attention_heads,
+        num_key_value_heads,
+        head_dim,
+        rms_norm_eps,
+        rope_theta,
+        max_position_embeddings,
+        mrope_interleaved,
+        mrope_section,
+        tie_word_embeddings,
+        hidden_act,
+    )
+        mrope_interleaved isa Bool || throw(ArgumentError(
+            "Qwen3-VL text mrope_interleaved must be a Bool",
+        ))
+        tie_word_embeddings isa Bool || throw(ArgumentError(
+            "Qwen3-VL text tie_word_embeddings must be a Bool",
+        ))
+        prefix = "Qwen3-VL text"
+        return new(
+            _qwen3_spec_positive_int(vocab_size, "$prefix vocab_size"),
+            _qwen3_spec_positive_int(hidden_size, "$prefix hidden_size"),
+            _qwen3_spec_positive_int(
+                intermediate_size,
+                "$prefix intermediate_size",
+            ),
+            _qwen3_spec_nonnegative_int(
+                num_hidden_layers,
+                "$prefix num_hidden_layers",
+            ),
+            _qwen3_spec_positive_int(
+                num_attention_heads,
+                "$prefix num_attention_heads",
+            ),
+            _qwen3_spec_positive_int(
+                num_key_value_heads,
+                "$prefix num_key_value_heads",
+            ),
+            _qwen3_spec_positive_int(head_dim, "$prefix head_dim"),
+            _qwen3_vl_spec_positive_float64(rms_norm_eps, "$prefix rms_norm_eps"),
+            _qwen3_vl_spec_positive_float64(rope_theta, "$prefix rope_theta"),
+            _qwen3_spec_positive_int(
+                max_position_embeddings,
+                "$prefix max_position_embeddings",
+            ),
+            mrope_interleaved,
+            _qwen3_vl_spec_int3(mrope_section, "$prefix mrope_section"),
+            tie_word_embeddings,
+            _qwen3_spec_string(hidden_act, "$prefix hidden_act"),
+        )
+    end
 end
 
 """Frozen vision-tower and merger architecture for Qwen3-VL-2B-Instruct."""

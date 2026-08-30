@@ -54,6 +54,110 @@ function _ch43_captured_error(thunk)
     error("expected Qwen3-VL call to fail")
 end
 
+@testset "Qwen3-VL text specifications are strict" begin
+    valid = (
+        big(32),
+        Int32(16),
+        UInt8(32),
+        big(0),
+        Int16(2),
+        big(1),
+        Int128(8),
+        Float32(1.0e-6),
+        Int32(10_000),
+        big(64),
+        true,
+        (Int32(2), big(1), UInt8(1)),
+        true,
+        SubString("xsilu", 2),
+    )
+    spec = Qwen3VLTextSpec(valid...)
+    @test spec.vocab_size === 32
+    @test spec.num_hidden_layers === 0
+    @test spec.rms_norm_eps isa Float64
+    @test spec.rope_theta === 10_000.0
+    @test spec.mrope_section === (2, 1, 1)
+    @test spec.hidden_act === "silu"
+
+    integer_fields = (
+        1 => "vocab_size",
+        2 => "hidden_size",
+        3 => "intermediate_size",
+        4 => "num_hidden_layers",
+        5 => "num_attention_heads",
+        6 => "num_key_value_heads",
+        7 => "head_dim",
+        10 => "max_position_embeddings",
+    )
+    for (index, label) in integer_fields
+        failure = _ch43_captured_error() do
+            Qwen3VLTextSpec(Base.setindex(valid, true, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL text $label must be an integer"
+
+        invalid = index == 4 ? -1 : 0
+        qualifier = index == 4 ? "non-negative" : "positive"
+        failure = _ch43_captured_error() do
+            Qwen3VLTextSpec(Base.setindex(valid, invalid, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL text $label must be $qualifier"
+    end
+
+    too_large = big(typemax(Int)) + 1
+    for (index, value, message) in (
+        (1, 1.0, "vocab_size must be an integer"),
+        (1, too_large, "vocab_size is outside the host integer range"),
+        (11, 1, "mrope_interleaved must be a Bool"),
+        (13, 1, "tie_word_embeddings must be a Bool"),
+        (14, :silu, "hidden_act must be a string"),
+    )
+        failure = _ch43_captured_error() do
+            Qwen3VLTextSpec(Base.setindex(valid, value, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: Qwen3-VL text $message"
+    end
+
+    for index in (8, 9)
+        label = index == 8 ? "rms_norm_eps" : "rope_theta"
+        for (value, message) in (
+            (true, "must be a real number"),
+            ("1", "must be a real number"),
+            (0, "must be positive and finite"),
+            (NaN, "must be positive and finite"),
+            (Inf, "must be positive and finite"),
+            (big(10)^1_000, "must be positive and finite"),
+        )
+            failure = _ch43_captured_error() do
+                Qwen3VLTextSpec(Base.setindex(valid, value, index)...)
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) ==
+                "ArgumentError: Qwen3-VL text $label $message"
+        end
+    end
+
+    for (section, message) in (
+        ([2, 1, 1], "must be a tuple of three integers"),
+        ((2, 1), "must be a tuple of three integers"),
+        ((true, 1, 1), "[1] must be an integer"),
+        ((-1, 1, 1), "[1] must be non-negative"),
+        ((too_large, 1, 1), "[1] is outside the host integer range"),
+    )
+        failure = _ch43_captured_error() do
+            Qwen3VLTextSpec(Base.setindex(valid, section, 12)...)
+        end
+        @test failure isa ArgumentError
+        separator = startswith(message, "[") ? "" : " "
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL text mrope_section$separator$message"
+    end
+end
+
 @testset "Qwen3-VL frozen checkpoint and tensor contract" begin
     spec = qwen3_vl_checkpoint_spec()
     @test spec.variant == :qwen3_vl_2b_instruct

@@ -233,6 +233,8 @@ Chapter 03 reproducible-training test.
      lengths, rejecting Bool, non-integers, non-positive values, and overflow.
 116. Strictly normalize Qwen3 embedding lengths, MRL dimensions, and retrieval
      limits before tokenization, inference, pooling, or similarity work.
+117. Strictly construct Qwen3-VL text specifications, normalizing dimensions,
+     finite Float64 hyperparameters, Bool flags, and three-lane mRoPE sections.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
