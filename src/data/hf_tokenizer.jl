@@ -465,9 +465,18 @@ function _hf_validate_tokenizer_config(
     return bos_id, eos_id, pad_id, Int(model_max_length), String(chat_template)
 end
 
+function _hf_strict_host_int(value, label::AbstractString)
+    value isa Integer && !(value isa Bool) || throw(ArgumentError(
+        "$label must be an integer",
+    ))
+    typemin(Int) <= value <= typemax(Int) || throw(ArgumentError(
+        "$label is outside the host integer range",
+    ))
+    return Int(value)
+end
+
 function _hf_generation_id(value, total_vocabulary::Int, name::AbstractString)
-    value isa Integer || throw(ArgumentError("`$name` must be an integer"))
-    id = Int(value)
+    id = _hf_strict_host_int(value, "`$name`")
     0 <= id < total_vocabulary || throw(ArgumentError("`$name` is outside tokenizer vocabulary"))
     return id + 1
 end
@@ -514,14 +523,25 @@ function _hf_validate_generation_config(
     length(unique(eos_ids)) == length(eos_ids) || throw(ArgumentError("duplicate eos_token_id"))
     do_sample = _hf_required(config, "do_sample", "generation_config.json")
     do_sample isa Bool || throw(ArgumentError("do_sample must be boolean"))
-    temperature = _hf_required(config, "temperature", "generation_config.json")
-    temperature isa Real && isfinite(temperature) && temperature > 0 || throw(ArgumentError(
+    raw_temperature = _hf_required(config, "temperature", "generation_config.json")
+    raw_temperature isa Real && !(raw_temperature isa Bool) || throw(ArgumentError(
         "temperature must be a finite positive number",
     ))
-    top_k = _hf_required(config, "top_k", "generation_config.json")
-    top_k isa Integer && top_k > 0 || throw(ArgumentError("top_k must be a positive integer"))
-    top_p = _hf_required(config, "top_p", "generation_config.json")
-    top_p isa Real && isfinite(top_p) && 0 < top_p <= 1 || throw(ArgumentError(
+    temperature = Float32(raw_temperature)
+    isfinite(temperature) && temperature > 0 || throw(ArgumentError(
+        "temperature must be a finite positive number",
+    ))
+    top_k = _hf_strict_host_int(
+        _hf_required(config, "top_k", "generation_config.json"),
+        "top_k",
+    )
+    top_k > 0 || throw(ArgumentError("top_k must be a positive integer"))
+    raw_top_p = _hf_required(config, "top_p", "generation_config.json")
+    raw_top_p isa Real && !(raw_top_p isa Bool) || throw(ArgumentError(
+        "top_p must be in (0, 1]",
+    ))
+    top_p = Float32(raw_top_p)
+    isfinite(top_p) && 0 < top_p <= 1 || throw(ArgumentError(
         "top_p must be in (0, 1]",
     ))
     transformers_version = _hf_required(
@@ -537,9 +557,9 @@ function _hf_validate_generation_config(
         eos_ids,
         pad_id,
         do_sample,
-        Float32(temperature),
-        Int(top_k),
-        Float32(top_p),
+        temperature,
+        top_k,
+        top_p,
         String(transformers_version),
     )
 end

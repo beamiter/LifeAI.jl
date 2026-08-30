@@ -166,6 +166,56 @@ end
             @test_throws ArgumentError load_hf_qwen3_tokenizer(directory)
         end
     end
+
+    generation_mutations = (
+        (
+            payloads -> (payloads.generation_config["bos_token_id"] = true),
+            "`bos_token_id` must be an integer",
+        ),
+        (
+            payloads -> (payloads.generation_config["eos_token_id"] = true),
+            "`eos_token_id` must be an integer",
+        ),
+        (
+            payloads -> (payloads.generation_config["top_k"] = true),
+            "top_k must be an integer",
+        ),
+        (
+            payloads -> (payloads.generation_config["top_k"] = 0),
+            "top_k must be a positive integer",
+        ),
+        (
+            payloads -> (payloads.generation_config["temperature"] = true),
+            "temperature must be a finite positive number",
+        ),
+        (
+            payloads -> (payloads.generation_config["temperature"] = 1.0e100),
+            "temperature must be a finite positive number",
+        ),
+        (
+            payloads -> (payloads.generation_config["top_p"] = true),
+            "top_p must be in (0, 1]",
+        ),
+        (
+            payloads -> (payloads.generation_config["top_p"] = 1.0e-100),
+            "top_p must be in (0, 1]",
+        ),
+    )
+    for (mutate!, message) in generation_mutations
+        mktempdir() do directory
+            payloads = qwen3_tokenizer_fixture_payloads()
+            mutate!(payloads)
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            failure = try
+                load_hf_qwen3_tokenizer(directory)
+                nothing
+            catch caught
+                caught
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+    end
 end
 
 @testset "Qwen3 tokenizer artifact and checkpoint round-trip" begin

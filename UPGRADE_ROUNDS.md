@@ -227,6 +227,8 @@ Chapter 03 reproducible-training test.
      checkpoint, preserving custom special-token and merge contracts.
 113. Strictly normalize Qwen3 tokenizer decode ids and byte-length queries,
      rejecting Bool and host-range overflow without leaking conversions.
+114. Strictly parse Qwen3 generation ids, sampling integers, and Float32
+     probabilities, rejecting Bool and precision-level overflow or underflow.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
