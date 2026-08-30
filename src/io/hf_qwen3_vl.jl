@@ -760,7 +760,7 @@ function load_hf_qwen3_vl_config(
         "unsupported mrope_section in $rope_path: expected " *
         "$(text_spec.mrope_section), got $mrope_section",
     ))
-    sum(mrope_section) == text_spec.head_dim ÷ 2 || throw(ArgumentError(
+    sum(BigInt, mrope_section) == BigInt(text_spec.head_dim ÷ 2) || throw(ArgumentError(
         "mrope_section must partition half of head_dim",
     ))
 

@@ -2,6 +2,7 @@ using Base64: base64decode
 using JSON3
 using SHA: sha256
 using Test
+import LifeAI
 using LifeAI: Qwen3VLCheckpointSpec,
     Qwen3VLRopeLayout,
     Qwen3VLVisionInput,
@@ -115,6 +116,38 @@ function _ch44_hf_tensor(reference, name::AbstractString)
     width = shape[3]
     values = collect(reinterpret(Float32, bytes))
     return reshape(values, width, 8, 1)
+end
+
+@testset "Chapter 44 — mRoPE section arithmetic is overflow-safe" begin
+    names = fieldnames(Qwen3VLTextSpec)
+    fields = ntuple(length(names)) do index
+        names[index] === :mrope_section && return (
+            typemax(Int),
+            typemax(Int),
+            6,
+        )
+        return getfield(_CH44_TINY_TEXT_SPEC, names[index])
+    end
+    overflow_spec = Qwen3VLTextSpec(fields...)
+    # Ordinary Int addition wraps this tuple sum back to head_dim ÷ 2 == 4.
+    @test sum(overflow_spec.mrope_section) == overflow_spec.head_dim ÷ 2
+    @test sum(BigInt, overflow_spec.mrope_section) !=
+        BigInt(overflow_spec.head_dim ÷ 2)
+    @test_throws ArgumentError LifeAI._qwen3_vl_text_mrope(
+        overflow_spec,
+        zeros(Float32, 1),
+        reshape(Int[0, 0, 0], 3, 1, 1),
+    )
+
+    cosine, sine = LifeAI._qwen3_vl_text_mrope(
+        _CH44_TINY_TEXT_SPEC,
+        zeros(Float32, 1),
+        reshape(Int[1, 2, 3], 3, 1, 1),
+    )
+    @test size(cosine) == (4, 1, 1)
+    @test size(sine) == (4, 1, 1)
+    @test all(isfinite, cosine)
+    @test all(isfinite, sine)
 end
 
 @testset "Chapter 44 — deterministic tiny Float32 decoder HF parity" begin

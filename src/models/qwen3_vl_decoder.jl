@@ -162,7 +162,7 @@ function _qwen3_vl_text_mrope(
         "Qwen3-VL position_ids must have three T/H/W rows",
     ))
     half = spec.head_dim ÷ 2
-    sum(spec.mrope_section) == half || throw(ArgumentError(
+    sum(BigInt, spec.mrope_section) == BigInt(half) || throw(ArgumentError(
         "Qwen3-VL mRoPE sections do not partition half the head dimension",
     ))
     inv_frequency = Float32[
@@ -173,9 +173,10 @@ function _qwen3_vl_text_mrope(
     frequencies = Array{Float32}(undef, half, sequence_length, batch_size)
     @inbounds for batch in 1:batch_size, token in 1:sequence_length,
                   lane in 1:half
-        axis = if lane <= 3 * spec.mrope_section[2] && lane % 3 == 2
+        section_lane = cld(lane, 3)
+        axis = if section_lane <= spec.mrope_section[2] && lane % 3 == 2
             2
-        elseif lane <= 3 * spec.mrope_section[3] && lane % 3 == 0
+        elseif section_lane <= spec.mrope_section[3] && lane % 3 == 0
             3
         else
             1
