@@ -343,42 +343,36 @@ struct Qwen3SemanticMemory
     embeddings::Matrix{Float32}
     metadata::Vector{Any}
 
-    function Qwen3SemanticMemory(
-        texts::Vector{String},
-        embeddings::Matrix{Float32},
-        metadata::Vector{Any},
-    )
-        isempty(texts) && throw(ArgumentError(
-            "semantic memory must contain at least one document",
+    function Qwen3SemanticMemory(texts, embeddings, metadata)
+        text_values = _qwen3_embedding_text_list(texts)
+        embeddings isa AbstractMatrix || throw(ArgumentError(
+            "semantic memory embeddings must be a matrix",
         ))
-        any(isempty, texts) && throw(ArgumentError(
-            "semantic memory documents must not be empty",
-        ))
-        size(embeddings, 2) == length(texts) || throw(DimensionMismatch(
+        metadata_values = if metadata === nothing
+            Any[nothing for _ in text_values]
+        else
+            applicable(iterate, metadata) || throw(ArgumentError(
+                "semantic memory metadata must be iterable",
+            ))
+            Base.IteratorSize(typeof(metadata)) isa Base.HasShape{0} &&
+                throw(ArgumentError(
+                    "semantic memory metadata must be iterable",
+                ))
+            Any[collect(metadata)...]
+        end
+        size(embeddings, 2) == length(text_values) || throw(DimensionMismatch(
             "embedding column count must match document count",
         ))
-        length(metadata) == length(texts) || throw(DimensionMismatch(
+        length(metadata_values) == length(text_values) || throw(DimensionMismatch(
             "metadata length must match document count",
         ))
         normalized = _qwen3_normalized_columns(embeddings)
-        return new(texts, normalized, metadata)
+        return new(text_values, normalized, metadata_values)
     end
 end
 
-function Qwen3SemanticMemory(
-    texts,
-    embeddings::AbstractMatrix,
-    metadata=nothing,
-)
-    text_values = _qwen3_embedding_text_list(texts)
-    metadata_values = metadata === nothing ?
-        Any[nothing for _ in text_values] : Any[collect(metadata)...]
-    return Qwen3SemanticMemory(
-        text_values,
-        Float32.(Array(embeddings)),
-        metadata_values,
-    )
-end
+Qwen3SemanticMemory(texts, embeddings) =
+    Qwen3SemanticMemory(texts, embeddings, nothing)
 
 """
     build_qwen3_semantic_memory(bundle, documents; metadata=nothing, kwargs...)

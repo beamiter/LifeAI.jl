@@ -875,6 +875,43 @@ end
         Float32[1, 0];
         top_k=big(2),
     )] == [1, 2]
+
+    text_source = ["x-axis", "diagonal", "y-axis"]
+    embedding_source = copy(documents)
+    retained_metadata = Dict("axis" => "x")
+    metadata_source = Any[retained_metadata, :diagonal, :y]
+    owned_memory = Qwen3SemanticMemory(
+        text_source,
+        embedding_source,
+        metadata_source,
+    )
+    embedding_snapshot = copy(owned_memory.embeddings)
+    @test owned_memory.texts == text_source
+    @test owned_memory.texts !== text_source
+    @test owned_memory.embeddings !== embedding_source
+    @test owned_memory.metadata == metadata_source
+    @test owned_memory.metadata !== metadata_source
+    @test owned_memory.metadata[1] === retained_metadata
+    text_source[1] = "rewritten"
+    fill!(embedding_source, 0.0f0)
+    empty!(metadata_source)
+    @test owned_memory.texts == ["x-axis", "diagonal", "y-axis"]
+    @test owned_memory.embeddings == embedding_snapshot
+    @test length(owned_memory.metadata) == 3
+    @test owned_memory.metadata[1] === retained_metadata
+
+    text_buffer = "document!"
+    normalized_memory = Qwen3SemanticMemory(
+        (SubString(text_buffer, 1, 8),),
+        reshape(Int16[3, 4], 2, 1),
+        (:metadata,),
+    )
+    @test normalized_memory.texts == ["document"]
+    @test only(normalized_memory.texts) isa String
+    @test normalized_memory.embeddings isa Matrix{Float32}
+    @test normalized_memory.metadata == Any[:metadata]
+    @test length(methods(Qwen3SemanticMemory)) == 2
+
     for (top_k, message) in (
         (true, "top_k must be an integer"),
         (too_large, "top_k is outside the host integer range"),
@@ -904,6 +941,12 @@ end
         ["zero"],
         zeros(Float32, 2, 1),
     )
+    @test _embedding_argument_error_message() do
+        Qwen3SemanticMemory(["document"], Float32[1, 2], Any[nothing])
+    end == "semantic memory embeddings must be a matrix"
+    @test _embedding_argument_error_message() do
+        Qwen3SemanticMemory(["document"], ones(Float32, 2, 1), 42)
+    end == "semantic memory metadata must be iterable"
     @test_throws ArgumentError retrieve_qwen3_semantic_memory(
         memory,
         Float32[1, 0];

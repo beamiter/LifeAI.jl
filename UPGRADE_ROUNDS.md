@@ -427,6 +427,8 @@ Chapter 03 reproducible-training test.
      ids, states, timings, and owned nested snapshots for stable replay history.
 213. Reject unknown fields throughout the Qwen3 embedding Sequence and
      TemplateProcessing post-processor tree with deterministic diagnostics.
+214. Bind Qwen3 semantic-memory texts, normalized embeddings, and metadata to
+     owned collections so retained constructor inputs cannot rewrite retrieval.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
