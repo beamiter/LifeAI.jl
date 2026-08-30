@@ -132,6 +132,24 @@ function _validate_rope_style(style::Symbol)
     return style
 end
 
+function _rope_position_bounds(
+    start_pos,
+    token_count::Int,
+    cache_length::Int,
+    bounds_message::AbstractString,
+)
+    start = _rope_positive_host_int(start_pos, "start_pos")
+    fits = if iszero(token_count)
+        start - 1 <= cache_length
+    else
+        token_count <= cache_length &&
+            start <= cache_length - token_count + 1
+    end
+    fits || throw(AssertionError(bounds_message))
+    stop = iszero(token_count) ? start - 1 : start + token_count - 1
+    return start, stop
+end
+
 """
     apply_rope!(y, x, rope; start_pos=1)
 
@@ -158,15 +176,19 @@ function apply_rope!(
     y,
     x,
     rope::RoPE;
-    start_pos::Int=1,
+    start_pos=1,
 )
     D, H, T, B = size(x)
 
     @assert size(y) == size(x) "`y` and `x` must have the same shape"
     @assert D == rope.head_dim "`x` head_dim does not match rope.head_dim"
     @assert iseven(D) "`head_dim` must be even for RoPE"
-    @assert start_pos >= 1 "`start_pos` must be >= 1"
-    @assert start_pos + T - 1 <= rope.max_seq_len "`x` exceeds rope.max_seq_len"
+    resolved_start, _ = _rope_position_bounds(
+        start_pos,
+        T,
+        rope.max_seq_len,
+        "`x` exceeds rope.max_seq_len",
+    )
 
     half_dim = D ÷ 2
     cos_cache = rope.cos_cache
@@ -174,7 +196,7 @@ function apply_rope!(
 
     @inbounds for b in 1:B
         for t in 1:T
-            pos_idx = start_pos + t - 1
+            pos_idx = resolved_start + t - 1
 
             for h in 1:H
                 for pair in 1:half_dim
@@ -201,7 +223,7 @@ function apply_rope(
     x,
     cos_cache,
     sin_cache;
-    start_pos::Int=1,
+    start_pos=1,
     rope_style::Symbol=:interleaved,
 )
     D, H, T, B = size(x)
@@ -209,8 +231,12 @@ function apply_rope(
     @assert iseven(D) "`head_dim` must be even for RoPE"
     @assert size(cos_cache) == size(sin_cache) "RoPE cache shapes must match"
     @assert size(cos_cache, 1) == D ÷ 2 "RoPE cache head_dim does not match input"
-    @assert start_pos >= 1 "`start_pos` must be >= 1"
-    @assert start_pos + T - 1 <= size(cos_cache, 2) "`x` exceeds RoPE cache length"
+    resolved_start, stop = _rope_position_bounds(
+        start_pos,
+        T,
+        size(cos_cache, 2),
+        "`x` exceeds RoPE cache length",
+    )
     _validate_rope_style(rope_style)
 
     half_dim = D ÷ 2
@@ -226,7 +252,7 @@ function apply_rope(
         selectdim(x_halves, 2, 1), selectdim(x_halves, 2, 2)
     end
 
-    positions = start_pos:(start_pos + T - 1)
+    positions = resolved_start:stop
     cos_values = reshape(eltype(x).(cos_cache[:, positions]), half_dim, 1, T, 1)
     sin_values = reshape(eltype(x).(sin_cache[:, positions]), half_dim, 1, T, 1)
 
@@ -248,30 +274,46 @@ end
 function apply_rope(
     x,
     rope::RoPE;
-    start_pos::Int=1,
+    start_pos=1,
 )
     @assert size(x, 1) == rope.head_dim "`x` head_dim does not match rope.head_dim"
+    resolved_start, _ = _rope_position_bounds(
+        start_pos,
+        size(x, 3),
+        rope.max_seq_len,
+        "`x` exceeds rope.max_seq_len",
+    )
 
     device = get_device(x)
     cos_cache = device(eltype(x).(rope.cos_cache))
     sin_cache = device(eltype(x).(rope.sin_cache))
 
-    return apply_rope(x, cos_cache, sin_cache; start_pos, rope_style=rope.style)
+    return apply_rope(
+        x,
+        cos_cache,
+        sin_cache;
+        start_pos=resolved_start,
+        rope_style=rope.style,
+    )
 end
 
 function apply_rope_threaded!(
     y,
     x,
     rope::RoPE;
-    start_pos::Int=1,
+    start_pos=1,
 )
     D, H, T, B = size(x)
 
     @assert size(y) == size(x)
     @assert D == rope.head_dim
     @assert iseven(D)
-    @assert start_pos >= 1
-    @assert start_pos + T - 1 <= rope.max_seq_len
+    resolved_start, _ = _rope_position_bounds(
+        start_pos,
+        T,
+        rope.max_seq_len,
+        "`x` exceeds rope.max_seq_len",
+    )
 
     half_dim = D ÷ 2
     cos_cache = rope.cos_cache
@@ -279,7 +321,7 @@ function apply_rope_threaded!(
 
     Threads.@threads for b in 1:B
         @inbounds for t in 1:T
-            pos_idx = start_pos + t - 1
+            pos_idx = resolved_start + t - 1
 
             for h in 1:H
                 for pair in 1:half_dim

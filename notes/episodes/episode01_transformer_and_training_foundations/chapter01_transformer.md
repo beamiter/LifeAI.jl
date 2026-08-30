@@ -18,8 +18,9 @@
 - Implemented `RoPE` with precomputed `cos_cache` / `sin_cache`.
 - Integrated RoPE into `MultiHeadAttention`, applying rotation only to Q/K and leaving V unchanged.
 - Added RoPE tests covering shape, finite values, position-0 identity, pairwise
-  norm preservation, `start_pos`, invalid constructor dimensions/theta/allocation
-  sizes, cross-width integer normalization, and mismatched dimensions.
+  norm preservation, strict overflow-safe `start_pos` bounds, invalid constructor
+  dimensions/theta/allocation sizes, cross-width integer normalization, and
+  mismatched dimensions.
 - Implemented a minimal GPT-style `TransformerBlock` in `src/core/transformer.jl`.
 
 ## TransformerBlock Design

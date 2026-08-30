@@ -1,6 +1,6 @@
 using Test
 using Random
-using LifeAI: RoPE, apply_rope
+using LifeAI: RoPE, apply_rope, apply_rope!, apply_rope_threaded!
 
 @testset "RoPE" begin
     D = 8
@@ -70,7 +70,7 @@ using LifeAI: RoPE, apply_rope
 
     # start_pos > 1 时，第一个 token 不再是 position 0，
     # 因此通常会发生旋转。
-    y_offset = apply_rope(x, rope; start_pos=4)
+    y_offset = apply_rope(x, rope; start_pos=Int128(4))
 
     @test !isapprox(
         y_offset[:, :, 1, :],
@@ -78,6 +78,68 @@ using LifeAI: RoPE, apply_rope
         atol=1.0f-6,
         rtol=1.0f-6,
     )
+
+    y_cache = apply_rope(
+        x,
+        rope.cos_cache,
+        rope.sin_cache;
+        start_pos=big(4),
+    )
+    y_inplace = similar(x)
+    y_threaded = similar(x)
+    apply_rope!(y_inplace, x, rope; start_pos=Int32(4))
+    apply_rope_threaded!(y_threaded, x, rope; start_pos=big(4))
+    @test y_cache == y_offset
+    @test y_inplace == y_offset
+    @test y_threaded == y_offset
+
+    invalid_start_positions = (true, 0, big(typemax(Int)) + 1)
+    for invalid_start in invalid_start_positions
+        for operation in (
+            () -> apply_rope(x, rope; start_pos=invalid_start),
+            () -> apply_rope(
+                x,
+                rope.cos_cache,
+                rope.sin_cache;
+                start_pos=invalid_start,
+            ),
+            () -> apply_rope!(similar(x), x, rope; start_pos=invalid_start),
+            () -> apply_rope_threaded!(
+                similar(x),
+                x,
+                rope;
+                start_pos=invalid_start,
+            ),
+        )
+            error = try
+                operation()
+                nothing
+            catch caught
+                caught
+            end
+            @test error isa ArgumentError
+            @test occursin("start_pos", sprint(showerror, error))
+        end
+    end
+
+    for operation in (
+        () -> apply_rope(x, rope; start_pos=typemax(Int)),
+        () -> apply_rope(
+            x,
+            rope.cos_cache,
+            rope.sin_cache;
+            start_pos=typemax(Int),
+        ),
+        () -> apply_rope!(similar(x), x, rope; start_pos=typemax(Int)),
+        () -> apply_rope_threaded!(
+            similar(x),
+            x,
+            rope;
+            start_pos=typemax(Int),
+        ),
+    )
+        @test_throws AssertionError operation()
+    end
 
     # 构造参数在任何大表分配之前严格规范到宿主表示。
     for invalid_head_dim in (true, 0, big(typemax(Int)) + 1)
