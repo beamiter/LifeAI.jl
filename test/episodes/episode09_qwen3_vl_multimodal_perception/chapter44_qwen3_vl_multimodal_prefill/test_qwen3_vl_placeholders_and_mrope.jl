@@ -154,6 +154,25 @@ end
     @test startswith(expanded, "A" * repeat(image_pad, 64) * "B")
     @test endswith(expanded, repeat(image_pad, 72) * "C")
 
+    single_tuple = qwen3_vl_expand_image_placeholders(
+        "A$(image_pad)B",
+        (1, 16, 16),
+    )
+    @test single_tuple == "A" * repeat(image_pad, 64) * "B"
+    single_vector = qwen3_vl_expand_image_placeholders(
+        "A$(image_pad)B",
+        Int[1, 12, 24],
+    )
+    @test single_vector == "A" * repeat(image_pad, 72) * "B"
+    @test qwen3_vl_expand_image_placeholders(
+        prompt,
+        ((1, 16, 16), Int[1, 12, 24]),
+    ) == expected
+    @test qwen3_vl_expand_image_placeholders(
+        "no image",
+        NTuple{3,Int}[],
+    ) == "no image"
+
     # Equal total counts are insufficient: every original sentinel consumes
     # exactly its corresponding grid, in prompt order.
     reversed = qwen3_vl_expand_image_placeholders(prompt, grids[:, end:-1:1])
@@ -194,6 +213,12 @@ end
     @test layout.visual_mask[:, 1] ==
         Bool[false, false, true, true, true, true, false, false]
     @test all(layout.attention_mask)
+
+    tuple_layout = qwen3_vl_rope_layout(tokens, (1, 4, 4))
+    @test tuple_layout.position_ids == layout.position_ids
+    @test tuple_layout.rope_deltas == layout.rope_deltas
+    @test tuple_layout.visual_mask == layout.visual_mask
+    @test tuple_layout.attention_mask == layout.attention_mask
 
     wide_layout = qwen3_vl_rope_layout(
         tokens,

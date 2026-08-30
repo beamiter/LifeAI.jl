@@ -1200,6 +1200,13 @@ function _qwen3_vl_grid_columns(grids)
             index in axes(grids, 2)
         ]
     end
+    if (grids isa Tuple || grids isa AbstractVector) && !isempty(grids)
+        nested = any(
+            value -> value isa Tuple || value isa AbstractVector,
+            grids,
+        )
+        nested || return [_qwen3_vl_image_grid_tuple(grids)]
+    end
     return [_qwen3_vl_image_grid_tuple(grid) for grid in grids]
 end
 

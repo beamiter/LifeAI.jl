@@ -307,6 +307,8 @@ Chapter 03 reproducible-training test.
      device placement without revalidating trusted slices inside XLA traces.
 153. Restrict Qwen3 quantized row slicing to non-empty in-bounds host ranges so
      its trace-safe constructor cannot create malformed INT8 or INT4 weights.
+154. Accept one Qwen3-VL image grid as a flat tuple or vector without confusing
+     its three dimensions for a collection of three separate image grids.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
