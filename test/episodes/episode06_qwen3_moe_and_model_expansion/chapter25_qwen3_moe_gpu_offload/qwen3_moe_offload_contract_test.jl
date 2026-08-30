@@ -27,6 +27,141 @@ function _qwen3_offload_captured_error(thunk)
     error("expected Qwen3 MoE offload call to fail")
 end
 
+@testset "Qwen3 MoE session options fail before checkpoint I/O" begin
+    mktempdir() do directory
+        too_large = big(typemax(Int)) + 1
+        cases = (
+            ("context_tokens must be an integer", (; context_tokens=true)),
+            (
+                "context_tokens is outside the host integer range",
+                (; context_tokens=too_large),
+            ),
+            ("context_tokens must be positive", (; context_tokens=0)),
+            (
+                "prefill_chunk_tokens must be an integer",
+                (; context_tokens=8, prefill_chunk_tokens=true),
+            ),
+            (
+                "prefill_chunk_tokens is outside the host integer range",
+                (; context_tokens=8, prefill_chunk_tokens=too_large),
+            ),
+            (
+                "prefill_chunk_tokens must be in 1:context_tokens",
+                (; context_tokens=8, prefill_chunk_tokens=0),
+            ),
+            (
+                "prefill_chunk_tokens must be in 1:context_tokens",
+                (; context_tokens=8, prefill_chunk_tokens=9),
+            ),
+            (
+                "expert_cache_budget_bytes must be an integer",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_cache_budget_bytes=true),
+            ),
+            (
+                "expert_cache_budget_bytes is outside the host integer range",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_cache_budget_bytes=too_large),
+            ),
+            (
+                "expert_cache_budget_bytes must be non-negative",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_cache_budget_bytes=-1),
+            ),
+            (
+                "expert_gc_interval_layers must be an integer",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_gc_interval_layers=true),
+            ),
+            (
+                "expert_gc_interval_layers is outside the host integer range",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_gc_interval_layers=too_large),
+            ),
+            (
+                "expert_gc_interval_layers must be non-negative",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_gc_interval_layers=-1),
+            ),
+            (
+                "expert_read_workers must be an integer",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_read_workers=true),
+            ),
+            (
+                "expert_read_workers is outside the host integer range",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_read_workers=too_large),
+            ),
+            (
+                "expert_read_workers must be positive",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_read_workers=0),
+            ),
+            (
+                "expert_cache_policy must be",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_cache_policy=:bad),
+            ),
+            (
+                "expert_cache_dispatch must be",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_cache_dispatch=:bad),
+            ),
+            (
+                "expert_read_mode must be",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_read_mode=:bad),
+            ),
+            (
+                "expert_miss_pipeline must be",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_miss_pipeline=:bad),
+            ),
+            (
+                "scattered expert cache dispatch requires a positive cache budget",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_cache_dispatch=:scattered),
+            ),
+            (
+                "overlapped expert misses require a positive cache budget",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_miss_pipeline=:overlapped),
+            ),
+            (
+                "pinned expert upload requires expert_miss_pipeline=:overlapped",
+                (; context_tokens=8, prefill_chunk_tokens=1,
+                    expert_pinned_upload=true),
+            ),
+        )
+        for (needle, options) in cases
+            failure = _qwen3_offload_captured_error() do
+                load_hf_qwen3_moe_offload_session(
+                    directory;
+                    options...,
+                )
+            end
+            @test failure isa ArgumentError
+            message = sprint(showerror, failure)
+            @test occursin(needle, message)
+            @test !occursin("config.json", message)
+        end
+
+        io_failure = _qwen3_offload_captured_error() do
+            load_hf_qwen3_moe_offload_session(
+                directory;
+                context_tokens=Int32(8),
+                prefill_chunk_tokens=big(1),
+                expert_cache_budget_bytes=Int128(0),
+                expert_gc_interval_layers=Int16(0),
+                expert_read_workers=big(1),
+            )
+        end
+        @test io_failure isa ArgumentError
+        @test occursin("JSON file does not exist", sprint(showerror, io_failure))
+    end
+end
+
 @testset "Qwen3 MoE GPU offload contract" begin
     config = load_hf_qwen3_moe_config(
         QWEN3_MOE_CHAPTER24_FIXTURE;

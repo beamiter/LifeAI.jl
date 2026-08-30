@@ -59,6 +59,9 @@ Qwen3-30B-A3B session，而不把 61 GB BF16 权重树假装成能常驻 24 GB �
 - **规划输入不混淆布尔与整数**：context、batch、active experts 与 dtype bytes
   均严格归一为宿主 `Int`；可表示的窄整数/BigInt 保持支持，Bool 和越界值在
   预算计算前统一失败。
+- **session 选项先于 checkpoint 工作**：window、cache/GC/reader 数值、四类
+  策略枚举及相互依赖在读取 config、构造 RoPE 或加载 resident tensors 前
+  完成校验；无效启动参数不会触发高成本 I/O 或内存分配。
 - **路由编号必须重映射**：磁盘上的 global expert id 不能直接索引只包含
   active experts 的局部三维参数张量；session 在宿主读取极小的 top-k route
   table，排序 active ids 后构造 local ids，再把小表传回设备。

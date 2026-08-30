@@ -346,6 +346,75 @@ end
 
 _qwen3_moe_default_expert_read_workers() = min(8, Threads.nthreads())
 
+function _qwen3_moe_offload_preflight(;
+    context_tokens,
+    prefill_chunk_tokens,
+    expert_cache_budget_bytes,
+    expert_cache_policy,
+    expert_cache_dispatch,
+    expert_gc_interval_layers,
+    expert_read_mode,
+    expert_miss_pipeline,
+    expert_read_workers,
+    expert_pinned_upload,
+)
+    window = _qwen3_session_window_preflight(
+        context_tokens,
+        prefill_chunk_tokens,
+    )
+    cache_budget = _strict_host_int(
+        expert_cache_budget_bytes,
+        "expert_cache_budget_bytes",
+    )
+    gc_interval = _strict_host_int(
+        expert_gc_interval_layers,
+        "expert_gc_interval_layers",
+    )
+    read_workers = _strict_host_int(
+        expert_read_workers,
+        "expert_read_workers",
+    )
+    cache_policy = _qwen3_moe_validate_expert_cache_policy(
+        expert_cache_policy,
+    )
+    cache_dispatch = _qwen3_moe_validate_expert_cache_dispatch(
+        expert_cache_dispatch,
+    )
+    read_mode = _qwen3_moe_validate_expert_read_mode(expert_read_mode)
+    miss_pipeline = _qwen3_moe_validate_expert_miss_pipeline(
+        expert_miss_pipeline,
+    )
+    cache_budget >= 0 || throw(ArgumentError(
+        "expert_cache_budget_bytes must be non-negative",
+    ))
+    gc_interval >= 0 || throw(ArgumentError(
+        "expert_gc_interval_layers must be non-negative",
+    ))
+    read_workers > 0 || throw(ArgumentError(
+        "expert_read_workers must be positive",
+    ))
+    cache_dispatch === :scattered && cache_budget == 0 && throw(ArgumentError(
+        "scattered expert cache dispatch requires a positive cache budget",
+    ))
+    miss_pipeline === :overlapped && cache_budget == 0 && throw(ArgumentError(
+        "overlapped expert misses require a positive cache budget",
+    ))
+    expert_pinned_upload && miss_pipeline !== :overlapped && throw(ArgumentError(
+        "pinned expert upload requires expert_miss_pipeline=:overlapped",
+    ))
+    return (;
+        context_tokens=window.context_tokens,
+        prefill_chunk_tokens=window.prefill_chunk_tokens,
+        cache_budget,
+        cache_policy,
+        cache_dispatch,
+        gc_interval,
+        read_mode,
+        miss_pipeline,
+        read_workers,
+    )
+end
+
 function _qwen3_moe_expert_read_buffer_pool(
     reader::HFSafetensorsReader,
     enabled::Bool,
@@ -1528,51 +1597,36 @@ function load_hf_qwen3_moe_offload_session(
     to_device=identity,
     on_resident_layer=nothing,
 )
+    preflight = _qwen3_moe_offload_preflight(;
+        context_tokens,
+        prefill_chunk_tokens,
+        expert_cache_budget_bytes,
+        expert_cache_policy,
+        expert_cache_dispatch,
+        expert_gc_interval_layers,
+        expert_read_mode,
+        expert_miss_pipeline,
+        expert_read_workers,
+        expert_pinned_upload,
+    )
     isdir(model_dir) || throw(ArgumentError(
         "model directory does not exist: $model_dir",
     ))
-    context = Int(context_tokens)
-    chunk = Int(prefill_chunk_tokens)
-    cache_budget = Int(expert_cache_budget_bytes)
-    cache_policy = _qwen3_moe_validate_expert_cache_policy(
-        expert_cache_policy,
-    )
-    cache_dispatch = _qwen3_moe_validate_expert_cache_dispatch(
-        expert_cache_dispatch,
-    )
-    gc_interval = Int(expert_gc_interval_layers)
-    read_mode = _qwen3_moe_validate_expert_read_mode(expert_read_mode)
-    miss_pipeline = _qwen3_moe_validate_expert_miss_pipeline(
-        expert_miss_pipeline,
-    )
-    read_workers = Int(expert_read_workers)
+    context = preflight.context_tokens
+    chunk = preflight.prefill_chunk_tokens
+    cache_budget = preflight.cache_budget
+    cache_policy = preflight.cache_policy
+    cache_dispatch = preflight.cache_dispatch
+    gc_interval = preflight.gc_interval
+    read_mode = preflight.read_mode
+    miss_pipeline = preflight.miss_pipeline
+    read_workers = preflight.read_workers
     config = load_hf_qwen3_moe_config(
         joinpath(model_dir, "config.json");
         max_seq_len=context,
     )
     model = GPTModel(config)
     _qwen3_validate_moe_semantics(model)
-    0 < chunk <= context || throw(ArgumentError(
-        "prefill_chunk_tokens must be in 1:context_tokens",
-    ))
-    cache_budget >= 0 || throw(ArgumentError(
-        "expert_cache_budget_bytes must be non-negative",
-    ))
-    gc_interval >= 0 || throw(ArgumentError(
-        "expert_gc_interval_layers must be non-negative",
-    ))
-    read_workers > 0 || throw(ArgumentError(
-        "expert_read_workers must be positive",
-    ))
-    cache_dispatch === :scattered && cache_budget == 0 && throw(ArgumentError(
-        "scattered expert cache dispatch requires a positive cache budget",
-    ))
-    miss_pipeline === :overlapped && cache_budget == 0 && throw(ArgumentError(
-        "overlapped expert misses require a positive cache budget",
-    ))
-    expert_pinned_upload && miss_pipeline !== :overlapped && throw(ArgumentError(
-        "pinned expert upload requires expert_miss_pipeline=:overlapped",
-    ))
     reader = open_safetensors_reader(model_dir)
     _qwen3_validate_moe_tensor_names(
         model,
