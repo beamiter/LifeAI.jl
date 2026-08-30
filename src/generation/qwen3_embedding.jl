@@ -219,6 +219,10 @@ function hf_qwen3_embedding_forward(
 )
     resolved_dimension = _strict_host_int(dimension, "dimension")
     _qwen3_validate_semantics(model)
+    minimum_dimension = min(qwen3_embedding_spec().minimum_dimension, model.d_model)
+    minimum_dimension <= resolved_dimension <= model.d_model || throw(ArgumentError(
+        "dimension must be in $minimum_dimension:$(model.d_model)",
+    ))
     eltype(parameters.token_embedding.weight) === BFloat16 || throw(ArgumentError(
         "hf_qwen3_embedding_forward requires a BFloat16 parameter tree",
     ))
@@ -259,7 +263,6 @@ function hf_qwen3_embedding_forward(
         capture_trace=false,
         capture_final_hidden=true,
     )
-    minimum_dimension = min(qwen3_embedding_spec().minimum_dimension, model.d_model)
     embeddings = qwen3_last_token_pool(
         result.final_hidden,
         mask;

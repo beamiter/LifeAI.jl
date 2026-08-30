@@ -1307,6 +1307,15 @@ end
         @test _embedding_argument_error_message() do
             hf_qwen3_embedding_forward(
                 loaded.model,
+                nothing,
+                left_tokens,
+                left_mask;
+                dimension=7,
+            )
+        end == "dimension must be in 8:8"
+        @test _embedding_argument_error_message() do
+            hf_qwen3_embedding_forward(
+                loaded.model,
                 loaded.parameters,
                 left_tokens,
                 left_mask;
