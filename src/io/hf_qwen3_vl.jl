@@ -590,9 +590,7 @@ function load_hf_qwen3_vl_config(
     resolved_max_seq_len = if max_seq_len === nothing
         text_spec.max_position_embeddings
     else
-        max_seq_len isa Integer && !(max_seq_len isa Bool) ||
-            throw(ArgumentError("max_seq_len must be an integer or nothing"))
-        Int(max_seq_len)
+        _strict_host_int(max_seq_len, "max_seq_len")
     end
     1 <= resolved_max_seq_len <= text_spec.max_position_embeddings ||
         throw(ArgumentError(

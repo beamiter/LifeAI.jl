@@ -1120,11 +1120,12 @@ Qwen3VLRopeLayout(position_ids, rope_deltas, visual_mask) = Qwen3VLRopeLayout(
 )
 
 function _qwen3_vl_token_matrix(input_ids)
-    input_ids isa AbstractVector && return reshape(Int.(input_ids), :, 1)
-    input_ids isa AbstractMatrix || throw(ArgumentError(
+    is_vector = input_ids isa AbstractVector
+    (is_vector || input_ids isa AbstractMatrix) || throw(ArgumentError(
         "Qwen3-VL input_ids must be a vector or (sequence, batch) matrix",
     ))
-    return Int.(input_ids)
+    tokens = _strict_preserving_int_array(input_ids, "Qwen3-VL input_ids")
+    return is_vector ? reshape(tokens, :, 1) : tokens
 end
 
 function _qwen3_vl_attention_matrix(attention_mask, dimensions)

@@ -263,6 +263,20 @@ end
         _ch45_hf_hidden(reference, "prefill.final_hidden") atol=1.0f-6 rtol=1.0f-6
     @test prefill.logits ≈
         _ch45_hf_hidden(reference, "prefill.logits") atol=1.0f-6 rtol=1.0f-6
+    overflow_token = big(typemax(Int)) + 1
+    for invalid in (
+        true,
+        Bool[true],
+        Float64[8],
+        Char['\x08'],
+        BigInt[overflow_token],
+    )
+        @test_throws ArgumentError hf_qwen3_vl_text_decode_step(
+            parameters,
+            invalid,
+            cache8,
+        )
+    end
     _ch45_assert_cache_matches(reference, cache8, "prefill", 8)
     prefill_keys = map(layer -> copy(layer.keys), cache8.layers)
     prefill_values = map(layer -> copy(layer.values), cache8.layers)
@@ -409,6 +423,22 @@ end
         max_new_tokens=1,
         stop_token_ids=[33],
     )
+    overflow_stop = big(typemax(Int)) + 1
+    for invalid_stops in (
+        Float64[8],
+        Bool[true],
+        Char['\x08'],
+        BigInt[overflow_stop],
+    )
+        @test_throws ArgumentError generate_hf_qwen3_vl_tokens(
+            parameters,
+            inputs.input_ids,
+            inputs.rope_layout;
+            vision_features=inputs.vision_features,
+            max_new_tokens=0,
+            stop_token_ids=invalid_stops,
+        )
+    end
 
     # A prompt may occupy the complete physical context when only the first
     # token from prefill logits is requested. The selected token is returned

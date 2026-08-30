@@ -619,7 +619,7 @@ end
 
 function _qwen3_vl_decode_token_matrix(token, batch_size::Int)
     tokens = if token isa Integer && !(token isa Bool)
-        fill(Int(token), 1, 1)
+        fill(_strict_host_int(token, "Qwen3-VL decode token"), 1, 1)
     else
         _qwen3_vl_token_matrix(token)
     end

@@ -142,6 +142,62 @@ end
     )
 end
 
+@testset "KV cache token ids require host-representable integers" begin
+    rng = Xoshiro(20260830)
+    model = GPTModel(13, 8, 2, 1; max_seq_len=4, use_rope=true)
+    ps, st = Lux.setup(rng, model)
+
+    _, int32_cache, _ = prefill(
+        model,
+        ps,
+        st,
+        Int32[1, 2],
+        init_kv_cache(model),
+    )
+    @test length(int32_cache) == 2
+    _, bigint_cache, bigint_state = prefill(
+        model,
+        ps,
+        st,
+        BigInt[1, 2],
+        init_kv_cache(model),
+    )
+    @test length(bigint_cache) == 2
+    _, decoded_cache, _ = decode_step(
+        model,
+        ps,
+        bigint_state,
+        BigInt(3),
+        bigint_cache,
+    )
+    @test length(decoded_cache) == 3
+
+    overflow = big(typemax(Int)) + 1
+    for invalid in (
+        Float64[1, 2],
+        Bool[true, false],
+        Char['\x01', '\x02'],
+        BigInt[1, overflow],
+    )
+        @test_throws ArgumentError prefill(
+            model,
+            ps,
+            st,
+            invalid,
+            init_kv_cache(model),
+        )
+    end
+    for invalid in (true, Bool[true], Float64[3], Char['\x03'], BigInt[overflow])
+        @test_throws ArgumentError decode_step(
+            model,
+            ps,
+            bigint_state,
+            invalid,
+            bigint_cache,
+        )
+    end
+end
+
 
 @testset "Static KV cache keeps fixed storage and matches full forward" begin
     rng = Xoshiro(20260714)

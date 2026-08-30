@@ -124,6 +124,10 @@ end
     @test config.source_max_seq_len == 262_144
     @test load_hf_qwen3_vl_config(_CH43_VL_CONFIG; max_seq_len=4_096).max_seq_len ==
         4_096
+    @test load_hf_qwen3_vl_config(
+        _CH43_VL_CONFIG;
+        max_seq_len=Int32(4_096),
+    ).max_seq_len == 4_096
     @test_throws ArgumentError load_hf_qwen3_vl_config(
         _CH43_VL_CONFIG;
         max_seq_len=0,
@@ -135,6 +139,14 @@ end
     @test_throws ArgumentError load_hf_qwen3_vl_config(
         _CH43_VL_CONFIG;
         max_seq_len=true,
+    )
+    @test_throws ArgumentError load_hf_qwen3_vl_config(
+        _CH43_VL_CONFIG;
+        max_seq_len=4_096.0,
+    )
+    @test_throws ArgumentError load_hf_qwen3_vl_config(
+        _CH43_VL_CONFIG;
+        max_seq_len=big(typemax(Int)) + 1,
     )
 
     @test_throws ArgumentError _ch43_load_mutated_config() do document

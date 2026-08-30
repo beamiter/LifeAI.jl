@@ -186,6 +186,11 @@ Qwen3-VL checkpoint 环境变量时的 opt-in 门禁。首次隔离运行还暴�
 显式包含 prompt/generated/all ids、`:greedy` strategy、`:eos` 或 `:length` stop
 reason、逐 step top-two margin、prefill result 和最终 cache。
 
+所有 prompt/decode token 与显式 stop ids 都在宿主边界要求非 Bool 整数并安全转换
+为平台 `Int`；浮点数、字符、Bool 和越界 `BigInt` 不会再被静默解释为词表 id，或
+把底层 `InexactError` 泄漏给调用方。VL config 的 `max_seq_len` override 使用相同
+合同，可表示的窄整数仍受支持。
+
 `generate_hf_qwen3_vl` 再把高层 raw boundary 串起来：
 
 ```text

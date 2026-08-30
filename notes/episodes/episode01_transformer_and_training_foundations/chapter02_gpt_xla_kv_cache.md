@@ -77,6 +77,9 @@ loss / gradients
 - RoPE 使用 cache position 作为 `start_pos`，保证新增 token 使用正确的绝对位置。
 - 支持单 batch 与 batched cache。
 - 用 full forward 对齐测试验证 prefill logits、逐 token logits 和 greedy generation 结果。
+- host-side prefill/decode 只接受非 Bool 的整数 token id；可表示的 `Int32`/`BigInt`
+  会规范化为平台 `Int`，浮点数、字符、Bool 与超出平台范围的整数在搬到设备前以
+  `ArgumentError` 拒绝。
 
 动态 cache 会沿序列维度增长，接口直观，适合普通 eager CPU/GPU 执行，也是验证增量推理语义的基准实现。
 

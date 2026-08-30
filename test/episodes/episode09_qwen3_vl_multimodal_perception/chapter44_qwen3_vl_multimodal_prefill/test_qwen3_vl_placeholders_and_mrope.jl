@@ -5,6 +5,25 @@ using LifeAI: apply_qwen3_vl_chat_template,
     qwen3_vl_expand_image_placeholders,
     qwen3_vl_rope_layout
 
+@testset "Chapter 44 — Qwen3-VL token ids require integers" begin
+    @test qwen3_vl_rope_layout(Int32[1, 2]).position_ids[:, :, 1] == [
+        0 1
+        0 1
+        0 1
+    ]
+    @test qwen3_vl_rope_layout(BigInt[1, 2]).rope_deltas == reshape(Int[0], 1, 1)
+
+    overflow = big(typemax(Int)) + 1
+    for invalid in (
+        Float64[1, 2],
+        Bool[true, false],
+        Char['\x01', '\x02'],
+        BigInt[1, overflow],
+    )
+        @test_throws ArgumentError qwen3_vl_rope_layout(invalid)
+    end
+end
+
 function _ch44_occurrences(text::AbstractString, needle::AbstractString)
     return length(split(String(text), String(needle); keepempty=true)) - 1
 end

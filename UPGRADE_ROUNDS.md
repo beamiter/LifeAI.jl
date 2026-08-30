@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the forty follow-up rounds implemented on top of the
+This ledger records the forty-one follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -72,6 +72,9 @@ Chapter 03 reproducible-training test.
     enforcing the model context independently of caller caps and deriving mRoPE
     deltas from attention-valid coordinates; use a finite Float32 causal-mask
     sentinel so fully masked padding queries cannot poison valid-token logits.
+41. Require host-representable, non-Boolean integers at shared Qwen prefill,
+    decode, Qwen3-VL stop-id, and VL context-override boundaries, converting
+    overflow failures into stable `ArgumentError`s before model computation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

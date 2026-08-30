@@ -11,7 +11,7 @@ function _qwen3_vl_generation_stop_ids(parameters, stop_token_ids)
     else
         stop_token_ids
     end
-    stops = Set(Int.(collect(raw)))
+    stops = Set(_strict_host_int_array(raw, "Qwen3-VL stop token id"))
     all(id -> 1 <= id <= parameters.spec.vocab_size, stops) || throw(
         ArgumentError("Qwen3-VL stop token id is outside the vocabulary"),
     )
