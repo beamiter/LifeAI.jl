@@ -239,6 +239,8 @@ Chapter 03 reproducible-training test.
      dimensions and non-negative three-lane DeepStack indexes.
 119. Strictly construct Qwen3-VL checkpoint specifications, validating
      provenance, assets, counts, raw token ids, and nested tower contracts.
+120. Strictly construct Qwen3-VL asset metadata and reject duplicate asset names,
+     keeping the immutable file manifest one-to-one with verification work.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

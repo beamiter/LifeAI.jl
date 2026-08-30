@@ -1,7 +1,8 @@
 using JSON3
 using SHA: sha256
 using Test
-using LifeAI: Qwen3VLCheckpointSpec,
+using LifeAI: Qwen3VLAssetSpec,
+    Qwen3VLCheckpointSpec,
     Qwen3VLTextSpec,
     Qwen3VLVisionSpec,
     _qwen3_vl_text_parameter_count,
@@ -52,6 +53,36 @@ function _ch43_captured_error(thunk)
         return error
     end
     error("expected Qwen3-VL call to fail")
+end
+
+@testset "Qwen3-VL asset specifications are strict" begin
+    spec = Qwen3VLAssetSpec(
+        SubString("xmodel.safetensors", 2),
+        big(7),
+        SubString("xhash", 2),
+    )
+    @test spec.name === "model.safetensors"
+    @test spec.bytes === 7
+    @test spec.sha256 === "hash"
+
+    too_large = big(typemax(Int)) + 1
+    for (arguments, message) in (
+        ((:model, 7, "hash"), "name must be a string"),
+        (("model", 7, :hash), "sha256 must be a string"),
+        (("model", true, "hash"), "bytes must be an integer"),
+        (("model", 7.0, "hash"), "bytes must be an integer"),
+        (("model", -1, "hash"), "bytes must be non-negative"),
+        (
+            ("model", too_large, "hash"),
+            "bytes is outside the host integer range",
+        ),
+    )
+        failure = _ch43_captured_error() do
+            Qwen3VLAssetSpec(arguments...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: Qwen3-VL asset $message"
+    end
 end
 
 @testset "Qwen3-VL text specifications are strict" begin
@@ -297,6 +328,14 @@ end
             5,
             ((; name="asset", bytes=0, sha256="hash"),),
             "assets must contain Qwen3VLAssetSpec values",
+        ),
+        (
+            5,
+            (
+                Qwen3VLAssetSpec("duplicate", 1, "first"),
+                Qwen3VLAssetSpec("duplicate", 2, "second"),
+            ),
+            "asset names must be unique",
         ),
         (15, (;), "text must be a Qwen3VLTextSpec"),
         (16, (;), "vision must be a Qwen3VLVisionSpec"),

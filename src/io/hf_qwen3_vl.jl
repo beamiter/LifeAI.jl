@@ -31,6 +31,14 @@ struct Qwen3VLAssetSpec
     name::String
     bytes::Int
     sha256::String
+
+    function Qwen3VLAssetSpec(name, bytes, sha256)
+        return new(
+            _qwen3_spec_string(name, "Qwen3-VL asset name"),
+            _qwen3_spec_nonnegative_int(bytes, "Qwen3-VL asset bytes"),
+            _qwen3_spec_string(sha256, "Qwen3-VL asset sha256"),
+        )
+    end
 end
 
 """Frozen language-tower architecture for Qwen3-VL-2B-Instruct."""
@@ -224,6 +232,10 @@ struct Qwen3VLCheckpointSpec
         all(asset -> asset isa Qwen3VLAssetSpec, assets) || throw(ArgumentError(
             "Qwen3-VL checkpoint assets must contain Qwen3VLAssetSpec values",
         ))
+        length(Set(asset.name for asset in assets)) == length(assets) ||
+            throw(ArgumentError(
+                "Qwen3-VL checkpoint asset names must be unique",
+            ))
         text isa Qwen3VLTextSpec || throw(ArgumentError(
             "Qwen3-VL checkpoint text must be a Qwen3VLTextSpec",
         ))
