@@ -440,6 +440,9 @@ Chapter 03 reproducible-training test.
 219. Seal Qwen3 memory hits and retrieval contexts behind strict scalar
      invariants, canonical digests, and owned hit/metadata snapshots while
      retaining consumer-side revalidation.
+220. Bind generic dynamic K/V layer construction to coherent lazy or positive
+     four-dimensional same-shape/dtype/device distinct zero-copy storage while
+     preserving trace-safe internal appends.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

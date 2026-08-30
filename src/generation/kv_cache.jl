@@ -1,6 +1,9 @@
 using MLDataDevices: cpu_device, get_device
 using Random: AbstractRNG, default_rng
 
+struct _LayerKVCacheValidated end
+const _LAYER_KV_CACHE_VALIDATED = _LayerKVCacheValidated()
+
 """
     LayerKVCache(keys, values)
 
@@ -19,6 +22,68 @@ its element type and device from the projected keys and values.
 struct LayerKVCache{K,V}
     keys::K
     values::V
+
+    function LayerKVCache(
+        ::_LayerKVCacheValidated,
+        keys::K,
+        values::V,
+    ) where {K,V}
+        return new{K,V}(keys, values)
+    end
+end
+
+LayerKVCache(::Nothing, ::Nothing) =
+    LayerKVCache(_LAYER_KV_CACHE_VALIDATED, nothing, nothing)
+
+function _validate_layer_kv_arrays(keys::AbstractArray, values::AbstractArray)
+    ndims(keys) == 4 && ndims(values) == 4 || throw(DimensionMismatch(
+        "layer KV cache keys and values must be four-dimensional",
+    ))
+    axes(keys, 1) == Base.OneTo(size(keys, 1)) &&
+        axes(keys, 2) == Base.OneTo(size(keys, 2)) &&
+        axes(keys, 3) == Base.OneTo(size(keys, 3)) &&
+        axes(keys, 4) == Base.OneTo(size(keys, 4)) || throw(ArgumentError(
+            "layer KV cache keys must use one-based axes",
+        ))
+    axes(values, 1) == Base.OneTo(size(values, 1)) &&
+        axes(values, 2) == Base.OneTo(size(values, 2)) &&
+        axes(values, 3) == Base.OneTo(size(values, 3)) &&
+        axes(values, 4) == Base.OneTo(size(values, 4)) || throw(ArgumentError(
+            "layer KV cache values must use one-based axes",
+        ))
+    size(keys, 1) > 0 &&
+        size(keys, 2) > 0 &&
+        size(keys, 3) > 0 &&
+        size(keys, 4) > 0 || throw(ArgumentError(
+            "layer KV cache dimensions must be positive",
+        ))
+    size(values, 1) > 0 &&
+        size(values, 2) > 0 &&
+        size(values, 3) > 0 &&
+        size(values, 4) > 0 || throw(ArgumentError(
+            "layer KV cache dimensions must be positive",
+        ))
+    size(keys, 1) == size(values, 1) &&
+        size(keys, 2) == size(values, 2) &&
+        size(keys, 3) == size(values, 3) &&
+        size(keys, 4) == size(values, 4) || throw(DimensionMismatch(
+            "layer KV cache key and value shapes must match",
+        ))
+    eltype(keys) == eltype(values) || throw(ArgumentError(
+        "layer KV cache key and value dtypes must match",
+    ))
+    keys === values && throw(ArgumentError(
+        "layer KV cache keys and values must use distinct storage",
+    ))
+    return nothing
+end
+
+function LayerKVCache(keys::AbstractArray, values::AbstractArray)
+    _validate_layer_kv_arrays(keys, values)
+    get_device(keys) == get_device(values) || throw(ArgumentError(
+        "layer KV cache keys and values must use the same device",
+    ))
+    return LayerKVCache(_LAYER_KV_CACHE_VALIDATED, keys, values)
 end
 
 LayerKVCache() = LayerKVCache(nothing, nothing)
@@ -83,21 +148,28 @@ function _validate_kv_cache(model::GPTModel, cache::GPTKVCache)
 end
 
 function _append_kv(cache::LayerKVCache, keys, values)
-    size(keys) == size(values) ||
-        throw(DimensionMismatch("new keys and values must have matching shapes"))
+    keys isa AbstractArray && values isa AbstractArray || throw(ArgumentError(
+        "new layer KV cache keys and values must be arrays",
+    ))
+    _validate_layer_kv_arrays(keys, values)
 
     if isempty(cache)
-        return LayerKVCache(keys, values)
+        return LayerKVCache(_LAYER_KV_CACHE_VALIDATED, keys, values)
     end
 
+    _validate_layer_kv_arrays(cache.keys, cache.values)
     size(cache.keys, 1) == size(keys, 1) ||
         throw(DimensionMismatch("cached and new key head dimensions do not match"))
     size(cache.keys, 2) == size(keys, 2) ||
         throw(DimensionMismatch("cached and new key head counts do not match"))
     size(cache.keys, 4) == size(keys, 4) ||
         throw(DimensionMismatch("cached and new key batch sizes do not match"))
+    eltype(cache.keys) == eltype(keys) || throw(ArgumentError(
+        "cached and new key/value dtypes do not match",
+    ))
 
     return LayerKVCache(
+        _LAYER_KV_CACHE_VALIDATED,
         cat(cache.keys, keys; dims=3),
         cat(cache.values, values; dims=3),
     )

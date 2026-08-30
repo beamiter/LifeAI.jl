@@ -1,14 +1,136 @@
 using Test
 using Random
 using Lux
+import MLDataDevices
 using LifeAI:
     GPTModel,
+    LayerKVCache,
+    _append_kv,
     decode_step,
     generate,
     generate_cached,
     init_kv_cache,
     init_static_kv_cache,
     prefill
+
+struct _Ch02OffsetArray{T,N,A<:AbstractArray{T,N}} <: AbstractArray{T,N}
+    parent::A
+    offsets::NTuple{N,Int}
+end
+
+Base.size(array::_Ch02OffsetArray) = size(array.parent)
+Base.axes(array::_Ch02OffsetArray{T,N}) where {T,N} = ntuple(N) do dimension
+    parent_axis = axes(array.parent, dimension)
+    offset = array.offsets[dimension]
+    return (first(parent_axis) + offset):(last(parent_axis) + offset)
+end
+Base.IndexStyle(::Type{<:_Ch02OffsetArray}) = IndexCartesian()
+function Base.getindex(
+    array::_Ch02OffsetArray{T,N},
+    indices::Vararg{Int,N},
+) where {T,N}
+    parent_indices = ntuple(
+        dimension -> indices[dimension] - array.offsets[dimension],
+        N,
+    )
+    return getindex(array.parent, parent_indices...)
+end
+
+struct _Ch02ForeignDevice <: MLDataDevices.AbstractDevice end
+
+struct _Ch02ForeignDeviceArray{T,N,A<:AbstractArray{T,N}} <:
+    AbstractArray{T,N}
+    parent::A
+end
+
+Base.size(array::_Ch02ForeignDeviceArray) = size(array.parent)
+Base.axes(array::_Ch02ForeignDeviceArray) = axes(array.parent)
+Base.IndexStyle(::Type{<:_Ch02ForeignDeviceArray}) = IndexCartesian()
+Base.getindex(array::_Ch02ForeignDeviceArray, indices...) =
+    getindex(array.parent, indices...)
+MLDataDevices.get_device(::_Ch02ForeignDeviceArray) = _Ch02ForeignDevice()
+
+@testset "LayerKVCache seals dynamic storage invariants" begin
+    empty_cache = LayerKVCache()
+    @test empty_cache.keys === nothing
+    @test empty_cache.values === nothing
+    @test isempty(empty_cache)
+    @test isempty(LayerKVCache(nothing, nothing))
+
+    keys = reshape(collect(Int32, 1:24), 2, 3, 4, 1)
+    values = reshape(collect(Int32, 25:48), 2, 3, 4, 1)
+    cache = LayerKVCache(keys, values)
+    @test cache.keys === keys
+    @test cache.values === values
+    @test length(cache) == 4
+    @test eltype(cache.keys) == Int32
+
+    @test_throws MethodError LayerKVCache(nothing, values)
+    @test_throws MethodError LayerKVCache(keys, nothing)
+    @test_throws MethodError LayerKVCache(1, 2)
+    @test_throws MethodError LayerKVCache{Nothing,Nothing}(nothing, nothing)
+    @test_throws MethodError LayerKVCache{
+        typeof(keys),
+        typeof(values),
+    }(keys, values)
+    @test_throws DimensionMismatch LayerKVCache(
+        zeros(Float32, 2, 3, 4),
+        zeros(Float32, 2, 3, 4),
+    )
+    @test_throws DimensionMismatch LayerKVCache(
+        zeros(Float32, 2, 3, 4, 1),
+        zeros(Float32, 2, 3, 5, 1),
+    )
+    @test_throws ArgumentError LayerKVCache(
+        zeros(Float32, 2, 3, 0, 1),
+        zeros(Float32, 2, 3, 0, 1),
+    )
+    @test_throws ArgumentError LayerKVCache(
+        _Ch02OffsetArray(zeros(Float32, 2, 3, 4, 1), (1, 0, 0, 0)),
+        zeros(Float32, 2, 3, 4, 1),
+    )
+    @test_throws ArgumentError LayerKVCache(
+        zeros(Float32, 2, 3, 4, 1),
+        _Ch02OffsetArray(zeros(Float32, 2, 3, 4, 1), (0, 0, 1, 0)),
+    )
+    @test_throws ArgumentError LayerKVCache(
+        zeros(Float32, 2, 3, 4, 1),
+        zeros(Float64, 2, 3, 4, 1),
+    )
+    @test_throws ArgumentError LayerKVCache(
+        zeros(Float32, 2, 3, 4, 1),
+        _Ch02ForeignDeviceArray(zeros(Float32, 2, 3, 4, 1)),
+    )
+    @test_throws ArgumentError LayerKVCache(keys, keys)
+
+    first_keys = zeros(Float32, 2, 3, 2, 1)
+    first_values = ones(Float32, 2, 3, 2, 1)
+    first_cache = _append_kv(LayerKVCache(), first_keys, first_values)
+    @test first_cache.keys === first_keys
+    @test first_cache.values === first_values
+    @test_throws DimensionMismatch _append_kv(
+        LayerKVCache(),
+        zeros(Float32, 2, 3, 1),
+        ones(Float32, 2, 3, 1),
+    )
+    @test_throws ArgumentError _append_kv(
+        LayerKVCache(),
+        _Ch02OffsetArray(zeros(Float32, 2, 3, 1, 1), (0, 1, 0, 0)),
+        ones(Float32, 2, 3, 1, 1),
+    )
+    @test_throws DimensionMismatch _append_kv(
+        LayerKVCache(),
+        zeros(Float32, 2, 3, 1, 1),
+        ones(Float32, 2, 4, 1, 1),
+    )
+    shared = zeros(Float32, 2, 3, 1, 1)
+    @test_throws ArgumentError _append_kv(LayerKVCache(), shared, shared)
+    @test_throws ArgumentError _append_kv(
+        first_cache,
+        zeros(Float64, 2, 3, 1, 1),
+        ones(Float64, 2, 3, 1, 1),
+    )
+end
 
 @testset "KV cache prefill and incremental decode" begin
     rng = Xoshiro(20260713)

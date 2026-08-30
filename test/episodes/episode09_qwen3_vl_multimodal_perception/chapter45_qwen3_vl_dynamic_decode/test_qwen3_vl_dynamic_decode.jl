@@ -312,7 +312,7 @@ end
         1,
     )
     @test_throws ArgumentError LifeAI.Qwen3VLKVCache((1,), 0, 0, 1)
-    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+    @test_throws MethodError LifeAI.Qwen3VLKVCache(
         (LayerKVCache(first_layer.keys, nothing),),
         2,
         0,
@@ -330,7 +330,7 @@ end
         0,
         1,
     )
-    @test_throws ArgumentError LifeAI.Qwen3VLKVCache(
+    @test_throws MethodError LifeAI.Qwen3VLKVCache(
         (LayerKVCache(1, 2),),
         2,
         0,
