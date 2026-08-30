@@ -391,6 +391,8 @@ Chapter 03 reproducible-training test.
      while preserving required-field semantics and sorted diagnostics.
 195. Seal Qwen3 agent-tool declarations behind their canonical schema builder
      so advertised and enforced required arguments cannot diverge.
+196. Bind each Qwen3-VL static K/V layer to positive four-dimensional,
+     same-shape, same-dtype, same-device, and distinct zero-copy storage.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

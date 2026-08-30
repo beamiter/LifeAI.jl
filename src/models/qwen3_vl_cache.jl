@@ -154,6 +154,49 @@ at `Qwen3VLStaticKVCache.position` is logically valid.
 struct Qwen3VLStaticLayerKVCache{K,V}
     keys::K
     values::V
+
+    function Qwen3VLStaticLayerKVCache(
+        keys::AbstractArray,
+        values::AbstractArray,
+    )
+        ndims(keys) == 4 && ndims(values) == 4 || throw(DimensionMismatch(
+            "Qwen3-VL static layer keys and values must be four-dimensional",
+        ))
+        all(
+            dimension -> axes(keys, dimension) ==
+                Base.OneTo(size(keys, dimension)),
+            1:4,
+        ) || throw(ArgumentError(
+            "Qwen3-VL static layer keys must use one-based axes",
+        ))
+        all(
+            dimension -> axes(values, dimension) ==
+                Base.OneTo(size(values, dimension)),
+            1:4,
+        ) || throw(ArgumentError(
+            "Qwen3-VL static layer values must use one-based axes",
+        ))
+        size(keys) == size(values) || throw(DimensionMismatch(
+            "Qwen3-VL static layer key and value shapes must match",
+        ))
+        all(dimension -> dimension > 0, size(keys)) || throw(ArgumentError(
+            "Qwen3-VL static layer dimensions must be positive",
+        ))
+        key_type = eltype(keys)
+        key_type in (Float32, BFloat16) || throw(ArgumentError(
+            "Qwen3-VL static layer storage must contain Float32 or BFloat16 values",
+        ))
+        eltype(values) == key_type || throw(ArgumentError(
+            "Qwen3-VL static layer key and value dtypes must match",
+        ))
+        get_device(keys) == get_device(values) || throw(ArgumentError(
+            "Qwen3-VL static layer keys and values must use the same device",
+        ))
+        keys === values && throw(ArgumentError(
+            "Qwen3-VL static layer keys and values must use distinct storage",
+        ))
+        return new{typeof(keys),typeof(values)}(keys, values)
+    end
 end
 
 """

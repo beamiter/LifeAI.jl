@@ -3,6 +3,7 @@ using JSON3
 using SHA: sha256
 using Test
 using LifeAI: Qwen3VLRopeLayout,
+    Qwen3VLStaticLayerKVCache,
     Qwen3VLStaticKVCache,
     Qwen3VLTextSpec,
     generate_hf_qwen3_vl_tokens,
@@ -222,6 +223,49 @@ function _ch46_assert_prefix(reference, cache, phase::String, tokens::Int)
         @test view(actual.values, :, :, 1:tokens, :) ≈
             expected_value atol=1.0f-6 rtol=1.0f-6
     end
+end
+
+@testset "Chapter 46 — static layer storage is strict" begin
+    keys = zeros(Float32, 8, 1, 4, 1)
+    values = similar(keys)
+    fill!(values, 1.0f0)
+    layer = Qwen3VLStaticLayerKVCache(keys, values)
+    @test layer.keys === keys
+    @test layer.values === values
+    @test size(layer.keys) == (8, 1, 4, 1)
+    @test eltype(layer.values) === Float32
+
+    @test_throws MethodError Qwen3VLStaticLayerKVCache{
+        typeof(keys),
+        typeof(values),
+    }(keys, values)
+    @test_throws MethodError Qwen3VLStaticLayerKVCache(1, 2)
+    @test_throws DimensionMismatch Qwen3VLStaticLayerKVCache(
+        keys,
+        zeros(Float32, 8, 1, 4),
+    )
+    @test_throws DimensionMismatch Qwen3VLStaticLayerKVCache(
+        keys,
+        zeros(Float32, 8, 1, 3, 1),
+    )
+    @test_throws ArgumentError Qwen3VLStaticLayerKVCache(
+        zeros(Float64, 8, 1, 4, 1),
+        zeros(Float64, 8, 1, 4, 1),
+    )
+    @test_throws ArgumentError Qwen3VLStaticLayerKVCache(
+        keys,
+        zeros(Float64, 8, 1, 4, 1),
+    )
+    @test_throws ArgumentError Qwen3VLStaticLayerKVCache(keys, keys)
+    @test_throws ArgumentError Qwen3VLStaticLayerKVCache(
+        zeros(Float32, 8, 1, 0, 1),
+        zeros(Float32, 8, 1, 0, 1),
+    )
+    bf16_keys = zeros(Core.BFloat16, 8, 1, 4, 1)
+    bf16_values = similar(bf16_keys)
+    bf16_layer = Qwen3VLStaticLayerKVCache(bf16_keys, bf16_values)
+    @test bf16_layer.keys === bf16_keys
+    @test bf16_layer.values === bf16_values
 end
 
 @testset "Chapter 46 — static cache constructor is strict" begin
