@@ -722,12 +722,117 @@ qwen3_vl_patchify(
     spec::Qwen3VLProcessorSpec,
 ) = qwen3_vl_patchify(image; spec)
 
+function _validate_qwen3_vl_processed_image(
+    pixel_values,
+    grid_thw,
+    original_size,
+    resized_size,
+    spec,
+)
+    all(
+        dimension -> axes(pixel_values, dimension) ==
+            Base.OneTo(size(pixel_values, dimension)),
+        1:2,
+    ) || throw(ArgumentError(
+        "Qwen3-VL processed pixel_values must use one-based axes",
+    ))
+    eltype(pixel_values) <: AbstractFloat || throw(ArgumentError(
+        "Qwen3-VL processed pixel_values must contain floating-point values",
+    ))
+    eltype(grid_thw) <: Integer && !(eltype(grid_thw) <: Bool) ||
+        throw(ArgumentError(
+            "Qwen3-VL processed grid_thw must contain non-Boolean integers",
+        ))
+    grid_thw isa StridedMatrix || throw(ArgumentError(
+        "Qwen3-VL processed grid_thw must be a host-resident StridedMatrix",
+    ))
+    all(
+        dimension -> axes(grid_thw, dimension) ==
+            Base.OneTo(size(grid_thw, dimension)),
+        1:2,
+    ) || throw(ArgumentError(
+        "Qwen3-VL processed grid_thw must use one-based axes",
+    ))
+    size(grid_thw) == (3, 1) || throw(DimensionMismatch(
+        "Qwen3-VL processed grid_thw must have shape (3, 1)",
+    ))
+
+    expected_resized = qwen3_vl_smart_resize(original_size...; spec)
+    resized_size == expected_resized || throw(DimensionMismatch(
+        "Qwen3-VL processed resized_size must be $expected_resized; " *
+        "got $resized_size",
+    ))
+    expected_grid = qwen3_vl_image_grid(original_size; spec)
+    actual_grid = _qwen3_vl_image_grid_tuple(view(grid_thw, :, 1))
+    actual_grid == expected_grid || throw(DimensionMismatch(
+        "Qwen3-VL processed grid_thw must describe $expected_grid; " *
+        "got $actual_grid",
+    ))
+
+    patch_area = _qwen3_vl_checked_mul(
+        spec.patch_size,
+        spec.patch_size,
+        "Qwen3-VL processed patch area",
+    )
+    temporal_patch_area = _qwen3_vl_checked_mul(
+        spec.temporal_patch_size,
+        patch_area,
+        "Qwen3-VL processed temporal patch area",
+    )
+    patch_width = _qwen3_vl_checked_mul(
+        length(spec.image_mean),
+        temporal_patch_area,
+        "Qwen3-VL processed patch width",
+    )
+    grid_area = _qwen3_vl_checked_mul(
+        expected_grid[2],
+        expected_grid[3],
+        "Qwen3-VL processed grid area",
+    )
+    patch_count = _qwen3_vl_checked_mul(
+        expected_grid[1],
+        grid_area,
+        "Qwen3-VL processed patch count",
+    )
+    expected_shape = (patch_width, patch_count)
+    size(pixel_values) == expected_shape || throw(DimensionMismatch(
+        "Qwen3-VL processed pixel_values must have shape $expected_shape; " *
+        "got $(size(pixel_values))",
+    ))
+    all(isfinite, pixel_values) || throw(ArgumentError(
+        "Qwen3-VL processed pixel_values must be finite",
+    ))
+    return nothing
+end
+
 """Decoded RGB image plus the exact tensors consumed by the vision tower."""
 struct Qwen3VLProcessedImage{P,G}
     pixel_values::P
     grid_thw::G
     original_size::Tuple{Int,Int}
     resized_size::Tuple{Int,Int}
+
+    function Qwen3VLProcessedImage(
+        pixel_values::AbstractMatrix,
+        grid_thw::AbstractMatrix,
+        original_size::Tuple{Int,Int},
+        resized_size::Tuple{Int,Int};
+        spec::Qwen3VLProcessorSpec=qwen3_vl_processor_spec(),
+    )
+        _validate_qwen3_vl_processed_image(
+            pixel_values,
+            grid_thw,
+            original_size,
+            resized_size,
+            spec,
+        )
+        return new{typeof(pixel_values),typeof(grid_thw)}(
+            pixel_values,
+            grid_thw,
+            original_size,
+            resized_size,
+        )
+    end
 end
 
 function _qwen3_vl_rgb_hwc(image::AbstractArray{UInt8,3}, layout::Symbol)
@@ -981,7 +1086,8 @@ function qwen3_vl_process_image(
         pixels,
         grid_thw,
         (original_height, original_width),
-        (resized_height, resized_width),
+        (resized_height, resized_width);
+        spec,
     )
 end
 

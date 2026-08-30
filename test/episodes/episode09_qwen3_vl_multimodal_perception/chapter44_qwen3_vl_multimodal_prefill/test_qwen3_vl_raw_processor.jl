@@ -8,6 +8,7 @@ using LifeAI: qwen3_vl_image_grid,
     qwen3_vl_process_image,
     qwen3_vl_smart_resize,
     qwen3_vl_processor_spec,
+    Qwen3VLProcessedImage,
     Qwen3VLProcessorSpec
 
 function _ch44_patterned_rgb(height::Int, width::Int)
@@ -67,6 +68,109 @@ end
 function _ch44_chw_u8_sha256(values)
     bytes = vec(permutedims(values, (2, 1, 3)))
     return bytes2hex(sha256(bytes))
+end
+
+@testset "Chapter 44 — processed image construction binds its geometry" begin
+    frozen = qwen3_vl_processor_spec()
+    compact = Qwen3VLProcessorSpec(
+        frozen.preprocessor_config_sha256,
+        frozen.processor_class,
+        frozen.image_processor_type,
+        1_024,
+        1_024,
+        8,
+        1,
+        2,
+        frozen.image_mean,
+        frozen.image_std,
+    )
+    processed = qwen3_vl_process_image(
+        zeros(UInt8, 32, 32, 3);
+        spec=compact,
+    )
+    @test processed.original_size == processed.resized_size == (32, 32)
+    @test processed.grid_thw == reshape(Int[1, 4, 4], 3, 1)
+    @test size(processed.pixel_values) == (192, 16)
+
+    rebuilt = Qwen3VLProcessedImage(
+        processed.pixel_values,
+        processed.grid_thw,
+        processed.original_size,
+        processed.resized_size;
+        spec=compact,
+    )
+    @test rebuilt.pixel_values === processed.pixel_values
+    @test rebuilt.grid_thw === processed.grid_thw
+    @test_throws MethodError Qwen3VLProcessedImage{
+        typeof(processed.pixel_values),
+        typeof(processed.grid_thw),
+    }(
+        processed.pixel_values,
+        processed.grid_thw,
+        processed.original_size,
+        processed.resized_size,
+    )
+
+    integer_pixels = round.(Int, processed.pixel_values)
+    @test_throws ArgumentError Qwen3VLProcessedImage(
+        integer_pixels,
+        processed.grid_thw,
+        processed.original_size,
+        processed.resized_size;
+        spec=compact,
+    )
+    nonfinite_pixels = copy(processed.pixel_values)
+    nonfinite_pixels[1] = NaN32
+    @test_throws ArgumentError Qwen3VLProcessedImage(
+        nonfinite_pixels,
+        processed.grid_thw,
+        processed.original_size,
+        processed.resized_size;
+        spec=compact,
+    )
+    @test_throws DimensionMismatch Qwen3VLProcessedImage(
+        @view(processed.pixel_values[:, 1:15]),
+        processed.grid_thw,
+        processed.original_size,
+        processed.resized_size;
+        spec=compact,
+    )
+
+    @test_throws ArgumentError Qwen3VLProcessedImage(
+        processed.pixel_values,
+        Float32.(processed.grid_thw),
+        processed.original_size,
+        processed.resized_size;
+        spec=compact,
+    )
+    @test_throws DimensionMismatch Qwen3VLProcessedImage(
+        processed.pixel_values,
+        repeat(processed.grid_thw, 1, 2),
+        processed.original_size,
+        processed.resized_size;
+        spec=compact,
+    )
+    @test_throws DimensionMismatch Qwen3VLProcessedImage(
+        processed.pixel_values,
+        reshape(Int[1, 2, 8], 3, 1),
+        processed.original_size,
+        processed.resized_size;
+        spec=compact,
+    )
+    @test_throws ArgumentError Qwen3VLProcessedImage(
+        processed.pixel_values,
+        processed.grid_thw,
+        (0, 32),
+        processed.resized_size;
+        spec=compact,
+    )
+    @test_throws DimensionMismatch Qwen3VLProcessedImage(
+        processed.pixel_values,
+        processed.grid_thw,
+        processed.original_size,
+        (16, 64);
+        spec=compact,
+    )
 end
 
 @testset "Chapter 44 — exact fast raw RGB processing" begin

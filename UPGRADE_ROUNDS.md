@@ -369,6 +369,8 @@ Chapter 03 reproducible-training test.
      Float32 storage so just-over-one top-p values cannot round into acceptance.
 184. Preflight Qwen3 CUDA route and padded-layout capacities against the Int32
      metadata sentinel before any device allocation or kernel launch.
+185. Bind processed Qwen3-VL image tensors to their source resize, patch grid,
+     and processor geometry while preserving zero-copy array ownership.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
