@@ -157,7 +157,7 @@ _tool_argument(arguments, name::AbstractString) = get(arguments, Symbol(name), n
 function _tool_integer(arguments, name::AbstractString, coerced::Vector{String})
     value = _tool_argument(arguments, name)
     value isa Bool && throw(ArgumentError("argument $(repr(name)) must be an integer"))
-    value isa Integer && return Int(value)
+    value isa Integer && return _strict_host_int(value, "argument $(repr(name))")
     if value isa AbstractString
         parsed = tryparse(Int, strip(value))
         parsed === nothing && throw(ArgumentError(

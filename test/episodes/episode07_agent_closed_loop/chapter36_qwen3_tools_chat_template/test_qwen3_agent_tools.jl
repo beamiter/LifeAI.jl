@@ -131,6 +131,44 @@ end
         call("<tool_call>\n{\"name\": \"add_integers\", \"arguments\": {\"a\": true, \"b\": 2}}\n</tool_call>"),
     ).ok
 
+    for value in (big(typemax(Int)) + 1, big(typemin(Int)) - 1)
+        overflow = invoke_agent_tool(
+            registry,
+            call(
+                "<tool_call>\n{\"name\": \"add_integers\", \"arguments\": " *
+                "{\"a\": $value, \"b\": 0}}\n</tool_call>",
+            ),
+        )
+        @test !overflow.ok
+        @test overflow.error ==
+            "ArgumentError: argument \"a\" is outside the host integer range"
+        @test isempty(overflow.coerced_arguments)
+    end
+    for value in (typemin(Int), typemax(Int))
+        boundary = invoke_agent_tool(
+            registry,
+            call(
+                "<tool_call>\n{\"name\": \"add_integers\", \"arguments\": " *
+                "{\"a\": $value, \"b\": 0}}\n</tool_call>",
+            ),
+        )
+        @test boundary.ok
+        @test boundary.output == string(value)
+    end
+
+    unsigned_arguments = LifeAI.OrderedJSONObject([
+        "a" => UInt(typemax(Int)) + UInt(1),
+    ])
+    unsigned_failure = try
+        LifeAI._tool_integer(unsigned_arguments, "a", String[])
+        nothing
+    catch error
+        error
+    end
+    @test unsigned_failure isa ArgumentError
+    @test sprint(showerror, unsigned_failure) ==
+        "ArgumentError: argument \"a\" is outside the host integer range"
+
     listing = invoke_agent_tool(
         registry,
         call("<tool_call>\n{\"name\": \"list_directory\", \"arguments\": {\"path\": \"src\"}}\n</tool_call>"),
