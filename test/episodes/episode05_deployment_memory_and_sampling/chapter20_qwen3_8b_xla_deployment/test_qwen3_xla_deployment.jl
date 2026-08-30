@@ -6,6 +6,7 @@ using LifeAI:
     HFQwen3BF16XLASession,
     generate_hf_qwen3_bf16_xla!,
     load_hf_qwen3_bf16_xla_session,
+    load_hf_qwen3_compact_bundle,
     load_hf_qwen3_compact_model,
     load_hf_qwen3_model,
     open_safetensors_reader,
@@ -166,6 +167,75 @@ end
         1;
         context_tokens=typemax(Int),
     )
+end
+
+@testset "compact Qwen3 bundle requests fail before tokenizer I/O" begin
+    mktempdir() do directory
+        too_large = big(typemax(Int)) + 1
+        cases = (
+            (
+                "max_seq_len must be an integer",
+                () -> load_hf_qwen3_compact_bundle(
+                    directory;
+                    max_seq_len=true,
+                ),
+            ),
+            (
+                "max_seq_len must be positive",
+                () -> load_hf_qwen3_compact_bundle(
+                    directory;
+                    max_seq_len=0,
+                ),
+            ),
+            (
+                "max_seq_len is outside the host integer range",
+                () -> load_hf_qwen3_compact_bundle(
+                    directory;
+                    max_seq_len=too_large,
+                ),
+            ),
+            (
+                "variant must be a symbol or string",
+                () -> load_hf_qwen3_compact_bundle(
+                    directory;
+                    variant=true,
+                ),
+            ),
+            (
+                "unknown Qwen3 dense variant",
+                () -> load_hf_qwen3_compact_bundle(
+                    directory;
+                    variant=:not_qwen3,
+                ),
+            ),
+            (
+                "weight_dtype must be Float32 or BFloat16",
+                () -> load_hf_qwen3_compact_bundle(
+                    directory;
+                    weight_dtype=Float64,
+                ),
+            ),
+        )
+        for (needle, request) in cases
+            failure = _qwen3_xla_captured_error(request)
+            @test failure isa ArgumentError
+            @test occursin(needle, sprint(showerror, failure))
+            @test !occursin("tokenizer", sprint(showerror, failure))
+        end
+
+        io_failure = _qwen3_xla_captured_error() do
+            load_hf_qwen3_compact_bundle(
+                directory;
+                max_seq_len=big(8),
+                weight_dtype=BFloat16,
+            )
+        end
+        @test io_failure isa ArgumentError
+        @test occursin(
+            "required Qwen3 tokenizer file does not exist",
+            sprint(showerror, io_failure),
+        )
+    end
 end
 
 @testset "XLA session options fail before bundle and device I/O" begin

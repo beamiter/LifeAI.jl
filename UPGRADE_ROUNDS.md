@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the seventy-eight follow-up rounds implemented on top of the
+This ledger records the seventy-nine follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -155,6 +155,8 @@ Chapter 03 reproducible-training test.
     mutation and align token callbacks with the dense one-argument contract.
 78. Preflight Qwen3 XLA session context, chunk, strategy, and sampling-width
     options before tokenizer, compact-weight, or Reactant work.
+79. Give the compact Qwen3 bundle explicit model options and preflight them
+    before tokenizer I/O while preserving valid tokenizer-first loading.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

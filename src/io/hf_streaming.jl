@@ -498,18 +498,32 @@ function load_hf_qwen3_compact_model(
 end
 
 """
-    load_hf_qwen3_compact_bundle(model_dir; revision="", kwargs...)
+    load_hf_qwen3_compact_bundle(
+        model_dir; max_seq_len=2048, weight_dtype=BFloat16,
+        revision="", variant=nothing,
+    )
 
 Load the exact tokenizer/generation configuration next to a streamed compact
 Qwen3 model without constructing the ordinary unpacked model parameters.
 """
 function load_hf_qwen3_compact_bundle(
     model_dir::AbstractString;
+    max_seq_len::Integer=2048,
+    weight_dtype::Type=BFloat16,
     revision::AbstractString="",
-    kwargs...,
+    variant=nothing,
 )
+    requested_max_seq_len = _qwen3_requested_max_seq_len(max_seq_len)
+    requested_variant = _qwen3_requested_dense_variant(variant)
+    requested_weight_dtype = _qwen3_weight_dtype(weight_dtype)
     tokenizer = load_hf_qwen3_tokenizer(model_dir; revision)
-    loaded = load_hf_qwen3_compact_model(model_dir; kwargs...)
+    loaded = load_hf_qwen3_compact_model(
+        model_dir;
+        max_seq_len=requested_max_seq_len,
+        weight_dtype=requested_weight_dtype,
+        variant=requested_variant === nothing ?
+            nothing : requested_variant.variant,
+    )
     vocab_size(tokenizer) <= loaded.model.vocab_size || throw(ArgumentError(
         "tokenizer vocabulary exceeds the model vocabulary",
     ))
