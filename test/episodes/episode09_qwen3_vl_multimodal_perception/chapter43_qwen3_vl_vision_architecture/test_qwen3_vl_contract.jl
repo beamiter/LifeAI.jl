@@ -198,6 +198,34 @@ end
         @test sprint(showerror, failure) ==
             "ArgumentError: Qwen3-VL text mrope_section$separator$message"
     end
+
+    invalid_gqa = Base.setindex(valid, 3, 5)
+    invalid_gqa = Base.setindex(invalid_gqa, 2, 6)
+    gqa_failure = _ch43_captured_error() do
+        Qwen3VLTextSpec(invalid_gqa...)
+    end
+    @test gqa_failure isa ArgumentError
+    @test sprint(showerror, gqa_failure) ==
+        "ArgumentError: Qwen3-VL text num_heads must be divisible by num_kv_heads"
+
+    query_overflow = Base.setindex(valid, typemax(Int), 5)
+    query_overflow = Base.setindex(query_overflow, 2, 7)
+    query_failure = _ch43_captured_error() do
+        Qwen3VLTextSpec(query_overflow...)
+    end
+    @test query_failure isa ArgumentError
+    @test sprint(showerror, query_failure) ==
+        "ArgumentError: Qwen3-VL text query projection width exceeds the host integer range"
+
+    kv_overflow = Base.setindex(valid, 1, 5)
+    kv_overflow = Base.setindex(kv_overflow, typemax(Int), 6)
+    kv_overflow = Base.setindex(kv_overflow, 2, 7)
+    kv_failure = _ch43_captured_error() do
+        Qwen3VLTextSpec(kv_overflow...)
+    end
+    @test kv_failure isa ArgumentError
+    @test sprint(showerror, kv_failure) ==
+        "ArgumentError: Qwen3-VL text key/value projection width exceeds the host integer range"
 end
 
 @testset "Qwen3-VL vision specifications are strict" begin
@@ -292,6 +320,7 @@ end
         "ArgumentError: Qwen3-VL vision merged width exceeds the host integer range"
 
     qkv_width_values = Base.setindex(valid, 1, 8)
+    qkv_width_values = Base.setindex(qkv_width_values, 1, 4)
     qkv_width_values = Base.setindex(
         qkv_width_values,
         typemax(Int) ÷ 3 + 1,
@@ -303,6 +332,13 @@ end
     @test qkv_width_failure isa ArgumentError
     @test sprint(showerror, qkv_width_failure) ==
         "ArgumentError: Qwen3-VL vision QKV width exceeds the host integer range"
+
+    head_geometry_failure = _ch43_captured_error() do
+        Qwen3VLVisionSpec(Base.setindex(valid, 15, 2)...)
+    end
+    @test head_geometry_failure isa ArgumentError
+    @test sprint(showerror, head_geometry_failure) ==
+        "ArgumentError: Qwen3-VL vision hidden_size must be divisible by num_heads"
 end
 
 @testset "Qwen3-VL checkpoint specifications are strict" begin
@@ -548,58 +584,6 @@ end
     @test_throws ArgumentError qwen3_vl_parameter_count(total_overflow_spec)
 
     maximum_dimension = typemax(Int)
-    tiny_vision = Qwen3VLVisionSpec(
-        0,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        (0, 0, 0),
-        "gelu",
-    )
-    derived_dimension_text = Qwen3VLTextSpec(
-        1,
-        1,
-        1,
-        1,
-        maximum_dimension,
-        1,
-        maximum_dimension,
-        1.0e-6,
-        1.0e4,
-        1,
-        true,
-        (1, 1, 1),
-        true,
-        "silu",
-    )
-    derived_dimension_spec = Qwen3VLCheckpointSpec(
-        :overflow,
-        "overflow",
-        "overflow",
-        "overflow",
-        (),
-        40,
-        0,
-        32,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        derived_dimension_text,
-        tiny_vision,
-    )
-    @test_throws ArgumentError qwen3_vl_expected_tensor_shapes(
-        derived_dimension_spec,
-    )
-
     product_text = Qwen3VLTextSpec(
         1,
         1,

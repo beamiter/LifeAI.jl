@@ -484,6 +484,9 @@ Chapter 03 reproducible-training test.
 234. Seal compiled Qwen3 XLA sessions behind validated model geometry,
      generation strategy, RoPE/cache storage, callback identity, and immutable
      runtime contracts with atomic per-chunk revalidation.
+235. Bind Qwen3-VL text specifications to overflow-safe GQA projection
+     geometry and vision specifications to head-divisible hidden widths before
+     tensor-shape derivation or checkpoint work.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

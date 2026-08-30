@@ -81,6 +81,24 @@ struct Qwen3VLTextSpec
             "Qwen3-VL text tie_word_embeddings must be a Bool",
         ))
         prefix = "Qwen3-VL text"
+        resolved_num_attention_heads = _qwen3_spec_positive_int(
+            num_attention_heads,
+            "$prefix num_attention_heads",
+        )
+        resolved_num_key_value_heads = _qwen3_spec_positive_int(
+            num_key_value_heads,
+            "$prefix num_key_value_heads",
+        )
+        resolved_head_dim = _qwen3_spec_positive_int(
+            head_dim,
+            "$prefix head_dim",
+        )
+        _qwen3_spec_attention_geometry(
+            prefix,
+            resolved_num_attention_heads,
+            resolved_num_key_value_heads,
+            resolved_head_dim,
+        )
         return new(
             _qwen3_spec_positive_int(vocab_size, "$prefix vocab_size"),
             _qwen3_spec_positive_int(hidden_size, "$prefix hidden_size"),
@@ -92,15 +110,9 @@ struct Qwen3VLTextSpec
                 num_hidden_layers,
                 "$prefix num_hidden_layers",
             ),
-            _qwen3_spec_positive_int(
-                num_attention_heads,
-                "$prefix num_attention_heads",
-            ),
-            _qwen3_spec_positive_int(
-                num_key_value_heads,
-                "$prefix num_key_value_heads",
-            ),
-            _qwen3_spec_positive_int(head_dim, "$prefix head_dim"),
+            resolved_num_attention_heads,
+            resolved_num_key_value_heads,
+            resolved_head_dim,
             _qwen3_vl_spec_positive_float64(rms_norm_eps, "$prefix rms_norm_eps"),
             _qwen3_vl_spec_positive_float64(rope_theta, "$prefix rope_theta"),
             _qwen3_spec_positive_int(
@@ -153,6 +165,13 @@ struct Qwen3VLVisionSpec
             spatial_merge_size,
             "$prefix spatial_merge_size",
         )
+        resolved_num_heads = _qwen3_spec_positive_int(
+            num_heads,
+            "$prefix num_heads",
+        )
+        resolved_hidden_size % resolved_num_heads == 0 || throw(ArgumentError(
+            "$prefix hidden_size must be divisible by num_heads",
+        ))
         _qwen3_parameter_count_int(
             BigInt(resolved_hidden_size) *
                 BigInt(resolved_spatial_merge_size)^2,
@@ -169,7 +188,7 @@ struct Qwen3VLVisionSpec
                 intermediate_size,
                 "$prefix intermediate_size",
             ),
-            _qwen3_spec_positive_int(num_heads, "$prefix num_heads"),
+            resolved_num_heads,
             _qwen3_spec_positive_int(in_channels, "$prefix in_channels"),
             _qwen3_spec_positive_int(patch_size, "$prefix patch_size"),
             _qwen3_spec_positive_int(
