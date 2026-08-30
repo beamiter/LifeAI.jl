@@ -196,6 +196,78 @@ struct Qwen3VLCheckpointSpec
     eos_token_id::Int
     text::Qwen3VLTextSpec
     vision::Qwen3VLVisionSpec
+
+    function Qwen3VLCheckpointSpec(
+        variant,
+        model_id,
+        modelscope_revision,
+        hf_revision,
+        assets,
+        tensor_count,
+        tensor_bytes,
+        parameter_count,
+        image_token_id,
+        video_token_id,
+        vision_start_token_id,
+        vision_end_token_id,
+        bos_token_id,
+        eos_token_id,
+        text,
+        vision,
+    )
+        variant isa Symbol || throw(ArgumentError(
+            "Qwen3-VL checkpoint variant must be a Symbol",
+        ))
+        assets isa Tuple || throw(ArgumentError(
+            "Qwen3-VL checkpoint assets must be a tuple",
+        ))
+        all(asset -> asset isa Qwen3VLAssetSpec, assets) || throw(ArgumentError(
+            "Qwen3-VL checkpoint assets must contain Qwen3VLAssetSpec values",
+        ))
+        text isa Qwen3VLTextSpec || throw(ArgumentError(
+            "Qwen3-VL checkpoint text must be a Qwen3VLTextSpec",
+        ))
+        vision isa Qwen3VLVisionSpec || throw(ArgumentError(
+            "Qwen3-VL checkpoint vision must be a Qwen3VLVisionSpec",
+        ))
+        prefix = "Qwen3-VL checkpoint"
+        return new(
+            variant,
+            _qwen3_spec_string(model_id, "$prefix model_id"),
+            _qwen3_spec_string(
+                modelscope_revision,
+                "$prefix modelscope_revision",
+            ),
+            _qwen3_spec_string(hf_revision, "$prefix hf_revision"),
+            assets,
+            _qwen3_spec_nonnegative_int(tensor_count, "$prefix tensor_count"),
+            _qwen3_spec_nonnegative_int(tensor_bytes, "$prefix tensor_bytes"),
+            _qwen3_spec_nonnegative_int(
+                parameter_count,
+                "$prefix parameter_count",
+            ),
+            _qwen3_spec_nonnegative_int(
+                image_token_id,
+                "$prefix image_token_id",
+            ),
+            _qwen3_spec_nonnegative_int(
+                video_token_id,
+                "$prefix video_token_id",
+            ),
+            _qwen3_spec_nonnegative_int(
+                vision_start_token_id,
+                "$prefix vision_start_token_id",
+            ),
+            _qwen3_spec_nonnegative_int(
+                vision_end_token_id,
+                "$prefix vision_end_token_id",
+            ),
+            _qwen3_spec_nonnegative_int(bos_token_id, "$prefix bos_token_id"),
+            _qwen3_spec_nonnegative_int(eos_token_id, "$prefix eos_token_id"),
+            text,
+            vision,
+        )
+    end
 end
 
 const _QWEN3_VL_CHECKPOINT_SPEC = Qwen3VLCheckpointSpec(

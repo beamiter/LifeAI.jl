@@ -237,6 +237,8 @@ Chapter 03 reproducible-training test.
      finite Float64 hyperparameters, Bool flags, and three-lane mRoPE sections.
 118. Strictly construct Qwen3-VL vision specifications, normalizing tower
      dimensions and non-negative three-lane DeepStack indexes.
+119. Strictly construct Qwen3-VL checkpoint specifications, validating
+     provenance, assets, counts, raw token ids, and nested tower contracts.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -241,6 +241,75 @@ end
     end
 end
 
+@testset "Qwen3-VL checkpoint specifications are strict" begin
+    base = qwen3_vl_checkpoint_spec()
+    strings = ntuple(_ -> SubString("xvalue", 2), 3)
+    valid = (
+        :fixture,
+        strings...,
+        (),
+        ntuple(_ -> big(0), 9)...,
+        base.text,
+        base.vision,
+    )
+    spec = Qwen3VLCheckpointSpec(valid...)
+    @test spec.variant === :fixture
+    @test spec.model_id === "value"
+    @test spec.modelscope_revision === "value"
+    @test spec.hf_revision === "value"
+    @test spec.tensor_count === 0
+    @test spec.eos_token_id === 0
+    @test isempty(spec.assets)
+
+    integer_fields = (
+        6 => "tensor_count",
+        7 => "tensor_bytes",
+        8 => "parameter_count",
+        9 => "image_token_id",
+        10 => "video_token_id",
+        11 => "vision_start_token_id",
+        12 => "vision_end_token_id",
+        13 => "bos_token_id",
+        14 => "eos_token_id",
+    )
+    for (index, label) in integer_fields
+        for (value, message) in (
+            (true, "must be an integer"),
+            (-1, "must be non-negative"),
+        )
+            failure = _ch43_captured_error() do
+                Qwen3VLCheckpointSpec(Base.setindex(valid, value, index)...)
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) ==
+                "ArgumentError: Qwen3-VL checkpoint $label $message"
+        end
+    end
+
+    too_large = big(typemax(Int)) + 1
+    for (index, value, message) in (
+        (6, 1.0, "tensor_count must be an integer"),
+        (6, too_large, "tensor_count is outside the host integer range"),
+        (1, "fixture", "variant must be a Symbol"),
+        (2, :model, "model_id must be a string"),
+        (5, [], "assets must be a tuple"),
+        (
+            5,
+            ((; name="asset", bytes=0, sha256="hash"),),
+            "assets must contain Qwen3VLAssetSpec values",
+        ),
+        (15, (;), "text must be a Qwen3VLTextSpec"),
+        (16, (;), "vision must be a Qwen3VLVisionSpec"),
+    )
+        failure = _ch43_captured_error() do
+            Qwen3VLCheckpointSpec(Base.setindex(valid, value, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL checkpoint $message"
+    end
+end
+
 @testset "Qwen3-VL frozen checkpoint and tensor contract" begin
     spec = qwen3_vl_checkpoint_spec()
     @test spec.variant == :qwen3_vl_2b_instruct
