@@ -587,6 +587,10 @@ end
     @test static.cache.capacity == 10
     @test static.cache.position == 10
     @test static.cache.rope_delta == -2
+    @test static.prefill.input_embeddings === nothing
+    @test static.prefill.final_hidden === nothing
+    @test dynamic.prefill.input_embeddings === nothing
+    @test dynamic.prefill.final_hidden === nothing
     @test static.generated_ids == [8, 8, 8]
     @test static.generated_ids == dynamic.generated_ids
     @test static.token_ids == vcat(collect(1:8), [8, 8, 8])
@@ -599,6 +603,25 @@ end
         @test static.trace[step].logits ≈
             dynamic.trace[step].logits atol=1.0f-6 rtol=1.0f-6
     end
+
+    captured_static = generate_hf_qwen3_vl_tokens(
+        parameters,
+        inputs.input_ids,
+        inputs.rope_layout;
+        vision_features=inputs.vision_features,
+        max_new_tokens=3,
+        stop_token_ids=Int[],
+        capture_logits=true,
+        cache=:static,
+        static_capacity=10,
+        capture_prefill_states=true,
+    )
+    @test size(captured_static.prefill.input_embeddings) == (16, 8, 1)
+    @test size(captured_static.prefill.final_hidden) == (16, 8, 1)
+    @test captured_static.prefill.logits == static.prefill.logits
+    @test captured_static.generated_ids == static.generated_ids
+    @test captured_static.trace == static.trace
+    @test captured_static.cache.position == static.cache.position
 
     inferred = generate_hf_qwen3_vl_tokens(
         parameters,

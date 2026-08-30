@@ -369,6 +369,8 @@ end
     # The first token is selected directly from prefill. With three output
     # tokens only two decode calls occur, so the final cache length is 10.
     @test generated.prefill !== nothing
+    @test generated.prefill.input_embeddings === nothing
+    @test generated.prefill.final_hidden === nothing
     @test size(generated.prefill.logits) == (32, 1, 1)
     @test generated.trace[1].logits ≈
         vec(_ch45_hf_hidden(reference, "prefill.logits")[:, end, 1])
@@ -376,6 +378,28 @@ end
         vec(_ch45_hf_hidden(reference, "decode.0.logits"))
     @test generated.trace[3].logits ≈
         vec(_ch45_hf_hidden(reference, "decode.1.logits"))
+
+    captured = generate_hf_qwen3_vl_tokens(
+        parameters,
+        inputs.input_ids,
+        inputs.rope_layout;
+        vision_features=inputs.vision_features,
+        max_new_tokens=3,
+        stop_token_ids=Int[],
+        capture_logits=true,
+        capture_prefill_states=true,
+    )
+    @test size(captured.prefill.input_embeddings) == (16, 8, 1)
+    @test captured.prefill.final_hidden ≈
+        _ch45_hf_hidden(reference, "prefill.final_hidden") atol=1.0f-6 rtol=1.0f-6
+    @test captured.prefill.logits == generated.prefill.logits
+    @test captured.generated_ids == generated.generated_ids
+    @test captured.trace == generated.trace
+    @test captured.cache.position == generated.cache.position
+    for layer in eachindex(captured.cache.layers)
+        @test captured.cache.layers[layer].keys == generated.cache.layers[layer].keys
+        @test captured.cache.layers[layer].values == generated.cache.layers[layer].values
+    end
 
     stopped = generate_hf_qwen3_vl_tokens(
         parameters,
@@ -389,6 +413,8 @@ end
     @test stopped.stop_reason === :eos
     @test stopped.cache.position == 8
     @test length(stopped.trace) == 1
+    @test stopped.prefill.input_embeddings === nothing
+    @test stopped.prefill.final_hidden === nothing
 
     zero = generate_hf_qwen3_vl_tokens(
         parameters,

@@ -80,8 +80,9 @@ function _qwen3_vl_generation_prefill(
     rope_layout,
     vision_features,
     cache::Qwen3VLKVCache,
+    capture_prefill_states::Bool,
 )
-    return hf_qwen3_vl_text_prefill_cached(
+    prefill_result, updated_cache = hf_qwen3_vl_text_prefill_cached(
         text_parameters,
         tokens,
         rope_layout;
@@ -89,6 +90,10 @@ function _qwen3_vl_generation_prefill(
         cache,
         logits_to_keep=1,
     )
+    return _qwen3_vl_generation_prefill_result(
+        prefill_result,
+        capture_prefill_states,
+    ), updated_cache
 end
 
 function _qwen3_vl_generation_prefill(
@@ -97,14 +102,34 @@ function _qwen3_vl_generation_prefill(
     rope_layout,
     vision_features,
     cache::Qwen3VLStaticKVCache,
+    capture_prefill_states::Bool,
 )
-    return hf_qwen3_vl_text_prefill_static(
+    prefill_result, updated_cache = hf_qwen3_vl_text_prefill_static(
         text_parameters,
         tokens,
         rope_layout;
         vision_features,
         cache,
         logits_to_keep=1,
+    )
+    return _qwen3_vl_generation_prefill_result(
+        prefill_result,
+        capture_prefill_states,
+    ), updated_cache
+end
+
+function _qwen3_vl_generation_prefill_result(
+    prefill_result::Qwen3VLTextPrefill,
+    capture_prefill_states::Bool,
+)
+    capture_prefill_states && return prefill_result
+    return Qwen3VLTextPrefill(
+        nothing,
+        prefill_result.block_outputs,
+        prefill_result.layer_outputs,
+        nothing,
+        prefill_result.logits,
+        prefill_result.rope_layout,
     )
 end
 
@@ -122,7 +147,8 @@ _qwen3_vl_generation_decode(
                                 vision_features=nothing,
                                 max_new_tokens=32, stop_token_ids=nothing,
                                 capture_logits=false, cache=:dynamic,
-                                static_capacity=nothing)
+                                static_capacity=nothing,
+                                capture_prefill_states=false)
 
 Greedily generate one Qwen3-VL sequence from already-tokenized multimodal
 prefill inputs. The first output token is selected from the final prefill
@@ -135,6 +161,9 @@ contains `prompt_length + generated_count - 1` valid tokens unless generation
 stops before a decode is needed. `cache=:static` selects preallocated storage;
 `static_capacity` defaults to the exact processed context. The returned static
 cache can be reset and reused through the low-level static-cache API.
+By default the returned prefill keeps only its last-token logits and layout;
+set `capture_prefill_states=true` to retain full prompt input embeddings and
+final hidden states for diagnostics.
 Generation intentionally supports batch size one and greedy selection only.
 """
 function generate_hf_qwen3_vl_tokens(
@@ -147,6 +176,7 @@ function generate_hf_qwen3_vl_tokens(
     capture_logits::Bool=false,
     cache::Symbol=:dynamic,
     static_capacity=nothing,
+    capture_prefill_states::Bool=false,
 )
     tokens = _qwen3_vl_token_matrix(input_ids)
     prompt_length, batch_size = size(tokens)
@@ -193,6 +223,7 @@ function generate_hf_qwen3_vl_tokens(
         rope_layout,
         vision_features,
         cache_state,
+        capture_prefill_states,
     )
     logits = prefill_result.logits
     host = cpu_device()
@@ -319,6 +350,7 @@ function generate_hf_qwen3_vl(
     processor_spec::Qwen3VLProcessorSpec=qwen3_vl_processor_spec(),
     cache::Symbol=:dynamic,
     static_capacity=nothing,
+    capture_prefill_states::Bool=false,
 )
     tokenizer.profile === :qwen3_vl_generation || throw(ArgumentError(
         "generate_hf_qwen3_vl requires a Qwen3-VL tokenizer",
@@ -381,6 +413,7 @@ function generate_hf_qwen3_vl(
         capture_logits,
         cache,
         static_capacity,
+        capture_prefill_states,
     )
     completion = decode(
         tokenizer,

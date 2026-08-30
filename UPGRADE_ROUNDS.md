@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the forty-two follow-up rounds implemented on top of the
+This ledger records the forty-three follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -78,6 +78,9 @@ Chapter 03 reproducible-training test.
 42. Use stepwise checked arithmetic for Qwen3 sparse-MoE parameter counts and
     CUDA indexed-workspace bytes, rejecting multiplication or addition overflow
     before a wrapped negative size can reach allocation or capacity planning.
+43. Stop Qwen3-VL generation from retaining prompt-sized input embeddings and
+    final hidden states by default, while preserving full diagnostics behind the
+    explicit `capture_prefill_states=true` compatibility option.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -335,6 +335,10 @@ result = generate_hf_qwen3_vl_tokens(
 入口只切换 text K/V store policy，不重复运行 vision tower，也不改变 processor、chat、
 placeholder、mRoPE、greedy/EOS 或 tokenizer 语义。
 
+dynamic/static generation 都默认压缩返回的 prefill diagnostic state：保留 logits 与
+layout，但将 prompt-sized input embeddings/final hidden 置为 `nothing`。显式
+`capture_prefill_states=true` 可恢复完整状态；这一选项不改变 token、trace 或 cache。
+
 ## 一个真实 Julia API 踩坑：keyword 不能参与 dispatch
 
 初版集成曾尝试保留同名 prefill API，只用 keyword 参数类型区分 cache：
@@ -373,7 +377,8 @@ f(parameters, ids, layout; cache::Qwen3VLStaticKVCache) = ...
 - 已完成长上下文、并发、多 batch 或服务级吞吐验收。
 
 static path 仍会构造 token embedding、Q/K/V、attention context、MLP intermediates、
-final hidden 和 vocabulary logits；高层 generation 还会保存 trace/ids。固定 K/V 是
+final hidden 和 vocabulary logits；高层 generation 默认不再长期保留两块 prompt-sized
+diagnostic tensor，但仍会保存 trace/ids。固定 K/V 是
 消除一个已知 `O(T²)` prefix-copy 来源的必要步骤，不是性能工作的终点。
 
 ## 已知边界与下一步
