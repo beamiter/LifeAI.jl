@@ -71,10 +71,13 @@ struct HFAddedToken
     end
 end
 
-"""Validated sampling and stop-token settings from Qwen3 `generation_config.json`."""
+"""
+Validated sampling and stop-token settings from Qwen3 `generation_config.json`.
+The public `eos_ids` property is a fresh vector snapshot of sealed metadata.
+"""
 struct HFQwen3GenerationConfig
     bos_id::Int
-    eos_ids::Vector{Int}
+    eos_ids::Tuple{Vararg{Int}}
     pad_id::Int
     do_sample::Bool
     temperature::Float32
@@ -99,10 +102,10 @@ struct HFQwen3GenerationConfig
         eos_ids isa AbstractVector && !isempty(eos_ids) || throw(ArgumentError(
             "eos_ids must be a non-empty vector",
         ))
-        resolved_eos_ids = Int[
+        resolved_eos_ids = Tuple(Int[
             _hf_strict_host_int(eos_id, "eos_ids[$index]")
             for (index, eos_id) in enumerate(collect(eos_ids))
-        ]
+        ])
         all(>(0), resolved_eos_ids) || throw(ArgumentError(
             "eos_ids must contain only positive token ids",
         ))
@@ -158,10 +161,18 @@ struct HFQwen3GenerationConfig
     end
 end
 
+function Base.getproperty(config::HFQwen3GenerationConfig, name::Symbol)
+    name === :eos_ids && return collect(getfield(config, :eos_ids))
+    return getfield(config, name)
+end
+
 struct _HFQwen3TokenizerValidated end
 const _HF_QWEN3_TOKENIZER_VALIDATED = _HFQwen3TokenizerValidated()
 
-"""A strict, imported HuggingFace Qwen3 byte-level BPE tokenizer."""
+"""
+A strict, imported HuggingFace Qwen3 byte-level BPE tokenizer. Public mutable
+collection properties are defensive snapshots of the validated tokenizer.
+"""
 struct HFQwen3Tokenizer <: AbstractTokenizer
     vocabulary::Dict{String,Int}
     id_to_token::Vector{String}
@@ -175,7 +186,7 @@ struct HFQwen3Tokenizer <: AbstractTokenizer
     special_ids::Set{Int}
     bos_id::Union{Nothing,Int}
     eos_id::Union{Nothing,Int}
-    eos_ids::Vector{Int}
+    eos_ids::Tuple{Vararg{Int}}
     pad_id::Union{Nothing,Int}
     generation::HFQwen3GenerationConfig
     profile::Symbol
@@ -203,7 +214,7 @@ struct HFQwen3Tokenizer <: AbstractTokenizer
         special_ids::Set{Int},
         bos_id::Union{Nothing,Int},
         eos_id::Union{Nothing,Int},
-        eos_ids::Vector{Int},
+        eos_ids::Tuple{Vararg{Int}},
         pad_id::Union{Nothing,Int},
         generation::HFQwen3GenerationConfig,
         profile::Symbol,
@@ -245,6 +256,24 @@ struct HFQwen3Tokenizer <: AbstractTokenizer
             generation_config_sha256,
         )
     end
+end
+
+function Base.getproperty(tokenizer::HFQwen3Tokenizer, name::Symbol)
+    if name === :token_bytes
+        return [copy(bytes) for bytes in getfield(tokenizer, :token_bytes)]
+    elseif name === :eos_ids
+        return collect(getfield(tokenizer, :eos_ids))
+    elseif name in (
+        :vocabulary,
+        :id_to_token,
+        :merge_ranks,
+        :added_tokens,
+        :added_by_content,
+        :special_ids,
+    )
+        return copy(getfield(tokenizer, name))
+    end
+    return getfield(tokenizer, name)
 end
 
 function _hf_json(raw::AbstractString, label::AbstractString)
@@ -1081,7 +1110,7 @@ function _hf_qwen3_tokenizer_from_json(
         tokenizer_pad == value.pad_id || throw(ArgumentError(
             "tokenizer and generation PAD ids conflict",
         ))
-        tokenizer_eos in value.eos_ids || throw(ArgumentError(
+        tokenizer_eos in getfield(value, :eos_ids) || throw(ArgumentError(
             "tokenizer EOS id is absent from generation eos_token_id",
         ))
         value
@@ -1111,7 +1140,7 @@ function _hf_qwen3_tokenizer_from_json(
         special_ids,
         generation.bos_id,
         tokenizer_eos,
-        generation.eos_ids,
+        getfield(generation, :eos_ids),
         generation.pad_id,
         generation,
         profile,
@@ -1222,7 +1251,7 @@ function load_hf_qwen3_embedding_tokenizer(
 end
 
 _normalization_mode(::HFQwen3Tokenizer) = :nfc
-vocab_size(tokenizer::HFQwen3Tokenizer) = length(tokenizer.id_to_token)
+vocab_size(tokenizer::HFQwen3Tokenizer) = length(getfield(tokenizer, :id_to_token))
 Base.length(tokenizer::HFQwen3Tokenizer) = vocab_size(tokenizer)
 
 """
@@ -1235,10 +1264,10 @@ function hf_generation_config(tokenizer::HFQwen3Tokenizer)
     tokenizer.profile !== :embedding || throw(ArgumentError(
         "embedding tokenizer does not define text-generation sampling settings",
     ))
-    config = tokenizer.generation
+    config = getfield(tokenizer, :generation)
     return (;
         bos_id=config.bos_id,
-        eos_ids=copy(config.eos_ids),
+        eos_ids=collect(getfield(config, :eos_ids)),
         pad_id=config.pad_id,
         do_sample=config.do_sample,
         temperature=config.temperature,
@@ -1281,7 +1310,11 @@ function _hf_added_segments(tokenizer::HFQwen3Tokenizer, input::AbstractString)
     cursor = firstindex(text)
     terminal = ncodeunits(text) + 1
     while cursor < terminal
-        token, range = _hf_next_added_match(text, cursor, tokenizer.added_tokens)
+        token, range = _hf_next_added_match(
+            text,
+            cursor,
+            getfield(tokenizer, :added_tokens),
+        )
         if range === nothing
             push!(segments, (false, String(SubString(text, cursor)), nothing))
             break
@@ -1345,12 +1378,13 @@ end
 function _hf_bpe_tokens(tokenizer::HFQwen3Tokenizer, piece::String)
     symbols = string.(collect(_hf_byte_symbols(piece)))
     length(symbols) <= 1 && return symbols
+    merge_ranks = getfield(tokenizer, :merge_ranks)
     while true
         best_rank = typemax(Int)
         best_pair = nothing
         for index in 1:(length(symbols) - 1)
             pair = (symbols[index], symbols[index + 1])
-            rank = get(tokenizer.merge_ranks, pair, typemax(Int))
+            rank = get(merge_ranks, pair, typemax(Int))
             if rank < best_rank
                 best_rank = rank
                 best_pair = pair
@@ -1382,6 +1416,7 @@ function encode(
 )
     add_special_tokens isa Bool || throw(ArgumentError("add_special_tokens must be Bool"))
     ids = Int[]
+    vocabulary = getfield(tokenizer, :vocabulary)
     for (is_added, segment, added_token) in _hf_added_segments(tokenizer, text)
         if is_added
             push!(ids, added_token.id)
@@ -1390,7 +1425,7 @@ function encode(
         normalized = normalize_text(segment, :nfc)
         for record in _hf_pretoken_records(tokenizer, normalized)
             for token in _hf_bpe_tokens(tokenizer, record.text)
-                id = get(tokenizer.vocabulary, token, nothing)
+                id = get(vocabulary, token, nothing)
                 id === nothing && throw(ArgumentError(
                     "BPE output token $(repr(token)) is absent from the imported vocabulary",
                 ))
@@ -1420,13 +1455,15 @@ function decode_bytes(
     skip_special_tokens::Bool=false,
 )
     output = UInt8[]
+    special_ids = getfield(tokenizer, :special_ids)
+    token_bytes = getfield(tokenizer, :token_bytes)
     for raw_id in ids
         id = _hf_qwen3_token_id(raw_id)
         1 <= id <= vocab_size(tokenizer) || throw(ArgumentError(
             "token id $id is outside the imported tokenizer vocabulary",
         ))
-        skip_special_tokens && id in tokenizer.special_ids && continue
-        append!(output, tokenizer.token_bytes[id])
+        skip_special_tokens && id in special_ids && continue
+        append!(output, token_bytes[id])
     end
     return output
 end
@@ -1445,24 +1482,29 @@ function token_byte_length(tokenizer::HFQwen3Tokenizer, raw_id)
     1 <= id <= vocab_size(tokenizer) || throw(ArgumentError(
         "token id is outside vocabulary",
     ))
-    return id in tokenizer.special_ids ? 0 : length(tokenizer.token_bytes[id])
+    special_ids = getfield(tokenizer, :special_ids)
+    token_bytes = getfield(tokenizer, :token_bytes)
+    return id in special_ids ? 0 : length(token_bytes[id])
 end
 
 function tokenizer_config(tokenizer::HFQwen3Tokenizer)
+    merge_ranks = getfield(tokenizer, :merge_ranks)
+    added_tokens = getfield(tokenizer, :added_tokens)
+    generation = getfield(tokenizer, :generation)
     return (;
         type=:hf_qwen3_bpe,
         id_base=1,
         normalization=:nfc,
         vocabulary_size=vocab_size(tokenizer),
         model_vocabulary_size=tokenizer.model_vocabulary_size,
-        merge_count=length(tokenizer.merge_ranks),
-        added_token_count=length(tokenizer.added_tokens),
-        eos_ids=copy(tokenizer.eos_ids),
-        do_sample=tokenizer.generation.do_sample,
-        temperature=tokenizer.generation.temperature,
-        top_k=tokenizer.generation.top_k,
-        top_p=tokenizer.generation.top_p,
-        transformers_version=tokenizer.generation.transformers_version,
+        merge_count=length(merge_ranks),
+        added_token_count=length(added_tokens),
+        eos_ids=collect(getfield(tokenizer, :eos_ids)),
+        do_sample=generation.do_sample,
+        temperature=generation.temperature,
+        top_k=generation.top_k,
+        top_p=generation.top_p,
+        transformers_version=generation.transformers_version,
         profile=tokenizer.profile,
         model_max_length=tokenizer.model_max_length,
         revision=tokenizer.revision,

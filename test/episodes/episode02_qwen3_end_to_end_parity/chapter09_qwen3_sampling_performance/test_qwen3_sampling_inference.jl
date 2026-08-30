@@ -100,6 +100,9 @@ end
     @test direct.transformers_version == "4.51.0"
     source_eos_ids[1] = 1
     @test direct.eos_ids == [261, 259]
+    empty!(direct.eos_ids)
+    @test direct.eos_ids == [261, 259]
+    @test getfield(direct, :eos_ids) == (261, 259)
 
     minimum_temperature = HFQwen3GenerationConfig(
         1,
@@ -195,6 +198,10 @@ end
         @test config.top_p == 0.95f0
         @test config.transformers_version == "4.51.0"
 
+        empty!(tokenizer.eos_ids)
+        empty!(tokenizer.generation.eos_ids)
+        @test tokenizer.eos_ids == [261, 259]
+        @test tokenizer.generation.eos_ids == [261, 259]
         push!(config.eos_ids, 1)
         @test hf_generation_config(tokenizer).eos_ids == [261, 259]
     end

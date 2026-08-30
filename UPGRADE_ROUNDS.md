@@ -493,6 +493,9 @@ Chapter 03 reproducible-training test.
 237. Freeze Qwen3 XLA session EOS and normalized sampling metadata in a
      constant-size source signature, rejecting valid in-place mutations before
      reset, request execution, or the next compiled chunk.
+238. Seal Qwen3 tokenizer and generation metadata ownership with immutable stop
+     ids and defensive snapshots for every public mutable collection while
+     preserving zero-copy access on internal encode/decode hot paths.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

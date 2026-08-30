@@ -124,6 +124,25 @@ end
         malformed_fields = Base.setindex(fields, true, 4)
         @test_throws MethodError HFQwen3Tokenizer(malformed_fields...)
 
+        @test getfield(tokenizer, :eos_ids) == (261, 259)
+        vocabulary_snapshot = tokenizer.vocabulary
+        vocabulary_snapshot["hi"] = 1
+        empty!(tokenizer.id_to_token)
+        empty!(tokenizer.token_bytes[258])
+        empty!(tokenizer.merge_ranks)
+        empty!(tokenizer.added_tokens)
+        empty!(tokenizer.added_by_content)
+        empty!(tokenizer.special_ids)
+        empty!(tokenizer.eos_ids)
+        @test tokenizer.vocabulary["hi"] == 257
+        @test length(tokenizer.id_to_token) == 263
+        @test tokenizer.token_bytes[258] == codeunits("hi!")
+        @test length(tokenizer.merge_ranks) == 2
+        @test length(tokenizer.added_tokens) == 5
+        @test haskey(tokenizer.added_by_content, "<|im_start|>")
+        @test tokenizer.special_ids == Set([259, 260, 261])
+        @test tokenizer.eos_ids == [261, 259]
+
         @test encode(tokenizer, "hi!") == [257, 34]
         @test encode(tokenizer, "hi"; add_special_tokens=true) == [257]
         @test encode(tokenizer, "hi"; add_special_tokens=false) == [257]
