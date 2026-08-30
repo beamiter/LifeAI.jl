@@ -165,6 +165,70 @@ function _qwen3_moe_write_sharded_checkpoint(directory, tensors)
     return weight_map
 end
 
+function _qwen3_moe_weight_loading_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected Qwen3 MoE loading call to fail")
+end
+
+@testset "Qwen3 MoE requests fail before config and weight I/O" begin
+    mktempdir() do directory
+        config_path = joinpath(directory, "config.json")
+        too_large = big(typemax(Int)) + 1
+        for (value, message) in (
+            true => "max_seq_len must be an integer",
+            0 => "max_seq_len must be positive",
+            too_large => "max_seq_len is outside the host integer range",
+        )
+            failure = _qwen3_moe_weight_loading_captured_error() do
+                load_hf_qwen3_moe_config(config_path; max_seq_len=value)
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
+
+        config_io_failure = _qwen3_moe_weight_loading_captured_error() do
+            load_hf_qwen3_moe_config(config_path; max_seq_len=big(8))
+        end
+        @test config_io_failure isa ArgumentError
+        @test occursin(
+            "JSON file does not exist",
+            sprint(showerror, config_io_failure),
+        )
+
+        for (options, message) in (
+            ((; max_seq_len=true), "max_seq_len must be an integer"),
+            (
+                (; max_seq_len=8, weight_dtype=Float64),
+                "weight_dtype must be Float32 or BFloat16",
+            ),
+        )
+            failure = _qwen3_moe_weight_loading_captured_error() do
+                load_hf_qwen3_moe_model(directory; options...)
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+            @test !occursin("config.json", sprint(showerror, failure))
+        end
+
+        model_io_failure = _qwen3_moe_weight_loading_captured_error() do
+            load_hf_qwen3_moe_model(
+                directory;
+                max_seq_len=Int32(8),
+                weight_dtype=Float32,
+            )
+        end
+        @test model_io_failure isa ArgumentError
+        @test occursin(
+            "JSON file does not exist",
+            sprint(showerror, model_io_failure),
+        )
+    end
+end
+
 @testset "Qwen3 MoE config and HuggingFace expert weight mapping" begin
     mktempdir() do directory
         path = joinpath(directory, "config.json")

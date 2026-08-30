@@ -633,6 +633,7 @@ function load_hf_qwen3_moe_config(
     path::AbstractString;
     max_seq_len=nothing,
 )
+    requested_max_seq_len = _qwen3_requested_max_seq_len(max_seq_len)
     config = _json_object(path)
 
     model_type = _json_required(config, "model_type", path)
@@ -700,9 +701,9 @@ function load_hf_qwen3_moe_config(
     ))
     iseven(head_dim) || throw(ArgumentError("Qwen3 MoE head_dim must be even for RoPE"))
 
-    resolved_max_seq_len = max_seq_len === nothing ? max_positions :
-        _strict_host_int(max_seq_len, "max_seq_len")
-    1 <= resolved_max_seq_len <= max_positions || throw(ArgumentError(
+    resolved_max_seq_len = requested_max_seq_len === nothing ?
+        max_positions : requested_max_seq_len
+    resolved_max_seq_len <= max_positions || throw(ArgumentError(
         "max_seq_len must be in 1:$max_positions; got $resolved_max_seq_len",
     ))
     rms_norm_eps = _required_positive_float32(config, "rms_norm_eps", path)
@@ -1721,13 +1722,15 @@ function load_hf_qwen3_moe_model(
     max_seq_len=2048,
     weight_dtype::Type=Float32,
 )
+    requested_max_seq_len = _qwen3_requested_max_seq_len(max_seq_len)
+    requested_weight_dtype = _qwen3_weight_dtype(weight_dtype)
     isdir(model_dir) || throw(ArgumentError("model directory does not exist: $model_dir"))
     config = load_hf_qwen3_moe_config(
         joinpath(model_dir, "config.json");
-        max_seq_len,
+        max_seq_len=requested_max_seq_len,
     )
     model = GPTModel(config)
-    tensors = load_safetensors(model_dir; target_dtype=weight_dtype)
+    tensors = load_safetensors(model_dir; target_dtype=requested_weight_dtype)
     parameters = load_hf_qwen3_moe_parameters(model, tensors)
     empty!(tensors)
     GC.gc(false)

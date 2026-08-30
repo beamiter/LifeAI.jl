@@ -74,6 +74,8 @@ LifeAI.jl 能否严格复现原始 Qwen3 MoE 的 top-k routing、expert SwiGLU�
 - MoE config 的结构整数、runtime context override 与数值字段复用 dense 严格标量
   合同：Bool、浮点伪整数、越界宿主整数，以及 Float32 下溢/溢出的 norm/RoPE 值均
   在模型构造前拒绝。
+- eager MoE config/model 加载入口会在读取 `config.json`、构造 RoPE 或访问权重前
+  预检请求的 context 长度与权重 dtype；非法请求不会被缺失 checkpoint 文件掩盖。
 - 四个按测试内容命名的专项共 `43 / 43` 通过：router 13、expert mixture 6、config/weight mapping 18、cached decode 6。
 - Dense 回归：Qwen3 HF weight loading `54 / 54`、dense family `91 / 91` 通过。
 
