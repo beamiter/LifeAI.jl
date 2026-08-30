@@ -209,6 +209,8 @@ Chapter 03 reproducible-training test.
      before generating coordinate tuples or mutating visual masks.
 104. Track Qwen3-VL mRoPE bases incrementally so multi-image layouts avoid
      repeatedly rescanning all prior coordinate tuples.
+105. Strictly construct Qwen3 MoE shard metadata, rejecting lossy byte coercion,
+     negative sizes, and host-range overflow at the public boundary.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

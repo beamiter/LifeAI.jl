@@ -44,6 +44,20 @@ struct Qwen3MoEShardSpec
     filename::String
     bytes::Int
     sha256::String
+
+    function Qwen3MoEShardSpec(filename, bytes, sha256)
+        filename isa AbstractString || throw(ArgumentError(
+            "Qwen3 MoE shard filename must be a string",
+        ))
+        sha256 isa AbstractString || throw(ArgumentError(
+            "Qwen3 MoE shard sha256 must be a string",
+        ))
+        resolved_bytes = _strict_host_int(bytes, "Qwen3 MoE shard bytes")
+        resolved_bytes >= 0 || throw(ArgumentError(
+            "Qwen3 MoE shard bytes must be non-negative",
+        ))
+        return new(String(filename), resolved_bytes, String(sha256))
+    end
 end
 
 """

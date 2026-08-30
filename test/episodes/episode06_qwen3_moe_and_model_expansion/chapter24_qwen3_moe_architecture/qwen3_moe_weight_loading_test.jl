@@ -175,6 +175,34 @@ function _qwen3_moe_weight_loading_captured_error(thunk)
     error("expected Qwen3 MoE loading call to fail")
 end
 
+@testset "Qwen3 MoE shard specifications are strict" begin
+    filename = SubString("xmodel.safetensors", 2)
+    digest = SubString("x012345", 2)
+    spec = Qwen3MoEShardSpec(filename, big(7), digest)
+    @test spec.filename === "model.safetensors"
+    @test spec.bytes === 7
+    @test spec.sha256 === "012345"
+
+    too_large = big(typemax(Int)) + 1
+    for (arguments, message) in (
+        ((1, 7, "hash"), "Qwen3 MoE shard filename must be a string"),
+        (("model", 7, 1), "Qwen3 MoE shard sha256 must be a string"),
+        (("model", true, "hash"), "Qwen3 MoE shard bytes must be an integer"),
+        (("model", 7.0, "hash"), "Qwen3 MoE shard bytes must be an integer"),
+        (
+            ("model", too_large, "hash"),
+            "Qwen3 MoE shard bytes is outside the host integer range",
+        ),
+        (("model", -1, "hash"), "Qwen3 MoE shard bytes must be non-negative"),
+    )
+        failure = _qwen3_moe_weight_loading_captured_error() do
+            Qwen3MoEShardSpec(arguments...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
+    end
+end
+
 @testset "Qwen3 MoE requests fail before config and weight I/O" begin
     mktempdir() do directory
         config_path = joinpath(directory, "config.json")
