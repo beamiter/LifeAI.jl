@@ -293,6 +293,8 @@ Chapter 03 reproducible-training test.
      host-safe patch-dimension arithmetic that cannot wrap or leak exceptions.
 146. Restrict Qwen3-VL attention masks to Bool or integer zero/one values,
      rejecting numerically equal floats, complex numbers, and missing data.
+147. Validate Qwen3-VL raw-generation message roles before image extraction,
+     replacing numeric and symbolic role conversion failures with clear errors.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

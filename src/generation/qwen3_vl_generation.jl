@@ -352,6 +352,9 @@ function _qwen3_vl_generation_image(messages)
     images = Any[]
     for message in messages
         role = _hf_message_value(message, :role; required=true)
+        role isa AbstractString || throw(ArgumentError(
+            "Qwen3-VL generation chat role must be a string",
+        ))
         raw_content = _hf_message_value(message, :content; default=nothing)
         raw_content isa AbstractString && continue
         items = _qwen3_vl_content_list(raw_content, "Qwen3-VL generation")

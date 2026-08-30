@@ -770,6 +770,27 @@ end
     )
 end
 
+@testset "Chapter 45 — raw generation image roles are strict" begin
+    image = zeros(UInt8, 1, 1, 3)
+    valid_messages = [(
+        role=SubString("xuser", 2),
+        content=Any[(type="image", image=image)],
+    )]
+    @test LifeAI._qwen3_vl_generation_image(valid_messages) === image
+
+    for invalid_role in (1, true, :user)
+        failure = _ch45_captured_error() do
+            LifeAI._qwen3_vl_generation_image([(
+                role=invalid_role,
+                content=Any[(type="image", image=image)],
+            )])
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL generation chat role must be a string"
+    end
+end
+
 @testset "Chapter 45 — raw generation options fail before image compute" begin
     poison = _CH45VisionComputePoison()
     @test LifeAI._qwen3_vl_generation_vision_features(
