@@ -66,6 +66,42 @@ const QWEN3_MOE_READ_BUFFER_TINY_FIXTURE = joinpath(
     @test pool.borrows[] == 0
     @test_throws ArgumentError LifeAI._SafetensorsReadBufferPool(0, 1)
     @test_throws ArgumentError LifeAI._SafetensorsReadBufferPool(1, -1)
+
+    mixed_integer_pool = LifeAI._SafetensorsReadBufferPool(Int32(2), big(3))
+    @test mixed_integer_pool.buffer_count == 2
+    @test mixed_integer_pool.buffer_bytes == 3
+    @test LifeAI._with_safetensors_read_buffer(
+        length,
+        mixed_integer_pool,
+    ) == 3
+    @test LifeAI._SafetensorsReadBufferPool(UInt8(1), big(0)).buffer_bytes == 0
+
+    oversized = big(typemax(Int)) + 1
+    for arguments in (
+        (true, 1),
+        (1.0, 1),
+        (oversized, 1),
+        (1, true),
+        (1, 1.0),
+        (1, oversized),
+    )
+        @test_throws ArgumentError LifeAI._SafetensorsReadBufferPool(
+            arguments...,
+        )
+    end
+    for arguments in ((typemax(Int), 2), (2, typemax(Int)))
+        capacity_failure = try
+            LifeAI._SafetensorsReadBufferPool(arguments...)
+            nothing
+        catch caught
+            caught
+        end
+        @test capacity_failure isa ArgumentError
+        @test occursin(
+            "read buffer pool byte count",
+            sprint(showerror, capacity_failure),
+        )
+    end
     @test_throws ArgumentError LifeAI._expect_tensor(
         Dict("not_array" => 1),
         "not_array",

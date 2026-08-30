@@ -373,6 +373,8 @@ Chapter 03 reproducible-training test.
      and processor geometry while preserving zero-copy array ownership.
 186. Preflight Qwen3 MoE host staging-pool dimensions and aggregate bytes before
      allocating channels or per-expert upload matrices.
+187. Preflight reusable Qwen3 MoE safetensors read-buffer dimensions and total
+     payload bytes before allocating pool channels or byte vectors.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

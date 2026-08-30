@@ -34,17 +34,32 @@ mutable struct _SafetensorsReadBufferPool
 end
 
 function _SafetensorsReadBufferPool(
-    buffer_count::Integer,
-    buffer_bytes::Integer,
+    buffer_count,
+    buffer_bytes,
 )
-    count = Int(buffer_count)
-    bytes = Int(buffer_bytes)
+    count = _strict_host_int(
+        buffer_count,
+        "safetensors read buffer_count",
+    )
+    bytes = _strict_host_int(
+        buffer_bytes,
+        "safetensors read buffer_bytes",
+    )
     count > 0 || throw(ArgumentError(
         "safetensors read buffer_count must be positive",
     ))
     bytes >= 0 || throw(ArgumentError(
         "safetensors read buffer_bytes must be non-negative",
     ))
+    try
+        Base.Checked.checked_mul(count, bytes)
+    catch error
+        error isa OverflowError || rethrow()
+        throw(ArgumentError(
+            "safetensors read buffer pool byte count exceeds the host " *
+            "integer range",
+        ))
+    end
     buffers = Channel{Vector{UInt8}}(count)
     for _ in 1:count
         put!(buffers, Vector{UInt8}(undef, bytes))
