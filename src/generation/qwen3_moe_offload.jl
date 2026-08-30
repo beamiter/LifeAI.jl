@@ -440,13 +440,16 @@ end
 _qwen3_moe_host_buffer_reuse_supported(prototype) = false
 
 function _Qwen3MoEHostStagingPool(
-    buffer_count::Integer,
-    hidden_dim::Integer,
-    d_model::Integer,
+    buffer_count,
+    hidden_dim,
+    d_model,
 )
-    count = Int(buffer_count)
-    hidden = Int(hidden_dim)
-    model = Int(d_model)
+    count = _strict_host_int(
+        buffer_count,
+        "Qwen3 MoE host buffer_count",
+    )
+    hidden = _strict_host_int(hidden_dim, "Qwen3 MoE host hidden_dim")
+    model = _strict_host_int(d_model, "Qwen3 MoE host d_model")
     count > 0 || throw(ArgumentError(
         "Qwen3 MoE host buffer_count must be positive",
     ))
@@ -456,6 +459,20 @@ function _Qwen3MoEHostStagingPool(
     model > 0 || throw(ArgumentError(
         "Qwen3 MoE host d_model must be positive",
     ))
+
+    buffer_bytes = _qwen3_moe_checked_size(
+        "Qwen3 MoE host staging buffer byte count",
+    ) do
+        matrix_elements = Base.Checked.checked_mul(hidden, model)
+        slot_elements = Base.Checked.checked_mul(3, matrix_elements)
+        Base.Checked.checked_mul(slot_elements, sizeof(BFloat16))
+    end
+    _qwen3_moe_checked_size(
+        "Qwen3 MoE host staging pool byte count",
+    ) do
+        Base.Checked.checked_mul(count, buffer_bytes)
+    end
+
     slots = Channel{_Qwen3MoEHostStagingSlot}(count)
     for _ in 1:count
         put!(slots, _Qwen3MoEHostStagingSlot(
@@ -464,10 +481,6 @@ function _Qwen3MoEHostStagingPool(
             Matrix{BFloat16}(undef, model, hidden),
         ))
     end
-    buffer_bytes = Base.checked_mul(
-        3,
-        Base.checked_mul(hidden, Base.checked_mul(model, sizeof(BFloat16))),
-    )
     return _Qwen3MoEHostStagingPool(
         slots,
         count,

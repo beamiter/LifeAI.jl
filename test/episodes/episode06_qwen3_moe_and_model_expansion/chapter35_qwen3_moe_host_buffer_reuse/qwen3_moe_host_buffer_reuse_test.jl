@@ -137,6 +137,52 @@ end
     @test_throws ArgumentError LifeAI._Qwen3MoEHostStagingPool(1, 0, 8)
     @test_throws ArgumentError LifeAI._Qwen3MoEHostStagingPool(1, 3, 0)
 
+    mixed_integer_pool = LifeAI._Qwen3MoEHostStagingPool(
+        Int32(1),
+        UInt8(2),
+        big(3),
+    )
+    @test mixed_integer_pool.buffer_count == 1
+    @test mixed_integer_pool.buffer_bytes == 36
+    oversized = big(typemax(Int)) + 1
+    for arguments in (
+        (true, 3, 8),
+        (1.0, 3, 8),
+        (oversized, 3, 8),
+        (1, true, 8),
+        (1, 3.0, 8),
+        (1, oversized, 8),
+        (1, 3, true),
+        (1, 3, 8.0),
+        (1, 3, oversized),
+    )
+        @test_throws ArgumentError LifeAI._Qwen3MoEHostStagingPool(
+            arguments...,
+        )
+    end
+    buffer_capacity_failure = try
+        LifeAI._Qwen3MoEHostStagingPool(1, typemax(Int), 2)
+        nothing
+    catch caught
+        caught
+    end
+    @test buffer_capacity_failure isa ArgumentError
+    @test occursin(
+        "staging buffer byte count",
+        sprint(showerror, buffer_capacity_failure),
+    )
+    pool_capacity_failure = try
+        LifeAI._Qwen3MoEHostStagingPool(typemax(Int), 1, 1)
+        nothing
+    catch caught
+        caught
+    end
+    @test pool_capacity_failure isa ArgumentError
+    @test occursin(
+        "staging pool byte count",
+        sprint(showerror, pool_capacity_failure),
+    )
+
     session = load_hf_qwen3_moe_offload_session(
         QWEN3_MOE_HOST_BUFFER_TINY_FIXTURE;
         context_tokens=8,

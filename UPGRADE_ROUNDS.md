@@ -371,6 +371,8 @@ Chapter 03 reproducible-training test.
      metadata sentinel before any device allocation or kernel launch.
 185. Bind processed Qwen3-VL image tensors to their source resize, patch grid,
      and processor geometry while preserving zero-copy array ownership.
+186. Preflight Qwen3 MoE host staging-pool dimensions and aggregate bytes before
+     allocating channels or per-expert upload matrices.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
