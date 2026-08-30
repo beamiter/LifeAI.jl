@@ -221,6 +221,8 @@ Chapter 03 reproducible-training test.
      JSON values and reusing the checked host integer in verification reports.
 110. Reject duplicate Qwen3 MoE shard filenames at specification construction,
      keeping shard-set membership and payload accounting one-to-one.
+111. Strictly construct Qwen3 dense-family specifications, normalizing positive
+     dimensions and finite Float32 hyperparameters without lossy coercions.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

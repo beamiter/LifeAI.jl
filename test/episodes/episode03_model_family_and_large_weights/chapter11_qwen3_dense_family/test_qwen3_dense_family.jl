@@ -86,6 +86,86 @@ function _qwen3_family_untied_wide_tensors(model::GPTModel)
     return tensors
 end
 
+@testset "Qwen3 dense specifications are strict" begin
+    strings = ntuple(_ -> SubString("xvalue", 2), 3)
+    valid = (
+        :fixture,
+        strings...,
+        ntuple(_ -> big(1), 7)...,
+        Float64(0.5),
+        Int32(2),
+        big(1),
+        true,
+    )
+    spec = Qwen3DenseSpec(valid...)
+    @test spec.variant === :fixture
+    @test spec.model_id === "value"
+    @test spec.vocab_size === 1
+    @test spec.rms_norm_epsilon === 0.5f0
+    @test spec.rope_theta === 2.0f0
+    @test spec.tie_embeddings
+
+    integer_fields = (
+        5 => "vocab_size",
+        6 => "d_model",
+        7 => "mlp_hidden_dim",
+        8 => "num_layers",
+        9 => "num_heads",
+        10 => "num_kv_heads",
+        11 => "head_dim",
+        14 => "max_position_embeddings",
+    )
+    for (index, label) in integer_fields
+        for (value, message) in (
+            (true, "must be an integer"),
+            (0, "must be positive"),
+            (-1, "must be positive"),
+        )
+            failure = _qwen3_family_captured_error() do
+                Qwen3DenseSpec(Base.setindex(valid, value, index)...)
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) ==
+                "ArgumentError: Qwen3 dense $label $message"
+        end
+    end
+
+    too_large = big(typemax(Int)) + 1
+    for (index, value, message) in (
+        (5, 1.0, "vocab_size must be an integer"),
+        (5, too_large, "vocab_size is outside the host integer range"),
+        (1, "fixture", "variant must be a Symbol"),
+        (2, :model, "model_id must be a string"),
+        (15, 1, "tie_embeddings must be a Bool"),
+    )
+        failure = _qwen3_family_captured_error() do
+            Qwen3DenseSpec(Base.setindex(valid, value, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: Qwen3 dense $message"
+    end
+
+    for index in (12, 13)
+        label = index == 12 ? "rms_norm_epsilon" : "rope_theta"
+        for (value, message) in (
+            (true, "must be a real number"),
+            ("1", "must be a real number"),
+            (0, "must be positive and finite at Float32 precision"),
+            (NaN, "must be positive and finite at Float32 precision"),
+            (Inf, "must be positive and finite at Float32 precision"),
+            (1.0e100, "must be positive and finite at Float32 precision"),
+            (1.0e-100, "must be positive and finite at Float32 precision"),
+        )
+            failure = _qwen3_family_captured_error() do
+                Qwen3DenseSpec(Base.setindex(valid, value, index)...)
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) ==
+                "ArgumentError: Qwen3 dense $label $message"
+        end
+    end
+end
+
 @testset "Qwen3 official dense family contract" begin
     fixture = JSON3.read(read(_QWEN3_FAMILY_SPECS_PATH, String))
     entries = collect(fixture.variants)

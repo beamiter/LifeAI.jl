@@ -31,6 +31,24 @@ function _qwen3_spec_positive_int(value, label::AbstractString)
     return resolved
 end
 
+function _qwen3_spec_positive_float32(value, label::AbstractString)
+    value isa Real && !(value isa Bool) || throw(ArgumentError(
+        "$label must be a real number",
+    ))
+    resolved = try
+        Float32(value)
+    catch error
+        error isa InterruptException && rethrow()
+        throw(ArgumentError(
+            "$label must be positive and finite at Float32 precision",
+        ))
+    end
+    isfinite(resolved) && resolved > 0 || throw(ArgumentError(
+        "$label must be positive and finite at Float32 precision",
+    ))
+    return resolved
+end
+
 """
     Qwen3DenseSpec
 
@@ -54,6 +72,55 @@ struct Qwen3DenseSpec
     rope_theta::Float32
     max_position_embeddings::Int
     tie_embeddings::Bool
+
+    function Qwen3DenseSpec(
+        variant,
+        model_id,
+        revision,
+        config_sha256,
+        vocab_size,
+        d_model,
+        mlp_hidden_dim,
+        num_layers,
+        num_heads,
+        num_kv_heads,
+        head_dim,
+        rms_norm_epsilon,
+        rope_theta,
+        max_position_embeddings,
+        tie_embeddings,
+    )
+        variant isa Symbol || throw(ArgumentError(
+            "Qwen3 dense variant must be a Symbol",
+        ))
+        tie_embeddings isa Bool || throw(ArgumentError(
+            "Qwen3 dense tie_embeddings must be a Bool",
+        ))
+        prefix = "Qwen3 dense"
+        return new(
+            variant,
+            _qwen3_spec_string(model_id, "$prefix model_id"),
+            _qwen3_spec_string(revision, "$prefix revision"),
+            _qwen3_spec_string(config_sha256, "$prefix config_sha256"),
+            _qwen3_spec_positive_int(vocab_size, "$prefix vocab_size"),
+            _qwen3_spec_positive_int(d_model, "$prefix d_model"),
+            _qwen3_spec_positive_int(mlp_hidden_dim, "$prefix mlp_hidden_dim"),
+            _qwen3_spec_positive_int(num_layers, "$prefix num_layers"),
+            _qwen3_spec_positive_int(num_heads, "$prefix num_heads"),
+            _qwen3_spec_positive_int(num_kv_heads, "$prefix num_kv_heads"),
+            _qwen3_spec_positive_int(head_dim, "$prefix head_dim"),
+            _qwen3_spec_positive_float32(
+                rms_norm_epsilon,
+                "$prefix rms_norm_epsilon",
+            ),
+            _qwen3_spec_positive_float32(rope_theta, "$prefix rope_theta"),
+            _qwen3_spec_positive_int(
+                max_position_embeddings,
+                "$prefix max_position_embeddings",
+            ),
+            tie_embeddings,
+        )
+    end
 end
 
 """One immutable safetensors shard in an official Qwen3 MoE checkpoint."""
