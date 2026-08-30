@@ -17,6 +17,19 @@ function _ch43_processor_error(thunk)
     error("expected Qwen3-VL processor specification to fail")
 end
 
+mutable struct _Ch43ReadCountingImage{T,N} <: AbstractArray{T,N}
+    dimensions::NTuple{N,Int}
+    reads::Int
+end
+
+Base.size(image::_Ch43ReadCountingImage) = image.dimensions
+Base.IndexStyle(::Type{<:_Ch43ReadCountingImage}) = IndexLinear()
+
+function Base.getindex(image::_Ch43ReadCountingImage{T}, index::Int) where {T}
+    image.reads += 1
+    return zero(T)
+end
+
 @testset "Qwen3-VL processor specifications are strict" begin
     valid = (
         SubString("xhash", 2),
@@ -278,6 +291,14 @@ end
     @test eltype(qwen3_vl_patchify(zeros(Float64, 3, 32, 32))) == Float64
     @test_throws ArgumentError qwen3_vl_patchify(zeros(Float32, 1, 32, 32))
     @test_throws ArgumentError qwen3_vl_patchify(zeros(Float32, 3, 16, 32))
+    invalid_channels = _Ch43ReadCountingImage{Float32,3}((1, 32, 32), 0)
+    invalid_channels_error = _ch43_processor_error() do
+        qwen3_vl_patchify(invalid_channels)
+    end
+    @test invalid_channels_error isa ArgumentError
+    @test sprint(showerror, invalid_channels_error) ==
+        "ArgumentError: Qwen3-VL patchify expects 3 channels; got 1"
+    @test invalid_channels.reads == 0
     nonfinite = zeros(Float32, 3, 32, 32)
     nonfinite[1] = NaN32
     @test_throws ArgumentError qwen3_vl_patchify(nonfinite; spec=official)

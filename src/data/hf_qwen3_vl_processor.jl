@@ -645,9 +645,6 @@ function qwen3_vl_patchify(
     eltype(image) <: AbstractFloat || throw(ArgumentError(
         "Qwen3-VL patchify expects an already normalized floating-point image",
     ))
-    all(isfinite, image) || throw(ArgumentError(
-        "Qwen3-VL patchify input must contain only finite values",
-    ))
 
     channels, height, width = size(image)
     channels == length(spec.image_mean) || throw(ArgumentError(
@@ -692,6 +689,11 @@ function qwen3_vl_patchify(
         temporal_patch_area,
         "flattened patch width",
     )
+    # Geometry is constant-time metadata. Reject it before traversing a
+    # potentially lazy image, while retaining the finite scan before allocation.
+    all(isfinite, image) || throw(ArgumentError(
+        "Qwen3-VL patchify input must contain only finite values",
+    ))
     flattened = Matrix{eltype(image)}(undef, feature_width, total_patches)
 
     patch_index = 0
