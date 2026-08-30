@@ -1,6 +1,6 @@
 # Additional Upgrade Rounds
 
-This ledger records the sixty-four follow-up rounds implemented on top of the
+This ledger records the sixty-five follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
 Chapter 03 reproducible-training test.
@@ -127,6 +127,8 @@ Chapter 03 reproducible-training test.
     JSON parsing, RoPE construction, or checkpoint I/O.
 64. Derive Qwen3-VL tensor-oracle dimensions with exact arithmetic, check each
     shape product, and accumulate checkpoint parameters without host overflow.
+65. Derive and accumulate Qwen3-VL BF16 payload bytes with exact arithmetic,
+    rejecting byte counts that overflow even when their parameter totals fit.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

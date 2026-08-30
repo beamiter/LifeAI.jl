@@ -654,6 +654,13 @@ function _qwen3_vl_shape_parameter_count(shape::Tuple, name::AbstractString)
     return _checked_element_count(Int[shape...], name)
 end
 
+function _qwen3_vl_bf16_byte_count(parameter_count::Integer, label::AbstractString)
+    return _qwen3_parameter_count_int(
+        2 * BigInt(parameter_count),
+        label,
+    )
+end
+
 """
     qwen3_vl_expected_tensor_shapes([spec])
 
@@ -898,6 +905,14 @@ function qwen3_vl_expected_tensor_shapes(
         "Qwen3-VL tensor oracle has $parameters parameters; " *
         "expected $(spec.parameter_count)",
     )
+    tensor_bytes = _qwen3_vl_bf16_byte_count(
+        parameters,
+        "Qwen3-VL tensor oracle BF16 byte count",
+    )
+    tensor_bytes == spec.tensor_bytes || error(
+        "Qwen3-VL tensor oracle has $tensor_bytes BF16 bytes; " *
+        "expected $(spec.tensor_bytes)",
+    )
     return shapes
 end
 
@@ -971,7 +986,7 @@ function verify_qwen3_vl_checkpoint(
         "$(spec.tensor_count), got $(length(reader.locations))",
     ))
 
-    payload_bytes = 0
+    payload_bytes = BigInt(0)
     parameter_count = BigInt(0)
     weight_path = abspath(joinpath(model_dir, "model.safetensors"))
     for name in keys(expected)
@@ -989,8 +1004,12 @@ function verify_qwen3_vl_checkpoint(
             "$expected_shape",
         ))
         tensor_parameters = _qwen3_vl_shape_parameter_count(expected_shape, name)
-        tensor_bytes = location.data_stop - location.data_start
-        tensor_bytes == 2 * tensor_parameters || throw(ArgumentError(
+        tensor_bytes = BigInt(location.data_stop) - location.data_start
+        expected_tensor_bytes = _qwen3_vl_bf16_byte_count(
+            tensor_parameters,
+            "Qwen3-VL tensor `$name` BF16 byte count",
+        )
+        tensor_bytes == expected_tensor_bytes || throw(ArgumentError(
             "Qwen3-VL tensor `$name` payload is inconsistent with BF16 shape",
         ))
         parameter_count += tensor_parameters
@@ -1004,9 +1023,13 @@ function verify_qwen3_vl_checkpoint(
         "Qwen3-VL safetensors parameter count mismatch: expected " *
         "$(spec.parameter_count), got $resolved_parameter_count",
     ))
-    payload_bytes == spec.tensor_bytes || throw(ArgumentError(
+    resolved_payload_bytes = _qwen3_parameter_count_int(
+        payload_bytes,
+        "Qwen3-VL safetensors payload byte count",
+    )
+    resolved_payload_bytes == spec.tensor_bytes || throw(ArgumentError(
         "Qwen3-VL safetensors payload mismatch: expected " *
-        "$(spec.tensor_bytes) bytes, got $payload_bytes",
+        "$(spec.tensor_bytes) bytes, got $resolved_payload_bytes",
     ))
     qwen3_vl_parameter_count(spec) == resolved_parameter_count || error(
         "Qwen3-VL architecture, tensor oracle, and payload disagree",
@@ -1021,7 +1044,7 @@ function verify_qwen3_vl_checkpoint(
         assets=Tuple(verified_assets),
         tensor_count=length(reader.locations),
         parameter_count=resolved_parameter_count,
-        tensor_bytes=payload_bytes,
+        tensor_bytes=resolved_payload_bytes,
         config,
         source=abspath(model_dir),
     )

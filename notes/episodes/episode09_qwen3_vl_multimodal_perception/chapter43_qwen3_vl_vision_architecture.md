@@ -89,6 +89,8 @@ text、vision 两个 tower 及其总和都以任意精度中间值计算，并�
 tensor-shape oracle 同样以任意精度推导 attention/QKV/merge 维度，以 checked
 乘法计算每个 shape 的元素数，并用任意精度累加全表；验证器复用同一套逐张量
 计数合同，避免合法正维度或总量在宿主整数上回绕后碰巧匹配冻结 metadata。
+oracle 还会从参数总数独立推导 BF16 payload bytes；验证器以任意精度计算每个
+张量的预期字节并累加 payload，参数量可表示但乘二后越界的规格也会 fail closed。
 
 ## processor 与输入边界
 

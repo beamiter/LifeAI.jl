@@ -362,6 +362,56 @@ end
     )
     @test_throws ArgumentError qwen3_vl_expected_tensor_shapes(aggregate_spec)
 
+    half_byte_text = Qwen3VLTextSpec(
+        half,
+        1,
+        1,
+        0,
+        1,
+        1,
+        2,
+        1.0e-6,
+        1.0e4,
+        1,
+        true,
+        (1, 0, 0),
+        true,
+        "silu",
+    )
+    half_byte_vision = Qwen3VLVisionSpec(
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        (0, 0, 0),
+        "gelu",
+    )
+    byte_overflow_spec = Qwen3VLCheckpointSpec(
+        :overflow,
+        "overflow",
+        "overflow",
+        "overflow",
+        (),
+        29,
+        0,
+        half + 28,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        half_byte_text,
+        half_byte_vision,
+    )
+    @test_throws ArgumentError qwen3_vl_expected_tensor_shapes(byte_overflow_spec)
+
     @test spec.text.mrope_interleaved
     @test spec.text.mrope_section == (24, 20, 20)
     @test sum(spec.text.mrope_section) == spec.text.head_dim ÷ 2
