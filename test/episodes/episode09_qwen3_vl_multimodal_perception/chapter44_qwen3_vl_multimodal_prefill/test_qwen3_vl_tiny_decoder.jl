@@ -3,6 +3,7 @@ using JSON3
 using SHA: sha256
 using Test
 import LifeAI
+import MLDataDevices
 using LifeAI: Qwen3VLCheckpointSpec,
     Qwen3VLRopeLayout,
     Qwen3VLTextPrefill,
@@ -28,6 +29,28 @@ const _CH44_TINY_TEXT_SPEC = Qwen3VLTextSpec(
     true,           # tie_word_embeddings
     "silu",
 )
+
+struct _Ch44ForeignDevice <: MLDataDevices.AbstractDevice end
+
+struct _Ch44ForeignDeviceMatrix{T,A<:AbstractMatrix{T}} <: AbstractMatrix{T}
+    data::A
+end
+
+Base.size(values::_Ch44ForeignDeviceMatrix) = size(values.data)
+Base.axes(values::_Ch44ForeignDeviceMatrix) = axes(values.data)
+Base.IndexStyle(::Type{<:_Ch44ForeignDeviceMatrix}) = IndexCartesian()
+Base.getindex(values::_Ch44ForeignDeviceMatrix, indices...) =
+    getindex(values.data, indices...)
+MLDataDevices.get_device(::_Ch44ForeignDeviceMatrix) = _Ch44ForeignDevice()
+
+function _ch44_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected the test call to fail")
+end
 
 function _ch44_tiny_values(count::Int, offset::Int; scale=0.02f0)
     return Float32[
@@ -399,6 +422,105 @@ end
 
     predicted = [argmax(view(result.logits, :, token, 1)) for token in 1:8]
     @test predicted == [1, 2, 13, 14, 15, 7, 32, 8]
+end
+
+@testset "Chapter 44 — text-consumed vision residency is preflighted" begin
+    parameters = _ch44_tiny_text_parameters()
+    inputs = _ch44_tiny_prefill_inputs()
+    prefill_error = function (vision_features)
+        return _ch44_captured_error(() -> hf_qwen3_vl_text_prefill(
+            parameters,
+            inputs.input_ids,
+            inputs.rope_layout;
+            vision_features,
+        ))
+    end
+
+    dtype_visual = merge(inputs.vision_features, (
+        visual_embeddings=Float64.(
+            inputs.vision_features.visual_embeddings,
+        ),
+    ))
+    error = prefill_error(dtype_visual)
+    @test error isa ArgumentError
+    @test sprint(showerror, error) ==
+        "ArgumentError: Qwen3-VL visual_embeddings dtype must match " *
+        "text parameter embedding"
+
+    dtype_deepstack = merge(inputs.vision_features, (
+        deepstack=Base.setindex(
+            inputs.vision_features.deepstack,
+            Float64.(inputs.vision_features.deepstack[1]),
+            1,
+        ),
+    ))
+    error = prefill_error(dtype_deepstack)
+    @test error isa ArgumentError
+    @test sprint(showerror, error) ==
+        "ArgumentError: Qwen3-VL deepstack[1] dtype must match " *
+        "text parameter embedding"
+
+    foreign_visual = merge(inputs.vision_features, (
+        visual_embeddings=_Ch44ForeignDeviceMatrix(
+            inputs.vision_features.visual_embeddings,
+        ),
+    ))
+    error = prefill_error(foreign_visual)
+    @test error isa ArgumentError
+    @test sprint(showerror, error) ==
+        "ArgumentError: Qwen3-VL visual_embeddings device must match " *
+        "text parameter embedding"
+
+    foreign_deepstack = merge(inputs.vision_features, (
+        deepstack=Base.setindex(
+            inputs.vision_features.deepstack,
+            _Ch44ForeignDeviceMatrix(inputs.vision_features.deepstack[1]),
+            1,
+        ),
+    ))
+    error = prefill_error(foreign_deepstack)
+    @test error isa ArgumentError
+    @test sprint(showerror, error) ==
+        "ArgumentError: Qwen3-VL deepstack[1] device must match " *
+        "text parameter embedding"
+
+    # The long-standing DeepStack arity error remains ahead of residency.
+    short_deepstack = (
+        inputs.vision_features.deepstack[1],
+        inputs.vision_features.deepstack[2],
+    )
+    error = prefill_error((;
+        visual_embeddings=foreign_visual.visual_embeddings,
+        deepstack=short_deepstack,
+    ))
+    @test error isa DimensionMismatch
+    @test sprint(showerror, error) ==
+        "DimensionMismatch: Qwen3-VL prefill requires exactly three " *
+        "DeepStack features"
+
+    # Shallow toy decoders retain the three-item public contract, but feature
+    # residency matters only for the DeepStack entries their layers consume.
+    for num_hidden_layers in 0:2
+        shallow_parameters = (;
+            embedding=parameters.embedding,
+            spec=(; num_hidden_layers),
+        )
+        shallow_deepstack = ntuple(3) do index
+            index <= num_hidden_layers &&
+                return inputs.vision_features.deepstack[index]
+            return _Ch44ForeignDeviceMatrix(Float64.(
+                inputs.vision_features.deepstack[index],
+            ))
+        end
+        shallow_features = merge(
+            inputs.vision_features,
+            (; deepstack=shallow_deepstack),
+        )
+        @test isnothing(LifeAI._validate_qwen3_vl_text_feature_residency(
+            shallow_parameters,
+            shallow_features,
+        ))
+    end
 end
 
 @testset "Chapter 44 — cache-free prompt layout contract" begin

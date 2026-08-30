@@ -816,6 +816,60 @@ end
     @test isempty(malformed)
 end
 
+@testset "Chapter 46 — feature residency fails before static cache writes" begin
+    parameters = _ch46_tiny_text_parameters()
+    inputs = _ch46_tiny_prefill_inputs()
+    dtype_features = merge(inputs.vision_features, (
+        visual_embeddings=Float64.(
+            inputs.vision_features.visual_embeddings,
+        ),
+    ))
+    foreign_deepstack = merge(inputs.vision_features, (
+        deepstack=Base.setindex(
+            inputs.vision_features.deepstack,
+            _Ch46ForeignDeviceArray(inputs.vision_features.deepstack[2]),
+            2,
+        ),
+    ))
+
+    for (features, message) in (
+        (
+            dtype_features,
+            "ArgumentError: Qwen3-VL visual_embeddings dtype must match " *
+            "text parameter embedding",
+        ),
+        (
+            foreign_deepstack,
+            "ArgumentError: Qwen3-VL deepstack[2] device must match " *
+            "text parameter embedding",
+        ),
+    )
+        cache = init_qwen3_vl_static_kv_cache(parameters; capacity=10)
+        refs = _ch46_storage_refs(cache)
+        key_snapshots = map(layer -> copy(layer.keys), cache.layers)
+        value_snapshots = map(layer -> copy(layer.values), cache.layers)
+        error = _ch46_captured_error(() ->
+            hf_qwen3_vl_text_prefill_static(
+                parameters,
+                inputs.input_ids,
+                inputs.rope_layout;
+                vision_features=features,
+                cache,
+            ),
+        )
+        @test error isa ArgumentError
+        @test sprint(showerror, error) == message
+        @test isempty(cache)
+        @test cache.position == 0
+        @test cache.rope_delta == 0
+        _ch46_assert_storage_identity(cache, refs)
+        for layer in eachindex(cache.layers)
+            @test cache.layers[layer].keys == key_snapshots[layer]
+            @test cache.layers[layer].values == value_snapshots[layer]
+        end
+    end
+end
+
 @testset "Chapter 46 — reset reuses the allocation" begin
     reference = _ch46_reference()
     parameters = _ch46_tiny_text_parameters()

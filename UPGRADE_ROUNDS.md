@@ -421,6 +421,8 @@ Chapter 03 reproducible-training test.
      embedding, and vision-language profiles with deterministic diagnostics.
 210. Bind archived Qwen3 loop tool calls to coherent result states and snapshot
      coercion evidence so raw construction cannot falsify replay history.
+211. Preflight text-consumed Qwen3-VL vision feature dtypes and devices before
+     embedding gather or cache writes while ignoring unused DeepStack entries.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

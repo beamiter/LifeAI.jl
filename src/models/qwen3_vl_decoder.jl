@@ -1,4 +1,5 @@
 using BFloat16s: BFloat16
+using MLDataDevices: get_device
 using NNlib: batched_mul, gather
 import NNlib
 
@@ -518,6 +519,39 @@ function _qwen3_vl_replace_visual_embeddings(x, features, visual_mask)
     return x .* keep .+ reshape(scattered, size(x, 1), sequence_length, 1)
 end
 
+"""Validate only the vision features the text tower will actually consume."""
+function _validate_qwen3_vl_text_feature_residency(
+    parameters,
+    vision_features,
+)
+    embedding = parameters.embedding
+    expected_dtype = eltype(embedding)
+    visual_embeddings = vision_features.visual_embeddings
+    eltype(visual_embeddings) == expected_dtype || throw(ArgumentError(
+        "Qwen3-VL visual_embeddings dtype must match text parameter embedding",
+    ))
+
+    consumed_deepstack = min(3, parameters.spec.num_hidden_layers)
+    for index in 1:consumed_deepstack
+        eltype(vision_features.deepstack[index]) == expected_dtype ||
+            throw(ArgumentError(
+                "Qwen3-VL deepstack[$index] dtype must match text parameter embedding",
+            ))
+    end
+
+    expected_device = get_device(embedding)
+    get_device(visual_embeddings) == expected_device || throw(ArgumentError(
+        "Qwen3-VL visual_embeddings device must match text parameter embedding",
+    ))
+    for index in 1:consumed_deepstack
+        get_device(vision_features.deepstack[index]) == expected_device ||
+            throw(ArgumentError(
+                "Qwen3-VL deepstack[$index] device must match text parameter embedding",
+            ))
+    end
+    return nothing
+end
+
 function _qwen3_vl_add_deepstack(x, features, visual_mask)
     sequence_length, batch_size = size(visual_mask)
     batch_size == 1 || throw(ArgumentError(
@@ -734,10 +768,6 @@ function hf_qwen3_vl_text_prefill(
     options.logits_to_keep <= sequence_length || throw(ArgumentError(
         "logits_to_keep must be between zero and the prefill length",
     ))
-    x = reshape(
-        gather(parameters.embedding, tokens),
-        spec.hidden_size, sequence_length, batch_size,
-    )
     if vision_features === nothing
         any(rope_layout.visual_mask) && throw(ArgumentError(
             "Qwen3-VL visual placeholders require vision features",
@@ -746,6 +776,16 @@ function hf_qwen3_vl_text_prefill(
         length(vision_features.deepstack) == 3 || throw(DimensionMismatch(
             "Qwen3-VL prefill requires exactly three DeepStack features",
         ))
+        _validate_qwen3_vl_text_feature_residency(
+            parameters,
+            vision_features,
+        )
+    end
+    x = reshape(
+        gather(parameters.embedding, tokens),
+        spec.hidden_size, sequence_length, batch_size,
+    )
+    if vision_features !== nothing
         x = _qwen3_vl_replace_visual_embeddings(
             x,
             vision_features.visual_embeddings,

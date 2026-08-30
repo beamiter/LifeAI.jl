@@ -902,12 +902,6 @@ function hf_qwen3_vl_text_prefill_cached(
     )
     sequence_length, batch_size = size(tokens)
 
-    x = reshape(
-        gather(parameters.embedding, tokens),
-        spec.hidden_size,
-        sequence_length,
-        batch_size,
-    )
     if vision_features === nothing
         any(rope_layout.visual_mask) && throw(ArgumentError(
             "Qwen3-VL visual placeholders require vision features",
@@ -916,6 +910,18 @@ function hf_qwen3_vl_text_prefill_cached(
         length(vision_features.deepstack) == 3 || throw(DimensionMismatch(
             "Qwen3-VL cached prefill requires exactly three DeepStack features",
         ))
+        _validate_qwen3_vl_text_feature_residency(
+            parameters,
+            vision_features,
+        )
+    end
+    x = reshape(
+        gather(parameters.embedding, tokens),
+        spec.hidden_size,
+        sequence_length,
+        batch_size,
+    )
+    if vision_features !== nothing
         x = _qwen3_vl_replace_visual_embeddings(
             x,
             vision_features.visual_embeddings,
@@ -1257,12 +1263,6 @@ function hf_qwen3_vl_text_prefill_static(
     )
     sequence_length, batch_size = size(tokens)
 
-    x = reshape(
-        gather(parameters.embedding, tokens),
-        spec.hidden_size,
-        sequence_length,
-        batch_size,
-    )
     if vision_features === nothing
         any(rope_layout.visual_mask) && throw(ArgumentError(
             "Qwen3-VL visual placeholders require vision features",
@@ -1271,6 +1271,18 @@ function hf_qwen3_vl_text_prefill_static(
         length(vision_features.deepstack) == 3 || throw(DimensionMismatch(
             "Qwen3-VL static prefill requires exactly three DeepStack features",
         ))
+        _validate_qwen3_vl_text_feature_residency(
+            parameters,
+            vision_features,
+        )
+    end
+    x = reshape(
+        gather(parameters.embedding, tokens),
+        spec.hidden_size,
+        sequence_length,
+        batch_size,
+    )
+    if vision_features !== nothing
         x = _qwen3_vl_replace_visual_embeddings(
             x,
             vision_features.visual_embeddings,

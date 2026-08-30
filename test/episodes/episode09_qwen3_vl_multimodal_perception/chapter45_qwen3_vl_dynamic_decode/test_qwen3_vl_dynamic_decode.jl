@@ -479,6 +479,56 @@ end
     )
 end
 
+@testset "Chapter 45 — feature residency fails before dynamic cache compute" begin
+    parameters = _ch45_tiny_text_parameters()
+    inputs = _ch45_tiny_prefill_inputs()
+    dtype_features = merge(inputs.vision_features, (
+        visual_embeddings=Float64.(
+            inputs.vision_features.visual_embeddings,
+        ),
+    ))
+    foreign_deepstack = merge(inputs.vision_features, (
+        deepstack=Base.setindex(
+            inputs.vision_features.deepstack,
+            _Ch45ForeignDeviceArray(inputs.vision_features.deepstack[1]),
+            1,
+        ),
+    ))
+
+    for (features, message) in (
+        (
+            dtype_features,
+            "ArgumentError: Qwen3-VL visual_embeddings dtype must match " *
+            "text parameter embedding",
+        ),
+        (
+            foreign_deepstack,
+            "ArgumentError: Qwen3-VL deepstack[1] device must match " *
+            "text parameter embedding",
+        ),
+    )
+        cache = init_qwen3_vl_kv_cache(parameters)
+        error = _ch45_captured_error(() ->
+            hf_qwen3_vl_text_prefill_cached(
+                parameters,
+                inputs.input_ids,
+                inputs.rope_layout;
+                vision_features=features,
+                cache,
+            ),
+        )
+        @test error isa ArgumentError
+        @test sprint(showerror, error) == message
+        @test isempty(cache)
+        @test cache.position == 0
+        @test cache.rope_delta == 0
+        @test all(
+            layer -> layer.keys === nothing && layer.values === nothing,
+            cache.layers,
+        )
+    end
+end
+
 @testset "Chapter 45 — frozen HF DynamicCache fixture contract" begin
     reference = _ch45_reference()
     metadata = reference.metadata
