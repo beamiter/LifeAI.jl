@@ -44,36 +44,27 @@ end
 
 @testset "Chapter 44 — mRoPE checkpoint bounds are preflighted" begin
     base = qwen3_vl_checkpoint_spec()
+    # The strict checkpoint constructor now makes an out-of-vocabulary role
+    # impossible to pass to `qwen3_vl_rope_layout`. Exercise its defensive
+    # runtime guard directly instead of restoring an unreachable forged spec.
     for name in (
         :image_token_id,
         :video_token_id,
         :vision_start_token_id,
         :vision_end_token_id,
     )
-        checkpoint = _ch44_replace_spec_field(
-            base,
-            name,
-            base.text.vocab_size,
-        )
         failure = _ch44_layout_captured_error() do
-            qwen3_vl_rope_layout(Int[1]; checkpoint)
+            LifeAI._qwen3_vl_checkpoint_token_id(
+                base.text.vocab_size,
+                base.text.vocab_size,
+                String(name),
+            )
         end
         @test failure isa ArgumentError
         @test sprint(showerror, failure) ==
             "ArgumentError: Qwen3-VL checkpoint $name must be in " *
             "0:$(base.text.vocab_size - 1)"
     end
-
-    invalid_checkpoint = _ch44_replace_spec_field(
-        base,
-        :image_token_id,
-        base.text.vocab_size,
-    )
-    priority_failure = _ch44_layout_captured_error() do
-        qwen3_vl_rope_layout(Bool[true]; checkpoint=invalid_checkpoint)
-    end
-    @test priority_failure isa ArgumentError
-    @test occursin("image_token_id", sprint(showerror, priority_failure))
 
     short_text = _ch44_replace_spec_field(
         base.text,
