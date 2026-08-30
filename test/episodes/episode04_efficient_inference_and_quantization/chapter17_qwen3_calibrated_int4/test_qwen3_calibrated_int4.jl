@@ -349,7 +349,7 @@ end
         1,
         1,
         1,
-        maximum_count,
+        1,
         1,
         maximum_count,
         1.0f-6,

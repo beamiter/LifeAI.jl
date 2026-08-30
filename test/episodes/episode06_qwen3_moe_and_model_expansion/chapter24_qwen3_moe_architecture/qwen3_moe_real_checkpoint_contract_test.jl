@@ -24,6 +24,23 @@ function _qwen3_moe_contract_captured_error(thunk)
     error("expected Qwen3 MoE checkpoint specification to fail")
 end
 
+function _qwen3_moe_contract_geometry_arguments(
+    base;
+    d_model=base[10],
+    num_heads=base[14],
+    num_kv_heads=base[15],
+    head_dim=base[16],
+    num_experts=base[17],
+    experts_per_token=base[18],
+)
+    values = Base.setindex(base, d_model, 10)
+    values = Base.setindex(values, num_heads, 14)
+    values = Base.setindex(values, num_kv_heads, 15)
+    values = Base.setindex(values, head_dim, 16)
+    values = Base.setindex(values, num_experts, 17)
+    return Base.setindex(values, experts_per_token, 18)
+end
+
 function _qwen3_moe_contract_copy(
     spec;
     index_sha256=spec.index_sha256,
@@ -150,6 +167,62 @@ end
         @test sprint(showerror, failure) ==
             "ArgumentError: Qwen3 MoE checkpoint $message"
     end
+
+    wide = Qwen3MoECheckpointSpec(_qwen3_moe_contract_geometry_arguments(
+        valid;
+        d_model=3,
+        num_heads=2,
+        num_kv_heads=1,
+        head_dim=2,
+    )...)
+    @test wide.num_heads * wide.head_dim == 4
+    @test wide.d_model == 3
+
+    geometry_failures = (
+        (
+            _qwen3_moe_contract_geometry_arguments(
+                valid;
+                num_heads=typemax(Int),
+                num_kv_heads=1,
+                head_dim=2,
+            ),
+            "query projection width exceeds the host integer range",
+        ),
+        (
+            _qwen3_moe_contract_geometry_arguments(
+                valid;
+                num_heads=1,
+                num_kv_heads=typemax(Int),
+                head_dim=2,
+            ),
+            "key/value projection width exceeds the host integer range",
+        ),
+        (
+            _qwen3_moe_contract_geometry_arguments(
+                valid;
+                num_heads=3,
+                num_kv_heads=2,
+                head_dim=2,
+            ),
+            "num_heads must be divisible by num_kv_heads",
+        ),
+        (
+            _qwen3_moe_contract_geometry_arguments(
+                valid;
+                num_experts=1,
+                experts_per_token=2,
+            ),
+            "experts_per_token must not exceed num_experts",
+        ),
+    )
+    for (arguments, message) in geometry_failures
+        failure = _qwen3_moe_contract_captured_error() do
+            Qwen3MoECheckpointSpec(arguments...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3 MoE checkpoint $message"
+    end
 end
 
 @testset "Qwen3 MoE index tensor counts are exact and preflighted" begin
@@ -185,11 +258,11 @@ end
     end
 end
 
-@testset "Qwen3 MoE shard byte totals are exact and preflighted" begin
+@testset "Qwen3 MoE shard byte totals are bound at construction" begin
     base = qwen3_moe_checkpoint_spec()
     cases = (
         (
-            _qwen3_moe_contract_copy(
+            () -> _qwen3_moe_contract_copy(
                 base;
                 shard_payload_bytes=0,
                 shards=(
@@ -197,30 +270,23 @@ end
                     Qwen3MoEShardSpec("second", 1, "hash"),
                 ),
             ),
-            "Qwen3 MoE shard payload byte count exceeds the host integer range",
+            "Qwen3 MoE checkpoint shard payload byte count exceeds " *
+            "the host integer range",
         ),
         (
-            _qwen3_moe_contract_copy(
+            () -> _qwen3_moe_contract_copy(
                 base;
                 shard_payload_bytes=2,
                 shards=(Qwen3MoEShardSpec("only", 1, "hash"),),
             ),
-            "frozen Qwen3 MoE shard sizes do not match payload byte total",
+            "Qwen3 MoE checkpoint shard_payload_bytes must equal " *
+            "sum(shard.bytes)",
         ),
     )
-    mktempdir() do directory
-        for (spec, message) in cases
-            failure = _qwen3_moe_contract_captured_error() do
-                verify_qwen3_moe_checkpoint(
-                    directory;
-                    spec,
-                    verify_shard_checksums=false,
-                )
-            end
-            @test failure isa ArgumentError
-            @test sprint(showerror, failure) == "ArgumentError: $message"
-            @test !occursin("config.json", sprint(showerror, failure))
-        end
+    for (build, message) in cases
+        failure = _qwen3_moe_contract_captured_error(build)
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) == "ArgumentError: $message"
     end
 end
 

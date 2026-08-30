@@ -49,12 +49,34 @@ function _qwen3_spec_positive_float32(value, label::AbstractString)
     return resolved
 end
 
+function _qwen3_spec_attention_geometry(
+    prefix::AbstractString,
+    num_heads::Int,
+    num_kv_heads::Int,
+    head_dim::Int,
+)
+    query_width = BigInt(num_heads) * head_dim
+    query_width <= typemax(Int) || throw(ArgumentError(
+        "$prefix query projection width exceeds the host integer range",
+    ))
+    kv_width = BigInt(num_kv_heads) * head_dim
+    kv_width <= typemax(Int) || throw(ArgumentError(
+        "$prefix key/value projection width exceeds the host integer range",
+    ))
+    num_heads % num_kv_heads == 0 || throw(ArgumentError(
+        "$prefix num_heads must be divisible by num_kv_heads",
+    ))
+    return nothing
+end
+
 """
     Qwen3DenseSpec
 
 Frozen architecture and provenance metadata for one official Qwen3 dense
 checkpoint family member. `max_position_embeddings` is the checkpoint's native
-RoPE limit; a loader may still choose a smaller runtime `max_seq_len`.
+RoPE limit; a loader may still choose a smaller runtime `max_seq_len`. Qwen3's
+query and key/value projection widths are derived independently from `d_model`
+as `num_heads * head_dim` and `num_kv_heads * head_dim`, respectively.
 """
 struct Qwen3DenseSpec
     variant::Symbol
@@ -97,27 +119,70 @@ struct Qwen3DenseSpec
             "Qwen3 dense tie_embeddings must be a Bool",
         ))
         prefix = "Qwen3 dense"
+        resolved_model_id = _qwen3_spec_string(model_id, "$prefix model_id")
+        resolved_revision = _qwen3_spec_string(revision, "$prefix revision")
+        resolved_config_sha256 = _qwen3_spec_string(
+            config_sha256,
+            "$prefix config_sha256",
+        )
+        resolved_vocab_size = _qwen3_spec_positive_int(
+            vocab_size,
+            "$prefix vocab_size",
+        )
+        resolved_d_model = _qwen3_spec_positive_int(d_model, "$prefix d_model")
+        resolved_mlp_hidden_dim = _qwen3_spec_positive_int(
+            mlp_hidden_dim,
+            "$prefix mlp_hidden_dim",
+        )
+        resolved_num_layers = _qwen3_spec_positive_int(
+            num_layers,
+            "$prefix num_layers",
+        )
+        resolved_num_heads = _qwen3_spec_positive_int(
+            num_heads,
+            "$prefix num_heads",
+        )
+        resolved_num_kv_heads = _qwen3_spec_positive_int(
+            num_kv_heads,
+            "$prefix num_kv_heads",
+        )
+        resolved_head_dim = _qwen3_spec_positive_int(
+            head_dim,
+            "$prefix head_dim",
+        )
+        resolved_rms_norm_epsilon = _qwen3_spec_positive_float32(
+            rms_norm_epsilon,
+            "$prefix rms_norm_epsilon",
+        )
+        resolved_rope_theta = _qwen3_spec_positive_float32(
+            rope_theta,
+            "$prefix rope_theta",
+        )
+        resolved_max_position_embeddings = _qwen3_spec_positive_int(
+            max_position_embeddings,
+            "$prefix max_position_embeddings",
+        )
+        _qwen3_spec_attention_geometry(
+            prefix,
+            resolved_num_heads,
+            resolved_num_kv_heads,
+            resolved_head_dim,
+        )
         return new(
             variant,
-            _qwen3_spec_string(model_id, "$prefix model_id"),
-            _qwen3_spec_string(revision, "$prefix revision"),
-            _qwen3_spec_string(config_sha256, "$prefix config_sha256"),
-            _qwen3_spec_positive_int(vocab_size, "$prefix vocab_size"),
-            _qwen3_spec_positive_int(d_model, "$prefix d_model"),
-            _qwen3_spec_positive_int(mlp_hidden_dim, "$prefix mlp_hidden_dim"),
-            _qwen3_spec_positive_int(num_layers, "$prefix num_layers"),
-            _qwen3_spec_positive_int(num_heads, "$prefix num_heads"),
-            _qwen3_spec_positive_int(num_kv_heads, "$prefix num_kv_heads"),
-            _qwen3_spec_positive_int(head_dim, "$prefix head_dim"),
-            _qwen3_spec_positive_float32(
-                rms_norm_epsilon,
-                "$prefix rms_norm_epsilon",
-            ),
-            _qwen3_spec_positive_float32(rope_theta, "$prefix rope_theta"),
-            _qwen3_spec_positive_int(
-                max_position_embeddings,
-                "$prefix max_position_embeddings",
-            ),
+            resolved_model_id,
+            resolved_revision,
+            resolved_config_sha256,
+            resolved_vocab_size,
+            resolved_d_model,
+            resolved_mlp_hidden_dim,
+            resolved_num_layers,
+            resolved_num_heads,
+            resolved_num_kv_heads,
+            resolved_head_dim,
+            resolved_rms_norm_epsilon,
+            resolved_rope_theta,
+            resolved_max_position_embeddings,
             tie_embeddings,
         )
     end
@@ -149,7 +214,8 @@ end
 
 Frozen architecture, provenance, index, and shard metadata for the official
 `Qwen/Qwen3-30B-A3B` checkpoint. File hashes refer to the immutable Hugging
-Face revision, never the moving `main` branch.
+Face revision, never the moving `main` branch. Attention projection widths may
+differ from `d_model` and are derived from the explicit head geometry.
 """
 struct Qwen3MoECheckpointSpec
     variant::Symbol
@@ -209,29 +275,110 @@ struct Qwen3MoECheckpointSpec
                 "Qwen3 MoE checkpoint shard filenames must be unique",
             ))
         prefix = "Qwen3 MoE checkpoint"
+        resolved_model_id = _qwen3_spec_string(model_id, "$prefix model_id")
+        resolved_revision = _qwen3_spec_string(revision, "$prefix revision")
+        resolved_config_sha256 = _qwen3_spec_string(
+            config_sha256,
+            "$prefix config_sha256",
+        )
+        resolved_index_sha256 = _qwen3_spec_string(
+            index_sha256,
+            "$prefix index_sha256",
+        )
+        resolved_index_tensor_count = _qwen3_spec_nonnegative_int(
+            index_tensor_count,
+            "$prefix index_tensor_count",
+        )
+        resolved_tensor_bytes = _qwen3_spec_nonnegative_int(
+            tensor_bytes,
+            "$prefix tensor_bytes",
+        )
+        resolved_shard_payload_bytes = _qwen3_spec_nonnegative_int(
+            shard_payload_bytes,
+            "$prefix shard_payload_bytes",
+        )
+        resolved_vocab_size = _qwen3_spec_positive_int(
+            vocab_size,
+            "$prefix vocab_size",
+        )
+        resolved_d_model = _qwen3_spec_positive_int(d_model, "$prefix d_model")
+        resolved_dense_mlp_hidden_dim = _qwen3_spec_positive_int(
+            dense_mlp_hidden_dim,
+            "$prefix dense_mlp_hidden_dim",
+        )
+        resolved_moe_hidden_dim = _qwen3_spec_positive_int(
+            moe_hidden_dim,
+            "$prefix moe_hidden_dim",
+        )
+        resolved_num_layers = _qwen3_spec_positive_int(
+            num_layers,
+            "$prefix num_layers",
+        )
+        resolved_num_heads = _qwen3_spec_positive_int(
+            num_heads,
+            "$prefix num_heads",
+        )
+        resolved_num_kv_heads = _qwen3_spec_positive_int(
+            num_kv_heads,
+            "$prefix num_kv_heads",
+        )
+        resolved_head_dim = _qwen3_spec_positive_int(
+            head_dim,
+            "$prefix head_dim",
+        )
+        resolved_num_experts = _qwen3_spec_positive_int(
+            num_experts,
+            "$prefix num_experts",
+        )
+        resolved_experts_per_token = _qwen3_spec_positive_int(
+            experts_per_token,
+            "$prefix experts_per_token",
+        )
+        resolved_max_position_embeddings = _qwen3_spec_positive_int(
+            max_position_embeddings,
+            "$prefix max_position_embeddings",
+        )
+        _qwen3_spec_attention_geometry(
+            prefix,
+            resolved_num_heads,
+            resolved_num_kv_heads,
+            resolved_head_dim,
+        )
+        resolved_experts_per_token <= resolved_num_experts || throw(ArgumentError(
+            "$prefix experts_per_token must not exceed num_experts",
+        ))
+        shard_byte_sum = sum(
+            (BigInt(shard.bytes) for shard in shards);
+            init=BigInt(0),
+        )
+        resolved_shard_byte_sum = _qwen3_parameter_count_int(
+            shard_byte_sum,
+            "$prefix shard payload byte count",
+        )
+        resolved_shard_payload_bytes == resolved_shard_byte_sum ||
+            throw(ArgumentError(
+                "$prefix shard_payload_bytes must equal sum(shard.bytes)",
+            ))
         return new(
             variant,
-            _qwen3_spec_string(model_id, "$prefix model_id"),
-            _qwen3_spec_string(revision, "$prefix revision"),
-            _qwen3_spec_string(config_sha256, "$prefix config_sha256"),
-            _qwen3_spec_string(index_sha256, "$prefix index_sha256"),
-            _qwen3_spec_nonnegative_int(index_tensor_count, "$prefix index_tensor_count"),
-            _qwen3_spec_nonnegative_int(tensor_bytes, "$prefix tensor_bytes"),
-            _qwen3_spec_nonnegative_int(shard_payload_bytes, "$prefix shard_payload_bytes"),
-            _qwen3_spec_positive_int(vocab_size, "$prefix vocab_size"),
-            _qwen3_spec_positive_int(d_model, "$prefix d_model"),
-            _qwen3_spec_positive_int(dense_mlp_hidden_dim, "$prefix dense_mlp_hidden_dim"),
-            _qwen3_spec_positive_int(moe_hidden_dim, "$prefix moe_hidden_dim"),
-            _qwen3_spec_positive_int(num_layers, "$prefix num_layers"),
-            _qwen3_spec_positive_int(num_heads, "$prefix num_heads"),
-            _qwen3_spec_positive_int(num_kv_heads, "$prefix num_kv_heads"),
-            _qwen3_spec_positive_int(head_dim, "$prefix head_dim"),
-            _qwen3_spec_positive_int(num_experts, "$prefix num_experts"),
-            _qwen3_spec_positive_int(experts_per_token, "$prefix experts_per_token"),
-            _qwen3_spec_positive_int(
-                max_position_embeddings,
-                "$prefix max_position_embeddings",
-            ),
+            resolved_model_id,
+            resolved_revision,
+            resolved_config_sha256,
+            resolved_index_sha256,
+            resolved_index_tensor_count,
+            resolved_tensor_bytes,
+            resolved_shard_payload_bytes,
+            resolved_vocab_size,
+            resolved_d_model,
+            resolved_dense_mlp_hidden_dim,
+            resolved_moe_hidden_dim,
+            resolved_num_layers,
+            resolved_num_heads,
+            resolved_num_kv_heads,
+            resolved_head_dim,
+            resolved_num_experts,
+            resolved_experts_per_token,
+            resolved_max_position_embeddings,
             shards,
         )
     end

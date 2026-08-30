@@ -31,6 +31,19 @@ function _qwen3_family_captured_error(thunk)
     error("expected Qwen3 family call to fail")
 end
 
+function _qwen3_family_geometry_arguments(
+    base;
+    d_model=base[6],
+    num_heads=base[9],
+    num_kv_heads=base[10],
+    head_dim=base[11],
+)
+    values = Base.setindex(base, d_model, 6)
+    values = Base.setindex(values, num_heads, 9)
+    values = Base.setindex(values, num_kv_heads, 10)
+    return Base.setindex(values, head_dim, 11)
+end
+
 function _qwen3_family_values(shape, seed)
     values = Float32[
         Float32(mod(index + seed, 19) - 9) / 64.0f0
@@ -163,6 +176,57 @@ end
             @test sprint(showerror, failure) ==
                 "ArgumentError: Qwen3 dense $label $message"
         end
+    end
+
+    # Qwen3 permits a query projection wider than the residual stream. The
+    # constructor binds the head topology without imposing a false equality
+    # between that independently derived width and d_model.
+    wide = Qwen3DenseSpec(_qwen3_family_geometry_arguments(
+        valid;
+        d_model=3,
+        num_heads=2,
+        num_kv_heads=1,
+        head_dim=2,
+    )...)
+    @test wide.num_heads * wide.head_dim == 4
+    @test wide.d_model == 3
+
+    geometry_failures = (
+        (
+            _qwen3_family_geometry_arguments(
+                valid;
+                num_heads=typemax(Int),
+                num_kv_heads=1,
+                head_dim=2,
+            ),
+            "query projection width exceeds the host integer range",
+        ),
+        (
+            _qwen3_family_geometry_arguments(
+                valid;
+                num_heads=1,
+                num_kv_heads=typemax(Int),
+                head_dim=2,
+            ),
+            "key/value projection width exceeds the host integer range",
+        ),
+        (
+            _qwen3_family_geometry_arguments(
+                valid;
+                num_heads=3,
+                num_kv_heads=2,
+                head_dim=2,
+            ),
+            "num_heads must be divisible by num_kv_heads",
+        ),
+    )
+    for (arguments, message) in geometry_failures
+        failure = _qwen3_family_captured_error() do
+            Qwen3DenseSpec(arguments...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3 dense $message"
     end
 end
 
