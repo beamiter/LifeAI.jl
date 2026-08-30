@@ -77,7 +77,17 @@ end
 function _hf_generation_limits(model::GPTModel, prompt_length::Int, max_new_tokens::Int)
     max_new_tokens >= 0 || throw(ArgumentError("max_new_tokens must be non-negative"))
     prompt_length > 0 || throw(ArgumentError("prompt must encode to at least one token"))
-    processed = prompt_length + max(0, max_new_tokens - 1)
+    processed = try
+        Base.Checked.checked_add(
+            prompt_length,
+            max(0, max_new_tokens - 1),
+        )
+    catch error
+        error isa OverflowError || rethrow()
+        throw(ArgumentError(
+            "prompt plus generated context exceeds the host integer range",
+        ))
+    end
     processed <= model.max_seq_len || throw(ArgumentError(
         "prompt plus generated context exceeds model.max_seq_len",
     ))

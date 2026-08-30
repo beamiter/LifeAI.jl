@@ -281,6 +281,31 @@ end
     )
 end
 
+@testset "Qwen3 generation length arithmetic is checked" begin
+    model = GPTModel(
+        17,
+        8,
+        2,
+        1;
+        max_seq_len=8,
+        use_rope=true,
+        norm_type=:rmsnorm,
+        mlp_type=:swiglu,
+        tie_embeddings=true,
+    )
+    @test LifeAI._hf_generation_limits(model, 2, 7) === nothing
+    @test_throws ArgumentError LifeAI._hf_generation_limits(model, 2, 8)
+    overflow_failure = try
+        LifeAI._hf_generation_limits(model, 2, typemax(Int))
+        nothing
+    catch error
+        error
+    end
+    @test overflow_failure isa ArgumentError
+    @test sprint(showerror, overflow_failure) ==
+        "ArgumentError: prompt plus generated context exceeds the host integer range"
+end
+
 @testset "Qwen3 long-position rotate-half RoPE" begin
     fixture_dir = joinpath(@__DIR__, "fixtures", "qwen3_rope_long_context")
     reference = JSON3.read(read(joinpath(fixture_dir, "reference.json"), String))
