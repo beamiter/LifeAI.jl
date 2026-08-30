@@ -14,6 +14,102 @@ const _QWEN3_MOE_REAL_CONTRACT_DIR = joinpath(
     "qwen3_moe_real_checkpoint",
 )
 
+function _qwen3_moe_contract_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected Qwen3 MoE checkpoint specification to fail")
+end
+
+@testset "Qwen3 MoE checkpoint specifications are strict" begin
+    strings = ntuple(_ -> SubString("xvalue", 2), 4)
+    valid = (
+        :fixture,
+        strings...,
+        big(0),
+        Int32(0),
+        Int16(0),
+        ntuple(_ -> big(1), 11)...,
+        (),
+    )
+    spec = Qwen3MoECheckpointSpec(valid...)
+    @test spec.variant === :fixture
+    @test spec.model_id === "value"
+    @test spec.index_tensor_count === 0
+    @test spec.max_position_embeddings === 1
+    @test isempty(spec.shards)
+
+    integer_fields = (
+        6 => "index_tensor_count",
+        7 => "tensor_bytes",
+        8 => "shard_payload_bytes",
+        9 => "vocab_size",
+        10 => "d_model",
+        11 => "dense_mlp_hidden_dim",
+        12 => "moe_hidden_dim",
+        13 => "num_layers",
+        14 => "num_heads",
+        15 => "num_kv_heads",
+        16 => "head_dim",
+        17 => "num_experts",
+        18 => "experts_per_token",
+        19 => "max_position_embeddings",
+    )
+    for (index, label) in integer_fields
+        failure = _qwen3_moe_contract_captured_error() do
+            Qwen3MoECheckpointSpec(Base.setindex(valid, true, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3 MoE checkpoint $label must be an integer"
+    end
+
+    for (index, label) in integer_fields
+        failure = _qwen3_moe_contract_captured_error() do
+            Qwen3MoECheckpointSpec(Base.setindex(valid, -1, index)...)
+        end
+        qualifier = index <= 8 ? "non-negative" : "positive"
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3 MoE checkpoint $label must be $qualifier"
+    end
+
+    too_large = big(typemax(Int)) + 1
+    for (index, value, message) in (
+        (7, 1.0, "tensor_bytes must be an integer"),
+        (9, 1.0, "vocab_size must be an integer"),
+        (7, too_large, "tensor_bytes is outside the host integer range"),
+        (9, too_large, "vocab_size is outside the host integer range"),
+    )
+        failure = _qwen3_moe_contract_captured_error() do
+            Qwen3MoECheckpointSpec(Base.setindex(valid, value, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3 MoE checkpoint $message"
+    end
+
+    for (index, value, message) in (
+        (1, "fixture", "variant must be a Symbol"),
+        (2, :model, "model_id must be a string"),
+        (20, [], "shards must be a tuple"),
+        (
+            20,
+            ((; filename="model", bytes=0, sha256="hash"),),
+            "shards must contain Qwen3MoEShardSpec values",
+        ),
+    )
+        failure = _qwen3_moe_contract_captured_error() do
+            Qwen3MoECheckpointSpec(Base.setindex(valid, value, index)...)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3 MoE checkpoint $message"
+    end
+end
+
 @testset "Qwen3-30B-A3B immutable checkpoint contract" begin
     spec = qwen3_moe_checkpoint_spec()
     manifest = JSON3.read(read(joinpath(

@@ -217,7 +217,7 @@ end
             "config-sha256",
             "index-sha256",
             0,
-            wrapped_tensor_bytes,
+            0,
             0,
             huge_vocabulary,
             1,

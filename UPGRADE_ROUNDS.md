@@ -211,6 +211,8 @@ Chapter 03 reproducible-training test.
      repeatedly rescanning all prior coordinate tuples.
 105. Strictly construct Qwen3 MoE shard metadata, rejecting lossy byte coercion,
      negative sizes, and host-range overflow at the public boundary.
+106. Strictly normalize Qwen3 MoE checkpoint provenance, counts, dimensions,
+     and shard collections before immutable specifications are created.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

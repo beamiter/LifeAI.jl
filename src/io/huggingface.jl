@@ -14,6 +14,23 @@ function _qwen3_parameter_count_int(count::BigInt, label::AbstractString)
     return Int(count)
 end
 
+function _qwen3_spec_string(value, label::AbstractString)
+    value isa AbstractString || throw(ArgumentError("$label must be a string"))
+    return String(value)
+end
+
+function _qwen3_spec_nonnegative_int(value, label::AbstractString)
+    resolved = _strict_host_int(value, label)
+    resolved >= 0 || throw(ArgumentError("$label must be non-negative"))
+    return resolved
+end
+
+function _qwen3_spec_positive_int(value, label::AbstractString)
+    resolved = _strict_host_int(value, label)
+    resolved > 0 || throw(ArgumentError("$label must be positive"))
+    return resolved
+end
+
 """
     Qwen3DenseSpec
 
@@ -88,6 +105,65 @@ struct Qwen3MoECheckpointSpec
     experts_per_token::Int
     max_position_embeddings::Int
     shards::Tuple
+
+    function Qwen3MoECheckpointSpec(
+        variant,
+        model_id,
+        revision,
+        config_sha256,
+        index_sha256,
+        index_tensor_count,
+        tensor_bytes,
+        shard_payload_bytes,
+        vocab_size,
+        d_model,
+        dense_mlp_hidden_dim,
+        moe_hidden_dim,
+        num_layers,
+        num_heads,
+        num_kv_heads,
+        head_dim,
+        num_experts,
+        experts_per_token,
+        max_position_embeddings,
+        shards,
+    )
+        variant isa Symbol || throw(ArgumentError(
+            "Qwen3 MoE checkpoint variant must be a Symbol",
+        ))
+        shards isa Tuple || throw(ArgumentError(
+            "Qwen3 MoE checkpoint shards must be a tuple",
+        ))
+        all(shard -> shard isa Qwen3MoEShardSpec, shards) || throw(ArgumentError(
+            "Qwen3 MoE checkpoint shards must contain Qwen3MoEShardSpec values",
+        ))
+        prefix = "Qwen3 MoE checkpoint"
+        return new(
+            variant,
+            _qwen3_spec_string(model_id, "$prefix model_id"),
+            _qwen3_spec_string(revision, "$prefix revision"),
+            _qwen3_spec_string(config_sha256, "$prefix config_sha256"),
+            _qwen3_spec_string(index_sha256, "$prefix index_sha256"),
+            _qwen3_spec_nonnegative_int(index_tensor_count, "$prefix index_tensor_count"),
+            _qwen3_spec_nonnegative_int(tensor_bytes, "$prefix tensor_bytes"),
+            _qwen3_spec_nonnegative_int(shard_payload_bytes, "$prefix shard_payload_bytes"),
+            _qwen3_spec_positive_int(vocab_size, "$prefix vocab_size"),
+            _qwen3_spec_positive_int(d_model, "$prefix d_model"),
+            _qwen3_spec_positive_int(dense_mlp_hidden_dim, "$prefix dense_mlp_hidden_dim"),
+            _qwen3_spec_positive_int(moe_hidden_dim, "$prefix moe_hidden_dim"),
+            _qwen3_spec_positive_int(num_layers, "$prefix num_layers"),
+            _qwen3_spec_positive_int(num_heads, "$prefix num_heads"),
+            _qwen3_spec_positive_int(num_kv_heads, "$prefix num_kv_heads"),
+            _qwen3_spec_positive_int(head_dim, "$prefix head_dim"),
+            _qwen3_spec_positive_int(num_experts, "$prefix num_experts"),
+            _qwen3_spec_positive_int(experts_per_token, "$prefix experts_per_token"),
+            _qwen3_spec_positive_int(
+                max_position_embeddings,
+                "$prefix max_position_embeddings",
+            ),
+            shards,
+        )
+    end
 end
 
 const _QWEN3_30B_A3B_SPEC = Qwen3MoECheckpointSpec(
