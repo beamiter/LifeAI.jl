@@ -2,10 +2,67 @@ using Test
 using Lux
 using Random: Xoshiro
 using LifeAI:
+    Qwen3MoEDispatchStats,
     Qwen3SparseMoE,
     qwen3_dense_expert_reference,
     qwen3_moe_forward_with_stats,
     qwen3_sparse_expert_dispatch
+
+@testset "Qwen3 MoE dispatch statistics enforce count invariants" begin
+    source_counts = Int32[2, 0, 1]
+    stats = Qwen3MoEDispatchStats(
+        Int32(2),
+        UInt8(3),
+        big(2),
+        Int128(3),
+        Int64(6),
+        source_counts,
+    )
+    @test stats.token_count === 2
+    @test stats.expert_count === 3
+    @test stats.active_expert_count === 2
+    @test stats.routed_token_expert_pairs === 3
+    @test stats.dense_token_expert_pairs === 6
+    @test stats.expert_token_counts == [2, 0, 1]
+    @test stats.expert_token_counts isa Vector{Int}
+    source_counts[1] = 0
+    @test stats.expert_token_counts == [2, 0, 1]
+
+    empty_stats = Qwen3MoEDispatchStats(0, 0, 0, 0, 0, Int[])
+    @test isempty(empty_stats.expert_token_counts)
+
+    valid_fields = (2, 3, 2, 3, 6, [2, 0, 1])
+    oversized = big(typemax(Int)) + 1
+    for field in 1:5, invalid_value in (true, 1.0, -1, oversized)
+        invalid_fields = Base.setindex(valid_fields, invalid_value, field)
+        @test_throws ArgumentError Qwen3MoEDispatchStats(invalid_fields...)
+    end
+    for invalid_counts in ((2, 0, 1), reshape([2, 0, 1], 1, :), nothing)
+        @test_throws ArgumentError Qwen3MoEDispatchStats(
+            valid_fields[1:5]...,
+            invalid_counts,
+        )
+    end
+    for invalid_count in (true, 1.0, -1, oversized)
+        @test_throws ArgumentError Qwen3MoEDispatchStats(
+            valid_fields[1:5]...,
+            Any[2, 0, invalid_count],
+        )
+    end
+    @test_throws ArgumentError Qwen3MoEDispatchStats(2, 2, 1, 2, 4, [2])
+    @test_throws ArgumentError Qwen3MoEDispatchStats(2, 3, 2, 4, 6, [3, 0, 1])
+    @test_throws ArgumentError Qwen3MoEDispatchStats(2, 3, 1, 3, 6, [2, 0, 1])
+    @test_throws ArgumentError Qwen3MoEDispatchStats(2, 3, 2, 4, 6, [2, 0, 1])
+    @test_throws ArgumentError Qwen3MoEDispatchStats(2, 3, 2, 3, 7, [2, 0, 1])
+    @test_throws ArgumentError Qwen3MoEDispatchStats(
+        typemax(Int),
+        2,
+        0,
+        0,
+        0,
+        [0, 0],
+    )
+end
 
 @testset "Qwen3 MoE sparse token-to-expert dispatch" begin
     layer = Qwen3SparseMoE(6, 5, 8, 2)

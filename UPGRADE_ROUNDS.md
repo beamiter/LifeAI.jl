@@ -329,6 +329,8 @@ Chapter 03 reproducible-training test.
      positive host integers before checked byte arithmetic.
 164. Mask exact zero-weight Qwen3 MoE routes before device reduction so
      Float32 probability underflow cannot turn inactive NaN experts into NaN.
+165. Seal Qwen3 MoE dispatch statistics behind host-safe, internally
+     consistent counts and detach their per-expert vector from caller aliases.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -3,7 +3,7 @@ using ConcreteStructs
 using NNlib: batched_mul, gather, softmax, swish
 using Random: AbstractRNG
 
-function _mlp_positive_host_int(value, label::AbstractString)
+function _mlp_host_int(value, label::AbstractString)
     value isa Integer && !(value isa Bool) || throw(ArgumentError(
         "$label must be an integer",
     ))
@@ -14,7 +14,18 @@ function _mlp_positive_host_int(value, label::AbstractString)
             rethrow()
         throw(ArgumentError("$label is outside the host integer range"))
     end
+    return resolved
+end
+
+function _mlp_positive_host_int(value, label::AbstractString)
+    resolved = _mlp_host_int(value, label)
     resolved > 0 || throw(ArgumentError("$label must be positive"))
+    return resolved
+end
+
+function _mlp_nonnegative_host_int(value, label::AbstractString)
+    resolved = _mlp_host_int(value, label)
+    resolved >= 0 || throw(ArgumentError("$label must be non-negative"))
     return resolved
 end
 
@@ -370,6 +381,84 @@ struct Qwen3MoEDispatchStats
     routed_token_expert_pairs::Int
     dense_token_expert_pairs::Int
     expert_token_counts::Vector{Int}
+
+    function Qwen3MoEDispatchStats(
+        token_count,
+        expert_count,
+        active_expert_count,
+        routed_token_expert_pairs,
+        dense_token_expert_pairs,
+        expert_token_counts,
+    )
+        resolved_token_count = _mlp_nonnegative_host_int(
+            token_count,
+            "token_count",
+        )
+        resolved_expert_count = _mlp_nonnegative_host_int(
+            expert_count,
+            "expert_count",
+        )
+        resolved_active_count = _mlp_nonnegative_host_int(
+            active_expert_count,
+            "active_expert_count",
+        )
+        resolved_routed_pairs = _mlp_nonnegative_host_int(
+            routed_token_expert_pairs,
+            "routed_token_expert_pairs",
+        )
+        resolved_dense_pairs = _mlp_nonnegative_host_int(
+            dense_token_expert_pairs,
+            "dense_token_expert_pairs",
+        )
+        expert_token_counts isa AbstractVector || throw(ArgumentError(
+            "expert_token_counts must be a vector",
+        ))
+        resolved_counts = Int[
+            _mlp_nonnegative_host_int(
+                count,
+                "expert_token_counts[$index]",
+            )
+            for (index, count) in enumerate(collect(expert_token_counts))
+        ]
+        length(resolved_counts) == resolved_expert_count || throw(ArgumentError(
+            "expert_token_counts length must equal expert_count",
+        ))
+        all(<=(resolved_token_count), resolved_counts) || throw(ArgumentError(
+            "expert_token_counts entries must not exceed token_count",
+        ))
+
+        expected_active_count = count(!iszero, resolved_counts)
+        resolved_active_count == expected_active_count || throw(ArgumentError(
+            "active_expert_count must equal the number of non-zero expert counts",
+        ))
+        expected_routed_pairs = _qwen3_moe_checked_size(
+            "Qwen3 MoE routed pair count",
+        ) do
+            foldl(Base.Checked.checked_add, resolved_counts; init=0)
+        end
+        resolved_routed_pairs == expected_routed_pairs || throw(ArgumentError(
+            "routed_token_expert_pairs must equal sum(expert_token_counts)",
+        ))
+        expected_dense_pairs = _qwen3_moe_checked_size(
+            "Qwen3 MoE dense pair count",
+        ) do
+            Base.Checked.checked_mul(
+                resolved_token_count,
+                resolved_expert_count,
+            )
+        end
+        resolved_dense_pairs == expected_dense_pairs || throw(ArgumentError(
+            "dense_token_expert_pairs must equal token_count * expert_count",
+        ))
+        return new(
+            resolved_token_count,
+            resolved_expert_count,
+            resolved_active_count,
+            resolved_routed_pairs,
+            resolved_dense_pairs,
+            resolved_counts,
+        )
+    end
 end
 
 function _validate_qwen3_expert_parameters(tokens, num_experts, expert_parameters)
