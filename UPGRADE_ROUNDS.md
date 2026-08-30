@@ -253,6 +253,8 @@ Chapter 03 reproducible-training test.
      embedding sentinel ids without Bool coercion or one-based overflow.
 126. Strictly validate every Qwen3 embedding template type id as an integer,
      preventing Boolean equality from masquerading as numeric zero.
+127. Fail closed on non-string Qwen3 embedding template token metadata instead
+     of leaking element-conversion exceptions.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

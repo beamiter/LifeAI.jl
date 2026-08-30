@@ -248,9 +248,10 @@ function _hf_validate_embedding_post_processor(post_processor)
     ids isa JSON3.Array && length(ids) == 1 ||
         throw(ArgumentError(
             "embedding <|endoftext|> must define exactly one integer id",
-        ))
+    ))
     tokens = _hf_required(endoftext, "tokens", label)
-    tokens isa JSON3.Array && String.(collect(tokens)) == ["<|endoftext|>"] ||
+    tokens isa JSON3.Array && length(tokens) == 1 &&
+        tokens[1] isa AbstractString && String(tokens[1]) == "<|endoftext|>" ||
         throw(ArgumentError(
             "embedding template token payload must be <|endoftext|>",
         ))

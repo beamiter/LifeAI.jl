@@ -513,6 +513,19 @@ end
             end == message
         end
     end
+
+    for value in (true, 258, nothing)
+        mktempdir() do directory
+            payloads = _embedding_tokenizer_payloads()
+            payloads.tokenizer["post_processor"]["processors"][2][
+                "special_tokens"
+            ]["<|endoftext|>"]["tokens"] = Any[value]
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            @test _embedding_argument_error_message() do
+                load_hf_qwen3_embedding_tokenizer(directory)
+            end == "embedding template token payload must be <|endoftext|>"
+        end
+    end
 end
 
 @testset "last-token pooling, MRL, and cosine retrieval" begin
