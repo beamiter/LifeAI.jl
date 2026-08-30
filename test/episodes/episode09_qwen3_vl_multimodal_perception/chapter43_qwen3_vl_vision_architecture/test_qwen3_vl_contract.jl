@@ -270,6 +270,15 @@ end
             "ArgumentError: Qwen3-VL vision " *
             "deepstack_visual_indexes$separator$message"
     end
+
+    merged_width_failure = _ch43_captured_error() do
+        Qwen3VLVisionSpec(
+            Base.setindex(valid, typemax(Int), 8)...,
+        )
+    end
+    @test merged_width_failure isa ArgumentError
+    @test sprint(showerror, merged_width_failure) ==
+        "ArgumentError: Qwen3-VL vision merged width exceeds the host integer range"
 end
 
 @testset "Qwen3-VL checkpoint specifications are strict" begin

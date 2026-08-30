@@ -361,6 +361,8 @@ Chapter 03 reproducible-training test.
      bias state so malformed raw construction cannot corrupt Qwen MLP semantics.
 180. Bind GPTModel layer-count metadata to its actual block chain so malformed
      raw Qwen construction cannot diverge cache and weight-loading layer sets.
+181. Preflight Qwen3-VL spatial-merge derived widths with exact arithmetic so
+     enormous merge factors cannot wrap into plausible vision dimensions.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

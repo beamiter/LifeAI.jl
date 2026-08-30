@@ -145,9 +145,22 @@ struct Qwen3VLVisionSpec
         hidden_act,
     )
         prefix = "Qwen3-VL vision"
+        resolved_hidden_size = _qwen3_spec_positive_int(
+            hidden_size,
+            "$prefix hidden_size",
+        )
+        resolved_spatial_merge_size = _qwen3_spec_positive_int(
+            spatial_merge_size,
+            "$prefix spatial_merge_size",
+        )
+        _qwen3_parameter_count_int(
+            BigInt(resolved_hidden_size) *
+                BigInt(resolved_spatial_merge_size)^2,
+            "$prefix merged width",
+        )
         return new(
             _qwen3_spec_nonnegative_int(depth, "$prefix depth"),
-            _qwen3_spec_positive_int(hidden_size, "$prefix hidden_size"),
+            resolved_hidden_size,
             _qwen3_spec_positive_int(
                 intermediate_size,
                 "$prefix intermediate_size",
@@ -159,10 +172,7 @@ struct Qwen3VLVisionSpec
                 temporal_patch_size,
                 "$prefix temporal_patch_size",
             ),
-            _qwen3_spec_positive_int(
-                spatial_merge_size,
-                "$prefix spatial_merge_size",
-            ),
+            resolved_spatial_merge_size,
             _qwen3_spec_positive_int(
                 out_hidden_size,
                 "$prefix out_hidden_size",
