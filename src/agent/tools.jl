@@ -30,9 +30,20 @@ function AgentTool(;
 end
 
 """Ordered collection of tools addressable by name."""
+struct _ToolRegistryValidated end
+const _TOOL_REGISTRY_VALIDATED = _ToolRegistryValidated()
+
 struct ToolRegistry
     tools::Vector{AgentTool}
     by_name::Dict{String,AgentTool}
+
+    function ToolRegistry(
+        ::_ToolRegistryValidated,
+        tools::Vector{AgentTool},
+        by_name::Dict{String,AgentTool},
+    )
+        return new(tools, by_name)
+    end
 end
 
 function ToolRegistry(tools)
@@ -44,28 +55,52 @@ function ToolRegistry(tools)
         ))
         by_name[tool.name] = tool
     end
-    return ToolRegistry(ordered, by_name)
+    return ToolRegistry(_TOOL_REGISTRY_VALIDATED, ordered, by_name)
 end
 
 ToolRegistry(tools::AgentTool...) = ToolRegistry(collect(tools))
 
+function _validate_tool_registry(registry::ToolRegistry)
+    names = Set{String}()
+    for tool in registry.tools
+        tool.name in names && throw(ArgumentError(
+            "tool registry contains duplicate advertised names",
+        ))
+        push!(names, tool.name)
+        get(registry.by_name, tool.name, nothing) === tool ||
+            throw(ArgumentError(
+                "tool registry name index does not match advertised tools",
+            ))
+    end
+    Set(keys(registry.by_name)) == names || throw(ArgumentError(
+        "tool registry name index does not match advertised tools",
+    ))
+    return registry
+end
+
 Base.length(registry::ToolRegistry) = length(registry.tools)
 Base.isempty(registry::ToolRegistry) = isempty(registry.tools)
-Base.haskey(registry::ToolRegistry, name::AbstractString) = haskey(registry.by_name, String(name))
+function Base.haskey(registry::ToolRegistry, name::AbstractString)
+    _validate_tool_registry(registry)
+    return haskey(registry.by_name, String(name))
+end
 
 """
     qwen3_tool_specs(registry)
 
 Tool declarations shaped for `apply_qwen3_chat_template(...; tools=...)`.
 """
-qwen3_tool_specs(registry::ToolRegistry) = Any[
-    (; type="function", var"function"=(;
-        name=tool.name,
-        description=tool.description,
-        parameters=tool.parameters,
-    ))
-    for tool in registry.tools
-]
+function qwen3_tool_specs(registry::ToolRegistry)
+    _validate_tool_registry(registry)
+    return Any[
+        (; type="function", var"function"=(;
+            name=tool.name,
+            description=tool.description,
+            parameters=tool.parameters,
+        ))
+        for tool in registry.tools
+    ]
+end
 
 """One `<tool_call>` block recovered from generated text."""
 struct Qwen3ToolCall
@@ -194,6 +229,7 @@ an explanatory message instead of throwing, so a loop can feed the failure back 
 the model and still record the step.
 """
 function invoke_agent_tool(registry::ToolRegistry, call::Qwen3ToolCall)
+    _validate_tool_registry(registry)
     tool = get(registry.by_name, call.name, nothing)
     tool === nothing && return AgentToolResult(
         false,
@@ -228,6 +264,7 @@ arguments present, `:invalid` when any block failed, `:none` when no block was
 emitted.
 """
 function agent_tool_call_validity(registry::ToolRegistry, parse::Qwen3ToolCallParse)
+    _validate_tool_registry(registry)
     isempty(parse.invalid) || return :invalid
     isempty(parse.calls) && return :none
     for call in parse.calls

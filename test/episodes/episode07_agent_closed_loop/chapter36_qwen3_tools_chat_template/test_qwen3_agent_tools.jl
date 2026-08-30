@@ -32,6 +32,39 @@ end
         AgentTool(; name="dup", description="", handler=(a, c) -> ""),
         AgentTool(; name="dup", description="", handler=(a, c) -> ""),
     ])
+
+    advertised = AgentTool(;
+        name="advertised",
+        description="Visible tool",
+        handler=(_arguments, _coerced) -> "advertised ran",
+    )
+    hidden = AgentTool(;
+        name="hidden",
+        description="Undeclared tool",
+        handler=(_arguments, _coerced) -> "hidden ran",
+    )
+    @test_throws MethodError ToolRegistry(
+        AgentTool[advertised],
+        Dict{String,AgentTool}("hidden" => hidden),
+    )
+    canonical = ToolRegistry(advertised)
+    @test haskey(canonical, "advertised")
+    @test !haskey(canonical, "hidden")
+    @test_throws MethodError ToolRegistry(canonical.tools, canonical.by_name)
+    @test isempty(ToolRegistry())
+
+    canonical.by_name["hidden"] = hidden
+    @test_throws ArgumentError haskey(canonical, "hidden")
+    @test_throws ArgumentError qwen3_tool_specs(canonical)
+    hidden_parse = parse_qwen3_tool_calls(
+        "<tool_call>{\"name\":\"hidden\",\"arguments\":{}}</tool_call>",
+    )
+    hidden_call = only(hidden_parse.calls)
+    @test_throws ArgumentError agent_tool_call_validity(
+        canonical,
+        hidden_parse,
+    )
+    @test_throws ArgumentError invoke_agent_tool(canonical, hidden_call)
 end
 
 @testset "Chapter 36 — tool call parsing" begin

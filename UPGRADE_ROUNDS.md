@@ -383,6 +383,8 @@ Chapter 03 reproducible-training test.
      path so converting field constructors cannot forge inconsistent vocabularies.
 191. Seal Qwen3 added-token construction behind positive host ids, non-empty
      content, literal flags, and the supported byte-BPE behavior subset.
+192. Seal Qwen3 tool registries behind their canonical name-index builder so
+     advertised and executable tool sets cannot diverge.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
