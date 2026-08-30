@@ -472,6 +472,189 @@ end
             "post_processor ByteLevel fields: future_behavior"
     end
 
+    post_processor_field_mutations = (
+        (
+            payloads -> begin
+                post_processor = payloads.tokenizer["post_processor"]
+                delete!(post_processor, "processors")
+                post_processor["z_future"] = true
+                post_processor["a_future"] = true
+            end,
+            "unsupported tokenizer.json embedding post_processor fields: " *
+            "a_future, z_future",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer["post_processor"],
+                "processors",
+            ),
+            "missing `processors` in tokenizer.json embedding post_processor",
+        ),
+        (
+            payloads -> begin
+                template = payloads.tokenizer["post_processor"]["processors"][2]
+                delete!(template, "single")
+                template["future_behavior"] = true
+            end,
+            "unsupported tokenizer.json embedding post_processor " *
+            "TemplateProcessing fields: future_behavior",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer["post_processor"]["processors"][2],
+                "single",
+            ),
+            "missing `single` in tokenizer.json embedding post_processor",
+        ),
+        (
+            payloads -> begin
+                sequence = payloads.tokenizer["post_processor"]["processors"][2][
+                    "single"
+                ][1]["Sequence"]
+                delete!(sequence, "id")
+                sequence["future_behavior"] = true
+            end,
+            "unsupported tokenizer.json embedding post_processor single[1] " *
+            "Sequence fields: future_behavior",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer["post_processor"]["processors"][2][
+                    "single"
+                ][1]["Sequence"],
+                "id",
+            ),
+            "missing `id` in tokenizer.json embedding post_processor single[1]",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer["post_processor"]["processors"][2]["pair"][2][
+                    "Sequence"
+                ]["future_behavior"] = true
+            ),
+            "unsupported tokenizer.json embedding post_processor pair[2] " *
+            "Sequence fields: future_behavior",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer["post_processor"]["processors"][2]["pair"][2][
+                    "Sequence"
+                ],
+                "type_id",
+            ),
+            "missing `type_id` in tokenizer.json embedding post_processor pair[2]",
+        ),
+        (
+            payloads -> begin
+                special = payloads.tokenizer["post_processor"]["processors"][2][
+                    "single"
+                ][2]["SpecialToken"]
+                delete!(special, "id")
+                special["future_behavior"] = true
+            end,
+            "unsupported tokenizer.json embedding post_processor single[2] " *
+            "SpecialToken fields: future_behavior",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer["post_processor"]["processors"][2][
+                    "single"
+                ][2]["SpecialToken"],
+                "id",
+            ),
+            "missing `id` in tokenizer.json embedding post_processor single[2]",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer["post_processor"]["processors"][2]["pair"][3][
+                    "SpecialToken"
+                ]["future_behavior"] = true
+            ),
+            "unsupported tokenizer.json embedding post_processor pair[3] " *
+            "SpecialToken fields: future_behavior",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer["post_processor"]["processors"][2]["pair"][3][
+                    "SpecialToken"
+                ],
+                "type_id",
+            ),
+            "missing `type_id` in tokenizer.json embedding post_processor pair[3]",
+        ),
+        (
+            payloads -> begin
+                metadata = payloads.tokenizer["post_processor"]["processors"][2][
+                    "special_tokens"
+                ]["<|endoftext|>"]
+                delete!(metadata, "ids")
+                metadata["future_behavior"] = true
+            end,
+            "unsupported tokenizer.json embedding post_processor " *
+            "<|endoftext|> metadata fields: future_behavior",
+        ),
+        (
+            payloads -> delete!(
+                payloads.tokenizer["post_processor"]["processors"][2][
+                    "special_tokens"
+                ]["<|endoftext|>"],
+                "ids",
+            ),
+            "missing `ids` in tokenizer.json embedding post_processor",
+        ),
+    )
+    for (mutate!, message) in post_processor_field_mutations
+        mktempdir() do directory
+            payloads = _embedding_tokenizer_payloads()
+            mutate!(payloads)
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            @test _embedding_argument_error_message() do
+                load_hf_qwen3_embedding_tokenizer(directory)
+            end == message
+        end
+    end
+
+    post_processor_shape_mutations = (
+        (
+            payloads -> (
+                payloads.tokenizer["post_processor"]["processors"][2][
+                    "single"
+                ][1]["Future"] = Dict("enabled" => true)
+            ),
+            "tokenizer.json embedding post_processor single[1] must contain " *
+            "exactly one Sequence entry",
+        ),
+        (
+            payloads -> (
+                payloads.tokenizer["post_processor"]["processors"][2]["pair"][3][
+                    "Future"
+                ] = Dict("enabled" => true)
+            ),
+            "tokenizer.json embedding post_processor pair[3] must contain " *
+            "exactly one SpecialToken entry",
+        ),
+        (
+            payloads -> begin
+                special_tokens = payloads.tokenizer["post_processor"]["processors"][2][
+                    "special_tokens"
+                ]
+                special_tokens["future_token"] = Dict{String,Any}()
+                special_tokens["<|endoftext|>"]["future_behavior"] = true
+            end,
+            "embedding template must define only <|endoftext|>",
+        ),
+    )
+    for (mutate!, message) in post_processor_shape_mutations
+        mktempdir() do directory
+            payloads = _embedding_tokenizer_payloads()
+            mutate!(payloads)
+            write_qwen3_tokenizer_fixture(directory; payloads)
+            @test _embedding_argument_error_message() do
+                load_hf_qwen3_embedding_tokenizer(directory)
+            end == message
+        end
+    end
+
     mktempdir() do directory
         payloads = _embedding_tokenizer_payloads()
         payloads.tokenizer_config["future_behavior"] = true

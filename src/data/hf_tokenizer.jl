@@ -385,6 +385,7 @@ function _hf_template_sequence_entry(entry, expected::AbstractString, label)
     sequence isa JSON3.Object || throw(ArgumentError(
         "$label Sequence must be an object",
     ))
+    _hf_reject_unknown_fields(sequence, ("id", "type_id"), "$label Sequence")
     _hf_exact_value(sequence, "id", String(expected), label)
     _hf_exact_integer(sequence, "type_id", 0, label)
     return nothing
@@ -399,6 +400,11 @@ function _hf_template_special_entry(entry, label)
     special isa JSON3.Object || throw(ArgumentError(
         "$label SpecialToken must be an object",
     ))
+    _hf_reject_unknown_fields(
+        special,
+        ("id", "type_id"),
+        "$label SpecialToken",
+    )
     _hf_exact_value(special, "id", "<|endoftext|>", label)
     _hf_exact_integer(special, "type_id", 0, label)
     return nothing
@@ -406,6 +412,7 @@ end
 
 function _hf_validate_embedding_post_processor(post_processor)
     label = "tokenizer.json embedding post_processor"
+    _hf_reject_unknown_fields(post_processor, ("type", "processors"), label)
     _hf_exact_value(post_processor, "type", "Sequence", label)
     processors = _hf_required(post_processor, "processors", label)
     processors isa JSON3.Array && length(processors) == 2 || throw(ArgumentError(
@@ -421,6 +428,11 @@ function _hf_validate_embedding_post_processor(post_processor)
     template isa JSON3.Object || throw(ArgumentError(
         "embedding TemplateProcessing post-processor must be an object",
     ))
+    _hf_reject_unknown_fields(
+        template,
+        ("type", "single", "pair", "special_tokens"),
+        "$label TemplateProcessing",
+    )
     _hf_exact_value(template, "type", "TemplateProcessing", label)
     single = _hf_required(template, "single", label)
     single isa JSON3.Array && length(single) == 2 || throw(ArgumentError(
@@ -446,6 +458,11 @@ function _hf_validate_embedding_post_processor(post_processor)
     endoftext isa JSON3.Object || throw(ArgumentError(
         "embedding <|endoftext|> template metadata must be an object",
     ))
+    _hf_reject_unknown_fields(
+        endoftext,
+        ("id", "ids", "tokens"),
+        "$label <|endoftext|> metadata",
+    )
     _hf_exact_value(endoftext, "id", "<|endoftext|>", label)
     ids = _hf_required(endoftext, "ids", label)
     ids isa JSON3.Array && length(ids) == 1 ||

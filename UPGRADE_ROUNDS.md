@@ -425,6 +425,8 @@ Chapter 03 reproducible-training test.
      embedding gather or cache writes while ignoring unused DeepStack entries.
 212. Seal Qwen3 agent-loop step evidence behind strict counters, digests, token
      ids, states, timings, and owned nested snapshots for stable replay history.
+213. Reject unknown fields throughout the Qwen3 embedding Sequence and
+     TemplateProcessing post-processor tree with deterministic diagnostics.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
