@@ -89,6 +89,8 @@ function _qwen3_vl_generation_prefill(
         vision_features,
         cache,
         logits_to_keep=1,
+        capture_input_embeddings=capture_prefill_states,
+        capture_final_hidden=capture_prefill_states,
     )
     return _qwen3_vl_generation_prefill_result(
         prefill_result,
@@ -111,6 +113,8 @@ function _qwen3_vl_generation_prefill(
         vision_features,
         cache,
         logits_to_keep=1,
+        capture_input_embeddings=capture_prefill_states,
+        capture_final_hidden=capture_prefill_states,
     )
     return _qwen3_vl_generation_prefill_result(
         prefill_result,

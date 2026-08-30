@@ -321,6 +321,8 @@ function _ch47_run_generation(prepared, generated_tokens::Int)
         vision_features=prepared.features,
         cache,
         logits_to_keep=1,
+        capture_input_embeddings=false,
+        capture_final_hidden=false,
     )
     prefill, returned = prefill_timed.value
     returned === cache || error("static prefill replaced the request cache")
@@ -461,6 +463,8 @@ function _ch47_warm_profiled_path(prepared)
         vision_features=prepared.features,
         cache,
         logits_to_keep=1,
+        capture_input_embeddings=false,
+        capture_final_hidden=false,
     )
     token = _ch47_select_token(prefill.logits).token
     stage_records = NamedTuple[]
@@ -491,6 +495,8 @@ function _ch47_run_attribution(prepared, baseline)
         vision_features=prepared.features,
         cache,
         logits_to_keep=1,
+        capture_input_embeddings=false,
+        capture_final_hidden=false,
     )
     selection = _ch47_select_token(prefill.logits)
     generated_ids = Int[selection.token]

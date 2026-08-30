@@ -258,9 +258,17 @@ function _static_verify_four_phases(
         vision_features=features,
         cache=static_cache,
         logits_to_keep=1,
+        capture_input_embeddings=false,
+        capture_final_hidden=false,
     )
     CUDA.synchronize()
     returned_cache === static_cache || error("static prefill replaced the cache object")
+    static_prefill.input_embeddings === nothing || error(
+        "lightweight static prefill retained input embeddings",
+    )
+    static_prefill.final_hidden === nothing || error(
+        "lightweight static prefill retained final hidden states",
+    )
 
     phase_names = ("prefill", "decode.0", "decode.1", "decode.2")
     phases = metadata["phases"]

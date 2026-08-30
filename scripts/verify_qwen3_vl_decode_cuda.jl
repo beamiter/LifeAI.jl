@@ -354,6 +354,8 @@ prefill_timing = @timed begin
         vision_features=features,
         cache,
         logits_to_keep=1,
+        capture_input_embeddings=false,
+        capture_final_hidden=false,
     )
     synchronize()
     value

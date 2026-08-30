@@ -511,7 +511,9 @@ end
 """
     hf_qwen3_vl_text_prefill_cached(parameters, input_ids, rope_layout;
                                     vision_features=nothing, cache,
-                                    logits_to_keep=1)
+                                    logits_to_keep=1,
+                                    capture_input_embeddings=true,
+                                    capture_final_hidden=true)
 
 Run one batch-1, all-ones-mask Qwen3-VL prompt and populate a dynamic KV
 cache.  Main visual embeddings replace image-token embeddings before layer 0,
@@ -520,6 +522,9 @@ and the three DeepStack tensors are added after decoder layers 0, 1, and 2.
 Returns `(prefill_result, updated_cache)`.  The result uses the same
 `Qwen3VLTextPrefill` container as cache-free prefill; cached prefill does not
 capture intermediate layers, so its capture dictionaries are empty.
+The two `capture_*` keywords can suppress prompt-sized diagnostic tensors;
+when final hidden capture is disabled, RMSNorm is applied only to positions
+needed by `logits_to_keep`.
 """
 function hf_qwen3_vl_text_prefill_cached(
     parameters,
@@ -528,6 +533,8 @@ function hf_qwen3_vl_text_prefill_cached(
     vision_features=nothing,
     cache::Qwen3VLKVCache,
     logits_to_keep::Int=1,
+    capture_input_embeddings::Bool=true,
+    capture_final_hidden::Bool=true,
 )
     tokens = _qwen3_vl_token_matrix(input_ids)
     spec, rope_delta = _qwen3_vl_cached_prompt_contract(
@@ -559,7 +566,7 @@ function hf_qwen3_vl_text_prefill_cached(
             rope_layout.visual_mask,
         )
     end
-    input_embeddings = x
+    input_embeddings = capture_input_embeddings ? x : nothing
     cos_values, sin_values = _qwen3_vl_text_mrope(
         spec,
         parameters.embedding,
@@ -591,13 +598,13 @@ function hf_qwen3_vl_text_prefill_cached(
         end
     end
 
-    final_hidden = _qwen3_vl_text_rmsnorm(
+    final_hidden, projection = _qwen3_vl_prefill_projection(
+        parameters,
         x,
-        parameters.final_norm,
-        spec.rms_norm_eps,
+        sequence_length,
+        logits_to_keep,
+        capture_final_hidden,
     )
-    projection = logits_to_keep == 0 ? final_hidden :
-        final_hidden[:, (sequence_length - logits_to_keep + 1):end, :]
     logits = _qwen3_vl_project_tied(parameters.embedding, projection)
     updated_cache = Qwen3VLKVCache(
         Tuple(layer_caches),
@@ -615,6 +622,38 @@ function hf_qwen3_vl_text_prefill_cached(
         rope_layout,
     )
     return result, updated_cache
+end
+
+function _qwen3_vl_prefill_projection(
+    parameters,
+    hidden,
+    sequence_length::Int,
+    logits_to_keep::Int,
+    capture_final_hidden::Bool,
+)
+    if capture_final_hidden
+        final_hidden = _qwen3_vl_text_rmsnorm(
+            hidden,
+            parameters.final_norm,
+            parameters.spec.rms_norm_eps,
+        )
+        projection = logits_to_keep == 0 ? final_hidden :
+            final_hidden[:, (sequence_length - logits_to_keep + 1):end, :]
+        return final_hidden, projection
+    end
+
+    projection_input = logits_to_keep == 0 ? hidden : view(
+        hidden,
+        :,
+        (sequence_length - logits_to_keep + 1):sequence_length,
+        :,
+    )
+    projection = _qwen3_vl_text_rmsnorm(
+        projection_input,
+        parameters.final_norm,
+        parameters.spec.rms_norm_eps,
+    )
+    return nothing, projection
 end
 
 function _qwen3_vl_decode_token_matrix(token, batch_size::Int)
@@ -824,12 +863,15 @@ end
 """
     hf_qwen3_vl_text_prefill_static(parameters, input_ids, rope_layout;
                                     vision_features=nothing, cache,
-                                    logits_to_keep=1)
+                                    logits_to_keep=1,
+                                    capture_input_embeddings=true,
+                                    capture_final_hidden=true)
 
 Run one batch-1 Qwen3-VL prompt and write every layer's K/V tensors into the
 fixed `1:prompt_length` prefix of `cache`. The returned cache is the same
 mutable object passed by the caller, and all layer storage identities remain
-unchanged.
+unchanged. The `capture_*` keywords have the same lightweight diagnostic
+semantics as dynamic cached prefill.
 """
 function hf_qwen3_vl_text_prefill_static(
     parameters,
@@ -838,6 +880,8 @@ function hf_qwen3_vl_text_prefill_static(
     vision_features=nothing,
     cache::Qwen3VLStaticKVCache,
     logits_to_keep::Int=1,
+    capture_input_embeddings::Bool=true,
+    capture_final_hidden::Bool=true,
 )
     tokens = _qwen3_vl_token_matrix(input_ids)
     spec, rope_delta = _qwen3_vl_static_prompt_contract(
@@ -869,7 +913,7 @@ function hf_qwen3_vl_text_prefill_static(
             rope_layout.visual_mask,
         )
     end
-    input_embeddings = x
+    input_embeddings = capture_input_embeddings ? x : nothing
     cos_values, sin_values = _qwen3_vl_text_mrope(
         spec,
         parameters.embedding,
@@ -901,13 +945,13 @@ function hf_qwen3_vl_text_prefill_static(
         end
     end
 
-    final_hidden = _qwen3_vl_text_rmsnorm(
+    final_hidden, projection = _qwen3_vl_prefill_projection(
+        parameters,
         x,
-        parameters.final_norm,
-        spec.rms_norm_eps,
+        sequence_length,
+        logits_to_keep,
+        capture_final_hidden,
     )
-    projection = logits_to_keep == 0 ? final_hidden :
-        final_hidden[:, (sequence_length - logits_to_keep + 1):end, :]
     logits = _qwen3_vl_project_tied(parameters.embedding, projection)
     cache.position = sequence_length
     cache.rope_delta = rope_delta

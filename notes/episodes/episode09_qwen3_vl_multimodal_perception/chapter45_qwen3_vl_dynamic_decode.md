@@ -195,6 +195,10 @@ generation 默认只在 `prefill` 结果中保留 last-token logits、空 captur
 与 rope layout；整段 `input_embeddings` 和 `final_hidden` 在 prefill helper 返回时即
 解除引用，避免它们贯穿后续 decode 和调用方结果生命周期。诊断需要完整 prompt state
 时可显式传 `capture_prefill_states=true`；低层 cached prefill 的默认返回合同不变。
+generation 的轻量分支还把这一策略下推到 cached prefill：不为诊断字段持有初始
+embedding，并在 `logits_to_keep=1` 时只截取最后一个 block output token 做 final
+RMSNorm。低层 API 新增 `capture_input_embeddings` / `capture_final_hidden`，默认均为
+`true`，所以直接调用者仍获得完整状态；长 generation benchmark 显式使用轻量模式。
 
 `generate_hf_qwen3_vl` 再把高层 raw boundary 串起来：
 

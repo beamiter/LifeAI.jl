@@ -263,6 +263,49 @@ end
         _ch45_hf_hidden(reference, "prefill.final_hidden") atol=1.0f-6 rtol=1.0f-6
     @test prefill.logits ≈
         _ch45_hf_hidden(reference, "prefill.logits") atol=1.0f-6 rtol=1.0f-6
+
+    full_last_prefill, _ = hf_qwen3_vl_text_prefill_cached(
+        parameters,
+        inputs.input_ids,
+        inputs.rope_layout;
+        vision_features=inputs.vision_features,
+        cache=init_qwen3_vl_kv_cache(parameters; batch_size=1),
+        logits_to_keep=1,
+    )
+    light_prefill, light_cache8 = hf_qwen3_vl_text_prefill_cached(
+        parameters,
+        inputs.input_ids,
+        inputs.rope_layout;
+        vision_features=inputs.vision_features,
+        cache=init_qwen3_vl_kv_cache(parameters; batch_size=1),
+        logits_to_keep=1,
+        capture_input_embeddings=false,
+        capture_final_hidden=false,
+    )
+    @test light_prefill.input_embeddings === nothing
+    @test light_prefill.final_hidden === nothing
+    @test light_prefill.logits == full_last_prefill.logits
+    @test light_cache8.position == cache8.position
+    @test light_cache8.rope_delta == cache8.rope_delta
+    for layer in eachindex(light_cache8.layers)
+        @test light_cache8.layers[layer].keys == cache8.layers[layer].keys
+        @test light_cache8.layers[layer].values == cache8.layers[layer].values
+    end
+
+    light_all_logits, _ = hf_qwen3_vl_text_prefill_cached(
+        parameters,
+        inputs.input_ids,
+        inputs.rope_layout;
+        vision_features=inputs.vision_features,
+        cache=init_qwen3_vl_kv_cache(parameters; batch_size=1),
+        logits_to_keep=0,
+        capture_input_embeddings=false,
+        capture_final_hidden=false,
+    )
+    @test light_all_logits.input_embeddings === nothing
+    @test light_all_logits.final_hidden === nothing
+    @test light_all_logits.logits == prefill.logits
+
     overflow_token = big(typemax(Int)) + 1
     for invalid in (
         true,

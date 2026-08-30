@@ -338,6 +338,10 @@ placeholder、mRoPE、greedy/EOS 或 tokenizer 语义。
 dynamic/static generation 都默认压缩返回的 prefill diagnostic state：保留 logits 与
 layout，但将 prompt-sized input embeddings/final hidden 置为 `nothing`。显式
 `capture_prefill_states=true` 可恢复完整状态；这一选项不改变 token、trace 或 cache。
+轻量模式会传递到 dynamic/static 低层 prefill：初始 embedding 不再被局部诊断引用
+钉住，final RMSNorm 只处理 `logits_to_keep` 所需的 token。默认低层 capture 行为与
+既有调用兼容，CPU full/light 与 CUDA static-light verifier 都以 logits/cache parity
+作为门禁。
 
 ## 一个真实 Julia API 踩坑：keyword 不能参与 dispatch
 
@@ -376,9 +380,9 @@ f(parameters, ids, layout; cache::Qwen3VLStaticKVCache) = ...
 - latency 一定优于 dynamic path 的每个短请求阶段；
 - 已完成长上下文、并发、多 batch 或服务级吞吐验收。
 
-static path 仍会构造 token embedding、Q/K/V、attention context、MLP intermediates、
-final hidden 和 vocabulary logits；高层 generation 默认不再长期保留两块 prompt-sized
-diagnostic tensor，但仍会保存 trace/ids。固定 K/V 是
+static path 仍会构造 token embedding、Q/K/V、attention context、MLP intermediates
+和 vocabulary logits；高层轻量 generation 只为所需 tail token 构造 final hidden，
+且不再长期保留两块 prompt-sized diagnostic tensor，但仍会保存 trace/ids。固定 K/V 是
 消除一个已知 `O(T²)` prefix-copy 来源的必要步骤，不是性能工作的终点。
 
 ## 已知边界与下一步
