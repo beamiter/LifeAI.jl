@@ -18,6 +18,15 @@ const QWEN3_MOE_TINY_OFFLOAD_FIXTURE = joinpath(
     "qwen3_moe_tiny_parity",
 )
 
+function _qwen3_offload_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected Qwen3 MoE offload call to fail")
+end
+
 @testset "Qwen3 MoE GPU offload contract" begin
     config = load_hf_qwen3_moe_config(
         QWEN3_MOE_CHAPTER24_FIXTURE;
@@ -51,6 +60,56 @@ const QWEN3_MOE_TINY_OFFLOAD_FIXTURE = joinpath(
     @test routed_floor.max_active_experts == 8
     @test routed_floor.active_expert_layer_bytes == 75_497_472
     @test routed_floor.working_set_floor_bytes == 6_561_886_208
+
+    normalized_plan = qwen3_moe_offload_plan(
+        model,
+        Int32(1);
+        batch_size=big(1),
+        max_active_experts=Int128(model.experts_per_token),
+        dtype_bytes=big(2),
+    )
+    @test normalized_plan.context_tokens isa Int
+    @test normalized_plan.batch_size isa Int
+    @test normalized_plan.max_active_experts isa Int
+    @test normalized_plan.dtype_bytes isa Int
+
+    too_large = big(typemax(Int)) + 1
+    for invalid_context in (true, too_large)
+        @test_throws ArgumentError qwen3_moe_offload_plan(
+            model,
+            invalid_context,
+        )
+    end
+    for invalid_batch in (true, too_large)
+        @test_throws ArgumentError qwen3_moe_offload_plan(
+            model,
+            1;
+            batch_size=invalid_batch,
+        )
+    end
+    for invalid_active in (true, too_large)
+        failure = _qwen3_offload_captured_error() do
+            qwen3_moe_offload_plan(
+                model,
+                1;
+                max_active_experts=invalid_active,
+            )
+        end
+        @test failure isa ArgumentError
+        @test occursin(
+            invalid_active isa Bool ?
+                "max_active_experts must be an integer" :
+                "max_active_experts is outside the host integer range",
+            sprint(showerror, failure),
+        )
+    end
+    for invalid_dtype in (true, too_large)
+        @test_throws ArgumentError qwen3_moe_offload_plan(
+            model,
+            1;
+            dtype_bytes=invalid_dtype,
+        )
+    end
 
     routes = Int32[5 2 8; 2 5 2]
     remapped = LifeAI._qwen3_local_expert_routes(routes, 8)

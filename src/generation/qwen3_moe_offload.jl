@@ -33,10 +33,10 @@ function qwen3_moe_offload_plan(
     dtype_bytes::Integer=sizeof(BFloat16),
 )
     _qwen3_validate_moe_semantics(model)
-    context = Int(context_tokens)
-    batch = Int(batch_size)
-    active = Int(max_active_experts)
-    bytes = Int(dtype_bytes)
+    context = _strict_host_int(context_tokens, "context_tokens")
+    batch = _strict_host_int(batch_size, "batch_size")
+    active = _strict_host_int(max_active_experts, "max_active_experts")
+    bytes = _strict_host_int(dtype_bytes, "dtype_bytes")
     0 < context <= model.max_seq_len || throw(ArgumentError(
         "context_tokens must be in 1:model.max_seq_len",
     ))
