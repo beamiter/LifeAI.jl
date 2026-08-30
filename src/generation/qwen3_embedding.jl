@@ -317,6 +317,9 @@ function _qwen3_normalized_columns(values::AbstractMatrix)
     ))
     for column in axes(matrix, 2)
         magnitude = norm(view(matrix, :, column))
+        isfinite(magnitude) || throw(ArgumentError(
+            "embedding matrix contains a column with non-finite norm",
+        ))
         magnitude > 0 || throw(ArgumentError(
             "embedding matrix contains a zero-norm column",
         ))

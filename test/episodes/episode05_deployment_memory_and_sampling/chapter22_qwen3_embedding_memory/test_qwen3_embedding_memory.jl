@@ -1025,6 +1025,16 @@ end
         zeros(Float32, 3, 1),
         zeros(Float32, 2, 1),
     )
+    overflowing_norm = fill(floatmax(Float32), 2, 1)
+    overflowing_snapshot = copy(overflowing_norm)
+    @test _embedding_argument_error_message() do
+        qwen3_embedding_similarity(overflowing_norm, documents)
+    end == "embedding matrix contains a column with non-finite norm"
+    @test overflowing_norm == overflowing_snapshot
+    @test _embedding_argument_error_message() do
+        Qwen3SemanticMemory(["overflow"], overflowing_norm)
+    end == "embedding matrix contains a column with non-finite norm"
+    @test overflowing_norm == overflowing_snapshot
 
     memory = Qwen3SemanticMemory(
         ["x-axis", "diagonal", "y-axis"],
