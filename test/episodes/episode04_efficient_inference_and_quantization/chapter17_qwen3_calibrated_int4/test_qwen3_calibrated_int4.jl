@@ -64,6 +64,19 @@ Base.IndexStyle(::Type{<:_Ch17ForeignDeviceVector}) = IndexLinear()
 Base.getindex(values::_Ch17ForeignDeviceVector, index::Int) = values.data[index]
 MLDataDevices.get_device(::_Ch17ForeignDeviceVector) = _Ch17ForeignDevice()
 
+struct _Ch17ForeignDeviceMatrix{T,A<:AbstractMatrix{T}} <: AbstractMatrix{T}
+    data::A
+end
+Base.size(values::_Ch17ForeignDeviceMatrix) = size(values.data)
+Base.axes(values::_Ch17ForeignDeviceMatrix) = axes(values.data)
+Base.IndexStyle(::Type{<:_Ch17ForeignDeviceMatrix}) = IndexCartesian()
+Base.getindex(
+    values::_Ch17ForeignDeviceMatrix,
+    row::Int,
+    column::Int,
+) = values.data[row, column]
+MLDataDevices.get_device(::_Ch17ForeignDeviceMatrix) = _Ch17ForeignDevice()
+
 @testset "INT8 weight tensors are strict" begin
     quantized_storage = reshape(Int8.(1:12), 3, 4)
     scale_storage = Float32[0.25, 0.5, 0.75]
@@ -119,6 +132,95 @@ MLDataDevices.get_device(::_Ch17ForeignDeviceVector) = _Ch17ForeignDevice()
             _Ch17ForeignDeviceVector(Float32[1]),
         )
     end == "INT8 quantized values and scales must reside on the same device"
+end
+
+@testset "INT4 weight tensors are strict" begin
+    packed_storage = reshape(UInt8.(1:12), 3, 4)
+    scale_storage = reshape(Float32.(1:6), 3, 2)
+    packed = @view packed_storage[1:2, :]
+    scales = @view scale_storage[1:2, :]
+    weight = Int4GroupWeight(packed, scales, 4, 8)
+    @test weight.packed === packed
+    @test weight.scale === scales
+    @test_throws MethodError Int4GroupWeight{
+        typeof(packed),
+        typeof(scales),
+    }(packed, scales, 4, 8)
+
+    for (values, message) in (
+        (UInt8[1, 2], "INT4 packed values must be a matrix"),
+        (
+            reshape(UInt8[1, 2, 3, 4], 1, 2, 2),
+            "INT4 packed values must be a matrix",
+        ),
+        (
+            reshape(UInt16[1, 2, 3, 4], 1, 4),
+            "INT4 packed values must contain UInt8 values",
+        ),
+        (
+            _Ch17ZeroBasedArray(reshape(UInt8[1, 2, 3, 4], 1, 4)),
+            "INT4 packed values must use one-based axes",
+        ),
+        (
+            zeros(UInt8, 0, 4),
+            "INT4 packed values must have a positive output dimension",
+        ),
+    )
+        @test _quantization_argument_error_message() do
+            Int4GroupWeight(values, ones(Float32, 1, 2), 4, 8)
+        end == message
+    end
+
+    valid_packed = reshape(UInt8.(1:8), 2, 4)
+    for (values, message) in (
+        (Float32[1, 2], "INT4 scales must be a matrix"),
+        (
+            reshape(Float32[1, 2, 3, 4], 1, 2, 2),
+            "INT4 scales must be a matrix",
+        ),
+        (
+            ones(Float64, 2, 2),
+            "INT4 scales must contain Float32 values",
+        ),
+        (
+            _Ch17ZeroBasedArray(ones(Float32, 2, 2)),
+            "INT4 scales must use one-based axes",
+        ),
+    )
+        @test _quantization_argument_error_message() do
+            Int4GroupWeight(valid_packed, values, 4, 8)
+        end == message
+    end
+
+    for invalid_packed in (zeros(UInt8, 2, 3), zeros(UInt8, 2, 5))
+        @test_throws DimensionMismatch Int4GroupWeight(
+            invalid_packed,
+            ones(Float32, 2, 2),
+            4,
+            8,
+        )
+    end
+    for invalid_scales in (
+        zeros(Float32, 1, 2),
+        zeros(Float32, 3, 2),
+        zeros(Float32, 2, 1),
+        zeros(Float32, 2, 3),
+    )
+        @test_throws DimensionMismatch Int4GroupWeight(
+            valid_packed,
+            invalid_scales,
+            4,
+            8,
+        )
+    end
+    @test _quantization_argument_error_message() do
+        Int4GroupWeight(
+            valid_packed,
+            _Ch17ForeignDeviceMatrix(ones(Float32, 2, 2)),
+            4,
+            8,
+        )
+    end == "INT4 packed values and scales must reside on the same device"
 end
 
 @testset "trace-safe quantized dequantization preserves host values" begin

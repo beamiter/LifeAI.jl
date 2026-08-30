@@ -303,6 +303,8 @@ Chapter 03 reproducible-training test.
      returned geometry exactly satisfies its factor and closed pixel budget.
 151. Seal Qwen3 INT8 weights behind rank, dtype, axes, shape, and device checks
      while retaining a trace-safe internal row-slice construction path.
+152. Enforce exact Qwen3 INT4 packed and scale tensor layouts, dtypes, axes, and
+     device placement without revalidating trusted slices inside XLA traces.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -673,8 +673,9 @@ Adapt.@adapt_structure Int8ChannelWeight
     Int4GroupWeight(packed, scale, group, in_dim)
 
 Symmetric group-wise INT4 weight. Adjacent input columns are packed two per
-byte (`packed::Matrix{UInt8}` of shape `(out, in ÷ 2)`, low nibble first,
-values offset by +8); `scale` has shape `(out, in ÷ group)`.
+byte (`packed::AbstractMatrix{UInt8}` of shape `(out, in ÷ 2)`, low nibble
+first, values offset by +8); `scale::AbstractMatrix{Float32}` has shape
+`(out, in ÷ group)`.
 """
 struct Int4GroupWeight{Q,S}
     packed::Q
@@ -703,11 +704,68 @@ struct Int4GroupWeight{Q,S}
         resolved_in_dim % resolved_group == 0 || throw(ArgumentError(
             "INT4 weight input dimension must be divisible by its group",
         ))
+        packed isa AbstractMatrix || throw(ArgumentError(
+            "INT4 packed values must be a matrix",
+        ))
+        scale isa AbstractMatrix || throw(ArgumentError(
+            "INT4 scales must be a matrix",
+        ))
+        all(
+            dimension -> axes(packed, dimension) ==
+                Base.OneTo(size(packed, dimension)),
+            1:2,
+        ) || throw(ArgumentError(
+            "INT4 packed values must use one-based axes",
+        ))
+        all(
+            dimension -> axes(scale, dimension) ==
+                Base.OneTo(size(scale, dimension)),
+            1:2,
+        ) || throw(ArgumentError(
+            "INT4 scales must use one-based axes",
+        ))
+        eltype(packed) === UInt8 || throw(ArgumentError(
+            "INT4 packed values must contain UInt8 values",
+        ))
+        eltype(scale) === Float32 || throw(ArgumentError(
+            "INT4 scales must contain Float32 values",
+        ))
+        out_dim = size(packed, 1)
+        out_dim > 0 || throw(ArgumentError(
+            "INT4 packed values must have a positive output dimension",
+        ))
+        expected_packed_shape = (out_dim, resolved_in_dim ÷ 2)
+        size(packed) == expected_packed_shape || throw(DimensionMismatch(
+            "INT4 packed values must have shape $expected_packed_shape; " *
+            "got $(size(packed))",
+        ))
+        expected_scale_shape = (out_dim, resolved_in_dim ÷ resolved_group)
+        size(scale) == expected_scale_shape || throw(DimensionMismatch(
+            "INT4 scales must have shape $expected_scale_shape; got $(size(scale))",
+        ))
+        get_device(packed) == get_device(scale) || throw(ArgumentError(
+            "INT4 packed values and scales must reside on the same device",
+        ))
         return new{typeof(packed),typeof(scale)}(
             packed,
             scale,
             resolved_group,
             resolved_in_dim,
+        )
+    end
+
+    function Int4GroupWeight(
+        packed,
+        scale,
+        group::Int,
+        in_dim::Int,
+        ::_QuantizedWeightRowSlice,
+    )
+        return new{typeof(packed),typeof(scale)}(
+            packed,
+            scale,
+            group,
+            in_dim,
         )
     end
 end
@@ -884,7 +942,11 @@ _quant_row_slice(weight::Int8ChannelWeight, rows) = Int8ChannelWeight(
     _QuantizedWeightRowSlice(),
 )
 _quant_row_slice(weight::Int4GroupWeight, rows) = Int4GroupWeight(
-    weight.packed[rows, :], weight.scale[rows, :], weight.group, weight.in_dim,
+    weight.packed[rows, :],
+    weight.scale[rows, :],
+    weight.group,
+    weight.in_dim,
+    _QuantizedWeightRowSlice(),
 )
 _quant_out_dim(weight::Int8ChannelWeight) = size(weight.q, 1)
 _quant_out_dim(weight::Int4GroupWeight) = size(weight.packed, 1)
