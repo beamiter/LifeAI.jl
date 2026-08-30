@@ -409,6 +409,67 @@ function _qwen3_vl_prefill_options(
     return (; logits_to_keep=keep, max_prefill_tokens=limit)
 end
 
+function _qwen3_vl_prompt_rope_deltas(
+    spec,
+    rope_layout::Qwen3VLRopeLayout,
+    sequence_length::Int,
+    batch_size::Int,
+)
+    position_ids = rope_layout.position_ids
+    size(position_ids) == (3, sequence_length, batch_size) ||
+        throw(DimensionMismatch(
+            "Qwen3-VL rope layout does not match input_ids",
+        ))
+    normalized_positions = _strict_host_int_array(
+        position_ids,
+        "Qwen3-VL position_ids",
+    )
+    all(position -> 0 <= position < spec.max_position_embeddings,
+        normalized_positions) || throw(ArgumentError(
+        "Qwen3-VL prompt mRoPE coordinates are outside the decoder context",
+    ))
+
+    attention_mask = rope_layout.attention_mask
+    size(attention_mask) == (sequence_length, batch_size) ||
+        throw(DimensionMismatch(
+            "Qwen3-VL attention mask does not match input_ids",
+        ))
+    eltype(attention_mask) <: Bool || throw(ArgumentError(
+        "Qwen3-VL attention_mask must contain Bool values",
+    ))
+
+    rope_deltas = rope_layout.rope_deltas
+    size(rope_deltas) == (batch_size, 1) || throw(DimensionMismatch(
+        "Qwen3-VL rope_deltas must have shape (batch, 1)",
+    ))
+    normalized_deltas = _strict_host_int_array(
+        rope_deltas,
+        "Qwen3-VL rope_delta",
+    )
+    for batch in 1:batch_size
+        valid_positions = findall(view(attention_mask, :, batch))
+        isempty(valid_positions) && throw(ArgumentError(
+            "every Qwen3-VL batch item must contain a valid token",
+        ))
+        maximum_coordinate = maximum(view(
+            normalized_positions,
+            :,
+            valid_positions,
+            batch,
+        ))
+        expected_delta = _strict_host_int(
+            BigInt(maximum_coordinate) + 1 - BigInt(sequence_length),
+            "Qwen3-VL expected rope_delta",
+        )
+        normalized_deltas[batch, 1] == expected_delta ||
+            throw(ArgumentError(
+                "Qwen3-VL rope_delta is inconsistent with the prompt " *
+                "mRoPE positions",
+            ))
+    end
+    return vec(normalized_deltas)
+end
+
 function _qwen3_vl_cache_free_prompt_contract(
     spec::Qwen3VLTextSpec,
     tokens,
@@ -424,16 +485,6 @@ function _qwen3_vl_cache_free_prompt_contract(
         "Qwen3-VL prefill length must be in 1:$effective_limit",
     ))
 
-    position_ids = rope_layout.position_ids
-    size(position_ids) == (3, sequence_length, batch_size) ||
-        throw(DimensionMismatch("Qwen3-VL rope layout does not match input_ids"))
-    (eltype(position_ids) <: Integer && !(eltype(position_ids) <: Bool)) ||
-        throw(ArgumentError("Qwen3-VL position_ids must contain integers"))
-    all(position -> 0 <= position < spec.max_position_embeddings, position_ids) ||
-        throw(ArgumentError(
-            "Qwen3-VL prompt mRoPE coordinates are outside the decoder context",
-        ))
-
     visual_mask = rope_layout.visual_mask
     size(visual_mask) == size(tokens) || throw(DimensionMismatch(
         "Qwen3-VL visual mask does not match input_ids",
@@ -442,39 +493,16 @@ function _qwen3_vl_cache_free_prompt_contract(
         "Qwen3-VL visual_mask must contain Bool values",
     ))
 
+    _qwen3_vl_prompt_rope_deltas(
+        spec,
+        rope_layout,
+        sequence_length,
+        batch_size,
+    )
     attention_mask = rope_layout.attention_mask
-    size(attention_mask) == size(tokens) || throw(DimensionMismatch(
-        "Qwen3-VL attention mask does not match input_ids",
-    ))
-    eltype(attention_mask) <: Bool || throw(ArgumentError(
-        "Qwen3-VL attention_mask must contain Bool values",
-    ))
     all((.!visual_mask) .| attention_mask) || throw(ArgumentError(
         "Qwen3-VL visual positions must be valid attention positions",
     ))
-
-    rope_deltas = rope_layout.rope_deltas
-    size(rope_deltas) == (batch_size, 1) || throw(DimensionMismatch(
-        "Qwen3-VL rope_deltas must have shape (batch, 1)",
-    ))
-    (eltype(rope_deltas) <: Integer && !(eltype(rope_deltas) <: Bool)) ||
-        throw(ArgumentError("Qwen3-VL rope_deltas must contain integers"))
-    for batch in 1:batch_size
-        valid_positions = findall(view(attention_mask, :, batch))
-        isempty(valid_positions) && throw(ArgumentError(
-            "every Qwen3-VL batch item must contain a valid token",
-        ))
-        maximum_coordinate = maximum(view(
-            position_ids,
-            :,
-            valid_positions,
-            batch,
-        ))
-        expected_delta = maximum_coordinate + 1 - sequence_length
-        rope_deltas[batch, 1] == expected_delta || throw(ArgumentError(
-            "Qwen3-VL rope_delta is inconsistent with the prompt mRoPE positions",
-        ))
-    end
     return nothing
 end
 

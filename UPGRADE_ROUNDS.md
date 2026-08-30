@@ -193,6 +193,8 @@ Chapter 03 reproducible-training test.
     preflight complete block parameter counts before layer construction.
 96. Normalize GPT head dimensions and reconstructed KV/expert counts without
     accepting booleans or leaking host-integer conversion failures.
+97. Share strict Qwen3-VL prompt coordinate/delta validation across cache-free,
+    dynamic, and static prefill without unsigned wraparound or cache mutation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

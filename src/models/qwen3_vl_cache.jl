@@ -548,32 +548,19 @@ function _qwen3_vl_cached_prompt_contract(
     all(id -> 1 <= id <= spec.vocab_size, tokens) || throw(ArgumentError(
         "Qwen3-VL input_ids contain an out-of-vocabulary id",
     ))
-    size(rope_layout.position_ids) == (3, sequence_length, batch_size) ||
-        throw(DimensionMismatch(
-            "Qwen3-VL rope layout does not match input_ids",
-        ))
     size(rope_layout.visual_mask) == size(tokens) || throw(DimensionMismatch(
         "Qwen3-VL visual mask does not match input_ids",
     ))
-    size(rope_layout.attention_mask) == size(tokens) || throw(DimensionMismatch(
-        "Qwen3-VL attention mask does not match input_ids",
-    ))
+    rope_deltas = _qwen3_vl_prompt_rope_deltas(
+        spec,
+        rope_layout,
+        sequence_length,
+        batch_size,
+    )
     all(rope_layout.attention_mask) || throw(ArgumentError(
         "Qwen3-VL cached generation currently requires an all-ones attention mask",
     ))
-    size(rope_layout.rope_deltas) == (batch_size, 1) ||
-        throw(DimensionMismatch(
-            "Qwen3-VL rope_deltas must have shape (batch, 1)",
-        ))
-    all(position -> 0 <= position < spec.max_position_embeddings,
-        rope_layout.position_ids) || throw(ArgumentError(
-        "Qwen3-VL prompt mRoPE coordinates are outside the decoder context",
-    ))
-    rope_delta = Int(only(rope_layout.rope_deltas))
-    expected_rope_delta = maximum(rope_layout.position_ids) + 1 - sequence_length
-    rope_delta == expected_rope_delta || throw(ArgumentError(
-        "Qwen3-VL rope_delta is inconsistent with the prompt mRoPE positions",
-    ))
+    rope_delta = only(rope_deltas)
     0 <= logits_to_keep <= sequence_length || throw(ArgumentError(
         "logits_to_keep must be between zero and the prefill length",
     ))
@@ -901,32 +888,19 @@ function _qwen3_vl_static_prompt_contract(
     all(id -> 1 <= id <= spec.vocab_size, tokens) || throw(ArgumentError(
         "Qwen3-VL input_ids contain an out-of-vocabulary id",
     ))
-    size(rope_layout.position_ids) == (3, sequence_length, batch_size) ||
-        throw(DimensionMismatch(
-            "Qwen3-VL rope layout does not match input_ids",
-        ))
     size(rope_layout.visual_mask) == size(tokens) || throw(DimensionMismatch(
         "Qwen3-VL visual mask does not match input_ids",
     ))
-    size(rope_layout.attention_mask) == size(tokens) || throw(DimensionMismatch(
-        "Qwen3-VL attention mask does not match input_ids",
-    ))
+    rope_deltas = _qwen3_vl_prompt_rope_deltas(
+        spec,
+        rope_layout,
+        sequence_length,
+        batch_size,
+    )
     all(rope_layout.attention_mask) || throw(ArgumentError(
         "Qwen3-VL static generation currently requires an all-ones attention mask",
     ))
-    size(rope_layout.rope_deltas) == (batch_size, 1) ||
-        throw(DimensionMismatch(
-            "Qwen3-VL rope_deltas must have shape (batch, 1)",
-        ))
-    all(position -> 0 <= position < spec.max_position_embeddings,
-        rope_layout.position_ids) || throw(ArgumentError(
-        "Qwen3-VL prompt mRoPE coordinates are outside the decoder context",
-    ))
-    rope_delta = Int(only(rope_layout.rope_deltas))
-    expected_rope_delta = maximum(rope_layout.position_ids) + 1 - sequence_length
-    rope_delta == expected_rope_delta || throw(ArgumentError(
-        "Qwen3-VL rope_delta is inconsistent with the prompt mRoPE positions",
-    ))
+    rope_delta = only(rope_deltas)
     0 <= logits_to_keep <= sequence_length || throw(ArgumentError(
         "logits_to_keep must be between zero and the prefill length",
     ))

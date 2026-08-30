@@ -276,6 +276,92 @@ end
     @test all(layer -> layer.keys === nothing && layer.values === nothing, cache0.layers)
     @test_throws ArgumentError init_qwen3_vl_kv_cache(parameters; batch_size=2)
     @test_throws ArgumentError hf_qwen3_vl_text_decode_step(parameters, 8, cache0)
+
+    wide_layout = Qwen3VLRopeLayout(
+        UInt128.(inputs.rope_layout.position_ids),
+        Int128.(inputs.rope_layout.rope_deltas),
+        inputs.rope_layout.visual_mask,
+        inputs.rope_layout.attention_mask,
+    )
+    wide_prefill, wide_cache8 = hf_qwen3_vl_text_prefill_cached(
+        parameters,
+        inputs.input_ids,
+        wide_layout;
+        vision_features=inputs.vision_features,
+        cache=init_qwen3_vl_kv_cache(parameters),
+        logits_to_keep=0,
+    )
+
+    overflow_integer = big(typemax(Int)) + 1
+    invalid_integer_layouts = (
+        (
+            layout=Qwen3VLRopeLayout(
+                Bool.(inputs.rope_layout.position_ids .> 0),
+                reshape(Int[-6], 1, 1),
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL position_ids must be an integer",
+        ),
+        (
+            layout=Qwen3VLRopeLayout(
+                Float64.(inputs.rope_layout.position_ids),
+                inputs.rope_layout.rope_deltas,
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL position_ids must be an integer",
+        ),
+        (
+            layout=Qwen3VLRopeLayout(
+                inputs.rope_layout.position_ids,
+                reshape(Bool[true], 1, 1),
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL rope_delta must be an integer",
+        ),
+        (
+            layout=Qwen3VLRopeLayout(
+                inputs.rope_layout.position_ids,
+                reshape(Float64[-2.0], 1, 1),
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL rope_delta must be an integer",
+        ),
+        (
+            layout=Qwen3VLRopeLayout(
+                inputs.rope_layout.position_ids,
+                reshape(BigInt[overflow_integer], 1, 1),
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL rope_delta is outside the host integer range",
+        ),
+    )
+    for case in invalid_integer_layouts
+        guard = init_qwen3_vl_kv_cache(parameters)
+        layout_error = _ch45_captured_error(() ->
+            hf_qwen3_vl_text_prefill_cached(
+                parameters,
+                inputs.input_ids,
+                case.layout;
+                vision_features=inputs.vision_features,
+                cache=guard,
+            ),
+        )
+        @test layout_error isa ArgumentError
+        @test occursin(case.message, sprint(showerror, layout_error))
+        @test isempty(guard)
+        @test guard.position == 0
+        @test guard.rope_delta == 0
+        @test all(
+            layer -> layer.keys === nothing && layer.values === nothing,
+            guard.layers,
+        )
+    end
+
     malformed_layout = Qwen3VLRopeLayout(
         inputs.rope_layout.position_ids,
         reshape(Int[-1], 1, 1),
@@ -300,12 +386,20 @@ end
     )
     @test cache8.position == 8
     @test cache8.rope_delta == -2
+    @test wide_cache8.position == cache8.position
+    @test wide_cache8.rope_delta == cache8.rope_delta
     @test size(prefill.final_hidden) == (16, 8, 1)
     @test size(prefill.logits) == (32, 8, 1)
+    @test wide_prefill.final_hidden == prefill.final_hidden
+    @test wide_prefill.logits == prefill.logits
     @test prefill.final_hidden ≈
         _ch45_hf_hidden(reference, "prefill.final_hidden") atol=1.0f-6 rtol=1.0f-6
     @test prefill.logits ≈
         _ch45_hf_hidden(reference, "prefill.logits") atol=1.0f-6 rtol=1.0f-6
+    for layer in eachindex(cache8.layers)
+        @test wide_cache8.layers[layer].keys == cache8.layers[layer].keys
+        @test wide_cache8.layers[layer].values == cache8.layers[layer].values
+    end
 
     full_last_prefill, _ = hf_qwen3_vl_text_prefill_cached(
         parameters,

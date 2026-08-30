@@ -259,6 +259,16 @@ end
     )
     @test size(unlimited.logits) == (parameters.spec.vocab_size, 1, 1)
 
+    wide_layout = Qwen3VLRopeLayout(
+        UInt128.(inputs.rope_layout.position_ids),
+        Int128.(inputs.rope_layout.rope_deltas),
+        inputs.rope_layout.visual_mask,
+        inputs.rope_layout.attention_mask,
+    )
+    wide = call_prefill(wide_layout)
+    @test wide.final_hidden == unlimited.final_hidden
+    @test wide.logits == unlimited.logits
+
     negative_positions = copy(inputs.rope_layout.position_ids)
     negative_positions[1, 1, 1] = -1
     @test_throws ArgumentError call_prefill(Qwen3VLRopeLayout(
@@ -276,12 +286,64 @@ end
         inputs.rope_layout.visual_mask,
         inputs.rope_layout.attention_mask,
     ))
-    @test_throws ArgumentError call_prefill(Qwen3VLRopeLayout(
-        Float32.(inputs.rope_layout.position_ids),
-        inputs.rope_layout.rope_deltas,
-        inputs.rope_layout.visual_mask,
-        inputs.rope_layout.attention_mask,
-    ))
+    invalid_integer_layouts = (
+        (
+            layout=Qwen3VLRopeLayout(
+                Bool.(inputs.rope_layout.position_ids .> 0),
+                reshape(Int[-6], 1, 1),
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL position_ids must be an integer",
+        ),
+        (
+            layout=Qwen3VLRopeLayout(
+                Float32.(inputs.rope_layout.position_ids),
+                inputs.rope_layout.rope_deltas,
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL position_ids must be an integer",
+        ),
+        (
+            layout=Qwen3VLRopeLayout(
+                inputs.rope_layout.position_ids,
+                reshape(Bool[true], 1, 1),
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL rope_delta must be an integer",
+        ),
+        (
+            layout=Qwen3VLRopeLayout(
+                inputs.rope_layout.position_ids,
+                reshape(Float64[-2.0], 1, 1),
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL rope_delta must be an integer",
+        ),
+        (
+            layout=Qwen3VLRopeLayout(
+                inputs.rope_layout.position_ids,
+                reshape(BigInt[overflow_integer], 1, 1),
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL rope_delta is outside the host integer range",
+        ),
+    )
+    for case in invalid_integer_layouts
+        layout_error = try
+            call_prefill(case.layout)
+            nothing
+        catch caught
+            caught
+        end
+        @test layout_error isa ArgumentError
+        @test layout_error isa Exception &&
+            occursin(case.message, sprint(showerror, layout_error))
+    end
     @test_throws DimensionMismatch call_prefill(Qwen3VLRopeLayout(
         inputs.rope_layout.position_ids,
         Int[-2],

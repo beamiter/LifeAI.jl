@@ -425,6 +425,82 @@ end
         end
     end
 
+    invalid_integer_layouts = (
+        (
+            layout=Qwen3VLRopeLayout(
+                Bool.(inputs.rope_layout.position_ids .> 0),
+                reshape(Int[-6], 1, 1),
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL position_ids must be an integer",
+        ),
+        (
+            layout=Qwen3VLRopeLayout(
+                Float64.(inputs.rope_layout.position_ids),
+                inputs.rope_layout.rope_deltas,
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL position_ids must be an integer",
+        ),
+        (
+            layout=Qwen3VLRopeLayout(
+                inputs.rope_layout.position_ids,
+                reshape(Bool[true], 1, 1),
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL rope_delta must be an integer",
+        ),
+        (
+            layout=Qwen3VLRopeLayout(
+                inputs.rope_layout.position_ids,
+                reshape(Float64[-2.0], 1, 1),
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL rope_delta must be an integer",
+        ),
+        (
+            layout=Qwen3VLRopeLayout(
+                inputs.rope_layout.position_ids,
+                reshape(BigInt[overflow_integer], 1, 1),
+                inputs.rope_layout.visual_mask,
+                inputs.rope_layout.attention_mask,
+            ),
+            message="Qwen3-VL rope_delta is outside the host integer range",
+        ),
+    )
+    for case in invalid_integer_layouts
+        static_guard = init_qwen3_vl_static_kv_cache(
+            parameters;
+            capacity=10,
+        )
+        static_refs = _ch46_storage_refs(static_guard)
+        layout_error = try
+            hf_qwen3_vl_text_prefill_static(
+                parameters,
+                inputs.input_ids,
+                case.layout;
+                vision_features=inputs.vision_features,
+                cache=static_guard,
+            )
+            nothing
+        catch caught
+            caught
+        end
+        @test layout_error isa ArgumentError
+        @test layout_error isa Exception &&
+            occursin(case.message, sprint(showerror, layout_error))
+        @test isempty(static_guard)
+        @test static_guard.position == 0
+        @test static_guard.rope_delta == 0
+        @test all(layer -> all(iszero, layer.keys), static_guard.layers)
+        @test all(layer -> all(iszero, layer.values), static_guard.layers)
+        _ch46_assert_storage_identity(static_guard, static_refs)
+    end
+
     expected_bytes = parameters.spec.num_hidden_layers * 2 *
         parameters.spec.head_dim * parameters.spec.num_key_value_heads *
         cache.capacity * cache.batch_size * sizeof(Float32)
@@ -565,6 +641,25 @@ end
         logits_to_keep=Int128(0),
     )
 
+    wide_layout = Qwen3VLRopeLayout(
+        UInt128.(inputs.rope_layout.position_ids),
+        Int128.(inputs.rope_layout.rope_deltas),
+        inputs.rope_layout.visual_mask,
+        inputs.rope_layout.attention_mask,
+    )
+    wide_static = init_qwen3_vl_static_kv_cache(parameters; capacity=10)
+    wide_prefill, wide_returned = hf_qwen3_vl_text_prefill_static(
+        parameters,
+        inputs.input_ids,
+        wide_layout;
+        vision_features=inputs.vision_features,
+        cache=wide_static,
+        logits_to_keep=0,
+    )
+    @test wide_returned === wide_static
+    @test wide_static.position == 8
+    @test wide_static.rope_delta == -2
+
     static = init_qwen3_vl_static_kv_cache(parameters; capacity=10)
     refs = _ch46_storage_refs(static)
     fixed_bytes = _ch46_storage_bytes(static)
@@ -587,8 +682,12 @@ end
         dynamic_prefill.final_hidden atol=1.0f-6 rtol=1.0f-6
     @test static_prefill.logits ≈
         dynamic_prefill.logits atol=1.0f-6 rtol=1.0f-6
+    @test wide_prefill.final_hidden == static_prefill.final_hidden
+    @test wide_prefill.logits == static_prefill.logits
     _ch46_assert_prefix(reference, static, "prefill", 8)
     for layer in eachindex(static.layers)
+        @test wide_static.layers[layer].keys == static.layers[layer].keys
+        @test wide_static.layers[layer].values == static.layers[layer].values
         @test view(static.layers[layer].keys, :, :, 1:8, :) ≈
             dynamic.layers[layer].keys atol=1.0f-6 rtol=1.0f-6
         @test view(static.layers[layer].values, :, :, 1:8, :) ≈
