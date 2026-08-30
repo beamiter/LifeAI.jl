@@ -240,6 +240,29 @@ end
         @test overflow_failure isa ArgumentError
         @test sprint(showerror, overflow_failure) ==
             "ArgumentError: asset manifest total byte count exceeds the host integer range"
+        substring_report = verify_qwen3_deployment_assets(
+            directory,
+            path;
+            model_id=SubString("xQwen/test", 2),
+            revision=SubString("xfrozen", 2),
+        )
+        @test substring_report.model_id == "Qwen/test"
+        for (options, message) in (
+            ((; model_id=Symbol("Qwen/test")), "model_id must be a string"),
+            ((; model_id=true), "model_id must be a string"),
+            ((; revision=:frozen), "revision must be a string"),
+            ((; revision=true), "revision must be a string"),
+        )
+            failure = _qwen3_deployment_captured_error() do
+                verify_qwen3_deployment_assets(
+                    directory,
+                    path;
+                    options...,
+                )
+            end
+            @test failure isa ArgumentError
+            @test sprint(showerror, failure) == "ArgumentError: $message"
+        end
 
         write(joinpath(directory, "model.safetensors"), "unverified")
         @test_throws ArgumentError verify_qwen3_deployment_assets(directory, path)

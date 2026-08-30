@@ -267,6 +267,8 @@ Chapter 03 reproducible-training test.
      strict count, layer, source, and second-moment validation.
 133. Strictly normalize activation moments at the Qwen3 INT4 quantization
      consumer boundary instead of coercing Bool or leaking conversion errors.
+134. Strictly validate optional Qwen3 asset-manifest model and revision strings
+     while retaining normalized AbstractString compatibility.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

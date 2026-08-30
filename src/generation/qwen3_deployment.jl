@@ -360,12 +360,18 @@ function verify_qwen3_deployment_assets(
     ))
     manifest_model_id = _qwen3_required_string(object, "model_id")
     manifest_revision = _qwen3_required_string(object, "revision")
-    model_id === nothing || String(model_id) == manifest_model_id || throw(ArgumentError(
-        "asset manifest model_id does not match the deployment profile",
-    ))
-    revision === nothing || String(revision) == manifest_revision || throw(ArgumentError(
-        "asset manifest revision does not match the deployment profile",
-    ))
+    if model_id !== nothing
+        expected_model_id = _qwen3_profile_string(model_id, "model_id")
+        expected_model_id == manifest_model_id || throw(ArgumentError(
+            "asset manifest model_id does not match the deployment profile",
+        ))
+    end
+    if revision !== nothing
+        expected_revision = _qwen3_profile_string(revision, "revision")
+        expected_revision == manifest_revision || throw(ArgumentError(
+            "asset manifest revision does not match the deployment profile",
+        ))
+    end
     files = _qwen3_profile_value(object, "files")
     files isa JSON3.Array || throw(ArgumentError("asset manifest files must be an array"))
     isempty(files) && throw(ArgumentError("asset manifest files must not be empty"))
