@@ -1068,19 +1068,10 @@ end
         @test isequal(_qwen3_dense_session_state(session), preserved)
         pop!(session.generation_config.eos_ids)
 
-        original_tokenizer_eos = session.tokenizer.eos_ids[1]
-        session.tokenizer.eos_ids[1] = original_tokenizer_eos == 1 ? 2 : 1
-        preserved = _qwen3_dense_session_state(session)
-        tokenizer_mutation_failure = _qwen3_deployment_captured_error() do
-            decode_hf_qwen3_bf16!(session, 7)
-        end
-        @test tokenizer_mutation_failure isa ArgumentError
-        @test occursin(
-            "tokenizer/generation metadata changed after initialization",
-            sprint(showerror, tokenizer_mutation_failure),
-        )
-        @test isequal(_qwen3_dense_session_state(session), preserved)
-        session.tokenizer.eos_ids[1] = original_tokenizer_eos
+        tokenizer_eos_snapshot = session.tokenizer.eos_ids
+        original_tokenizer_eos = copy(tokenizer_eos_snapshot)
+        tokenizer_eos_snapshot[1] = tokenizer_eos_snapshot[1] == 1 ? 2 : 1
+        @test session.tokenizer.eos_ids == original_tokenizer_eos
 
         replacement_config = merge(
             session.generation_config,

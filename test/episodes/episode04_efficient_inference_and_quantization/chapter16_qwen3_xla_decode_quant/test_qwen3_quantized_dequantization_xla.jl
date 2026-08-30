@@ -53,3 +53,23 @@ using LifeAI: Int4GroupWeight, Int8ChannelWeight
     @test Array(actual[4]) == int4_slice_reference
     @test all(value -> eltype(value) === BFloat16, actual)
 end
+
+@testset "BF16 static cache trusted reconstruction traces on Reactant" begin
+    Reactant.set_default_backend(get(ENV, "LIFEAI_XLA_BACKEND", "cpu"))
+    shape = (2, 2, 4, 1)
+    cache = Reactant.to_rarray(LifeAI.BF16AStaticLayerCache(
+        zeros(BFloat16, shape),
+        zeros(BFloat16, shape),
+    ))
+    kernel = cache -> LifeAI._bf16a_static_layer_cache_trusted(
+        cache.keys .+ BFloat16(1),
+        cache.values .+ BFloat16(2),
+    )
+    compiled = Reactant.@compile kernel(cache)
+    actual = compiled(cache)
+
+    @test size(actual.keys) == shape
+    @test size(actual.values) == shape
+    @test all(Array(actual.keys) .== BFloat16(1))
+    @test all(Array(actual.values) .== BFloat16(2))
+end

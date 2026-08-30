@@ -458,12 +458,11 @@ end
     @test rejected_geometry.unchanged
     session.caches[1] = valid_first_cache
 
-    session.caches[1] = LifeAI.BF16AStaticLayerCache(
-        valid_first_cache.keys,
-        valid_first_cache.keys,
-    )
     rejected_alias = _qwen3_offload_atomic_failure(session) do
-        decode_hf_qwen3_moe_offload!(session, 4)
+        session.caches[1] = LifeAI.BF16AStaticLayerCache(
+            valid_first_cache.keys,
+            valid_first_cache.keys,
+        )
     end
     @test rejected_alias.failure isa ArgumentError
     @test occursin(
@@ -471,7 +470,6 @@ end
         sprint(showerror, rejected_alias.failure),
     )
     @test rejected_alias.unchanged
-    session.caches[1] = valid_first_cache
 
     valid_second_cache = session.caches[2]
     session.caches[2] = valid_first_cache
@@ -486,12 +484,11 @@ end
     @test rejected_cross_layer_alias.unchanged
     session.caches[2] = valid_second_cache
 
-    session.caches[1] = LifeAI.BF16AStaticLayerCache(
-        zeros(Float32, size(valid_first_cache.keys)),
-        zeros(Float32, size(valid_first_cache.values)),
-    )
     rejected_dtype = _qwen3_offload_atomic_failure(session) do
-        decode_hf_qwen3_moe_offload!(session, 4)
+        session.caches[1] = LifeAI.BF16AStaticLayerCache(
+            zeros(Float32, size(valid_first_cache.keys)),
+            zeros(Float32, size(valid_first_cache.values)),
+        )
     end
     @test rejected_dtype.failure isa ArgumentError
     @test occursin(
@@ -499,7 +496,6 @@ end
         sprint(showerror, rejected_dtype.failure),
     )
     @test rejected_dtype.unchanged
-    session.caches[1] = valid_first_cache
 
     @test reset_hf_qwen3_moe_offload_session!(session).position == 0
 end

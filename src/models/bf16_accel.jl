@@ -343,9 +343,46 @@ Only the prefix selected by the owning session is read. Unlike the historical
 parity path's tuple cache, appending a token never reallocates or concatenates
 the already-cached prefix.
 """
+struct _BF16AStaticLayerCacheValidated end
+const _BF16A_STATIC_LAYER_CACHE_VALIDATED = _BF16AStaticLayerCacheValidated()
+
 struct BF16AStaticLayerCache{K,V}
     keys::K
     values::V
+
+    function BF16AStaticLayerCache(
+        ::_BF16AStaticLayerCacheValidated,
+        keys::K,
+        values::V,
+    ) where {K,V}
+        return new{K,V}(keys, values)
+    end
+end
+
+# Traced kernels may rebuild this wrapper around storage validated at their
+# host boundary; keep that reconstruction free of host metadata inspection.
+_bf16a_static_layer_cache_trusted(keys, values) = BF16AStaticLayerCache(
+    _BF16A_STATIC_LAYER_CACHE_VALIDATED,
+    keys,
+    values,
+)
+
+function BF16AStaticLayerCache(
+    keys::AbstractArray,
+    values::AbstractArray,
+)
+    _validate_layer_kv_arrays(keys, values)
+    Base.mightalias(keys, values) && throw(ArgumentError(
+        "BF16 accelerator static KV cache keys and values must use independent storage",
+    ))
+    eltype(keys) === BFloat16 || throw(ArgumentError(
+        "BF16 accelerator static KV cache storage must use BFloat16",
+    ))
+    MLDataDevices.get_device(keys) == MLDataDevices.get_device(values) ||
+        throw(ArgumentError(
+            "BF16 accelerator static KV cache keys and values must use the same device",
+        ))
+    return _bf16a_static_layer_cache_trusted(keys, values)
 end
 
 function _bf16a_append_cache(

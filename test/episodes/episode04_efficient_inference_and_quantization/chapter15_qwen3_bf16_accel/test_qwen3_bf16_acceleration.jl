@@ -3,6 +3,8 @@ using BFloat16s: BFloat16
 using JSON3
 using Lux
 using NNlib: batched_mul
+import LifeAI
+import MLDataDevices
 using LifeAI:
     GPTModel,
     hf_qwen3_bf16_accel_forward,
@@ -22,6 +24,94 @@ const _QWEN3_ACCELERATION_ASSETS_PATH = joinpath(
     "qwen3_bf16_acceleration",
     "assets.json",
 )
+
+struct _BF16ACacheForeignDevice <: MLDataDevices.AbstractDevice end
+
+struct _BF16ACacheTestArray{T,N,A<:AbstractArray{T,N}} <: AbstractArray{T,N}
+    parent::A
+    offsets::NTuple{N,Int}
+    foreign_device::Bool
+end
+
+Base.size(array::_BF16ACacheTestArray) = size(array.parent)
+Base.axes(array::_BF16ACacheTestArray{T,N}) where {T,N} = ntuple(N) do dimension
+    parent_axis = axes(array.parent, dimension)
+    offset = array.offsets[dimension]
+    return (first(parent_axis) + offset):(last(parent_axis) + offset)
+end
+Base.IndexStyle(::Type{<:_BF16ACacheTestArray}) = IndexCartesian()
+function Base.getindex(
+    array::_BF16ACacheTestArray{T,N},
+    indices::Vararg{Int,N},
+) where {T,N}
+    parent_indices = ntuple(
+        dimension -> indices[dimension] - array.offsets[dimension],
+        N,
+    )
+    return getindex(array.parent, parent_indices...)
+end
+MLDataDevices.get_device(array::_BF16ACacheTestArray) =
+    array.foreign_device ? _BF16ACacheForeignDevice() :
+    MLDataDevices.get_device(array.parent)
+
+@testset "BF16 accelerator static layer cache seals storage" begin
+    shape = (2, 3, 4, 1)
+    keys = zeros(BFloat16, shape)
+    values = ones(BFloat16, shape)
+    cache = LifeAI.BF16AStaticLayerCache(keys, values)
+    @test cache.keys === keys
+    @test cache.values === values
+    @test_throws MethodError typeof(cache)(keys, values)
+    @test_throws MethodError LifeAI.BF16AStaticLayerCache(nothing, nothing)
+    @test_throws MethodError LifeAI.BF16AStaticLayerCache{Nothing,Nothing}(
+        nothing,
+        nothing,
+    )
+
+    @test_throws DimensionMismatch LifeAI.BF16AStaticLayerCache(
+        zeros(BFloat16, 2, 3, 4),
+        zeros(BFloat16, 2, 3, 4),
+    )
+    @test_throws DimensionMismatch LifeAI.BF16AStaticLayerCache(
+        keys,
+        zeros(BFloat16, 2, 3, 5, 1),
+    )
+    @test_throws ArgumentError LifeAI.BF16AStaticLayerCache(
+        zeros(BFloat16, 2, 3, 0, 1),
+        zeros(BFloat16, 2, 3, 0, 1),
+    )
+    @test_throws ArgumentError LifeAI.BF16AStaticLayerCache(
+        zeros(Float32, shape),
+        ones(Float32, shape),
+    )
+    @test_throws ArgumentError LifeAI.BF16AStaticLayerCache(keys, keys)
+    shared = zeros(BFloat16, 2, 3, 4, 2)
+    aliased_keys = @view shared[:, :, :, 1:1]
+    aliased_values = @view shared[:, :, :, 1:1]
+    @test_throws ArgumentError LifeAI.BF16AStaticLayerCache(
+        aliased_keys,
+        aliased_values,
+    )
+
+    offset_keys = _BF16ACacheTestArray(keys, (1, 0, 0, 0), false)
+    offset_values = _BF16ACacheTestArray(values, (0, 0, 1, 0), false)
+    @test_throws ArgumentError LifeAI.BF16AStaticLayerCache(offset_keys, values)
+    @test_throws ArgumentError LifeAI.BF16AStaticLayerCache(keys, offset_values)
+    foreign_values = _BF16ACacheTestArray(values, (0, 0, 0, 0), true)
+    @test_throws ArgumentError LifeAI.BF16AStaticLayerCache(keys, foreign_values)
+
+    new_keys = fill(BFloat16(2), 2, 3, 2, 1)
+    new_values = fill(BFloat16(3), 2, 3, 2, 1)
+    all_keys, all_values, updated = LifeAI._bf16a_append_cache(
+        cache,
+        new_keys,
+        new_values,
+        0,
+    )
+    @test updated === cache
+    @test all_keys == new_keys
+    @test all_values == new_values
+end
 
 function _qwen3_acceleration_row_major_values(array)
     values = Float32.(array)
