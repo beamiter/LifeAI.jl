@@ -1190,12 +1190,44 @@ zero-based because they are RoPE coordinates, not token ids. Multiple images
 in the single prompt are supported, while batches and video are deliberately
 rejected in the Chapter 44 prefill boundary.
 """
+function _qwen3_vl_layout_token_id(
+    raw_id::Int,
+    vocab_size::Int,
+    label::AbstractString,
+)
+    0 <= raw_id < vocab_size || throw(ArgumentError(
+        "Qwen3-VL checkpoint $label must be in 0:$(vocab_size - 1)",
+    ))
+    return raw_id + 1
+end
+
 function qwen3_vl_rope_layout(
     input_ids,
     image_grid_thw=nothing;
     attention_mask=nothing,
     checkpoint::Qwen3VLCheckpointSpec=qwen3_vl_checkpoint_spec(),
 )
+    checkpoint_vocab_size = checkpoint.text.vocab_size
+    image_token = _qwen3_vl_layout_token_id(
+        checkpoint.image_token_id,
+        checkpoint_vocab_size,
+        "image_token_id",
+    )
+    video_token = _qwen3_vl_layout_token_id(
+        checkpoint.video_token_id,
+        checkpoint_vocab_size,
+        "video_token_id",
+    )
+    vision_start = _qwen3_vl_layout_token_id(
+        checkpoint.vision_start_token_id,
+        checkpoint_vocab_size,
+        "vision_start_token_id",
+    )
+    vision_end = _qwen3_vl_layout_token_id(
+        checkpoint.vision_end_token_id,
+        checkpoint_vocab_size,
+        "vision_end_token_id",
+    )
     tokens = _qwen3_vl_token_matrix(input_ids)
     sequence_length, batch_size = size(tokens)
     batch_size == 1 || throw(ArgumentError(
@@ -1204,7 +1236,12 @@ function qwen3_vl_rope_layout(
     sequence_length > 0 || throw(ArgumentError(
         "Qwen3-VL input_ids must contain at least one token",
     ))
-    all(id -> 1 <= id <= checkpoint.text.vocab_size, tokens) ||
+    sequence_length <= checkpoint.text.max_position_embeddings ||
+        throw(ArgumentError(
+            "Qwen3-VL input length $sequence_length exceeds checkpoint " *
+            "context $(checkpoint.text.max_position_embeddings)",
+        ))
+    all(id -> 1 <= id <= checkpoint_vocab_size, tokens) ||
         throw(ArgumentError("Qwen3-VL input_ids contain an out-of-vocabulary id"))
     mask = _qwen3_vl_attention_matrix(attention_mask, size(tokens))
     all(any(view(mask, :, batch)) for batch in 1:batch_size) ||
@@ -1215,10 +1252,6 @@ function qwen3_vl_rope_layout(
     position_ids = ones(Int, 3, sequence_length, batch_size)
     visual_mask = falses(sequence_length, batch_size)
     deltas = Matrix{Int}(undef, batch_size, 1)
-    image_token = checkpoint.image_token_id + 1
-    video_token = checkpoint.video_token_id + 1
-    vision_start = checkpoint.vision_start_token_id + 1
-    vision_end = checkpoint.vision_end_token_id + 1
     merge_size = checkpoint.vision.spatial_merge_size
     grid_index = 0
 

@@ -6,6 +6,23 @@ using LifeAI: apply_qwen3_vl_chat_template,
     qwen3_vl_expand_image_placeholders,
     qwen3_vl_rope_layout
 
+function _ch44_replace_spec_field(value, name::Symbol, replacement)
+    names = fieldnames(typeof(value))
+    index = findfirst(==(name), names)
+    index === nothing && error("unknown specification field: $name")
+    fields = Tuple(getfield(value, field) for field in names)
+    return typeof(value)(Base.setindex(fields, replacement, index)...)
+end
+
+function _ch44_layout_captured_error(thunk)
+    try
+        thunk()
+    catch error
+        return error
+    end
+    error("expected Qwen3-VL layout call to fail")
+end
+
 @testset "Chapter 44 — Qwen3-VL token ids require integers" begin
     @test qwen3_vl_rope_layout(Int32[1, 2]).position_ids[:, :, 1] == [
         0 1
@@ -23,6 +40,53 @@ using LifeAI: apply_qwen3_vl_chat_template,
     )
         @test_throws ArgumentError qwen3_vl_rope_layout(invalid)
     end
+end
+
+@testset "Chapter 44 — mRoPE checkpoint bounds are preflighted" begin
+    base = qwen3_vl_checkpoint_spec()
+    for name in (
+        :image_token_id,
+        :video_token_id,
+        :vision_start_token_id,
+        :vision_end_token_id,
+    )
+        checkpoint = _ch44_replace_spec_field(
+            base,
+            name,
+            base.text.vocab_size,
+        )
+        failure = _ch44_layout_captured_error() do
+            qwen3_vl_rope_layout(Int[1]; checkpoint)
+        end
+        @test failure isa ArgumentError
+        @test sprint(showerror, failure) ==
+            "ArgumentError: Qwen3-VL checkpoint $name must be in " *
+            "0:$(base.text.vocab_size - 1)"
+    end
+
+    invalid_checkpoint = _ch44_replace_spec_field(
+        base,
+        :image_token_id,
+        base.text.vocab_size,
+    )
+    priority_failure = _ch44_layout_captured_error() do
+        qwen3_vl_rope_layout(Bool[true]; checkpoint=invalid_checkpoint)
+    end
+    @test priority_failure isa ArgumentError
+    @test occursin("image_token_id", sprint(showerror, priority_failure))
+
+    short_text = _ch44_replace_spec_field(
+        base.text,
+        :max_position_embeddings,
+        1,
+    )
+    short_checkpoint = _ch44_replace_spec_field(base, :text, short_text)
+    context_failure = _ch44_layout_captured_error() do
+        qwen3_vl_rope_layout(Int[1, 2]; checkpoint=short_checkpoint)
+    end
+    @test context_failure isa ArgumentError
+    @test sprint(showerror, context_failure) ==
+        "ArgumentError: Qwen3-VL input length 2 exceeds checkpoint context 1"
 end
 
 function _ch44_occurrences(text::AbstractString, needle::AbstractString)

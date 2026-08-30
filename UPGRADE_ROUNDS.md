@@ -241,6 +241,8 @@ Chapter 03 reproducible-training test.
      provenance, assets, counts, raw token ids, and nested tower contracts.
 120. Strictly construct Qwen3-VL asset metadata and reject duplicate asset names,
      keeping the immutable file manifest one-to-one with verification work.
+121. Preflight Qwen3-VL mRoPE checkpoint token bounds and prompt context before
+     token conversion, grid parsing, mask creation, or coordinate allocation.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
