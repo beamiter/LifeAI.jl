@@ -1,9 +1,9 @@
 # Additional Upgrade Rounds
 
-This ledger records the ninety-five follow-up rounds implemented on top of the
+This ledger records the follow-up rounds implemented on top of the
 existing hardening work. Each round changes runtime behavior or a public
 contract and has a focused regression in the core contract files or the
-Chapter 03 reproducible-training test.
+corresponding episode tests.
 
 1. Reject Boolean and platform-overflowing `top_k` inputs.
 2. Keep exactly `top_k` candidates with deterministic original-index tie breaking.
@@ -520,6 +520,9 @@ Chapter 03 reproducible-training test.
 246. Reject overlapping Qwen3-VL dynamic and static K/V views within and across
      layers while retaining zero-copy disjoint views and atomic static-cache
      reset validation.
+247. Preserve the independent Qwen3-VL query projection width when merging
+     attention heads before the output projection, allowing valid narrower or
+     wider attention geometry in cache-free, dynamic, and static inference.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

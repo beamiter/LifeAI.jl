@@ -463,7 +463,11 @@ function _qwen3_vl_text_block(spec, block, x, cos_values, sin_values, mask)
     end
     attention = _bf16a_linear(
         block.o_weight,
-        reshape(context, spec.hidden_size, sequence_length, batch_size),
+        # The output projection maps concatenated query heads back to hidden_size.
+        reshape(
+            context,
+            head_dim * spec.num_attention_heads, sequence_length, batch_size,
+        ),
     )
     x = _qwen3_vl_text_residual(x, attention)
     normed = _qwen3_vl_text_rmsnorm(x, block.norm2, spec.rms_norm_eps)

@@ -342,6 +342,11 @@ end
             chapter,
             "test_qwen3_vl_dynamic_decode.jl",
         ))
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_attention_width.jl",
+        ))
     end
 end
 

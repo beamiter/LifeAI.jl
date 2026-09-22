@@ -899,7 +899,11 @@ function _qwen3_vl_cache_block_core(
     ) do
         attention = _bf16a_linear(
             block.o_weight,
-            reshape(context, spec.hidden_size, sequence_length, batch_size),
+            # Query projection width is independent of the residual hidden width.
+            reshape(
+                context,
+                head_dim * spec.num_attention_heads, sequence_length, batch_size,
+            ),
         )
         _qwen3_vl_text_residual(x, attention)
     end

@@ -90,7 +90,7 @@ test/
 | 08 | 42 | clean environment-event 显式写回、authoritative-spec 准入、fresh-load exact-spec retrieval、token-matched 三臂与 tokenizer-only replay |
 | 09 | 43 | Qwen3-VL checkpoint/vision architecture、raw processor 与真实 vision parity |
 | 09 | 44 | content-list chat、placeholder、mRoPE、DeepStack 与 decoder prefill |
-| 09 | 45 | dynamic K/V、cached decode、单图 greedy generation 与 HF DynamicCache oracle |
+| 09 | 45 | dynamic K/V、cached decode、单图 greedy generation、HF DynamicCache oracle 与独立 attention projection width |
 | 10 | 46 | bounded static K/V、fixed storage identity、overflow/reset 与 dynamic/static parity |
 | 10 | 47 | static decode stage runner 数值透明性/顺序完整性、pinned HF long-oracle fail-closed contract 与长生成 profile 骨架 |
 
