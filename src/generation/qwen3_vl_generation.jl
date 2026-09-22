@@ -134,7 +134,7 @@ function _qwen3_vl_generation_prompt_contract(
     tokens,
     rope_layout::Qwen3VLRopeLayout,
     vision_features,
-    require_prefill::Bool,
+    max_new_tokens::Int,
 )
     spec = text_parameters.spec
     sequence_length, batch_size = size(tokens)
@@ -160,11 +160,21 @@ function _qwen3_vl_generation_prompt_contract(
         sequence_length,
         batch_size,
     )
+    if max_new_tokens > 1
+        # Only N-1 generated tokens are fed through decode. Its rotary
+        # coordinates start at sequence_length + rope_delta, independently
+        # of the physical cache length. Compare the exclusive end exactly.
+        rope_end = BigInt(sequence_length) + only(rope_deltas) +
+            max_new_tokens - 1
+        rope_end <= spec.max_position_embeddings || throw(ArgumentError(
+            "Qwen3-VL generated mRoPE coordinates exceed max_position_embeddings",
+        ))
+    end
 
     # A zero-token request deliberately skips both vision and text prefill.
     # Its prompt layout is still part of the public input contract, but vision
     # features are not required because they would never be consumed.
-    require_prefill || return nothing
+    max_new_tokens == 0 && return nothing
     all(rope_layout.attention_mask) || throw(ArgumentError(
         "Qwen3-VL cached generation currently requires an all-ones attention mask",
     ))
@@ -350,6 +360,8 @@ contains `prompt_length + generated_count - 1` valid tokens unless generation
 stops before a decode is needed. `cache=:static` selects preallocated storage;
 `static_capacity` defaults to the exact processed context. The returned static
 cache can be reset and reused through the low-level static-cache API.
+The requested length must fit both physical cache positions and mRoPE
+coordinates before cache allocation or decoder computation begins.
 By default the returned prefill keeps only its last-token logits and layout;
 set `capture_prefill_states=true` to retain full prompt input embeddings and
 final hidden states for diagnostics.
@@ -389,7 +401,7 @@ function generate_hf_qwen3_vl_tokens(
         tokens,
         prompt_rope_layout,
         vision_features,
-        requested > 0,
+        requested,
     )
     stops = preflight.stops
     prompt_ids = vec(copy(tokens))

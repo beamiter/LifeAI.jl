@@ -1431,6 +1431,133 @@ end
     @test isempty(padded_zero.cache)
 end
 
+@testset "Chapter 45 — generation preflights the mRoPE decode horizon" begin
+    parameters = _ch45_tiny_text_parameters()
+    limit = parameters.spec.max_position_embeddings
+    prompt = [1, 2]
+    function high_layout(maximum_coordinate)
+        positions = repeat(
+            reshape(Int[maximum_coordinate - 1, maximum_coordinate], 1, 2, 1),
+            3,
+            1,
+            1,
+        )
+        delta = maximum_coordinate + 1 - length(prompt)
+        return Qwen3VLRopeLayout(
+            positions,
+            reshape(Int[delta], 1, 1),
+            falses(2, 1),
+            trues(2, 1),
+        )
+    end
+
+    error_message = "ArgumentError: Qwen3-VL generated mRoPE coordinates " *
+        "exceed max_position_embeddings"
+    cache_options = (
+        (; cache=:dynamic),
+        (; cache=:static, static_capacity=4),
+    )
+
+    # The final legal prompt coordinate leaves room for the token selected
+    # from prefill logits, but no room to append that token through decode.
+    exhausted = high_layout(limit - 1)
+    cache_poison = _CH45GenerationCachePoison(
+        parameters.spec,
+        parameters.embedding,
+    )
+    for options in cache_options
+        vision_failure = _ch45_captured_error() do
+            generate_hf_qwen3_vl_tokens(
+                parameters,
+                prompt,
+                exhausted;
+                vision_features=_CH45VisionComputePoison(),
+                max_new_tokens=2,
+                stop_token_ids=Int[],
+                options...,
+            )
+        end
+        @test sprint(showerror, vision_failure) == error_message
+
+        cache_failure = _ch45_captured_error() do
+            generate_hf_qwen3_vl_tokens(
+                cache_poison,
+                prompt,
+                exhausted;
+                max_new_tokens=2,
+                stop_token_ids=Int[],
+                options...,
+            )
+        end
+        @test sprint(showerror, cache_failure) == error_message
+    end
+
+    # max_new_tokens=0 skips prefill and max_new_tokens=1 consumes only its
+    # logits, so neither request needs a decode coordinate beyond the prompt.
+    for requested in (0, 1), options in cache_options
+        result = generate_hf_qwen3_vl_tokens(
+            parameters,
+            prompt,
+            exhausted;
+            max_new_tokens=requested,
+            stop_token_ids=Int[],
+            options...,
+        )
+        @test length(result.generated_ids) == requested
+        @test result.cache.position == (requested == 0 ? 0 : length(prompt))
+    end
+
+    # One coordinate below the limit admits exactly one decode append.
+    one_decode = high_layout(limit - 2)
+    for options in cache_options
+        legal = generate_hf_qwen3_vl_tokens(
+            parameters,
+            prompt,
+            one_decode;
+            max_new_tokens=2,
+            stop_token_ids=Int[],
+            options...,
+        )
+        @test length(legal.generated_ids) == 2
+        @test legal.cache.position == length(prompt) + 1
+
+        failure = _ch45_captured_error() do
+            generate_hf_qwen3_vl_tokens(
+                cache_poison,
+                prompt,
+                one_decode;
+                max_new_tokens=3,
+                stop_token_ids=Int[],
+                options...,
+            )
+        end
+        @test sprint(showerror, failure) == error_message
+    end
+
+    # BigInt arithmetic in the guard must reject a horizon whose host-Int
+    # additions would overflow, without allocating a correspondingly huge cache.
+    names = fieldnames(Qwen3VLTextSpec)
+    huge_spec = Qwen3VLTextSpec(ntuple(length(names)) do index
+        names[index] === :max_position_embeddings && return typemax(Int)
+        return getfield(parameters.spec, names[index])
+    end...)
+    huge_poison = _CH45GenerationCachePoison(huge_spec, parameters.embedding)
+    huge_layout = high_layout(typemax(Int) - 2)
+    for options in cache_options
+        overflow_failure = _ch45_captured_error() do
+            generate_hf_qwen3_vl_tokens(
+                huge_poison,
+                prompt,
+                huge_layout;
+                max_new_tokens=3,
+                stop_token_ids=Int[],
+                options...,
+            )
+        end
+        @test sprint(showerror, overflow_failure) == error_message
+    end
+end
+
 @testset "Chapter 45 — generation reuses sealed prompt validation" begin
     parameters = _ch45_tiny_text_parameters()
     inputs = _ch45_tiny_prefill_inputs()
@@ -1472,7 +1599,7 @@ end
         tokens,
         rope_layout,
         inputs.vision_features,
-        true,
+        1,
     )
     cache = init_qwen3_vl_kv_cache(parameters)
     changed_parameters = merge(
@@ -1513,7 +1640,7 @@ end
         tokens,
         rope_layout,
         mutable_features,
-        true,
+        1,
     )
     mutable_deepstack[1] = zeros(
         Float32,
@@ -1574,7 +1701,7 @@ end
         checkpoint_tokens,
         rope_layout,
         inputs.vision_features,
-        true,
+        1,
     )
     checkpoint.image_token_id = 3
 
@@ -1636,7 +1763,7 @@ end
         tokens,
         rope_layout,
         inputs.vision_features,
-        true,
+        1,
     )
     dynamic_guard = init_qwen3_vl_kv_cache(parameters)
     static_guard = LifeAI.init_qwen3_vl_static_kv_cache(

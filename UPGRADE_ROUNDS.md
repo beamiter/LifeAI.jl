@@ -523,6 +523,9 @@ corresponding episode tests.
 247. Preserve the independent Qwen3-VL query projection width when merging
      attention heads before the output projection, allowing valid narrower or
      wider attention geometry in cache-free, dynamic, and static inference.
+248. Preflight the complete Qwen3-VL generation mRoPE horizon with exact
+     arithmetic before consuming vision features or allocating K/V caches,
+     preserving zero-token and prefill-only generation at the rotary boundary.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
