@@ -547,6 +547,10 @@ corresponding episode tests.
 255. Preflight prompt plus visual-merge occupancy on the raw chat path before
      vision-tower compute when `max_new_tokens=0`, so zero-generation chat
      requests cannot spend vision compute on an already-overlong horizon.
+256. Bind the shared visual-merge preflight helper to zero-generation requests
+     (`max_new_tokens=0`) so oversized grids and prompt-plus-merge occupancy
+     are rejected before vision compute, instead of early-returning from the
+     helper and relying on a separate chat-path check.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now
