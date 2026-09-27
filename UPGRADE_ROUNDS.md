@@ -541,6 +541,9 @@ corresponding episode tests.
 253. Bind the same combined horizon preflight to the direct
      `generate_hf_qwen3_vl_tokens` path when caller-supplied vision features
      are present, so low-level callers cannot bypass the raw-chat guard.
+254. Preflight prompt plus visual-merge occupancy on the direct tokens path even
+     when `max_new_tokens=0`, so precomputed vision features cannot bypass the
+     combined horizon guard on a zero-generation request.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

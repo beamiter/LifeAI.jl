@@ -189,6 +189,13 @@ function _qwen3_vl_generation_prompt_contract(
     sequence_length = size(tokens, 1)
     visual_mask = rope_layout.visual_mask
 
+    if max_new_tokens == 0 && vision_features !== nothing
+        visual_count = count(visual_mask)
+        limit = spec.max_position_embeddings
+        sequence_length + visual_count <= limit || throw(ArgumentError(
+            "Qwen3-VL prompt and visual merge exceed max_position_embeddings",
+        ))
+    end
     # A zero-token request deliberately skips both vision and text prefill.
     # Its prompt layout is still part of the public input contract, but vision
     # features are not required because they would never be consumed.
