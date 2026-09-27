@@ -529,6 +529,11 @@ corresponding episode tests.
 249. Bind the Qwen3-VL raw chat generation path to the shared mRoPE horizon
      preflight after tokenizer layout assembly and before vision-tower compute,
      preserving zero-token skips and the sealed token-generation contract.
+250. Apply the shared Qwen3-VL generation mRoPE horizon preflight to
+     single-token decode (`max_new_tokens >= 1`), not only multi-token horizons.
+251. Preflight the single-image visual merge token count before vision-tower
+     compute on the raw chat path, rejecting grids whose merged patch count
+     alone exceeds `max_position_embeddings` while preserving zero-token skips.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

@@ -159,10 +159,10 @@ function _qwen3_vl_generation_mrope_horizon_preflight(
         sequence_length,
         batch_size,
     )
-    if max_new_tokens > 1
-        # Only N-1 generated tokens are fed through decode. Its rotary
-        # coordinates start at sequence_length + rope_delta, independently
-        # of the physical cache length. Compare the exclusive end exactly.
+    if max_new_tokens >= 1
+        # Decode rotary coordinates start at sequence_length + rope_delta,
+        # independently of the physical cache length. Compare the exclusive
+        # end exactly, including single-token generation.
         rope_end = BigInt(sequence_length) + only(rope_deltas) +
             max_new_tokens - 1
         rope_end <= spec.max_position_embeddings || throw(ArgumentError(
@@ -558,6 +558,24 @@ function _qwen3_vl_generation_process_image(image, processor_spec)
     ))
 end
 
+function _qwen3_vl_generation_visual_token_preflight(
+    text_parameters,
+    grid_thw,
+    processor_spec::Qwen3VLProcessorSpec,
+    max_new_tokens::Int,
+)
+    max_new_tokens == 0 && return
+    visual_tokens = qwen3_vl_image_token_count(
+        (grid_thw[1, 1], grid_thw[2, 1], grid_thw[3, 1]);
+        spec=processor_spec,
+    )
+    visual_tokens <= text_parameters.spec.max_position_embeddings ||
+        throw(ArgumentError(
+            "Qwen3-VL visual merge token count exceeds max_position_embeddings",
+        ))
+    return nothing
+end
+
 function _qwen3_vl_generation_vision_features(
     vision_parameters,
     processed,
@@ -665,6 +683,12 @@ function generate_hf_qwen3_vl(
         text_parameters,
         _qwen3_vl_token_matrix(prompt_ids),
         rope_layout,
+        requested,
+    )
+    _qwen3_vl_generation_visual_token_preflight(
+        text_parameters,
+        processed.grid_thw,
+        processor_spec,
         requested,
     )
 

@@ -1294,6 +1294,26 @@ end
 @testset "Chapter 45 — generation prompt fails before cache allocation" begin
     inputs = _ch45_tiny_prefill_inputs()
     parameters = _ch45_tiny_text_parameters()
+    full_context_ids = fill(1, parameters.spec.max_position_embeddings)
+    full_positions = repeat(
+        reshape(collect(0:(length(full_context_ids) - 1)), 1, :, 1),
+        3,
+        1,
+        1,
+    )
+    overfull_layout = Qwen3VLRopeLayout(
+        full_positions,
+        reshape(Int[1], 1, 1),
+        falses(length(full_context_ids), 1),
+        trues(length(full_context_ids), 1),
+    )
+    @test_throws ArgumentError generate_hf_qwen3_vl_tokens(
+        parameters,
+        full_context_ids,
+        overfull_layout;
+        max_new_tokens=1,
+        stop_token_ids=Int[],
+    )
     poison = _CH45GenerationCachePoison(
         _CH45_TINY_TEXT_SPEC,
         parameters.embedding,
@@ -2063,4 +2083,26 @@ end
     end
     @test image_failure isa ArgumentError
     @test occursin("image payload", sprint(showerror, image_failure))
+end
+
+@testset "Chapter 45 — visual merge token preflight" begin
+    parameters = _ch45_tiny_text_parameters()
+    spec = qwen3_vl_processor_spec()
+    oversized = reshape(
+        Int[1, spec.merge_size * 16, spec.merge_size * 16],
+        3,
+        1,
+    )
+    @test_throws ArgumentError LifeAI._qwen3_vl_generation_visual_token_preflight(
+        parameters,
+        oversized,
+        spec,
+        1,
+    )
+    @test LifeAI._qwen3_vl_generation_visual_token_preflight(
+        parameters,
+        oversized,
+        spec,
+        0,
+    ) === nothing
 end
