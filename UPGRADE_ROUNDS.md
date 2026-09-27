@@ -544,6 +544,9 @@ corresponding episode tests.
 254. Preflight prompt plus visual-merge occupancy on the direct tokens path even
      when `max_new_tokens=0`, so precomputed vision features cannot bypass the
      combined horizon guard on a zero-generation request.
+255. Preflight prompt plus visual-merge occupancy on the raw chat path before
+     vision-tower compute when `max_new_tokens=0`, so zero-generation chat
+     requests cannot spend vision compute on an already-overlong horizon.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

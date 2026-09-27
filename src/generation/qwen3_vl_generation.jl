@@ -711,6 +711,13 @@ function generate_hf_qwen3_vl(
         requested,
         prompt_ids,
     )
+    if requested == 0
+        visual_count = count(rope_layout.visual_mask)
+        limit = text_parameters.spec.max_position_embeddings
+        length(prompt_ids) + visual_count <= limit || throw(ArgumentError(
+            "Qwen3-VL prompt and visual merge exceed max_position_embeddings",
+        ))
+    end
 
     vision_features = _qwen3_vl_generation_vision_features(
         vision_parameters,
