@@ -222,6 +222,11 @@ function _qwen3_vl_generation_prompt_contract(
             "Qwen3-VL visual_embeddings must be a matrix",
         ))
         visual_count = count(visual_mask)
+        limit = spec.max_position_embeddings
+        sequence_length + visual_count + max_new_tokens <= limit ||
+            throw(ArgumentError(
+                "Qwen3-VL prompt, visual merge, and generation horizon exceed max_position_embeddings",
+            ))
         size(visual_embeddings, 2) == visual_count || throw(DimensionMismatch(
             "Qwen3-VL main visual feature count does not match image placeholders",
         ))

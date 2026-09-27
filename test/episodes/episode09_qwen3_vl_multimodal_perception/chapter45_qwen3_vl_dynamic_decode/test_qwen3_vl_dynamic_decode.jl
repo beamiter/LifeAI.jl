@@ -2117,3 +2117,37 @@ end
         long_prompt,
     )
 end
+
+@testset "Chapter 45 — direct tokens combined horizon preflight" begin
+    parameters = _ch45_tiny_text_parameters()
+    inputs = _ch45_tiny_prefill_inputs()
+    limit = parameters.spec.max_position_embeddings
+    prompt_len = limit - count(inputs.rope_layout.visual_mask)
+    long_ids = fill(1, prompt_len)
+    long_mask = falses(prompt_len, 1)
+    long_mask[1:4, 1] .= true
+    long_layout = Qwen3VLRopeLayout(
+        repeat(reshape(collect(0:(prompt_len - 1)), 1, :, 1), 3, 1, 1),
+        reshape(Int[0], 1, 1),
+        long_mask,
+        trues(prompt_len, 1),
+    )
+    visual_embeddings = permutedims(
+        _ch45_tiny_hf_matrix(4, 16, 120_000; scale=0.1f0),
+    )
+    deepstack = ntuple(3) do index
+        permutedims(_ch45_tiny_hf_matrix(
+            4,
+            16,
+            130_000 + 1_000 * (index - 1);
+            scale=0.1f0,
+        ))
+    end
+    @test_throws ArgumentError generate_hf_qwen3_vl_tokens(
+        parameters,
+        long_ids,
+        long_layout;
+        vision_features=(; visual_embeddings, deepstack),
+        max_new_tokens=1,
+    )
+end
