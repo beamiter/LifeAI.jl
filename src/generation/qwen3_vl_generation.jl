@@ -129,11 +129,10 @@ function _qwen3_vl_generation_rope_snapshot(
     )
 end
 
-function _qwen3_vl_generation_prompt_contract(
+function _qwen3_vl_generation_mrope_horizon_preflight(
     text_parameters,
     tokens,
     rope_layout::Qwen3VLRopeLayout,
-    vision_features,
     max_new_tokens::Int,
 )
     spec = text_parameters.spec
@@ -170,6 +169,25 @@ function _qwen3_vl_generation_prompt_contract(
             "Qwen3-VL generated mRoPE coordinates exceed max_position_embeddings",
         ))
     end
+    return rope_deltas
+end
+
+function _qwen3_vl_generation_prompt_contract(
+    text_parameters,
+    tokens,
+    rope_layout::Qwen3VLRopeLayout,
+    vision_features,
+    max_new_tokens::Int,
+)
+    spec = text_parameters.spec
+    rope_deltas = _qwen3_vl_generation_mrope_horizon_preflight(
+        text_parameters,
+        tokens,
+        rope_layout,
+        max_new_tokens,
+    )
+    sequence_length = size(tokens, 1)
+    visual_mask = rope_layout.visual_mask
 
     # A zero-token request deliberately skips both vision and text prefill.
     # Its prompt layout is still part of the public input contract, but vision
@@ -642,6 +660,12 @@ function generate_hf_qwen3_vl(
         prompt_ids,
         processed.grid_thw;
         checkpoint=text_parameters.checkpoint,
+    )
+    _qwen3_vl_generation_mrope_horizon_preflight(
+        text_parameters,
+        _qwen3_vl_token_matrix(prompt_ids),
+        rope_layout,
+        requested,
     )
 
     vision_features = _qwen3_vl_generation_vision_features(

@@ -526,6 +526,9 @@ corresponding episode tests.
 248. Preflight the complete Qwen3-VL generation mRoPE horizon with exact
      arithmetic before consuming vision features or allocating K/V caches,
      preserving zero-token and prefill-only generation at the rotary boundary.
+249. Bind the Qwen3-VL raw chat generation path to the shared mRoPE horizon
+     preflight after tokenizer layout assembly and before vision-tower compute,
+     preserving zero-token skips and the sealed token-generation contract.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

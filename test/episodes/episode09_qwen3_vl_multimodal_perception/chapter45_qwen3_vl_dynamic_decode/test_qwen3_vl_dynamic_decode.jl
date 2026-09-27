@@ -1558,6 +1558,62 @@ end
     end
 end
 
+@testset "Chapter 45 — raw generation preflights mRoPE before vision" begin
+    parameters = _ch45_tiny_text_parameters()
+    limit = parameters.spec.max_position_embeddings
+    prompt = [1, 2]
+    tokens = LifeAI._qwen3_vl_token_matrix(prompt)
+    function high_layout(maximum_coordinate)
+        positions = repeat(
+            reshape(Int[maximum_coordinate - 1, maximum_coordinate], 1, 2, 1),
+            3,
+            1,
+            1,
+        )
+        delta = maximum_coordinate + 1 - length(prompt)
+        return Qwen3VLRopeLayout(
+            positions,
+            reshape(Int[delta], 1, 1),
+            falses(2, 1),
+            trues(2, 1),
+        )
+    end
+
+    error_message = "ArgumentError: Qwen3-VL generated mRoPE coordinates " *
+        "exceed max_position_embeddings"
+    exhausted = high_layout(limit - 1)
+    poison = _CH45VisionComputePoison()
+
+    horizon_failure = _ch45_captured_error() do
+        LifeAI._qwen3_vl_generation_mrope_horizon_preflight(
+            parameters,
+            tokens,
+            exhausted,
+            2,
+        )
+    end
+    @test sprint(showerror, horizon_failure) == error_message
+
+    vision_failure = _ch45_captured_error() do
+        LifeAI._qwen3_vl_generation_mrope_horizon_preflight(
+            parameters,
+            tokens,
+            exhausted,
+            2,
+        )
+        LifeAI._qwen3_vl_generation_vision_features(poison, poison, 2)
+    end
+    @test sprint(showerror, vision_failure) == error_message
+
+    one_decode = high_layout(limit - 2)
+    LifeAI._qwen3_vl_generation_mrope_horizon_preflight(
+        parameters,
+        tokens,
+        one_decode,
+        2,
+    )
+end
+
 @testset "Chapter 45 — generation reuses sealed prompt validation" begin
     parameters = _ch45_tiny_text_parameters()
     inputs = _ch45_tiny_prefill_inputs()
