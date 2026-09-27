@@ -2087,7 +2087,7 @@ end
 
 @testset "Chapter 45 — visual merge token preflight" begin
     parameters = _ch45_tiny_text_parameters()
-    spec = qwen3_vl_processor_spec()
+    spec = LifeAI.qwen3_vl_processor_spec()
     oversized = reshape(
         Int[1, spec.merge_size * 16, spec.merge_size * 16],
         3,
