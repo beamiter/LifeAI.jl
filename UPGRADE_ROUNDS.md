@@ -534,6 +534,10 @@ corresponding episode tests.
 251. Preflight the single-image visual merge token count before vision-tower
      compute on the raw chat path, rejecting grids whose merged patch count
      alone exceeds `max_position_embeddings` while preserving zero-token skips.
+252. Preflight the combined prompt, visual-merge, and generation horizon before
+     vision-tower compute, rejecting requests whose prompt ids plus merged
+     visual tokens plus `max_new_tokens` would exceed
+     `max_position_embeddings` even when each piece alone fits.
 
 The Julia 1.12.6 Manifest has been regenerated and is now tracked, and the CI
 Julia 1.11/Project Julia 1.12 mismatch has been repaired. Full `Pkg.test()` now

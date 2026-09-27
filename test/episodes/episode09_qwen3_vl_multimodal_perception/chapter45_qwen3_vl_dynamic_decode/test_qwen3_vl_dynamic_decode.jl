@@ -2098,11 +2098,22 @@ end
         oversized,
         spec,
         1,
+        Int[],
     )
     @test LifeAI._qwen3_vl_generation_visual_token_preflight(
         parameters,
         oversized,
         spec,
         0,
+        Int[],
     ) === nothing
+    small_grid = reshape(Int[1, spec.merge_size, spec.merge_size], 3, 1)
+    long_prompt = fill(1, parameters.spec.max_position_embeddings)
+    @test_throws ArgumentError LifeAI._qwen3_vl_generation_visual_token_preflight(
+        parameters,
+        small_grid,
+        spec,
+        1,
+        long_prompt,
+    )
 end

@@ -563,15 +563,22 @@ function _qwen3_vl_generation_visual_token_preflight(
     grid_thw,
     processor_spec::Qwen3VLProcessorSpec,
     max_new_tokens::Int,
+    prompt_ids::AbstractVector{<:Integer},
 )
     max_new_tokens == 0 && return
     visual_tokens = qwen3_vl_image_token_count(
         (grid_thw[1, 1], grid_thw[2, 1], grid_thw[3, 1]);
         spec=processor_spec,
     )
-    visual_tokens <= text_parameters.spec.max_position_embeddings ||
+    limit = text_parameters.spec.max_position_embeddings
+    visual_tokens <= limit ||
         throw(ArgumentError(
             "Qwen3-VL visual merge token count exceeds max_position_embeddings",
+        ))
+    prompt_len = length(prompt_ids)
+    prompt_len + visual_tokens + max_new_tokens <= limit ||
+        throw(ArgumentError(
+            "Qwen3-VL prompt, visual merge, and generation horizon exceed max_position_embeddings",
         ))
     return nothing
 end
@@ -690,6 +697,7 @@ function generate_hf_qwen3_vl(
         processed.grid_thw,
         processor_spec,
         requested,
+        prompt_ids,
     )
 
     vision_features = _qwen3_vl_generation_vision_features(
