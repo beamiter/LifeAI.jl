@@ -14,6 +14,7 @@ include(joinpath(LIFEAI_TEST_SUPPORT, "repository_test_assets.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_diffusion_sampling.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_sampling_core.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_memory_core.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "test_semantic_memory_ranking.jl"))
 
 chapter_test(episode, chapter, filename) =
     joinpath(LIFEAI_TEST_EPISODES, episode, chapter, filename)

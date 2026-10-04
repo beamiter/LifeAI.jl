@@ -440,9 +440,9 @@ function retrieve_qwen3_semantic_memory(
     all(isfinite, scores) || throw(ArgumentError(
         "semantic memory similarity scores must be finite",
     ))
-    order = sortperm(
-        eachindex(scores);
-        by=index -> (-scores[index], index),
+    order = partialsortperm(
+        scores, 1:resolved_top_k;
+        by=score -> -score,
     )
     return [
         (;
@@ -452,7 +452,7 @@ function retrieve_qwen3_semantic_memory(
             score=scores[index],
             metadata=deepcopy(metadata[index]),
         )
-        for (rank, index) in enumerate(order[1:resolved_top_k])
+        for (rank, index) in enumerate(order)
     ]
 end
 
