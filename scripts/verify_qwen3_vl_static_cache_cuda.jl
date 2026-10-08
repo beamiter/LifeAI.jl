@@ -568,7 +568,14 @@ function _static_deterministic_image()
     return image
 end
 
-function _static_prepare_bfloat16(model_dir, reference_dir)
+function _static_prepare_bfloat16(
+    model_dir,
+    reference_dir;
+    compute_dtype::Type=BFloat16,
+)
+    compute_dtype in (Float32, BFloat16) || error(
+        "static preparation supports Float32 or BFloat16",
+    )
     metadata_path = joinpath(reference_dir, "reference.json")
     reference_path = joinpath(reference_dir, "reference.safetensors")
     _static_file_sha256(metadata_path) == _STATIC_EXPECTED_METADATA_SHA256 || error(
@@ -680,7 +687,7 @@ function _static_prepare_bfloat16(model_dir, reference_dir)
     vision_load = @timed begin
         value = load_hf_qwen3_vl_vision_parameters(
             model_dir;
-            target_dtype=BFloat16,
+            target_dtype=compute_dtype,
             to_device=CUDA.cu,
             spec=checkpoint.vision,
         )
@@ -690,15 +697,18 @@ function _static_prepare_bfloat16(model_dir, reference_dir)
     text_load = @timed begin
         value = load_hf_qwen3_vl_text_parameters(
             model_dir;
-            target_dtype=BFloat16,
+            target_dtype=compute_dtype,
             to_device=CUDA.cu,
             checkpoint,
         )
         CUDA.synchronize()
         value
     end
+    host_pixels = compute_dtype === BFloat16 ?
+        BFloat16.(processed.pixel_values) :
+        Float32.(processed.pixel_values)
     vision_input = Qwen3VLVisionInput(
-        CUDA.cu(BFloat16.(processed.pixel_values)),
+        CUDA.cu(host_pixels),
         processed.grid_thw;
         spec=checkpoint.vision,
     )
@@ -708,9 +718,10 @@ function _static_prepare_bfloat16(model_dir, reference_dir)
         value
     end
     reference = open_safetensors_reader(reference_path)
-    println("bf16_vision_load_seconds\t", vision_load.time)
-    println("bf16_text_load_seconds\t", text_load.time)
-    println("bf16_vision_forward_seconds\t", vision_forward.time)
+    prepare_label = compute_dtype === BFloat16 ? "bf16" : "float32"
+    println("$(prepare_label)_vision_load_seconds\t", vision_load.time)
+    println("$(prepare_label)_text_load_seconds\t", text_load.time)
+    println("$(prepare_label)_vision_forward_seconds\t", vision_forward.time)
     return (;
         text_parameters=text_load.value,
         features=vision_forward.value,

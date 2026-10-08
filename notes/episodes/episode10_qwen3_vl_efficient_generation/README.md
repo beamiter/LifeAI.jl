@@ -19,7 +19,17 @@ CUDA Graph、零分配 decode 或长上下文部署已经完成。
 ## 章节目录
 
 1. [`Chapter 46 — Qwen3-VL bounded static KV cache 与可复用 generation state`](chapter46_qwen3_vl_static_cache.md)（Closed）
-2. [`Chapter 47 — Qwen3-VL 长生成 allocation profile 与 decoder workspace 归因`](chapter47_qwen3_vl_long_generation_profile.md)（Open）
+2. [`Chapter 47 — Qwen3-VL 长生成 allocation profile 与 decoder workspace 归因`](chapter47_qwen3_vl_long_generation_profile.md)（Closed）
+3. [`Chapter 48 — Qwen3-VL decode mlp_activation 常量分配`](chapter48_qwen3_vl_mlp_activation.md)（Closed）
+4. [`Chapter 49 — Qwen3-VL decode qk_rope 常量分配`](chapter49_qwen3_vl_qk_rope.md)（Closed）
+5. [`Chapter 50 — Qwen3-VL decode qk_norm 常量分配`](chapter50_qwen3_vl_qk_norm.md)（Closed）
+6. [`Chapter 51 — Qwen3-VL decode hidden RMSNorm 常量分配`](chapter51_qwen3_vl_hidden_norm.md)（Closed）
+7. [`Chapter 52 — Qwen3-VL decode gate/up projection 常量分配`](chapter52_qwen3_vl_gate_up.md)（Closed）
+8. [`Chapter 53 — Qwen3-VL decode hidden residual 常量分配`](chapter53_qwen3_vl_hidden_residual.md)（Closed）
+9. [`Chapter 54 — Qwen3-VL decode tied logits 常量分配`](chapter54_qwen3_vl_tied_logits.md)（Closed）
+10. [`Chapter 55 — Qwen3-VL decode QKV projection 常量分配`](chapter55_qwen3_vl_qkv.md)（Closed）
+11. [`Chapter 56 — Qwen3-VL decode attention softmax 归约`](chapter56_qwen3_vl_attention_softmax.md)（Closed）
+12. [`Chapter 57 — Qwen3-VL decode token embedding 常量分配`](chapter57_qwen3_vl_token_embedding.md)（Closed）
 
 ## 预期能力变化
 
@@ -68,8 +78,63 @@ logits 等阶段；tiny profiled/unprofiled decode 的 logits、K/V 与状态 ex
 `[1987, 2169, 375, 265]`。RTX 4090 D 的 BF16 static 256-token warmup 在 generated
 step 79 fail closed：前 78 枚 exact，LifeAI 选了 zero-based `281`（` p`），HF
 Float32 top-1 是 `2518`（` red`），runner-up 正是 `281`，margin `0.04928589`。
-正式 32/128/256 三次采样和 allocation attribution 没有执行，因此本章和 Episode 10
-都保持 Open，不选择 workspace。
+正式 32/128/256 三次采样和 allocation attribution 没有执行。随后的同前缀拆分表明
+这是跨 dtype 边界，不是 position/mRoPE/cache length 错误：LifeAI Float32 CUDA
+79/79 argmax 与 HF 相同，BF16 只在 step 79 把 `25.939213 / 25.889927` 落成
+`26 / 25.875` 后选中 runner-up。在 HuggingFace token 的 teacher-forced 前缀上，
+Float32 CUDA 256/256 仍一致；BF16 只在 step 79 和 step 95 离开，后者两个候选
+都落成 `28.375`。一次非验收、单 repeat 的 BF16 profile 在 position `107 / 203 / 331`
+上把最后一步的 CUDA.jl bytes 和 allocation count 与无 hook 表面逐项对齐，
+`kv_write` 为 0；当时 dominant stage 都是 `attention`。随后 BF16 单 token decode
+把这条随 position 增长的 K/V permute 和 score/softmax 收进按 capacity 预分配、
+28 层共用的 scratch。重测后 position `107 / 203 / 331` 的 attention 都是
+`7,168` bytes，整步合计都是 `10,563,721` bytes。最大头变成不随 position
+增长的 `mlp_activation`（`2,752,512` bytes）。三次 repeat 的关闭采样里，32-token
+prefix 与 HF exact，128/256 在 step 70 分叉且三次 timeline 各自 deterministic。
+Chapter 47 因此 Closed。这次关闭不声称 BF16 strict parity 或整条 decode 零分配。
+
+Chapter 48 已 Closed。融合 `mlp_activation` 是每层 5 个固定形状数组，合计
+`98,304` bytes：3 个 Float32 与 2 个 BF16，公式为
+`intermediate_size * (3 * sizeof(Float32) + 2 * sizeof(BFloat16))`。
+`intermediate_size = 6144` 时 28 层原来各分配一次，单步 `2,752,512` bytes、
+`140` 次分配。BF16 单 token decode 现在把这 5 块 buffer 按 intermediate size
+预分配，28 层共用，reset 保留 storage；prefill 和 Float32 不创建它。同进程
+SiLU 乘积与原融合表达式逐位一致，预热后的复用调用是 `0` GPU bytes。
+2026-10-08 一次 repeat 的重测在
+`qwen3_vl_allocation_mlp_scratch.json`，SHA256 为
+`4aa2057607d940a12901bb3d71f8498a9fff1c6d548e597d07c8d7c3a22906de`。
+position `107 / 203 / 331` 的 `mlp_activation` 都是 `0` bytes，整步合计都是
+`7,811,209` bytes、`3,628` 次分配，正好少了原来的 `2,752,512 / 140`。
+没有新的线性头。最大常量 stage 变成 `qk_rope` 的 `2,265,088` bytes。
+32-token prefix 仍与 HF exact，128/256 仍在 step 70 分叉，margin
+`0.02797699`。最终 logits 没有升成 Float32。
+
+Chapter 49 已 Closed。单次 Q 的 `_bf16a_apply_rope` 是 `53,760` bytes、`19`
+次分配，单次 K 是 `27,136` bytes、`19` 次分配，合计正好是每层的 `80,896 / 38`。
+BF16 单 token decode 把这些 half 切片、Float32 提升和中间 BF16 舍入写进按
+query heads 预分配的 scratch，28 层共用，K 使用 head 前缀，reset 保留 storage。
+Q 与 K 的输出保持两块，因为它们要同时活到 `kv_write` 和 attention。prefill、
+Float32 和多 token 仍走原来的 `_bf16a_apply_rope`，该共享函数没有修改。同进程
+结果逐位一致，拆开后的复用调用是 `0` GPU bytes。驻留 scratch 是 `37,376`
+bytes。2026-10-08 一次 repeat 的重测在 `qwen3_vl_allocation_qk_rope.json`，
+SHA256 为 `d8726e41c1171fe42b823254bb0ccb3fde40baf547c700dd87bda228f0c398d8`。
+position `107 / 203 / 331` 的 `qk_rope` 都是 `0` bytes，整步合计都是
+`5,546,121` bytes、`2,564` 次分配，正好少了原来的 `2,265,088 / 1,064`。
+没有新的线性头。最大常量 stage 变成 `qk_norm` 的 `1,066,240` bytes。
+32-token prefix 仍与 HF exact，128/256 仍在 step 70 分叉，margin
+`0.02797699`。最终 logits 没有升成 Float32。
+
+Chapter 50 已 Closed。单次 Q RMSNorm 是 `25,216` bytes、`7` 次分配，单次 K 是
+`12,864` bytes、`7` 次分配，合计每层 `38,080 / 14`。BF16 单 token decode 用
+`sum!(abs2, dest, x)` 和预分配 broadcast 重放同一串舍入，28 层共用，K 使用
+head 前缀，Q/K 输出保持两块，reset 保留 storage。prefill 和 Float32 仍走
+`_qwen3_vl_text_rmsnorm`。同进程结果逐位一致，复用调用是 `0` GPU bytes。驻留
+scratch 是 `27,200` bytes。重测 SHA256 为
+`8f415d759aca2cf27a402c484c2c6c2c0a06624a25c64bceb6f74681f25afdad`。position
+`107 / 203 / 331` 的 `qk_norm` 都是 `0`，整步都是 `4,479,881` bytes、`2,172`
+次分配，正好少了 `1,066,240 / 392`。没有新的线性头。最大的并列常量阶段是
+`pre_attention_norm` 和 `post_attention_norm`，各 `918,176` bytes。32-token
+prefix 仍与 HF exact，128/256 仍在 step 70 分叉。最终 logits 没有升成 Float32。
 
 ## Episode Close 条件
 
@@ -88,6 +153,22 @@ Chapter 46 关闭的是 K/V growth allocation：它消除了 dynamic `cat` 对�
 重复分配与复制，并提供可 reset 的有界 request state。但 attention、线性投影、mRoPE、
 MLP、final norm、vocabulary logits 和 generation trace 仍会产生临时对象；当前也没有
 CUDA Graph/XLA static executable、并发 request scheduler 或完整 BF16 strict
-oracle。Chapter 47 的 256-token Float32/CPU oracle 已经冻结，但 BF16 static warmup
-在 generated step 79 与该 oracle 分叉，正式采样和 workspace 决策因此停住。Episode
-10 保持 Open，不能仅凭固定 K/V shape 或一条 fail-closed warmup 宣称部署优化完成。
+oracle。Chapter 47 已 Closed：decode attention 的 position 线性分配已收进 scratch，
+三次 repeat 的最后一步归因闭合，`kv_write` 为 0。128/256 的 BF16 自由生成仍在
+step 70 与 HF Float32 分叉，这是跨 dtype 边界，不是未关闭的 allocation 账。
+Chapter 48 已把不随 position 增长的 `mlp_activation` 收成 `98,304` byte 的跨层
+scratch，该 stage 在三个 position 上都是 `0` GPU bytes。Chapter 49 已把
+`qk_rope` 收成 `37,376` byte 的跨层 scratch，该 stage 在三个 position 上都是
+`0` GPU bytes。Chapter 50 已把 `qk_norm` 收成 `27,200` byte 的跨层 scratch，该 stage
+也是 `0` GPU bytes。Chapter 51 已把 hidden RMSNorm 的大数组收成 `32,772` byte
+的 scratch。`pre_attention_norm` 和 `post_attention_norm` 各剩 `448` bytes，
+`final_norm` 剩 `16` bytes，都是 `sum!` 的多 block partial。最大常量头变成 `mlp_gate_up_projection`（`688,576` bytes）。Chapter 52 把 gate
+和 up 的输出收进 `24,576` byte scratch，该阶段降到 `448` bytes。Chapter 53
+把两处 hidden residual 收进另一块 `24,576` byte scratch，两处都降到 `224`
+bytes。整步现在是 `14,017` bytes。最大阶段是 `attention` 剩下的 `7,168`
+bytes，每层 `256` bytes。Chapter 56 把 attention softmax 的 `maximum` 和
+`sum` 改成写入已有 buffer。该阶段降到 `3,584` bytes，整步是 `10,433` bytes。
+最大阶段变成 `token_embedding`（`4,105` bytes）。Chapter 57 把这一列写进
+`4,096` byte 的 scratch，该阶段变成 `0`。整步现在是 `6,328` bytes。最大阶段
+回到 `attention` 的 `3,584` bytes，来自每层两次 `batched_mul!` 各 `64` bytes。
+Episode 10 保持 Open，不能把这些 scratch 写成整条 decode 零分配。

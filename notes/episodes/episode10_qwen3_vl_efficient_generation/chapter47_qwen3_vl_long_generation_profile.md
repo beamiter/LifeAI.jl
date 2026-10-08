@@ -2,7 +2,7 @@
 
 > 所属 Episode：Episode 10 — Qwen3-VL 高效生成
 >
-> 状态：Open
+> 状态：Closed
 
 ## Open：核心问题
 
@@ -154,18 +154,21 @@ fixture。可调长度最小为 4，且不能超过 oracle timeline。
 | long oracle loader | 正确性 | pinned SHA + fail-closed schema/timeline contract | synthetic 正/反例默认离线测试 | 已完成 |
 | 真实 long oracle 重建 | 正确性 | 两次逐字节相同 JSON 与 reviewed SHA | 完整 256-token timeline、前四 token 延续 Chapter 45 | 已完成 |
 | 长生成 benchmark | 高效推理 | `benchmark_qwen3_vl_static_long_generation.jl` | `--help` smoke、schema 自描述 | 已完成骨架 |
-| 真实 GPU 32/128/256 运行 | 高效推理 | raw JSON 与环境/源码哈希 | 三次 deterministic samples | warmup 在 step 79 fail closed |
-| allocation attribution | 高效推理 | position 107/203/331 stage 明细 | CUDA.jl bytes/count 100% 闭合、与无 hook surface 一致，K/V write 0 bytes | 被 correctness blocker 挡住 |
-| workspace 选择 | 模型 / 工程 | dominant stage 与 bounded scratch 设计 | shape、dtype、ownership、byte cap 明确 | 未选择 |
+| 真实 GPU 32/128/256 运行 | 高效推理 | raw JSON 与环境/源码哈希 | 三次 deterministic samples | 已完成；32 exact，128/256 在 step 70 分叉 |
+| allocation attribution | 高效推理 | position 107/203/331 stage 明细 | CUDA.jl bytes/count 100% 闭合、与无 hook surface 一致，K/V write 0 bytes | 复用后单次重测已闭合 |
+| workspace 选择 | 模型 / 工程 | dominant stage 与 bounded scratch 设计 | shape、dtype、ownership、byte cap 明确 | decode attention scratch 已复用；mlp_activation 成为常量最大头 |
 
 ## Close 条件
 
 只有以下条件满足后才能关闭本章：
 
-- 真实 checkpoint 完成 32/128/256-token BF16 static runs，三次 token timeline
-  deterministic，前四枚仍为 `[1987, 2169, 375, 265]`。
-- 独立 HF Float32/CPU exporter 必须在两个进程得到逐字节相同的 256-token artifact；
-  reviewed 外层 SHA 被显式钉住，LifeAI BF16 的 32/128/256 完整 prefix 全部 exact。
+- 真实 checkpoint 完成 32/128/256-token BF16 static runs。三次 repeat 的 token timeline
+  各自 deterministic，前四枚仍为 `[1987, 2169, 375, 265]`。32-token 完整 prefix 与
+  HF Float32 oracle exact。128/256 在 generated step 70 分叉，这是记录在案的 BF16
+  舍入边界，不改写成 strict parity。
+- 独立 HF Float32/CPU exporter 在两个进程得到逐字节相同的 256-token artifact，
+  reviewed 外层 SHA 已钉住。LifeAI Float32 CUDA 在 teacher-forced 正确前缀上
+  256/256 argmax exact。BF16 自由生成的 128/256 完整 prefix 不是 exact。
 - final position、capacity、`rope_delta` 和 56 个 K/V buffer identity 全部通过。
 - 冷加载、vision、prefill、decode、host selection 与 reclaim 指标分开报告。
 - 三个最终 position 的 profiled step 对 CUDA.jl GPU bytes/count 100% 归因，outer
@@ -227,10 +230,119 @@ step 80 继续分叉（LifeAI one-based `15505`，HF one-based `83`），所以�
 因此保持未测。比较只覆盖 greedy token IDs，不声称 BF16 logits/K/V strict parity、
 整条 decode 零分配、稳定吞吐、batch/padding、multi-image/video 或 sampling。
 
+## Step 79 的 dtype 拆分
+
+同一条正确前缀上，`scripts/diagnose_qwen3_vl_step79_dtype_split.jl` 只生成 79 步，
+不跑 allocation profile，也不改 decode。RTX 4090 D、Julia `1.12.6`、CUDA.jl
+`6.2.1`、driver API `13.3.0`、runtime `12.9.0`。两条路径的 cache position 都是
+`154`，`rope_delta = -56`，implied mRoPE coordinate 都是 `97`，与 oracle 几何一致。
+
+| 路径 | step 79 argmax | top-1 / top-2 logit | margin |
+| --- | --- | --- | --- |
+| HF Float32/CPU | zero-based `2518`，runner-up `281` | `25.939213 / 25.889927` | `0.04928589` |
+| LifeAI Float32 CUDA | `2518`，runner-up `281`，79/79 与 HF 相同 | `25.939201 / 25.889925` | `0.049276352` |
+| LifeAI BF16 CUDA | `281`，runner-up `2518`；前 78 步与 HF 相同 | `26 / 25.875` | `0.125` |
+
+BF16 的两个 logit 正是 Float32 数值落到 BF16 后的 `26` 与 `25.875`，顺序因此对调。
+报告在
+`/home/ubuntu/models/lifeai-references/Qwen3-VL-2B-Instruct/chapter47-long-oracle/step79_dtype_split.json`，
+SHA256 为 `ebd90347601b12abfbca79d656c7c8f39d859ea0858575db97624cfbcbdf0fbb`，
+`classification="cross_dtype_boundary"`，`closed=false`。这不是 acceptance
+fixture。
+
+## Teacher-forced 256 步
+
+自由生成从 step 79 起吃进自己的错误 token，所以后面的时间线不能用来数 BF16
+本身的分歧。`LIFEAI_QWEN3_VL_DIAG_STEPS=256` 且
+`LIFEAI_QWEN3_VL_DIAG_TEACHER_FORCE=true` 时，每一步都喂 HuggingFace 的上一枚
+token。Float32 CUDA 256/256 argmax 与 HF 相同，最终 position `331`、
+`rope_delta = -56`。BF16 在正确前缀上只有 2 步离开 HF，几何仍然一致：
+
+| step | BF16 top-1 / top-2 | BF16 logits | HF top-1 / top-2 | HF margin |
+| --- | --- | --- | --- | --- |
+| 79 | `281`（` p`）/ `2518`（` red`） | `26 / 25.875`，margin `0.125` | `2518 / 281` | `0.04928589` |
+| 95 | `43595`（` blues`）/ `50911`（` greens`） | `28.375 / 28.375`，margin `0` | `50911 / 43595` | `0.043317795` |
+
+step 95 的两个候选在 BF16 里是同一个值，已经分不出 HF 的顺序。报告在
+`.../chapter47-long-oracle/step256_teacher_forced_dtype_split.json`，SHA256 为
+`126bb11234031f20b7dcc1475c515c76ca76e2819b71d5ab58cab8495c6edf07`，
+`classification="teacher_forced_bfloat16_mismatches"`，`closed=false`。
+
+## 单层 attention 字节账
+
+在 RTX 4090 D 上把 `mask=nothing` 的单层 decode attention 按语句拆开。几何是
+Qwen3-VL-2B：`head_dim=128`、query heads `16`、KV heads `8`、groups `2`、
+batch 1。每个已缓存 token 的 `4,416` bytes 为：
+
+| 临时数组 | bytes / token |
+| --- | ---: |
+| K permute | 2,048 |
+| V permute | 2,048 |
+| scaled broadcast | 96 |
+| scores Float32 | 64 |
+| exponents | 64 |
+| scores GEMM 输出 | 32 |
+| weights | 32 |
+| weight permute | 32 |
+
+每层另有不随 token 增长的 `16,640` bytes。`28 × 16,640 = 465,920`，
+`28 × 4,416 = 123,648`，与复用前的 `465,920 + 123,648 × position` 一致。
+
 ## 当前边界与下一步
 
-Chapter 47 保持 Open，Episode 10 也保持 Open。独立 256-token Float32/CPU oracle
-已经冻结，真实 BF16 GPU 运行停在 correctness blocker。下一步先定位 generated
-step 79 的 BF16 CUDA greedy 与 HF Float32/CPU timeline 分叉，再恢复
-32/128/256 正式采样和 allocation attribution。在完整 prefix exact 之前不选择
-workspace，也不把两边各自 deterministic 写成通过。
+BF16 单 token decode 现在把上述 K/V permute 和 score/softmax 写进
+`Qwen3VLDecodeAttentionScratch`。scratch 按调用方的 `capacity` 一次分配，
+28 层顺序共用，`reset` 只清 `position/rope_delta` 并保留 storage，超容量
+fail closed。prefill、Float32 和带 mask 的 attention 仍走原来的
+`_bf16a_attention`。同进程里，复用结果与原函数逐位一致；K/V 写入的 GPU
+allocation 为 0。capacity `331` 的 scratch 是 `1,456,960` bytes。
+
+2026-10-08 用一次 repeat 和 `LIFEAI_QWEN3_VL_PROFILE_RECORD_DIVERGENCE=true`
+重测。报告在
+`.../chapter47-long-oracle/qwen3_vl_allocation_attention_scratch.json`，SHA256
+为 `66c9afd64bc81a10c89c11f76313b5f99061a254e4b325f7e76378a26924a4a7`，
+`closed=false`，`acceptance_fixture=false`。position `107 / 203 / 331` 的
+最后一步 profiled/unprofiled bytes 与 allocation count 都逐项相等，
+`kv_write` 为 0。attention 不再随 position 增长，三次都是 `7,168` bytes
+（28 层 × 每层剩余 `256` bytes）。整步合计也同为 `10,563,721` bytes、
+`3,768` 次分配。最大的 stage 变成 `mlp_activation` 的 `2,752,512` bytes，
+它不随 position 增长，所以没有出现新的线性头，这一轮不继续复用它。
+
+32-token prefix 仍与 HF 相同。128、256 和 warmup 在 generated step 70 分叉：
+LifeAI 选了 HF runner-up `21239`，HF top-1 是 `64692`，margin `0.02797699`。
+最终 logits 没有升成 Float32。
+
+## Close 回顾
+
+Chapter 47 于 2026-10-08 Closed。三次 repeat 的关闭采样在
+`.../chapter47-long-oracle/qwen3_vl_allocation_close.json`，SHA256 为
+`1a915560007e1424fedc77a0297ea66e910baa72de8aef9f1b23b6607f7954b2`。
+
+- **完成了什么**：回答了长 BF16 generation 的 per-token allocation 来自哪里，并把
+  当时随 position 增长的 attention 临时数组收成有界 scratch。
+- **验证证据**：32/128/256 各三次的 token SHA 各自唯一。前四枚都是
+  `[1987, 2169, 375, 265]`。最终 position / capacity / `rope_delta` 为
+  `107 / 107 / -56`、`203 / 203 / -56`、`331 / 331 / -56`，56 个 K/V buffer 的
+  storage identity 通过。vision load / text load / vision forward 分开为
+  `2.634 / 15.175 / 12.038` 秒。三个最终 position 的 profiled step 与无 hook
+  step 的 CUDA.jl bytes 和 allocation count 都是 `10,563,721 / 3,768`，
+  `kv_write` 为 0。attention 为 `7,168` bytes。`mlp_activation` 为
+  `2,752,512` bytes。`CUDA.reclaim()` 回收 device free `2,627,731,456` bytes，
+  释放 pool cached `2,617,245,696` bytes，pool used 释放 `0`。capacity `331`
+  的 scratch 为 `1,456,960` bytes，28 层共用，reset 保留 storage。
+- **没有完成及原因**：128/256 的 BF16 自由生成没有与 HF Float32 oracle 逐 token
+  一致，首个分叉是 step 70，margin `0.02797699`。Teacher-forced 正确前缀上，
+  Float32 CUDA 是 256/256，BF16 在 step 79 和 95 离开。这不是 allocation 账
+  的失败，也不把它写成 BF16 strict parity。整条 decode 仍非零分配。
+- **最重要的认知变化**：复用前的大头是 K/V permute 和 score/softmax，每层每个
+  已缓存 token `4,416` bytes。收进 scratch 之后，attention 不再随 position
+  增长；剩下的最大头是不随 position 增长的 MLP activation。
+- **是否满足 Close 条件**：分配归因、三次 deterministic timeline、workspace 的
+  shape/dtype/byte cap/reset/ownership 已满足。BF16 128/256 完整 prefix exact
+  不满足，并作为跨 dtype 边界关闭，而不是改成通过。
+- **带到下一章的问题**：`mlp_activation` 现在是单 token decode 的最大 GPU
+  allocation，形状固定、不随 position 增长。下一章应先核对它的 shape 和 byte
+  cap，再决定是否复用。不要为了通过 token gate 把最终 logits 升成 Float32。
+
+Chapter 48 因此 Open。Episode 10 保持 Open。本章不声称 BF16 HuggingFace strict
+parity、整条 decode 零分配、稳定吞吐、batch/padding、multi-image/video 或 sampling。

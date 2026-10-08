@@ -519,6 +519,16 @@ mutable struct Qwen3VLStaticKVCache{C}
     rope_delta::Int
     batch_size::Int
     capacity::Int
+    attention_scratch::Any
+    mlp_activation_scratch::Any
+    qk_rope_scratch::Any
+    qk_norm_scratch::Any
+    hidden_norm_scratch::Any
+    gate_up_scratch::Any
+    hidden_residual_scratch::Any
+    tied_logits_scratch::Any
+    qkv_scratch::Any
+    token_embedding_scratch::Any
 
     function Qwen3VLStaticKVCache(
         layers,
@@ -570,6 +580,16 @@ mutable struct Qwen3VLStaticKVCache{C}
             resolved_rope_delta,
             resolved_batch,
             resolved_capacity,
+            nothing,
+            nothing,
+            nothing,
+            nothing,
+            nothing,
+            nothing,
+            nothing,
+            nothing,
+            nothing,
+            nothing,
         )
     end
 end
@@ -802,7 +822,15 @@ function _qwen3_vl_cache_block_core(
     mask,
     store,
     profile_runner=nothing,
-    layer_index::Int=0,
+    layer_index::Int=0;
+    attention_scratch=nothing,
+    mlp_scratch=nothing,
+    rope_scratch=nothing,
+    norm_scratch=nothing,
+    hidden_norm_scratch=nothing,
+    gate_up_scratch=nothing,
+    hidden_residual_scratch=nothing,
+    qkv_scratch=nothing,
 )
     head_dim = spec.head_dim
     sequence_length, batch_size = size(x, 2), size(x, 3)
@@ -811,53 +839,105 @@ function _qwen3_vl_cache_block_core(
         :pre_attention_norm,
         layer_index,
     ) do
-        _qwen3_vl_text_rmsnorm(x, block.norm1, spec.rms_norm_eps)
+        if hidden_norm_scratch !== nothing &&
+            eltype(x) === BFloat16 &&
+            size(x) == size(hidden_norm_scratch.output)
+            _qwen3_vl_decode_hidden_norm!(
+                hidden_norm_scratch,
+                x,
+                block.norm1,
+                spec.rms_norm_eps,
+            )
+        else
+            _qwen3_vl_text_rmsnorm(x, block.norm1, spec.rms_norm_eps)
+        end
     end
     queries, keys, values = _qwen3_vl_profile_stage(
         profile_runner,
         :qkv_projection,
         layer_index,
     ) do
-        queries = reshape(
-            _bf16a_linear(block.q_weight, normed),
-            head_dim, spec.num_attention_heads, sequence_length, batch_size,
-        )
-        keys = reshape(
-            _bf16a_linear(block.k_weight, normed),
-            head_dim, spec.num_key_value_heads, sequence_length, batch_size,
-        )
-        values = reshape(
-            _bf16a_linear(block.v_weight, normed),
-            head_dim, spec.num_key_value_heads, sequence_length, batch_size,
-        )
-        (queries, keys, values)
+        queries, keys, values = if qkv_scratch !== nothing &&
+            eltype(normed) === BFloat16 &&
+            size(normed) == (qkv_scratch.hidden_size, 1, 1)
+            _qwen3_vl_decode_qkv!(
+                qkv_scratch,
+                block.q_weight,
+                block.k_weight,
+                block.v_weight,
+                normed,
+            )
+        else
+            queries = reshape(
+                _bf16a_linear(block.q_weight, normed),
+                head_dim, spec.num_attention_heads, sequence_length, batch_size,
+            )
+            keys = reshape(
+                _bf16a_linear(block.k_weight, normed),
+                head_dim, spec.num_key_value_heads, sequence_length, batch_size,
+            )
+            values = reshape(
+                _bf16a_linear(block.v_weight, normed),
+                head_dim, spec.num_key_value_heads, sequence_length, batch_size,
+            )
+            (queries, keys, values)
+        end
     end
     queries, keys = _qwen3_vl_profile_stage(
         profile_runner,
         :qk_norm,
         layer_index,
     ) do
-        queries = _qwen3_vl_text_rmsnorm(
-            queries,
-            block.q_norm,
-            spec.rms_norm_eps,
-        )
-        keys = _qwen3_vl_text_rmsnorm(
-            keys,
-            block.k_norm,
-            spec.rms_norm_eps,
-        )
-        (queries, keys)
+        if norm_scratch !== nothing &&
+            eltype(x) === BFloat16 &&
+            size(queries, 3) == 1 &&
+            size(queries) == size(norm_scratch.query_out) &&
+            size(keys) == size(norm_scratch.key_out)
+            _qwen3_vl_decode_qk_norm!(
+                norm_scratch,
+                queries,
+                keys,
+                block.q_norm,
+                block.k_norm,
+                spec.rms_norm_eps,
+            )
+        else
+            queries = _qwen3_vl_text_rmsnorm(
+                queries,
+                block.q_norm,
+                spec.rms_norm_eps,
+            )
+            keys = _qwen3_vl_text_rmsnorm(
+                keys,
+                block.k_norm,
+                spec.rms_norm_eps,
+            )
+            (queries, keys)
+        end
     end
     queries, keys = _qwen3_vl_profile_stage(
         profile_runner,
         :qk_rope,
         layer_index,
     ) do
-        (
-            _qwen3_vl_text_apply_rope(queries, cos_values, sin_values),
-            _qwen3_vl_text_apply_rope(keys, cos_values, sin_values),
-        )
+        if rope_scratch !== nothing &&
+            eltype(x) === BFloat16 &&
+            size(queries, 3) == 1 &&
+            size(queries) == size(rope_scratch.query_out) &&
+            size(keys) == size(rope_scratch.key_out)
+            _qwen3_vl_decode_qk_rope!(
+                rope_scratch,
+                queries,
+                keys,
+                cos_values,
+                sin_values,
+            )
+        else
+            (
+                _qwen3_vl_text_apply_rope(queries, cos_values, sin_values),
+                _qwen3_vl_text_apply_rope(keys, cos_values, sin_values),
+            )
+        end
     end
 
     attention_keys, attention_values, updated_layer_cache =
@@ -874,7 +954,18 @@ function _qwen3_vl_cache_block_core(
         :attention,
         layer_index,
     ) do
-        if eltype(x) === BFloat16
+        if attention_scratch !== nothing &&
+            eltype(x) === BFloat16 &&
+            mask === nothing &&
+            size(queries, 3) == 1
+            _qwen3_vl_decode_attention!(
+                attention_scratch,
+                queries,
+                attention_keys,
+                attention_values;
+                scaling,
+            )
+        elseif eltype(x) === BFloat16
             _bf16a_attention(
                 queries,
                 attention_keys,
@@ -897,39 +988,93 @@ function _qwen3_vl_cache_block_core(
         :attention_output_projection_residual,
         layer_index,
     ) do
-        attention = _bf16a_linear(
-            block.o_weight,
-            # Query projection width is independent of the residual hidden width.
-            reshape(
+        attention = if hidden_residual_scratch !== nothing &&
+            eltype(x) === BFloat16 &&
+            size(x) == size(hidden_residual_scratch.output)
+            projected = reshape(
                 context,
-                head_dim * spec.num_attention_heads, sequence_length, batch_size,
-            ),
-        )
-        _qwen3_vl_text_residual(x, attention)
+                head_dim * spec.num_attention_heads,
+                sequence_length,
+                batch_size,
+            )
+            if size(projected) == (
+                hidden_residual_scratch.hidden_size,
+                1,
+                1,
+            )
+                _qwen3_vl_decode_hidden_residual!(
+                    hidden_residual_scratch,
+                    block.o_weight,
+                    projected,
+                    x,
+                )
+            else
+                _qwen3_vl_text_residual(x, _bf16a_linear(block.o_weight, projected))
+            end
+        else
+            _qwen3_vl_text_residual(
+                x,
+                _bf16a_linear(
+                    block.o_weight,
+                    reshape(
+                        context,
+                        head_dim * spec.num_attention_heads,
+                        sequence_length,
+                        batch_size,
+                    ),
+                ),
+            )
+        end
     end
     normed = _qwen3_vl_profile_stage(
         profile_runner,
         :post_attention_norm,
         layer_index,
     ) do
-        _qwen3_vl_text_rmsnorm(x, block.norm2, spec.rms_norm_eps)
+        if hidden_norm_scratch !== nothing &&
+            eltype(x) === BFloat16 &&
+            size(x) == size(hidden_norm_scratch.output)
+            _qwen3_vl_decode_hidden_norm!(
+                hidden_norm_scratch,
+                x,
+                block.norm2,
+                spec.rms_norm_eps,
+            )
+        else
+            _qwen3_vl_text_rmsnorm(x, block.norm2, spec.rms_norm_eps)
+        end
     end
     gate, up = _qwen3_vl_profile_stage(
         profile_runner,
         :mlp_gate_up_projection,
         layer_index,
     ) do
-        (
-            _bf16a_linear(block.gate_weight, normed),
-            _bf16a_linear(block.up_weight, normed),
-        )
+        if gate_up_scratch !== nothing &&
+            eltype(normed) === BFloat16 &&
+            size(normed) == (gate_up_scratch.hidden_size, 1, 1)
+            _qwen3_vl_decode_gate_up!(
+                gate_up_scratch,
+                block.gate_weight,
+                block.up_weight,
+                normed,
+            )
+        else
+            (
+                _bf16a_linear(block.gate_weight, normed),
+                _bf16a_linear(block.up_weight, normed),
+            )
+        end
     end
     hidden = _qwen3_vl_profile_stage(
         profile_runner,
         :mlp_activation,
         layer_index,
     ) do
-        if eltype(x) === BFloat16
+        if mlp_scratch !== nothing &&
+            eltype(x) === BFloat16 &&
+            size(gate) == size(mlp_scratch.product)
+            _qwen3_vl_mlp_activation!(mlp_scratch, gate, up)
+        elseif eltype(x) === BFloat16
             gate_f32 = _bf16a_f32(gate)
             activated = BFloat16.(gate_f32 ./ (1.0f0 .+ exp.(.-gate_f32)))
             BFloat16.(_bf16a_f32(activated) .* _bf16a_f32(up))
@@ -943,8 +1088,21 @@ function _qwen3_vl_cache_block_core(
         :mlp_down_projection_residual,
         layer_index,
     ) do
-        mlp = _bf16a_linear(block.down_weight, hidden)
-        _qwen3_vl_text_residual(x, mlp)
+        if hidden_residual_scratch !== nothing &&
+            eltype(hidden) === BFloat16 &&
+            eltype(x) === BFloat16 &&
+            size(x) == size(hidden_residual_scratch.output) &&
+            size(hidden) == (size(block.down_weight, 2), 1, 1)
+            _qwen3_vl_decode_hidden_residual!(
+                hidden_residual_scratch,
+                block.down_weight,
+                hidden,
+                x,
+            )
+        else
+            mlp = _bf16a_linear(block.down_weight, hidden)
+            _qwen3_vl_text_residual(x, mlp)
+        end
     end
     return x, updated_layer_cache
 end
@@ -1407,7 +1565,15 @@ function _qwen3_vl_static_cache_block!(
     layer_cache::Qwen3VLStaticLayerKVCache,
     write_start::Int,
     profile_runner=nothing,
-    layer_index::Int=0,
+    layer_index::Int=0;
+    attention_scratch=nothing,
+    mlp_scratch=nothing,
+    rope_scratch=nothing,
+    norm_scratch=nothing,
+    hidden_norm_scratch=nothing,
+    gate_up_scratch=nothing,
+    hidden_residual_scratch=nothing,
+    qkv_scratch=nothing,
 )
     sequence_length = size(x, 2)
     write_stop = write_start + sequence_length - 1
@@ -1461,7 +1627,15 @@ function _qwen3_vl_static_cache_block!(
         mask,
         store,
         profile_runner,
-        layer_index,
+        layer_index;
+        attention_scratch,
+        mlp_scratch,
+        rope_scratch,
+        norm_scratch,
+        hidden_norm_scratch,
+        gate_up_scratch,
+        hidden_residual_scratch,
+        qkv_scratch,
     )
 end
 
@@ -1746,18 +1920,37 @@ function _qwen3_vl_text_decode_step_static_impl(
     all(id -> 1 <= id <= spec.vocab_size, tokens) || throw(ArgumentError(
         "Qwen3-VL decode token is outside the vocabulary",
     ))
+    token_embedding_scratch = if eltype(parameters.embedding) === BFloat16
+        _qwen3_vl_ensure_token_embedding_scratch!(
+            cache,
+            spec,
+            parameters.embedding,
+        )
+    else
+        nothing
+    end
 
     x = _qwen3_vl_profile_stage(
         profile_runner,
         :token_embedding,
         0,
     ) do
-        reshape(
-            gather(parameters.embedding, tokens),
-            spec.hidden_size,
-            1,
-            cache.batch_size,
-        )
+        if token_embedding_scratch !== nothing &&
+            eltype(parameters.embedding) === BFloat16 &&
+            size(tokens) == (1, 1)
+            _qwen3_vl_decode_token_embedding!(
+                token_embedding_scratch,
+                parameters.embedding,
+                tokens[1],
+            )
+        else
+            reshape(
+                gather(parameters.embedding, tokens),
+                spec.hidden_size,
+                1,
+                cache.batch_size,
+            )
+        end
     end
     cos_values, sin_values = _qwen3_vl_profile_stage(
         profile_runner,
@@ -1772,6 +1965,87 @@ function _qwen3_vl_text_decode_step_static_impl(
         )
     end
     write_position = cache.position + 1
+    attention_scratch = if eltype(parameters.embedding) === BFloat16
+        _qwen3_vl_ensure_decode_attention_scratch!(
+            cache,
+            spec,
+            parameters.embedding,
+        )
+    else
+        nothing
+    end
+    mlp_scratch = if eltype(parameters.embedding) === BFloat16
+        _qwen3_vl_ensure_mlp_activation_scratch!(
+            cache,
+            spec,
+            parameters.embedding,
+        )
+    else
+        nothing
+    end
+    rope_scratch = if eltype(parameters.embedding) === BFloat16
+        _qwen3_vl_ensure_qk_rope_scratch!(
+            cache,
+            spec,
+            parameters.embedding,
+        )
+    else
+        nothing
+    end
+    norm_scratch = if eltype(parameters.embedding) === BFloat16
+        _qwen3_vl_ensure_qk_norm_scratch!(
+            cache,
+            spec,
+            parameters.embedding,
+        )
+    else
+        nothing
+    end
+    hidden_norm_scratch = if eltype(parameters.embedding) === BFloat16
+        _qwen3_vl_ensure_hidden_norm_scratch!(
+            cache,
+            spec,
+            parameters.embedding,
+        )
+    else
+        nothing
+    end
+    gate_up_scratch = if eltype(parameters.embedding) === BFloat16
+        _qwen3_vl_ensure_gate_up_scratch!(
+            cache,
+            spec,
+            parameters.embedding,
+        )
+    else
+        nothing
+    end
+    hidden_residual_scratch = if eltype(parameters.embedding) === BFloat16
+        _qwen3_vl_ensure_hidden_residual_scratch!(
+            cache,
+            spec,
+            parameters.embedding,
+        )
+    else
+        nothing
+    end
+    tied_logits_scratch = if eltype(parameters.embedding) === BFloat16
+        _qwen3_vl_ensure_tied_logits_scratch!(
+            cache,
+            spec,
+            parameters.embedding,
+        )
+    else
+        nothing
+    end
+    qkv_scratch = if eltype(parameters.embedding) === BFloat16
+        _qwen3_vl_ensure_qkv_scratch!(
+            cache,
+            spec,
+            parameters.embedding,
+        )
+    else
+        nothing
+    end
     for julia_layer in 1:spec.num_hidden_layers
         x, _ = _qwen3_vl_static_cache_block!(
             spec,
@@ -1783,7 +2057,15 @@ function _qwen3_vl_text_decode_step_static_impl(
             cache.layers[julia_layer],
             write_position,
             profile_runner,
-            julia_layer,
+            julia_layer;
+            attention_scratch,
+            mlp_scratch,
+            rope_scratch,
+            norm_scratch,
+            hidden_norm_scratch,
+            gate_up_scratch,
+            hidden_residual_scratch,
+            qkv_scratch,
         )
     end
     final_hidden = _qwen3_vl_profile_stage(
@@ -1791,18 +2073,43 @@ function _qwen3_vl_text_decode_step_static_impl(
         :final_norm,
         0,
     ) do
-        _qwen3_vl_text_rmsnorm(
-            x,
-            parameters.final_norm,
-            spec.rms_norm_eps,
-        )
+        if hidden_norm_scratch !== nothing &&
+            eltype(x) === BFloat16 &&
+            size(x) == size(hidden_norm_scratch.output)
+            _qwen3_vl_decode_hidden_norm!(
+                hidden_norm_scratch,
+                x,
+                parameters.final_norm,
+                spec.rms_norm_eps,
+            )
+        else
+            _qwen3_vl_text_rmsnorm(
+                x,
+                parameters.final_norm,
+                spec.rms_norm_eps,
+            )
+        end
     end
     logits = _qwen3_vl_profile_stage(
         profile_runner,
         :vocab_logits,
         0,
     ) do
-        _qwen3_vl_project_tied(parameters.embedding, final_hidden)
+        if tied_logits_scratch !== nothing &&
+            eltype(final_hidden) === BFloat16 &&
+            size(final_hidden) == (tied_logits_scratch.hidden_size, 1, 1) &&
+            size(parameters.embedding) == (
+                tied_logits_scratch.hidden_size,
+                tied_logits_scratch.vocab_size,
+            )
+            _qwen3_vl_decode_tied_logits!(
+                tied_logits_scratch,
+                parameters.embedding,
+                final_hidden,
+            )
+        else
+            _qwen3_vl_project_tied(parameters.embedding, final_hidden)
+        end
     end
     cache.position = write_position
     _validate_qwen3_vl_static_kv_cache(parameters, cache)

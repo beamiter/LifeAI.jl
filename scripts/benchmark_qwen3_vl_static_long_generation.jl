@@ -21,6 +21,8 @@ function _ch47_usage(io::IO=stdout)
     println(io, "Controls:")
     println(io, "  LIFEAI_QWEN3_VL_PROFILE_LENGTHS   default 32,128,256; each >= 4")
     println(io, "  LIFEAI_QWEN3_VL_PROFILE_REPEATS   default 3")
+    println(io, "  LIFEAI_QWEN3_VL_PROFILE_RECORD_DIVERGENCE")
+    println(io, "                                default false; keep profiling after a token fork")
     println(io, "  ", _CH47_LONG_REFERENCE_SHA_ENV, "   required pinned file SHA-256")
 end
 
@@ -114,11 +116,22 @@ function _ch47_write_oracle_blocker(
     return report
 end
 
+function _ch47_record_divergence()
+    raw = lowercase(get(ENV, "LIFEAI_QWEN3_VL_PROFILE_RECORD_DIVERGENCE", "false"))
+    if raw in ("1", "true", "yes")
+        return true
+    elseif raw in ("0", "false", "no", "")
+        return false
+    end
+    error("LIFEAI_QWEN3_VL_PROFILE_RECORD_DIVERGENCE must be true or false")
+end
+
 function _ch47_assert_long_oracle(
     sample,
     long_reference;
     output_path=nothing,
     sample_label="unspecified",
+    record_divergence::Bool=false,
 )
     token_count = sample.generated_tokens
     length(sample.generated_ids) == token_count || error(
@@ -129,6 +142,9 @@ function _ch47_assert_long_oracle(
         long_reference,
     )
     divergence === nothing && return nothing
+    if record_divergence
+        return divergence
+    end
     if output_path !== nothing
         _ch47_write_oracle_blocker(
             output_path,
@@ -602,6 +618,7 @@ output_path = abspath(length(ARGS) >= 3 ? ARGS[3] : get(
 ))
 lengths = _ch47_lengths()
 repeats = _ch47_positive_int("LIFEAI_QWEN3_VL_PROFILE_REPEATS", 3)
+record_divergence = _ch47_record_divergence()
 long_reference_path = abspath(get(
     ENV,
     _CH47_LONG_REFERENCE_ENV,
@@ -665,14 +682,18 @@ prepared.input_ids .- 1 == long_reference.input_ids_0_based || error(
 # One longest-shape warmup is excluded from every reported sample. Full GC
 # releases the warmup request state while retaining CUDA library workspaces.
 warmup = _ch47_run_generation(prepared, maximum(lengths))
-_ch47_assert_long_oracle(
+warmup_divergence = _ch47_assert_long_oracle(
     warmup,
     long_reference;
     output_path,
     sample_label="warmup",
+    record_divergence,
 )
 _ch47_warm_profiled_path(prepared)
-warmup_report = merge((; excluded_from_samples=true), warmup)
+warmup_report = merge((;
+    excluded_from_samples=true,
+    oracle_divergence=warmup_divergence,
+), warmup)
 warmup = nothing
 GC.gc(true)
 steady_memory_baseline = _ch47_memory_snapshot()
@@ -682,13 +703,17 @@ for repetition in 1:repeats
     order = isodd(repetition) ? lengths : reverse(lengths)
     for token_count in order
         sample = _ch47_run_generation(prepared, token_count)
-        _ch47_assert_long_oracle(
+        divergence = _ch47_assert_long_oracle(
             sample,
             long_reference;
             output_path,
             sample_label="sample.$repetition.$token_count",
+            record_divergence,
         )
-        push!(samples[token_count], merge((; repetition), sample))
+        push!(samples[token_count], merge((;
+            repetition,
+            oracle_divergence=divergence,
+        ), sample))
     end
 end
 
@@ -736,8 +761,16 @@ post_reclaim_memory = _ch47_memory_snapshot()
 report = (;
     schema_version=1,
     closed=false,
+    acceptance_fixture=false,
     chapter=47,
     title="Qwen3-VL long-generation allocation profile",
+    token_oracle=(;
+        record_divergence,
+        free_run_prefix_exact=warmup_divergence === nothing && all(
+            sample -> sample.oracle_divergence === nothing,
+            Iterators.flatten(values(samples)),
+        ),
+    ),
     environment=(;
         julia=string(VERSION),
         cuda_jl=string(pkgversion(CUDA)),

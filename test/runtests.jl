@@ -369,6 +369,92 @@ end
             chapter,
             "test_qwen3_vl_long_generation_profile.jl",
         ))
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_attention_scratch.jl",
+        ))
+    end
+    @testset "Chapter 48 — MLP activation scratch" begin
+        episode = "episode10_qwen3_vl_efficient_generation"
+        chapter = "chapter48_qwen3_vl_mlp_activation"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_mlp_activation.jl",
+        ))
+    end
+    @testset "Chapter 49 — QK RoPE scratch" begin
+        episode = "episode10_qwen3_vl_efficient_generation"
+        chapter = "chapter49_qwen3_vl_qk_rope"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_qk_rope.jl",
+        ))
+    end
+    @testset "Chapter 50 — QK norm scratch" begin
+        episode = "episode10_qwen3_vl_efficient_generation"
+        chapter = "chapter50_qwen3_vl_qk_norm"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_qk_norm.jl",
+        ))
+    end
+    @testset "Chapter 51 — hidden RMSNorm scratch" begin
+        episode = "episode10_qwen3_vl_efficient_generation"
+        chapter = "chapter51_qwen3_vl_hidden_norm"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_hidden_norm.jl",
+        ))
+    end
+    @testset "Chapter 52 — gate/up scratch" begin
+        episode = "episode10_qwen3_vl_efficient_generation"
+        chapter = "chapter52_qwen3_vl_gate_up"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_gate_up.jl",
+        ))
+    end
+    @testset "Chapter 53 — hidden residual scratch" begin
+        episode = "episode10_qwen3_vl_efficient_generation"
+        chapter = "chapter53_qwen3_vl_hidden_residual"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_hidden_residual.jl",
+        ))
+    end
+    @testset "Chapter 54 — tied logits scratch" begin
+        episode = "episode10_qwen3_vl_efficient_generation"
+        chapter = "chapter54_qwen3_vl_tied_logits"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_tied_logits.jl",
+        ))
+    end
+    @testset "Chapter 55 — QKV projection scratch" begin
+        episode = "episode10_qwen3_vl_efficient_generation"
+        chapter = "chapter55_qwen3_vl_qkv"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_qkv.jl",
+        ))
+    end
+    @testset "Chapter 57 — token embedding scratch" begin
+        episode = "episode10_qwen3_vl_efficient_generation"
+        chapter = "chapter57_qwen3_vl_token_embedding"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_token_embedding.jl",
+        ))
     end
 end
 

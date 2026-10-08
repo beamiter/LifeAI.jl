@@ -1211,13 +1211,89 @@ Chapter 45 `reference.safetensors` / `reference.json` 重新导出后仍是
 BF16 static 256-token warmup 在 generated step 79 分叉，blocker 文件 SHA256 为
 `90b10f6cb25489984314bfb02b727557fd25d71a1a1424c08bda98301d00c8d4`，
 `closed=false`。这是 correctness blocker，不是 allocation acceptance fixture。
+2026-10-08 的同前缀 dtype 拆分写在同目录 `step79_dtype_split.json`，SHA256 为
+`ebd90347601b12abfbca79d656c7c8f39d859ea0858575db97624cfbcbdf0fbb`。LifeAI
+Float32 CUDA 79/79 argmax 与 HF 相同；BF16 在 step 79 把 margin `0.04928589`
+落成 `26 / 25.875` 后选中 runner-up。`classification="cross_dtype_boundary"`，
+同样 `closed=false`，也不是 acceptance fixture。Teacher-forced 256 步写在
+`step256_teacher_forced_dtype_split.json`，SHA256 为
+`126bb11234031f20b7dcc1475c515c76ca76e2819b71d5ab58cab8495c6edf07`。Float32 CUDA
+256/256 argmax 与 HF 相同；BF16 在正确前缀上只在 step 79 和 step 95 离开，
+step 95 两个候选都是 `28.375`。它同样 `closed=false`，不是 acceptance fixture。
+同日的非验收 allocation 报告是 `qwen3_vl_allocation_despite_divergence.json`，
+SHA256 为 `b317f7fd4191f6f04a7f7023b3fda59fc59458174cb3a6f4dbde443038112a6f`。
+它使用一次 repeat，并在记录 token 分叉后继续归因。position `107 / 203 / 331`
+的最后一步 bytes/count 与无 hook 表面一致，`kv_write` 为 0，dominant stage 为
+`attention`。32-token prefix exact，128/256 在 step 79 分叉，因此
+`acceptance_fixture=false`。复用 decode attention scratch 之后的重测是
+`qwen3_vl_allocation_attention_scratch.json`，SHA256 为
+`66c9afd64bc81a10c89c11f76313b5f99061a254e4b325f7e76378a26924a4a7`。
+三个 position 的 attention bytes 都是 `7,168`，整步合计都是 `10,563,721`；
+`kv_write` 为 0。三次 repeat 的关闭采样是 `qwen3_vl_allocation_close.json`，
+SHA256 为 `1a915560007e1424fedc77a0297ea66e910baa72de8aef9f1b23b6607f7954b2`。
+32-token prefix exact，128/256 在 step 70 分叉，三次 timeline 各自 deterministic。
+Chapter 47 因此 Closed。该文件是 allocation 关闭记录，不是 BF16 strict parity。
+Chapter 48 复用 MLP activation scratch 之后的一次 repeat 重测是
+`qwen3_vl_allocation_mlp_scratch.json`，SHA256 为
+`4aa2057607d940a12901bb3d71f8498a9fff1c6d548e597d07c8d7c3a22906de`。
+三个 position 的 `mlp_activation` 都是 `0` bytes，整步合计都是 `7,811,209`，
+正好少了 `2,752,512`。32-token prefix exact，128/256 仍在 step 70 分叉。
+Chapter 48 因此 Closed。该文件同样是 allocation 关闭记录，不是 BF16 strict parity。
+Chapter 49 复用 QK RoPE scratch 之后的一次 repeat 重测是
+`qwen3_vl_allocation_qk_rope.json`，SHA256 为
+`d8726e41c1171fe42b823254bb0ccb3fde40baf547c700dd87bda228f0c398d8`。
+三个 position 的 `qk_rope` 都是 `0` bytes，整步合计都是 `5,546,121`，
+正好少了 `2,265,088`。32-token prefix exact，128/256 仍在 step 70 分叉。
+Chapter 49 因此 Closed。该文件同样是 allocation 关闭记录，不是 BF16 strict parity。
+Chapter 50 复用 QK norm scratch 之后的一次 repeat 重测是
+`qwen3_vl_allocation_qk_norm.json`，SHA256 为
+`8f415d759aca2cf27a402c484c2c6c2c0a06624a25c64bceb6f74681f25afdad`。
+三个 position 的 `qk_norm` 都是 `0` bytes，整步合计都是 `4,479,881`，
+正好少了 `1,066,240`。32-token prefix exact，128/256 仍在 step 70 分叉。
+Chapter 50 因此 Closed。该文件同样是 allocation 关闭记录，不是 BF16 strict parity。
+Chapter 51 复用 hidden RMSNorm scratch 之后的一次 repeat 重测是
+`qwen3_vl_allocation_hidden_norm.json`，SHA256 为
+`cb5b785c94655583dfe361923817ccb515ad2673bee849b164df2c80ec8a6be0`。
+`pre_attention_norm` 和 `post_attention_norm` 各剩 `448` bytes，`final_norm`
+剩 `16` bytes，整步合计 `2,611,649`。Chapter 51 因此 Closed。
+Chapter 52 复用 gate/up 输出之后的一次 repeat 重测是
+`qwen3_vl_allocation_gate_up.json`，SHA256 为
+`e39f1e52b76a0c965175c7591f8f2a9aad60255d3d0fdf434ce91a9c30d10399`。
+`mlp_gate_up_projection` 从 `688,576` 降到 `448`，整步合计 `1,923,521`。
+Chapter 52 因此 Closed。这些文件都是 allocation 记录，不是 BF16 strict parity。
+Chapter 53 复用 hidden residual scratch 之后的一次 repeat 重测是
+`qwen3_vl_allocation_hidden_residual.json`，SHA256 为
+`73f44165347e1eae6628be1cc9c9b05f51bf86b8d496b34cb0a40474c08317a9`。
+两处 residual 都从 `688,352` 降到 `224`，整步合计 `547,265`。
+Chapter 53 因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 54 复用 tied logits scratch 之后的一次 repeat 重测是
+`qwen3_vl_allocation_tied_logits.json`，SHA256 为
+`5123640b5cbd751eb5c7c794566b5c40027f9f7e0ae21b7654775568e7a0e429`。
+`vocab_logits` 从 `303,880` 降到 `8`，整步合计 `243,393`。
+Chapter 54 因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 55 复用 QKV scratch 之后的一次 repeat 重测是
+`qwen3_vl_allocation_qkv.json`，SHA256 为
+`5c27f76184dca24a0eb0ce48dec26bf92809baad5a92407affcd461c0aaf0995`。
+`qkv_projection` 从 `230,048` 降到 `672`，整步合计 `14,017`。
+Chapter 55 因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 56 把 attention softmax 的归约改成 `maximum!` / `sum!` 之后的一次
+repeat 重测是 `qwen3_vl_allocation_attention_softmax.json`，SHA256 为
+`3dda0a60100a6dbd73b0931b858b34e51205899daf941acf065ea16e9019ff49`。
+`attention` 从 `7,168` 降到 `3,584`，整步合计 `10,433`。
+Chapter 56 因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 57 复用 token embedding scratch 之后的一次 repeat 重测是
+`qwen3_vl_allocation_token_embedding.json`，SHA256 为
+`dfaa168759d4beddc9e8db405cbcdf7a3a0896a83831a3f2df6b0335fd575742`。
+`token_embedding` 从 `4,105` 降到 `0`，整步合计 `6,328`。
+Chapter 57 因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
 
 默认 workload 为 32/128/256-token BF16 static generation、每个长度三次；可用
 `LIFEAI_QWEN3_VL_PROFILE_LENGTHS` 和 `LIFEAI_QWEN3_VL_PROFILE_REPEATS`
 显式缩小 smoke（每个长度至少 4，且不超过 oracle timeline），但缩小结果不能关闭
 Chapter 47。脚本在 prefix exact 之后才输出累计 allocation traffic、
 allocation count、CUDA pool high-water、host greedy selection、无 hook latency 和
-最终 step 的逐 stage attribution。当前这次运行停在 warmup，没有这些指标。
+最终 step 的逐 stage attribution。默认路径在 token 分叉时仍停在 warmup；
+`LIFEAI_QWEN3_VL_PROFILE_RECORD_DIVERGENCE=true` 的非验收剖面会继续归因。
 
 ## Qwen3-30B-A3B 资产状态
 
