@@ -150,13 +150,13 @@ fixture。可调长度最小为 4，且不能超过 oracle timeline。
 | --- | --- | --- | --- | --- |
 | 恢复可导入的 frozen verifier helper | 工程 | Chapter 46 main guard | `include` 无模型加载副作用 | 已完成 |
 | decoder stage hook | 高效推理 | internal profiled decode entry | tiny profiled/unprofiled exact、48-stage order | 已完成 |
-| 独立 long oracle exporter | 正确性 | streaming HF Float32/CPU 256-token JSON | frozen env/assets、fixed-length free-run、无 K/V snapshot 累积 | 已完成骨架 |
+| 独立 long oracle exporter | 正确性 | streaming HF Float32/CPU 256-token JSON | frozen env/assets、fixed-length free-run、无 K/V snapshot 累积 | 已完成 |
 | long oracle loader | 正确性 | pinned SHA + fail-closed schema/timeline contract | synthetic 正/反例默认离线测试 | 已完成 |
-| 真实 long oracle 重建 | 正确性 | 两次逐字节相同 JSON 与 reviewed SHA | 完整 256-token timeline、前四 token 延续 Chapter 45 | 待执行 |
+| 真实 long oracle 重建 | 正确性 | 两次逐字节相同 JSON 与 reviewed SHA | 完整 256-token timeline、前四 token 延续 Chapter 45 | 已完成 |
 | 长生成 benchmark | 高效推理 | `benchmark_qwen3_vl_static_long_generation.jl` | `--help` smoke、schema 自描述 | 已完成骨架 |
-| 真实 GPU 32/128/256 运行 | 高效推理 | raw JSON 与环境/源码哈希 | 三次 deterministic samples | 待执行 |
-| allocation attribution | 高效推理 | position 107/203/331 stage 明细 | CUDA.jl bytes/count 100% 闭合、与无 hook surface 一致，K/V write 0 bytes | 待执行 |
-| workspace 选择 | 模型 / 工程 | dominant stage 与 bounded scratch 设计 | shape、dtype、ownership、byte cap 明确 | 待数据 |
+| 真实 GPU 32/128/256 运行 | 高效推理 | raw JSON 与环境/源码哈希 | 三次 deterministic samples | warmup 在 step 79 fail closed |
+| allocation attribution | 高效推理 | position 107/203/331 stage 明细 | CUDA.jl bytes/count 100% 闭合、与无 hook surface 一致，K/V write 0 bytes | 被 correctness blocker 挡住 |
+| workspace 选择 | 模型 / 工程 | dominant stage 与 bounded scratch 设计 | shape、dtype、ownership、byte cap 明确 | 未选择 |
 
 ## Close 条件
 
@@ -176,11 +176,61 @@ fixture。可调长度最小为 4，且不能超过 oracle timeline。
 - 文档明确不声称 BF16 HuggingFace strict parity、zero-allocation whole loop、稳定吞吐、
   batch/padding、multi-image/video 或 sampling 已完成。
 
+## 2026-10-08 真实运行
+
+`/tmp` 里的 Transformers 4.57 overlay 与 Chapter 45 reference 已经不在。仓库
+`.venv` 仍是 Transformers `4.51.3`，没有被改写。持久 CPU oracle 放在
+`/home/ubuntu/models/lifeai-oracles/qwen3vl-transformers-4.57.0`，版本与
+`scripts/qwen3_vl_long_reference_contract.jl` 一致：Python `3.10.12`、NumPy
+`1.26.4`、Pillow `11.3.0`、safetensors `0.5.3`、tokenizers `0.22.1`、Jinja2
+`3.1.6`、Transformers `4.57.0`、PyTorch `2.7.1+cpu`（git
+`e2d141dbde55c2a4370fac5165b0561b6af4798b`，config SHA
+`dcb7f1e248794c5c144992643f929d0dc623511210f6fe5615f78cb009d64745`）、
+torchvision `0.22.1+cu126`、intra/inter-op threads `24/24`、CPU capability
+`AVX2`。导入 torchvision 时仍出现既有的 `libc10_cuda.so` image-extension
+warning；NMS workaround 只沿用 exporter 里已有的那一处。该环境重新导出的
+Chapter 45 Float32 decode reference 与冻结 SHA 逐字节相同。
+
+| artifact | path | SHA256 |
+| --- | --- | --- |
+| Chapter 45 tensors | `/home/ubuntu/models/lifeai-references/Qwen3-VL-2B-Instruct/chapter45-decode-f32/reference.safetensors` | `a98812e25efb44c02ab9c06e974ab718724f35f2f1c686e4bdc395d856c03e81` |
+| Chapter 45 metadata | `.../chapter45-decode-f32/reference.json` | `569fe3666b65ee2f497327e9ce9931f81652d5bdc32d44dfb9fb774435caccfc` |
+| long oracle | `.../chapter47-long-oracle/long_generation_reference.json` | `72461330a8c5a0e74e7489abfdd481223aeb47d6c161fdc12dc0048e82690140` |
+
+两个独立进程写出的 long oracle 经 `cmp` 逐字节相同。前四枚 one-based token 仍是
+`[1987, 2169, 375, 265]`，256-token timeline SHA 为
+`e4db8b32e2e2a1379b11eac4023d0731b20f314c135c5cfd42bd53e12dfb6f4d`。prompt 仍是
+76 tokens，`rope_delta = -56`。
+
+RTX 4090 D（driver `570.153.02`，CUDA.jl `6.2.1` 报告 driver API `13.3.0` /
+runtime `12.9.0`，Julia `1.12.6`）上的 BF16 static benchmark 在最长 shape warmup
+处 fail closed，没有进入 32/128/256 的三次正式采样，也没有 allocation
+attribution。blocker 写在
+`.../chapter47-long-oracle/qwen3_vl_long_profile.json`，文件 SHA256 为
+`90b10f6cb25489984314bfb02b727557fd25d71a1a1424c08bda98301d00c8d4`，
+`status="correctness_blocker"`、`closed=false`、`sample_label="warmup"`。
+
+| 项目 | 值 |
+| --- | --- |
+| 首个分叉 | generated step `79` |
+| 前缀 | 前 `78` 枚与 HF Float32/CPU oracle exact |
+| LifeAI | one-based `282` / zero-based `281`，decode 为 ` p` |
+| HF top-1 | one-based `2519` / zero-based `2518`，decode 为 ` red` |
+| HF runner-up | zero-based `281`，即 LifeAI 的选择 |
+| HF top-1 / top-2 / margin | `25.939213 / 25.889927 / 0.04928589` |
+| LifeAI timeline SHA | `5a1c88495f544aed31ee27f81ac37cc3fcee6688864398eef8b33b755e5e8f9b` |
+
+step 80 继续分叉（LifeAI one-based `15505`，HF one-based `83`），所以这是时间线
+分叉，不是单点标注差异。这条 warmup 的前 78 枚覆盖了 32-token prefix，但正式
+三次采样没有执行，不能把这次观察写成 32-token acceptance。blocker schema
+不包含 CUDA allocation、pool high-water、latency 或 dominant stage；这些字段
+因此保持未测。比较只覆盖 greedy token IDs，不声称 BF16 logits/K/V strict parity、
+整条 decode 零分配、稳定吞吐、batch/padding、multi-image/video 或 sampling。
+
 ## 当前边界与下一步
 
-当前环境已验证 profiling hook 的离线数值透明性和 benchmark 的参数解析，但没有本章
-要求的冻结模型目录与 Chapter 45 reference，因此尚未生成真实长轨迹报告。Chapter 47
-保持 Open；独立 oracle 的 exporter/loader 已落地，但真实 256-token artifact、双进程
-重建、目标 GPU 运行、attribution closure 和 workspace shape/dtype/byte cap 都仍待
-完成。下一步是在冻结 CPU oracle 环境生成并复核长轨迹，再把 reviewed SHA 交给目标
-GPU benchmark；若 Float32/BF16 token suffix 分叉，先把分叉记录为 correctness blocker。
+Chapter 47 保持 Open，Episode 10 也保持 Open。独立 256-token Float32/CPU oracle
+已经冻结，真实 BF16 GPU 运行停在 correctness blocker。下一步先定位 generated
+step 79 的 BF16 CUDA greedy 与 HF Float32/CPU timeline 分叉，再恢复
+32/128/256 正式采样和 allocation attribution。在完整 prefix exact 之前不选择
+workspace，也不把两边各自 deterministic 写成通过。

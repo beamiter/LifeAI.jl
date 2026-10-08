@@ -1194,13 +1194,30 @@ Float32 CPU claim、revision/assets、prompt/image/input IDs 或 256-step timeli
 `status="correctness_blocker"` JSON，包含首分叉 step、双方 token、HF top-2 margin
 和完整对照 prefix；该 run 不会继续进入 allocation attribution。
 
+2026-10-08 的持久副本不放在 `/tmp`，也不放进模型 git 工作树：
+
+```text
+oracle: /home/ubuntu/models/lifeai-oracles/qwen3vl-transformers-4.57.0
+chapter45: /home/ubuntu/models/lifeai-references/Qwen3-VL-2B-Instruct/chapter45-decode-f32/
+long oracle: /home/ubuntu/models/lifeai-references/Qwen3-VL-2B-Instruct/chapter47-long-oracle/long_generation_reference.json
+blocker: /home/ubuntu/models/lifeai-references/Qwen3-VL-2B-Instruct/chapter47-long-oracle/qwen3_vl_long_profile.json
+```
+
+Chapter 45 `reference.safetensors` / `reference.json` 重新导出后仍是
+`a98812e25efb44c02ab9c06e974ab718724f35f2f1c686e4bdc395d856c03e81` /
+`569fe3666b65ee2f497327e9ce9931f81652d5bdc32d44dfb9fb774435caccfc`。两个独立
+进程的 long oracle 逐字节相同，SHA256 为
+`72461330a8c5a0e74e7489abfdd481223aeb47d6c161fdc12dc0048e82690140`。RTX 4090 D
+BF16 static 256-token warmup 在 generated step 79 分叉，blocker 文件 SHA256 为
+`90b10f6cb25489984314bfb02b727557fd25d71a1a1424c08bda98301d00c8d4`，
+`closed=false`。这是 correctness blocker，不是 allocation acceptance fixture。
+
 默认 workload 为 32/128/256-token BF16 static generation、每个长度三次；可用
 `LIFEAI_QWEN3_VL_PROFILE_LENGTHS` 和 `LIFEAI_QWEN3_VL_PROFILE_REPEATS`
 显式缩小 smoke（每个长度至少 4，且不超过 oracle timeline），但缩小结果不能关闭
-Chapter 47。脚本输出累计 allocation traffic、
+Chapter 47。脚本在 prefix exact 之后才输出累计 allocation traffic、
 allocation count、CUDA pool high-water、host greedy selection、无 hook latency 和
-最终 step 的逐 stage attribution。当前尚未冻结真实 long-oracle/profile JSON；资产段
-只记录恢复与执行方法，不把 exporter/loader 骨架写成实证结果。
+最终 step 的逐 stage attribution。当前这次运行停在 warmup，没有这些指标。
 
 ## Qwen3-30B-A3B 资产状态
 

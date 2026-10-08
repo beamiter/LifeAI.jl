@@ -63,12 +63,13 @@ Chapter 47 已 Open。它先加入数值透明的 internal decode-stage runner�
 与 28 个 decoder blocks 拆成 token embedding、mRoPE、Q/K/V projection、QK-Norm、
 RoPE、K/V write、attention、O projection/residual、MLP、final norm 和 vocabulary
 logits 等阶段；tiny profiled/unprofiled decode 的 logits、K/V 与状态 exact，调用顺序
-进入默认离线回归。HF Float32/CPU 流式 exporter 与 pinned-SHA loader 已为第 5–256
-token 建立独立 oracle contract；新的真实 benchmark 固定 76-token 单图 prompt 与
-32/128/256-token BF16 static generation，要求完整 prefix exact，再分别记录 allocation
-traffic、pool high-water mark、host greedy selection 和无 hook latency。真实 oracle
-artifact 与 profile 报告尚未采集，因此本章和 Episode 10 都保持 Open，不提前选择或
-宣称 workspace 优化对象。
+进入默认离线回归。2026-10-08 已在持久 CPU oracle 上由两个独立进程导出逐字节相同的
+256-token Float32/CPU timeline，外层 SHA 为 `72461330…90140`，前四枚仍是
+`[1987, 2169, 375, 265]`。RTX 4090 D 的 BF16 static 256-token warmup 在 generated
+step 79 fail closed：前 78 枚 exact，LifeAI 选了 zero-based `281`（` p`），HF
+Float32 top-1 是 `2518`（` red`），runner-up 正是 `281`，margin `0.04928589`。
+正式 32/128/256 三次采样和 allocation attribution 没有执行，因此本章和 Episode 10
+都保持 Open，不选择 workspace。
 
 ## Episode Close 条件
 
@@ -86,7 +87,7 @@ artifact 与 profile 报告尚未采集，因此本章和 Episode 10 都保持 O
 Chapter 46 关闭的是 K/V growth allocation：它消除了 dynamic `cat` 对历史 prefix 的
 重复分配与复制，并提供可 reset 的有界 request state。但 attention、线性投影、mRoPE、
 MLP、final norm、vocabulary logits 和 generation trace 仍会产生临时对象；当前也没有
-CUDA Graph/XLA static executable、并发 request scheduler、长生成 benchmark 或完整
-BF16 strict oracle。Chapter 47 已提供真实 allocation profile 的可复现入口，但冻结
-32/128/256-token 报告与 workspace 决策尚未完成。因此 Episode 10 保持 Open，不能仅凭
-固定 K/V shape 或 profiler 骨架宣称部署优化完成。
+CUDA Graph/XLA static executable、并发 request scheduler 或完整 BF16 strict
+oracle。Chapter 47 的 256-token Float32/CPU oracle 已经冻结，但 BF16 static warmup
+在 generated step 79 与该 oracle 分叉，正式采样和 workspace 决策因此停住。Episode
+10 保持 Open，不能仅凭固定 K/V shape 或一条 fail-closed warmup 宣称部署优化完成。
