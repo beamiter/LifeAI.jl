@@ -191,6 +191,38 @@ function _qwen3_vl_dense_kv_parent(src, capacity::Int)
     return parent_keys
 end
 
+function _qwen3_vl_device_gemm_storage!(::Any, C, A, B, transA::Char)
+    if transA == 'N'
+        LinearAlgebra.mul!(C, A, B)
+    else
+        LinearAlgebra.mul!(C, transpose(A), B)
+    end
+    return C
+end
+
+function _qwen3_vl_device_gemm!(C, A, B; transA::Char='N')
+    storage = C isa SubArray ? parent(C) : C
+    return _qwen3_vl_device_gemm_storage!(storage, C, A, B, transA)
+end
+
+# `sum!(abs2, dest, x)` on a GPU reduction longer than one block allocates the
+# partial buffer inside CUDA's own kernel. The device method reuses that
+# buffer and the same launch configuration. CPU reductions stay on `sum!`.
+function _qwen3_vl_device_sum_abs2!(::Any, dest, x)
+    sum!(abs2, dest, x)
+    return dest
+end
+
+function _qwen3_vl_sum_abs2!(dest, x)
+    storage = dest isa SubArray ? parent(dest) : dest
+    return _qwen3_vl_device_sum_abs2!(storage, dest, x)
+end
+
+function _qwen3_vl_device_batched_mul!(::Any, dest, left, right)
+    NNlib.batched_mul!(dest, left, right)
+    return dest
+end
+
 function _qwen3_vl_batched_mul!(dest, left, right)
     storage = dest isa SubArray ? parent(dest) : dest
     if storage isa Array
@@ -198,8 +230,7 @@ function _qwen3_vl_batched_mul!(dest, left, right)
         dest .= computed
         return dest
     end
-    NNlib.batched_mul!(dest, left, right)
-    return dest
+    return _qwen3_vl_device_batched_mul!(storage, dest, left, right)
 end
 
 function _qwen3_vl_load_decode_query!(scratch, queries)
@@ -806,9 +837,9 @@ function _qwen3_vl_ensure_qk_norm_scratch!(cache, spec, prototype)
 end
 
 # One-token BF16 hidden RMSNorm workspace. Prefill, post-attention, and the
-# final norm share it because only one result is live at a time. Reductions
-# longer than one CUDA block still allocate `sum!`'s partial; the large
-# tensors do not.
+# final norm share it because only one result is live at a time. The large
+# tensors stay here. A GPU reduction longer than one block reuses CUDA's
+# partial buffer without changing that reduction's launch configuration.
 
 struct Qwen3VLHiddenNormScratch{XF,MS,N,NF,SC,O}
     xf::XF
@@ -875,7 +906,7 @@ function _qwen3_vl_decode_hidden_norm!(
     ))
     epsilon_f32 = Float32(epsilon)
     scratch.xf .= 1.0f0 .* x
-    sum!(abs2, scratch.mean_square, scratch.xf)
+    _qwen3_vl_sum_abs2!(scratch.mean_square, scratch.xf)
     scratch.mean_square .= scratch.mean_square ./ Float32(size(x, 1))
     scratch.normalized .= BFloat16.(
         scratch.xf ./ sqrt.(scratch.mean_square .+ epsilon_f32)
@@ -981,7 +1012,7 @@ function _qwen3_vl_bf16_linear!(
         output .= reshape(BFloat16.(y_f32), out_dim, num_tokens, batch_size)
         return output
     end
-    LinearAlgebra.mul!(
+    _qwen3_vl_device_gemm!(
         reshape(output, out_dim, :),
         weight,
         reshape(x, in_dim, :),
@@ -1180,10 +1211,11 @@ function _qwen3_vl_decode_tied_logits!(
         scratch.output .= _qwen3_vl_project_tied(embedding, hidden)
         return scratch.output
     end
-    LinearAlgebra.mul!(
+    _qwen3_vl_device_gemm!(
         reshape(scratch.output, scratch.vocab_size, :),
-        transpose(embedding),
-        reshape(hidden, scratch.hidden_size, :),
+        embedding,
+        reshape(hidden, scratch.hidden_size, :);
+        transA='T',
     )
     return scratch.output
 end
@@ -1392,5 +1424,80 @@ function _qwen3_vl_ensure_token_embedding_scratch!(cache, spec, prototype)
         hidden_size=spec.hidden_size,
     )
     cache.token_embedding_scratch = scratch
+    return scratch
+end
+
+# One-token BF16 mRoPE cos/sin tables. All layers of a decode step share them.
+# The host frequencies stay on the same path as `_qwen3_vl_text_mrope`; only
+# the device copy is reused.
+
+struct Qwen3VLMropeScratch{C,S}
+    cos_values::C
+    sin_values::S
+    half::Int
+end
+
+function qwen3_vl_mrope_scratch_bytes(; head_dim::Integer)
+    head_dim = Int(head_dim)
+    head_dim > 0 && iseven(head_dim) || throw(ArgumentError(
+        "Qwen3-VL mRoPE scratch head_dim must be a positive even integer",
+    ))
+    return (head_dim ÷ 2) * 2 * sizeof(BFloat16)
+end
+
+function qwen3_vl_mrope_scratch_bytes(scratch::Qwen3VLMropeScratch)
+    return sizeof(scratch.cos_values) + sizeof(scratch.sin_values)
+end
+
+function init_qwen3_vl_mrope_scratch(
+    prototype::AbstractArray{BFloat16};
+    head_dim::Integer,
+)
+    expected = qwen3_vl_mrope_scratch_bytes(; head_dim)
+    half = Int(head_dim) ÷ 2
+    scratch = Qwen3VLMropeScratch(
+        similar(prototype, BFloat16, half, 1, 1),
+        similar(prototype, BFloat16, half, 1, 1),
+        half,
+    )
+    qwen3_vl_mrope_scratch_bytes(scratch) == expected ||
+        throw(ArgumentError(
+            "Qwen3-VL mRoPE scratch bytes do not match the formula",
+        ))
+    return scratch
+end
+
+function _qwen3_vl_decode_mrope!(
+    scratch::Qwen3VLMropeScratch,
+    spec,
+    coordinate::Integer,
+)
+    scratch.half == spec.head_dim ÷ 2 || throw(DimensionMismatch(
+        "Qwen3-VL mRoPE scratch does not match head_dim",
+    ))
+    position_ids = fill(Int(coordinate), 3, 1, 1)
+    frequencies = _qwen3_vl_text_mrope_frequencies(spec, position_ids)
+    copyto!(scratch.cos_values, BFloat16.(cos.(frequencies)))
+    copyto!(scratch.sin_values, BFloat16.(sin.(frequencies)))
+    return scratch.cos_values, scratch.sin_values
+end
+
+function _qwen3_vl_ensure_mrope_scratch!(cache, spec, prototype)
+    scratch = cache.mrope_scratch
+    half = spec.head_dim ÷ 2
+    if scratch isa Qwen3VLMropeScratch &&
+        scratch.half == half &&
+        eltype(scratch.cos_values) === eltype(prototype) &&
+        get_device(scratch.cos_values) == get_device(prototype)
+        return scratch
+    end
+    eltype(prototype) === BFloat16 || throw(ArgumentError(
+        "Qwen3-VL mRoPE scratch requires BFloat16 parameters",
+    ))
+    scratch = init_qwen3_vl_mrope_scratch(
+        prototype;
+        head_dim=spec.head_dim,
+    )
+    cache.mrope_scratch = scratch
     return scratch
 end

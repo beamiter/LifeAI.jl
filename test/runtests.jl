@@ -456,6 +456,15 @@ end
             "test_qwen3_vl_token_embedding.jl",
         ))
     end
+    @testset "Chapter 61 — mRoPE scratch" begin
+        episode = "episode10_qwen3_vl_efficient_generation"
+        chapter = "chapter61_qwen3_vl_mrope"
+        include(chapter_test(
+            episode,
+            chapter,
+            "test_qwen3_vl_mrope.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

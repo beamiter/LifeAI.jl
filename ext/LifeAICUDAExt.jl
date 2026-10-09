@@ -2033,4 +2033,225 @@ function qwen3_device_sparse_expert_dispatch(
     )
 end
 
+const _QWEN3_GEMM_ALPHA = Ref{Any}(nothing)
+const _QWEN3_GEMM_BETA = Ref{Any}(nothing)
+
+function _qwen3_gemm_scalars()
+    alpha = _QWEN3_GEMM_ALPHA[]
+    beta = _QWEN3_GEMM_BETA[]
+    if alpha === nothing || beta === nothing
+        alpha = CUDA.fill(1.0f0, 1)
+        beta = CUDA.fill(0.0f0, 1)
+        _QWEN3_GEMM_ALPHA[] = alpha
+        _QWEN3_GEMM_BETA[] = beta
+    end
+    return alpha, beta
+end
+
+function LifeAI._qwen3_vl_device_gemm_storage!(
+    ::CUDA.CuArray,
+    C,
+    A,
+    B,
+    transA::Char,
+)
+    alpha, beta = _qwen3_gemm_scalars()
+    opA = transA == 'N' ? CUDA.CUBLAS.CUBLAS_OP_N : CUDA.CUBLAS.CUBLAS_OP_T
+    m = size(A, transA == 'N' ? 1 : 2)
+    k = size(A, transA == 'N' ? 2 : 1)
+    n = size(B, 2)
+    CUDA.CUBLAS.cublasGemmEx(
+        CUDA.CUBLAS.handle(),
+        opA,
+        CUDA.CUBLAS.CUBLAS_OP_N,
+        Cint(m),
+        Cint(n),
+        Cint(k),
+        pointer(alpha),
+        pointer(A),
+        eltype(A),
+        Cint(max(1, stride(A, 2))),
+        pointer(B),
+        eltype(B),
+        Cint(max(1, stride(B, 2))),
+        pointer(beta),
+        pointer(C),
+        eltype(C),
+        Cint(max(1, stride(C, 2))),
+        CUDA.CUBLAS.CUBLAS_COMPUTE_32F,
+        CUDA.CUBLAS.CUBLAS_GEMM_DEFAULT,
+    )
+    return C
+end
+
+struct _Qwen3Abs2Plan
+    mode::Symbol
+    kernel::Any
+    Rreduce::Any
+    Rother::Any
+    threads::Int
+    blocks::Int
+    shmem::Int
+    partial::Any
+end
+
+const _QWEN3_ABS2_PLANS = Dict{Any,_Qwen3Abs2Plan}()
+
+function _qwen3_abs2_threads(dev, wanted_threads, max_threads, shuffle)
+    if wanted_threads > max_threads
+        return shuffle ? CUDA.prevwarp(dev, max_threads) : max_threads
+    end
+    return wanted_threads
+end
+
+function _qwen3_abs2_plan(dest::CUDA.CuArray, x)
+    key = (CUDA.device(), size(dest), size(x), eltype(dest))
+    cached = get(_QWEN3_ABS2_PLANS, key, nothing)
+    cached === nothing || return cached
+    plan = _qwen3_build_abs2_plan(dest, x)
+    _QWEN3_ABS2_PLANS[key] = plan
+    return plan
+end
+
+function _qwen3_build_abs2_plan(dest, x)
+    f = abs2
+    op = Base.add_sum
+    init = zero(eltype(dest))
+    T = eltype(dest)
+    dev = CUDA.device()
+    shuffle = T <: Union{
+        Bool,
+        UInt8, UInt16, UInt32, UInt64, UInt128,
+        Int8, Int16, Int32, Int64, Int128,
+        Float16, Float32, Float64,
+        ComplexF16, ComplexF32, ComplexF64,
+    }
+    CUDACore = parentmodule(CUDA.CuArray)
+    R = dest
+    A = x
+    if ndims(R) < ndims(A)
+        R = reshape(R, Base.fill_to_length(size(R), 1, Val(ndims(A))))
+    end
+    Rother = CartesianIndices(axes(R))
+    Rreduce = CartesianIndices(ifelse.(
+        axes(A) .== axes(R),
+        Ref(Base.OneTo(1)),
+        axes(A),
+    ))
+    wanted_threads = shuffle ? CUDA.nextwarp(dev, length(Rreduce)) : length(Rreduce)
+    compute_shmem(threads) = shuffle ? 0 : threads * sizeof(T)
+    compute_threads(max_threads) = _qwen3_abs2_threads(
+        dev, wanted_threads, max_threads, shuffle,
+    )
+    kernel = CUDA.@cuda launch=false CUDACore.partial_mapreduce_grid(
+        f, op, init, Rreduce, Rother, Val(shuffle), R, A,
+    )
+    kernel_config = CUDA.launch_configuration(
+        kernel.fun;
+        shmem=compute_shmem ∘ compute_threads,
+    )
+    reduce_threads = compute_threads(kernel_config.threads)
+    other_blocks = length(Rother)
+    reduce_blocks = if other_blocks >= kernel_config.blocks
+        1
+    else
+        min(
+            cld(length(Rreduce), reduce_threads),
+            cld(kernel_config.blocks, other_blocks),
+        )
+    end
+    if reduce_blocks == 1
+        return _Qwen3Abs2Plan(
+            :single,
+            kernel,
+            Rreduce,
+            Rother,
+            reduce_threads,
+            reduce_blocks * other_blocks,
+            compute_shmem(reduce_threads),
+            nothing,
+        )
+    end
+
+    empty_partial = similar(R, ntuple(_ -> 0, Val(ndims(R) + 1)))
+    partial_kernel = CUDA.@cuda launch=false CUDACore.partial_mapreduce_grid(
+        f, op, init, Rreduce, Rother, Val(shuffle), empty_partial, A,
+    )
+    partial_config = CUDA.launch_configuration(
+        partial_kernel.fun;
+        shmem=compute_shmem ∘ compute_threads,
+    )
+    partial_threads = compute_threads(partial_config.threads)
+    partial_blocks = if other_blocks >= partial_config.blocks
+        1
+    else
+        min(
+            cld(length(Rreduce), partial_threads),
+            cld(partial_config.blocks, other_blocks),
+        )
+    end
+    partial = similar(R, (size(R)..., partial_blocks))
+    return _Qwen3Abs2Plan(
+        :partial,
+        partial_kernel,
+        Rreduce,
+        Rother,
+        partial_threads,
+        partial_blocks * other_blocks,
+        compute_shmem(partial_threads),
+        partial,
+    )
+end
+
+function LifeAI._qwen3_vl_device_sum_abs2!(::CUDA.CuArray, dest, x)
+    eltype(dest) === Float32 || return sum!(abs2, dest, x)
+    plan = _qwen3_abs2_plan(dest, x)
+    init = zero(eltype(dest))
+    if plan.mode === :single
+        plan.kernel(
+            abs2,
+            Base.add_sum,
+            init,
+            plan.Rreduce,
+            plan.Rother,
+            Val(true),
+            dest,
+            x;
+            threads=plan.threads,
+            blocks=plan.blocks,
+            shmem=plan.shmem,
+        )
+    else
+        plan.kernel(
+            abs2,
+            Base.add_sum,
+            init,
+            plan.Rreduce,
+            plan.Rother,
+            Val(true),
+            plan.partial,
+            x;
+            threads=plan.threads,
+            blocks=plan.blocks,
+            shmem=plan.shmem,
+        )
+        sum!(identity, dest, plan.partial)
+    end
+    return dest
+end
+
+function LifeAI._qwen3_vl_device_batched_mul!(::CUDA.CuArray, dest, left, right)
+    batch = size(dest, 3)
+    for index in 1:batch
+        left_index = size(left, 3) == 1 ? 1 : index
+        right_index = size(right, 3) == 1 ? 1 : index
+        LifeAI._qwen3_vl_device_gemm!(
+            view(dest, :, :, index),
+            view(left, :, :, left_index),
+            view(right, :, :, right_index),
+        )
+    end
+    return dest
+end
+
 end # module LifeAICUDAExt

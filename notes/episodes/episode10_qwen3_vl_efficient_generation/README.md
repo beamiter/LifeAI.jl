@@ -30,6 +30,10 @@ CUDA Graph、零分配 decode 或长上下文部署已经完成。
 10. [`Chapter 55 — Qwen3-VL decode QKV projection 常量分配`](chapter55_qwen3_vl_qkv.md)（Closed）
 11. [`Chapter 56 — Qwen3-VL decode attention softmax 归约`](chapter56_qwen3_vl_attention_softmax.md)（Closed）
 12. [`Chapter 57 — Qwen3-VL decode token embedding 常量分配`](chapter57_qwen3_vl_token_embedding.md)（Closed）
+13. [`Chapter 58 — Qwen3-VL decode attention batched GEMM 的 64 bytes`](chapter58_qwen3_vl_batched_gemm.md)（Closed）
+14. [`Chapter 59 — Qwen3-VL decode gemmEx 的持久 alpha/beta`](chapter59_qwen3_vl_gemm_scalar.md)（Closed）
+15. [`Chapter 60 — Qwen3-VL decode hidden RMSNorm partial`](chapter60_qwen3_vl_norm_partial.md)（Closed）
+16. [`Chapter 61 — Qwen3-VL decode mRoPE cos/sin 表`](chapter61_qwen3_vl_mrope.md)（Closed）
 
 ## 预期能力变化
 
@@ -171,4 +175,14 @@ bytes，每层 `256` bytes。Chapter 56 把 attention softmax 的 `maximum` 和
 最大阶段变成 `token_embedding`（`4,105` bytes）。Chapter 57 把这一列写进
 `4,096` byte 的 scratch，该阶段变成 `0`。整步现在是 `6,328` bytes。最大阶段
 回到 `attention` 的 `3,584` bytes，来自每层两次 `batched_mul!` 各 `64` bytes。
-Episode 10 保持 Open，不能把这些 scratch 写成整条 decode 零分配。
+Chapter 58 试过一次 strided batched GEMM：分配能降到每调用 `8` bytes，但
+sequence `331` 有一个元素差 `0.0625`，自由生成分叉回到 step 79。该替换没有
+留下。Chapter 59 保留 per-head 顺序，只把同一条 `cublasGemmEx` 的 alpha/beta
+换成进程内持久标量。`attention`、`qkv_projection`、`mlp_gate_up_projection`、
+两处 residual 和 `vocab_logits` 都降到 `0`。整步当时是 `1,168` bytes。
+Chapter 60 复用 `sum!` 自己的多 block partial，归约顺序不变。三处 hidden
+norm 都降到 `0`。整步当时是 `256` bytes，只剩 `mrope_prepare`。Chapter 61
+把单 token 的 cos/sin 表收进 `256` byte scratch。position `107 / 203 / 331`
+的最后一步现在是 `0` GPU bytes。同一次生成只有第一次 decode 按 capacity
+创建 scratch；256-token 那次是 `2,018,180` bytes、`56` 次分配，其后每步是
+`0`。Episode 10 保持 Open，不能把这些 scratch 写成整条 decode 零分配。

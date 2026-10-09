@@ -328,9 +328,8 @@ function _qwen3_vl_text_residual(x, value)
     return x .+ value
 end
 
-function _qwen3_vl_text_mrope(
+function _qwen3_vl_text_mrope_frequencies(
     spec::Qwen3VLTextSpec,
-    reference,
     position_ids::AbstractArray{<:Integer,3},
 )
     size(position_ids, 1) == 3 || throw(DimensionMismatch(
@@ -359,6 +358,15 @@ function _qwen3_vl_text_mrope(
         frequencies[lane, token, batch] = inv_frequency[lane] *
             Float32(position_ids[axis, token, batch])
     end
+    return frequencies
+end
+
+function _qwen3_vl_text_mrope(
+    spec::Qwen3VLTextSpec,
+    reference,
+    position_ids::AbstractArray{<:Integer,3},
+)
+    frequencies = _qwen3_vl_text_mrope_frequencies(spec, position_ids)
     to_device = _bf16a_device_mover(reference)
     if eltype(reference) === BFloat16
         return (

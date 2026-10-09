@@ -529,6 +529,7 @@ mutable struct Qwen3VLStaticKVCache{C}
     tied_logits_scratch::Any
     qkv_scratch::Any
     token_embedding_scratch::Any
+    mrope_scratch::Any
 
     function Qwen3VLStaticKVCache(
         layers,
@@ -580,6 +581,7 @@ mutable struct Qwen3VLStaticKVCache{C}
             resolved_rope_delta,
             resolved_batch,
             resolved_capacity,
+            nothing,
             nothing,
             nothing,
             nothing,
@@ -1929,6 +1931,15 @@ function _qwen3_vl_text_decode_step_static_impl(
     else
         nothing
     end
+    mrope_scratch = if eltype(parameters.embedding) === BFloat16
+        _qwen3_vl_ensure_mrope_scratch!(
+            cache,
+            spec,
+            parameters.embedding,
+        )
+    else
+        nothing
+    end
 
     x = _qwen3_vl_profile_stage(
         profile_runner,
@@ -1957,12 +1968,16 @@ function _qwen3_vl_text_decode_step_static_impl(
         :mrope_prepare,
         0,
     ) do
-        position_ids = fill(coordinate, 3, 1, cache.batch_size)
-        _qwen3_vl_text_mrope(
-            spec,
-            parameters.embedding,
-            position_ids,
-        )
+        if mrope_scratch !== nothing && cache.batch_size == 1
+            _qwen3_vl_decode_mrope!(mrope_scratch, spec, coordinate)
+        else
+            position_ids = fill(coordinate, 3, 1, cache.batch_size)
+            _qwen3_vl_text_mrope(
+                spec,
+                parameters.embedding,
+                position_ids,
+            )
+        end
     end
     write_position = cache.position + 1
     attention_scratch = if eltype(parameters.embedding) === BFloat16

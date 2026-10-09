@@ -1286,6 +1286,30 @@ Chapter 57 复用 token embedding scratch 之后的一次 repeat 重测是
 `dfaa168759d4beddc9e8db405cbcdf7a3a0896a83831a3f2df6b0335fd575742`。
 `token_embedding` 从 `4,105` 降到 `0`，整步合计 `6,328`。
 Chapter 57 因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+`qwen3_vl_allocation_strided_gemm.json` 的 SHA256 为
+`b8542c41ada07f774c728e0f72457b6627098822759f1c55b2ed87caa7c50561`。
+它是一次没有采纳的 strided GEMM 试验：`attention` 降到 `448` bytes，但
+sequence `331` 不逐位，自由生成分叉回到 step 79。当前代码仍是 per-head
+`batched_mul!`。Chapter 58 因此 Closed。该文件不是 acceptance fixture。
+Chapter 59 把同一条 `cublasGemmEx` 的 alpha/beta 换成持久 device 标量之后的
+一次 repeat 重测是 `qwen3_vl_allocation_gemm_scalar.json`，SHA256 为
+`c0bdb3d4fa6427bce41d8f42a95f075ec6c53331c10eed1d00a2aa5014a6298c`。
+`attention`、`qkv_projection`、`mlp_gate_up_projection`、两处 residual 和
+`vocab_logits` 都是 `0` bytes，整步合计 `1,168`。32-token prefix exact，
+128/256 仍在 step 70 分叉。Chapter 59 因此 Closed。该文件同样是 allocation
+记录，不是 BF16 strict parity。
+Chapter 60 复用 hidden RMSNorm 的 `sum!` partial 之后的一次 repeat 重测是
+`qwen3_vl_allocation_norm_partial.json`，SHA256 为
+`b9e6d0ab4331d689d448ff8d03b7714d283c0553454f37f89b37abb43276361e`。
+三处 hidden norm 都是 `0` bytes，整步合计 `256`。32-token prefix exact，
+128/256 仍在 step 70 分叉。Chapter 60 因此 Closed。该文件同样是 allocation
+记录，不是 BF16 strict parity。
+Chapter 61 复用单 token mRoPE cos/sin 之后的一次 repeat 重测是
+`qwen3_vl_allocation_mrope.json`，SHA256 为
+`8411b055efea353da282dc295558b5db99b6d088b7814a62673ce54ecc7d46b9`。
+`mrope_prepare` 是 `0` bytes，position `107 / 203 / 331` 的最后一步都是 `0`。
+32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 61 因此 Closed。
+该文件同样是 allocation 记录，不是 BF16 strict parity。
 
 默认 workload 为 32/128/256-token BF16 static generation、每个长度三次；可用
 `LIFEAI_QWEN3_VL_PROFILE_LENGTHS` 和 `LIFEAI_QWEN3_VL_PROFILE_REPEATS`
