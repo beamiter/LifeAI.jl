@@ -1310,6 +1310,12 @@ Chapter 61 复用单 token mRoPE cos/sin 之后的一次 repeat 重测是
 `mrope_prepare` 是 `0` bytes，position `107 / 203 / 331` 的最后一步都是 `0`。
 32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 61 因此 Closed。
 该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 62—67 把元素广播收成 kernel 之后的一次 repeat 重测是
+`qwen3_vl_allocation_fused_elementwise.json`，SHA256 为
+`ebf007aafe96f34972d45a8429899acdcfd8781468e4f9b24611396ec9ab8b4a`。
+GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 分配是 `2,168,720` bytes。
+32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 62—67 因此 Closed。
+该文件同样是 allocation 记录，不是 BF16 strict parity。
 
 默认 workload 为 32/128/256-token BF16 static generation、每个长度三次；可用
 `LIFEAI_QWEN3_VL_PROFILE_LENGTHS` 和 `LIFEAI_QWEN3_VL_PROFILE_REPEATS`

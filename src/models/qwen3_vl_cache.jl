@@ -1,13 +1,56 @@
 using MLDataDevices: get_device
 
 """Record cache storage after proving that it cannot overlap earlier tensors."""
-function _record_qwen3_vl_cache_storage!(
-    storages::Vector{Any},
-    storage::AbstractArray,
-    message::AbstractString,
+_qwen3_vl_storage_parent(storage::SubArray) = _qwen3_vl_storage_parent(parent(storage))
+_qwen3_vl_storage_parent(storage::AbstractArray) = storage
+
+function _qwen3_vl_ranges_overlap(a::Integer, b::Integer)
+    return a == b
+end
+
+function _qwen3_vl_ranges_overlap(a::Integer, b::AbstractUnitRange)
+    return first(b) <= a <= last(b)
+end
+
+function _qwen3_vl_ranges_overlap(a::AbstractUnitRange, b::Integer)
+    return first(a) <= b <= last(a)
+end
+
+function _qwen3_vl_ranges_overlap(a::AbstractUnitRange, b::AbstractUnitRange)
+    return max(first(a), first(b)) <= min(last(a), last(b))
+end
+
+_qwen3_vl_indices_overlap(::Tuple{}, ::Tuple{}) = true
+
+function _qwen3_vl_indices_overlap(
+    left::Tuple{Any,Vararg{Any}},
+    right::Tuple{Any,Vararg{Any}},
 )
+    return _qwen3_vl_ranges_overlap(left[1], right[1]) &&
+        _qwen3_vl_indices_overlap(Base.tail(left), Base.tail(right))
+end
+
+function _qwen3_vl_storage_overlaps(left::SubArray, right::SubArray)
+    _qwen3_vl_storage_parent(left) === _qwen3_vl_storage_parent(right) ||
+        return false
+    return _qwen3_vl_indices_overlap(left.indices, right.indices)
+end
+
+function _qwen3_vl_storage_overlaps(left::AbstractArray, right::AbstractArray)
+    parent_left = _qwen3_vl_storage_parent(left)
+    parent_right = _qwen3_vl_storage_parent(right)
+    parent_left === parent_right || return false
+    return true
+end
+
+function _record_qwen3_vl_cache_storage!(
+    storages::Vector{T},
+    storage::T,
+    message::AbstractString,
+) where {T<:AbstractArray}
     for existing in storages
-        Base.mightalias(storage, existing) && throw(ArgumentError(message))
+        _qwen3_vl_storage_overlaps(storage, existing) &&
+            throw(ArgumentError(message))
     end
     push!(storages, storage)
     return nothing
@@ -27,7 +70,7 @@ function _validate_qwen3_vl_dynamic_cache_layers(
     expected_shape = nothing
     expected_dtype = nothing
     expected_device = nothing
-    seen_storage = Any[]
+    seen_storage = nothing
     for (layer_index, layer) in enumerate(layers)
         layer isa LayerKVCache || throw(ArgumentError(
             "Qwen3-VL dynamic cache layer $layer_index must be LayerKVCache storage",
@@ -89,6 +132,9 @@ function _validate_qwen3_vl_dynamic_cache_layers(
             device == expected_device || throw(ArgumentError(
                 "Qwen3-VL dynamic cache layer devices must match",
             ))
+        end
+        if seen_storage === nothing
+            seen_storage = Vector{typeof(keys)}()
         end
         for storage in (keys, values)
             _record_qwen3_vl_cache_storage!(
@@ -475,7 +521,7 @@ function _validate_qwen3_vl_static_cache_layers(
     )
     expected_dtype = eltype(first_layer.keys)
     expected_device = get_device(first_layer.keys)
-    seen_storage = Any[]
+    seen_storage = Vector{typeof(first_layer.keys)}()
     for (layer_index, layer) in enumerate(layers)
         layer isa Qwen3VLStaticLayerKVCache || throw(ArgumentError(
             "Qwen3-VL static cache layer $layer_index is not static layer storage",

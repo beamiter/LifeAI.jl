@@ -208,6 +208,47 @@ end
 # `sum!(abs2, dest, x)` on a GPU reduction longer than one block allocates the
 # partial buffer inside CUDA's own kernel. The device method reuses that
 # buffer and the same launch configuration. CPU reductions stay on `sum!`.
+function _qwen3_vl_device_mlp!(::Any, product, gate, up)
+    return nothing
+end
+
+function _qwen3_vl_device_residual!(::Any, output, residual, projected)
+    return nothing
+end
+
+function _qwen3_vl_device_qk_norm!(
+    ::Any,
+    output,
+    x,
+    scale,
+    mean_square,
+    epsilon::Float32,
+)
+    return nothing
+end
+
+function _qwen3_vl_device_hidden_norm!(
+    ::Any,
+    output,
+    x,
+    scale,
+    mean_square,
+    epsilon::Float32,
+)
+    return nothing
+end
+
+function _qwen3_vl_device_decode_rope!(
+    ::Any,
+    output,
+    x,
+    cos_values,
+    sin_values,
+    half::Int,
+)
+    return nothing
+end
+
 function _qwen3_vl_device_sum_abs2!(::Any, dest, x)
     sum!(abs2, dest, x)
     return dest
@@ -370,6 +411,15 @@ function _qwen3_vl_mlp_activation!(scratch::Qwen3VLMlpActivationScratch, gate, u
     size(up) == size(gate) || throw(DimensionMismatch(
         "Qwen3-VL MLP activation gate and up shapes differ",
     ))
+    if !(gate isa Array)
+        _qwen3_vl_device_mlp!(
+            gate isa SubArray ? parent(gate) : gate,
+            scratch.product,
+            gate,
+            up,
+        )
+        return scratch.product
+    end
     scratch.gate_f32 .= 1.0f0 .* gate
     scratch.activated .= BFloat16.(
         scratch.gate_f32 ./ (1.0f0 .+ exp.(.-scratch.gate_f32))
@@ -531,8 +581,7 @@ function init_qwen3_vl_qk_rope_scratch(
     return scratch
 end
 
-function _qwen3_vl_qk_rope_heads(buffer, heads::Int)
-    size(buffer, 2) == heads && return buffer
+function _qwen3_vl_qk_rope_heads(buffer::AbstractArray, heads::Int)
     return view(buffer, :, 1:heads, :, :)
 end
 
@@ -555,12 +604,18 @@ function _qwen3_vl_qk_rope_table(values, half::Int)
 end
 
 function _qwen3_vl_decode_rope_one!(
-    scratch::Qwen3VLQKRopeScratch,
-    x,
-    cos_values,
-    sin_values,
-    output,
-)
+    scratch::S,
+    x::X,
+    cos_values::C,
+    sin_values::N,
+    output::O,
+) where {
+    S<:Qwen3VLQKRopeScratch,
+    X<:AbstractArray{BFloat16,4},
+    C<:AbstractArray{BFloat16},
+    N<:AbstractArray{BFloat16},
+    O<:AbstractArray{BFloat16,4},
+}
     eltype(x) === BFloat16 || throw(ArgumentError(
         "Qwen3-VL decode RoPE scratch requires BFloat16 values",
     ))
@@ -579,6 +634,17 @@ function _qwen3_vl_decode_rope_one!(
             "Qwen3-VL RoPE heads do not match the scratch",
         ))
     half = scratch.head_dim ÷ 2
+    if !(x isa Array)
+        _qwen3_vl_device_decode_rope!(
+            x isa SubArray ? parent(x) : x,
+            output,
+            x,
+            cos_values,
+            sin_values,
+            half,
+        )
+        return output
+    end
     x1 = _qwen3_vl_qk_rope_heads(scratch.x1, heads)
     x2 = _qwen3_vl_qk_rope_heads(scratch.x2, heads)
     tmp_f32 = _qwen3_vl_qk_rope_heads(scratch.tmp_f32, heads)
@@ -747,12 +813,17 @@ function init_qwen3_vl_qk_norm_scratch(
 end
 
 function _qwen3_vl_decode_qk_norm_one!(
-    scratch::Qwen3VLQKNormScratch,
-    x,
-    scale,
-    output,
+    scratch::S,
+    x::X,
+    scale::Scale,
+    output::O,
     epsilon::Float32,
-)
+) where {
+    S<:Qwen3VLQKNormScratch,
+    X<:AbstractArray{BFloat16,4},
+    Scale<:AbstractArray{BFloat16},
+    O<:AbstractArray{BFloat16,4},
+}
     eltype(x) === BFloat16 || throw(ArgumentError(
         "Qwen3-VL decode QK norm scratch requires BFloat16 values",
     ))
@@ -780,6 +851,17 @@ function _qwen3_vl_decode_qk_norm_one!(
     xf .= 1.0f0 .* x
     sum!(abs2, mean_square, xf)
     mean_square .= mean_square ./ Float32(size(x, 1))
+    if !(x isa Array)
+        _qwen3_vl_device_qk_norm!(
+            x isa SubArray ? parent(x) : x,
+            output,
+            x,
+            scale,
+            mean_square,
+            epsilon,
+        )
+        return output
+    end
     normalized .= BFloat16.(xf ./ sqrt.(mean_square .+ epsilon))
     scratch.scale_f32 .= 1.0f0 .* reshape(scale, scratch.head_dim, 1, 1, 1)
     norm_f32 .= 1.0f0 .* normalized
@@ -890,11 +972,15 @@ function init_qwen3_vl_hidden_norm_scratch(
 end
 
 function _qwen3_vl_decode_hidden_norm!(
-    scratch::Qwen3VLHiddenNormScratch,
-    x,
-    scale,
+    scratch::S,
+    x::X,
+    scale::Scale,
     epsilon::Real,
-)
+) where {
+    S<:Qwen3VLHiddenNormScratch,
+    X<:AbstractArray{BFloat16,3},
+    Scale<:AbstractArray{BFloat16},
+}
     eltype(x) === BFloat16 || throw(ArgumentError(
         "Qwen3-VL decode hidden norm scratch requires BFloat16 values",
     ))
@@ -908,6 +994,17 @@ function _qwen3_vl_decode_hidden_norm!(
     scratch.xf .= 1.0f0 .* x
     _qwen3_vl_sum_abs2!(scratch.mean_square, scratch.xf)
     scratch.mean_square .= scratch.mean_square ./ Float32(size(x, 1))
+    if !(x isa Array)
+        _qwen3_vl_device_hidden_norm!(
+            x isa SubArray ? parent(x) : x,
+            scratch.output,
+            x,
+            scale,
+            scratch.mean_square,
+            epsilon_f32,
+        )
+        return scratch.output
+    end
     scratch.normalized .= BFloat16.(
         scratch.xf ./ sqrt.(scratch.mean_square .+ epsilon_f32)
     )
@@ -1121,6 +1218,15 @@ function _qwen3_vl_decode_hidden_residual!(
         "Qwen3-VL hidden residual scratch supports one token and batch size one",
     ))
     _qwen3_vl_bf16_linear!(scratch.projected, weight, value)
+    if !(residual isa Array)
+        _qwen3_vl_device_residual!(
+            residual isa SubArray ? parent(residual) : residual,
+            scratch.output,
+            residual,
+            scratch.projected,
+        )
+        return scratch.output
+    end
     scratch.residual_f32 .= 1.0f0 .* residual
     scratch.projected_f32 .= 1.0f0 .* scratch.projected
     scratch.output .= BFloat16.(scratch.residual_f32 .+ scratch.projected_f32)

@@ -34,6 +34,13 @@ CUDA Graph、零分配 decode 或长上下文部署已经完成。
 14. [`Chapter 59 — Qwen3-VL decode gemmEx 的持久 alpha/beta`](chapter59_qwen3_vl_gemm_scalar.md)（Closed）
 15. [`Chapter 60 — Qwen3-VL decode hidden RMSNorm partial`](chapter60_qwen3_vl_norm_partial.md)（Closed）
 16. [`Chapter 61 — Qwen3-VL decode mRoPE cos/sin 表`](chapter61_qwen3_vl_mrope.md)（Closed）
+17. [`Chapter 62 — Qwen3-VL cache 重叠判断不再调用 dataids`](chapter62_qwen3_vl_storage_overlap.md)（Closed）
+18. [`Chapter 63 — Qwen3-VL decode RoPE 合成 kernel`](chapter63_qwen3_vl_fused_rope.md)（Closed）
+19. [`Chapter 64 — Qwen3-VL decode QK RMSNorm 合成 kernel`](chapter64_qwen3_vl_fused_qk_norm.md)（Closed）
+20. [`Chapter 65 — Qwen3-VL decode hidden RMSNorm 元素合成 kernel`](chapter65_qwen3_vl_fused_hidden_norm.md)（Closed）
+21. [`Chapter 66 — Qwen3-VL decode hidden residual 合成 kernel`](chapter66_qwen3_vl_fused_residual.md)（Closed）
+22. [`Chapter 67 — Qwen3-VL decode MLP SiLU 合成 kernel`](chapter67_qwen3_vl_fused_mlp.md)（Closed）
+23. [`Chapter 68 — Qwen3-VL decode attention softmax 合成 kernel`](chapter68_qwen3_vl_fused_attention.md)（Closed）
 
 ## 预期能力变化
 
@@ -185,4 +192,8 @@ norm 都降到 `0`。整步当时是 `256` bytes，只剩 `mrope_prepare`。Chap
 把单 token 的 cos/sin 表收进 `256` byte scratch。position `107 / 203 / 331`
 的最后一步现在是 `0` GPU bytes。同一次生成只有第一次 decode 按 capacity
 创建 scratch；256-token 那次是 `2,018,180` bytes、`56` 次分配，其后每步是
-`0`。Episode 10 保持 Open，不能把这些 scratch 写成整条 decode 零分配。
+`0`。Chapter 62—67 把 cache 重叠判断和 RoPE、QK norm、hidden norm、residual、
+MLP SiLU 的元素广播收成 kernel。GPU 最后一步仍是 `0`。256-token 稳态一步的
+CPU 分配从 `7,586,128` bytes 降到 `2,168,720`。Chapter 68 试过把 attention
+softmax 的元素步收成 kernel，输出和原来的广播不是逐位一致，所以没有留下。
+Episode 10 保持 Open，不能把这些 scratch 写成整条 decode 零分配。

@@ -2033,6 +2033,180 @@ function qwen3_device_sparse_expert_dispatch(
     )
 end
 
+function _qwen3_cuda_mlp_kernel!(product, gate, up)
+    index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
+    index > length(product) && return
+    @inbounds begin
+        gate_value = Float32(gate[index])
+        activated = BFloat16(gate_value / (1.0f0 + exp(-gate_value)))
+        product[index] = BFloat16(Float32(activated) * Float32(up[index]))
+    end
+    return
+end
+
+function LifeAI._qwen3_vl_device_mlp!(
+    ::CUDA.CuArray{BFloat16},
+    product,
+    gate,
+    up,
+)
+    threads = 128
+    blocks = cld(length(product), threads)
+    CUDA.@cuda threads=threads blocks=blocks _qwen3_cuda_mlp_kernel!(
+        product,
+        gate,
+        up,
+    )
+    return product
+end
+
+function _qwen3_cuda_residual_kernel!(output, residual, projected)
+    index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
+    index > size(output, 1) && return
+    @inbounds output[index, 1, 1] = BFloat16(
+        Float32(residual[index, 1, 1]) + Float32(projected[index, 1, 1]),
+    )
+    return
+end
+
+function LifeAI._qwen3_vl_device_residual!(
+    ::CUDA.CuArray{BFloat16},
+    output,
+    residual,
+    projected,
+)
+    threads = 128
+    blocks = cld(size(output, 1), threads)
+    CUDA.@cuda threads=threads blocks=blocks _qwen3_cuda_residual_kernel!(
+        output,
+        residual,
+        projected,
+    )
+    return output
+end
+
+function _qwen3_cuda_decode_rope_kernel!(output, x, cosine, sine, half)
+    index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
+    total = half * size(x, 2)
+    index > total && return
+    head = (index - 1) ÷ half + 1
+    lane = (index - 1) % half + 1
+    @inbounds begin
+        x1 = Float32(x[lane, head, 1, 1])
+        x2 = Float32(x[lane + half, head, 1, 1])
+        cosine_value = Float32(cosine[lane, 1, 1])
+        sine_value = Float32(sine[lane, 1, 1])
+        upper = Float32(BFloat16(x1 * cosine_value)) +
+            Float32(BFloat16(-x2 * sine_value))
+        lower = Float32(BFloat16(x2 * cosine_value)) +
+            Float32(BFloat16(x1 * sine_value))
+        output[lane, head, 1, 1] = BFloat16(upper)
+        output[lane + half, head, 1, 1] = BFloat16(lower)
+    end
+    return
+end
+
+function _qwen3_cuda_rope_table(values, half::Int)
+    ndims(values) == 3 && return values
+    return reshape(values, half, 1, 1)
+end
+
+function _qwen3_cuda_qk_norm_kernel!(output, x, scale, mean_square, epsilon)
+    index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
+    head_dim = size(x, 1)
+    total = head_dim * size(x, 2)
+    index > total && return
+    head = (index - 1) ÷ head_dim + 1
+    lane = (index - 1) % head_dim + 1
+    @inbounds begin
+        rms = sqrt(mean_square[1, head, 1, 1] + epsilon)
+        normalized = BFloat16(Float32(x[lane, head, 1, 1]) / rms)
+        output[lane, head, 1, 1] = BFloat16(
+            Float32(normalized) * Float32(scale[lane, 1, 1, 1]),
+        )
+    end
+    return
+end
+
+function _qwen3_cuda_hidden_norm_kernel!(output, x, scale, mean_square, epsilon)
+    index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
+    index > size(x, 1) && return
+    @inbounds begin
+        rms = sqrt(mean_square[1, 1, 1] + epsilon)
+        normalized = BFloat16(Float32(x[index, 1, 1]) / rms)
+        output[index, 1, 1] = BFloat16(
+            Float32(normalized) * Float32(scale[index, 1, 1]),
+        )
+    end
+    return
+end
+
+function LifeAI._qwen3_vl_device_qk_norm!(
+    ::CUDA.CuArray{BFloat16},
+    output,
+    x,
+    scale,
+    mean_square,
+    epsilon::Float32,
+)
+    total = size(x, 1) * size(x, 2)
+    threads = 128
+    blocks = cld(total, threads)
+    scale_table = ndims(scale) == 4 ? scale : reshape(scale, size(scale, 1), 1, 1, 1)
+    CUDA.@cuda threads=threads blocks=blocks _qwen3_cuda_qk_norm_kernel!(
+        output,
+        x,
+        scale_table,
+        mean_square,
+        epsilon,
+    )
+    return output
+end
+
+function LifeAI._qwen3_vl_device_hidden_norm!(
+    ::CUDA.CuArray{BFloat16},
+    output,
+    x,
+    scale,
+    mean_square,
+    epsilon::Float32,
+)
+    threads = 128
+    blocks = cld(size(x, 1), threads)
+    scale_table = ndims(scale) == 3 ? scale : reshape(scale, size(scale, 1), 1, 1)
+    CUDA.@cuda threads=threads blocks=blocks _qwen3_cuda_hidden_norm_kernel!(
+        output,
+        x,
+        scale_table,
+        mean_square,
+        epsilon,
+    )
+    return output
+end
+
+function LifeAI._qwen3_vl_device_decode_rope!(
+    ::CUDA.CuArray{BFloat16},
+    output,
+    x,
+    cos_values,
+    sin_values,
+    half::Int,
+)
+    cosine = _qwen3_cuda_rope_table(cos_values, half)
+    sine = _qwen3_cuda_rope_table(sin_values, half)
+    total = half * size(x, 2)
+    threads = 128
+    blocks = cld(total, threads)
+    CUDA.@cuda threads=threads blocks=blocks _qwen3_cuda_decode_rope_kernel!(
+        output,
+        x,
+        cosine,
+        sine,
+        half,
+    )
+    return output
+end
+
 const _QWEN3_GEMM_ALPHA = Ref{Any}(nothing)
 const _QWEN3_GEMM_BETA = Ref{Any}(nothing)
 
@@ -2049,13 +2223,19 @@ function _qwen3_gemm_scalars()
 end
 
 function LifeAI._qwen3_vl_device_gemm_storage!(
-    ::CUDA.CuArray,
-    C,
-    A,
-    B,
+    ::CUDA.CuArray{BFloat16},
+    C::CMat,
+    A::AMat,
+    B::BMat,
     transA::Char,
-)
+) where {
+    CMat<:AbstractMatrix{BFloat16},
+    AMat<:AbstractMatrix{BFloat16},
+    BMat<:AbstractMatrix{BFloat16},
+}
     alpha, beta = _qwen3_gemm_scalars()
+    alpha = alpha::CUDA.CuArray{Float32,1}
+    beta = beta::CUDA.CuArray{Float32,1}
     opA = transA == 'N' ? CUDA.CUBLAS.CUBLAS_OP_N : CUDA.CUBLAS.CUBLAS_OP_T
     m = size(A, transA == 'N' ? 1 : 2)
     k = size(A, transA == 'N' ? 2 : 1)
@@ -2240,7 +2420,12 @@ function LifeAI._qwen3_vl_device_sum_abs2!(::CUDA.CuArray, dest, x)
     return dest
 end
 
-function LifeAI._qwen3_vl_device_batched_mul!(::CUDA.CuArray, dest, left, right)
+function LifeAI._qwen3_vl_device_batched_mul!(
+    ::CUDA.CuArray{BFloat16},
+    dest::AbstractArray{BFloat16,3},
+    left::AbstractArray{BFloat16,3},
+    right::AbstractArray{BFloat16,3},
+)
     batch = size(dest, 3)
     for index in 1:batch
         left_index = size(left, 3) == 1 ? 1 : index
