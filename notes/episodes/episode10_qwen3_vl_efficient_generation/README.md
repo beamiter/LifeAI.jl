@@ -41,6 +41,8 @@ CUDA Graph、零分配 decode 或长上下文部署已经完成。
 21. [`Chapter 66 — Qwen3-VL decode hidden residual 合成 kernel`](chapter66_qwen3_vl_fused_residual.md)（Closed）
 22. [`Chapter 67 — Qwen3-VL decode MLP SiLU 合成 kernel`](chapter67_qwen3_vl_fused_mlp.md)（Closed）
 23. [`Chapter 68 — Qwen3-VL decode attention softmax 合成 kernel`](chapter68_qwen3_vl_fused_attention.md)（Closed）
+24. [`Chapter 69 — Qwen3-VL decode attention softmax 元素 kernel`](chapter69_qwen3_vl_softmax_kernel.md)（Closed）
+25. [`Chapter 70 — Qwen3-VL decode attention permute kernel`](chapter70_qwen3_vl_permute_kernel.md)（Closed）
 
 ## 预期能力变化
 
@@ -196,4 +198,10 @@ norm 都降到 `0`。整步当时是 `256` bytes，只剩 `mrope_prepare`。Chap
 MLP SiLU 的元素广播收成 kernel。GPU 最后一步仍是 `0`。256-token 稳态一步的
 CPU 分配从 `7,586,128` bytes 降到 `2,168,720`。Chapter 68 试过把 attention
 softmax 的元素步收成 kernel，输出和原来的广播不是逐位一致，所以没有留下。
-Episode 10 保持 Open，不能把这些 scratch 写成整条 decode 零分配。
+Chapter 69 把 scale、exp、weight 分成三次 kernel，`maximum!` 和 `sum!` 留在
+原处。sequence `1 / 80 / 330 / 331` 的 2048 个 attention 输出与广播路径逐位
+一致。GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 分配从 `2,168,720`
+降到 `1,817,040`。Chapter 70 把 query、K/V、weight 和 context 的置换收成
+拷贝 kernel。GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 分配降到
+`1,422,800`。Episode 10 保持 Open，不能把这些 scratch 写成整条 decode
+零分配。

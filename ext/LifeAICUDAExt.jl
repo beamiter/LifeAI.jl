@@ -2420,6 +2420,224 @@ function LifeAI._qwen3_vl_device_sum_abs2!(::CUDA.CuArray, dest, x)
     return dest
 end
 
+function _qwen3_cuda_attention_scale_kernel!(f32_scores, scaled, scores, scaling, seq)
+    index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
+    groups = size(scores, 1)
+    total = groups * seq * size(scores, 3)
+    index > total && return
+    group = (index - 1) % groups + 1
+    token = ((index - 1) ÷ groups) % seq + 1
+    head = (index - 1) ÷ (groups * seq) + 1
+    @inbounds begin
+        promoted = 1.0f0 * Float32(scores[group, token, head])
+        rounded = BFloat16(promoted * scaling)
+        scaled[group, token, head] = rounded
+        f32_scores[group, token, head] = 1.0f0 * Float32(rounded)
+    end
+    return
+end
+
+function _qwen3_cuda_attention_exp_kernel!(exponents, f32_scores, maxima, seq)
+    index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
+    groups = size(f32_scores, 1)
+    total = groups * seq * size(f32_scores, 3)
+    index > total && return
+    group = (index - 1) % groups + 1
+    token = ((index - 1) ÷ groups) % seq + 1
+    head = (index - 1) ÷ (groups * seq) + 1
+    @inbounds exponents[group, token, head] = exp(
+        f32_scores[group, token, head] - maxima[group, 1, head],
+    )
+    return
+end
+
+function _qwen3_cuda_attention_weight_kernel!(weights, exponents, maxima, seq)
+    index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
+    groups = size(exponents, 1)
+    total = groups * seq * size(exponents, 3)
+    index > total && return
+    group = (index - 1) % groups + 1
+    token = ((index - 1) ÷ groups) % seq + 1
+    head = (index - 1) ÷ (groups * seq) + 1
+    @inbounds weights[group, token, head] = BFloat16(
+        exponents[group, token, head] / maxima[group, 1, head],
+    )
+    return
+end
+
+function LifeAI._qwen3_vl_device_attention_scale!(
+    ::CUDA.CuArray{BFloat16},
+    f32_scores,
+    scaled,
+    scores,
+    scaling::Float32,
+    seq::Int,
+)
+    total = size(scores, 1) * seq * size(scores, 3)
+    threads = 128
+    blocks = cld(total, threads)
+    CUDA.@cuda threads=threads blocks=blocks _qwen3_cuda_attention_scale_kernel!(
+        f32_scores,
+        scaled,
+        scores,
+        scaling,
+        seq,
+    )
+    return f32_scores
+end
+
+function LifeAI._qwen3_vl_device_attention_exp!(
+    ::CUDA.CuArray{BFloat16},
+    exponents,
+    f32_scores,
+    maxima,
+    seq::Int,
+)
+    total = size(f32_scores, 1) * seq * size(f32_scores, 3)
+    threads = 128
+    blocks = cld(total, threads)
+    CUDA.@cuda threads=threads blocks=blocks _qwen3_cuda_attention_exp_kernel!(
+        exponents,
+        f32_scores,
+        maxima,
+        seq,
+    )
+    return exponents
+end
+
+function LifeAI._qwen3_vl_device_attention_weight!(
+    ::CUDA.CuArray{BFloat16},
+    weights,
+    exponents,
+    maxima,
+    seq::Int,
+)
+    total = size(exponents, 1) * seq * size(exponents, 3)
+    threads = 128
+    blocks = cld(total, threads)
+    CUDA.@cuda threads=threads blocks=blocks _qwen3_cuda_attention_weight_kernel!(
+        weights,
+        exponents,
+        maxima,
+        seq,
+    )
+    return weights
+end
+
+function _qwen3_cuda_load_query_kernel!(output, queries, groups)
+    index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
+    head_dim = size(queries, 1)
+    kv_heads = size(output, 3)
+    total = groups * head_dim * kv_heads
+    index > total && return
+    group = (index - 1) % groups + 1
+    lane = ((index - 1) ÷ groups) % head_dim + 1
+    head = (index - 1) ÷ (groups * head_dim) + 1
+    query_head = group + (head - 1) * groups
+    @inbounds output[group, lane, head] = queries[lane, query_head, 1, 1]
+    return
+end
+
+function _qwen3_cuda_copy_kv_kernel!(dest, src)
+    index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
+    head_dim = size(dest, 1)
+    capacity = size(dest, 2)
+    kv_heads = size(dest, 3)
+    total = head_dim * capacity * kv_heads
+    index > total && return
+    lane = (index - 1) % head_dim + 1
+    token = ((index - 1) ÷ head_dim) % capacity + 1
+    head = (index - 1) ÷ (head_dim * capacity) + 1
+    @inbounds dest[lane, token, head] = src[lane, head, token, 1]
+    return
+end
+
+function _qwen3_cuda_permute_weights_kernel!(dest, src)
+    index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
+    capacity = size(dest, 1)
+    groups = size(dest, 2)
+    kv_heads = size(dest, 3)
+    total = capacity * groups * kv_heads
+    index > total && return
+    token = (index - 1) % capacity + 1
+    group = ((index - 1) ÷ capacity) % groups + 1
+    head = (index - 1) ÷ (capacity * groups) + 1
+    @inbounds dest[token, group, head] = src[group, token, head]
+    return
+end
+
+function _qwen3_cuda_store_context_kernel!(output, context, groups)
+    index = (CUDA.blockIdx().x - 1) * CUDA.blockDim().x + CUDA.threadIdx().x
+    head_dim = size(context, 1)
+    kv_heads = size(context, 3)
+    total = head_dim * groups * kv_heads
+    index > total && return
+    lane = (index - 1) % head_dim + 1
+    group = ((index - 1) ÷ head_dim) % groups + 1
+    head = (index - 1) ÷ (head_dim * groups) + 1
+    query_head = group + (head - 1) * groups
+    @inbounds output[lane, query_head, 1, 1] = context[lane, group, head]
+    return
+end
+
+function LifeAI._qwen3_vl_device_load_query!(
+    ::CUDA.CuArray{BFloat16},
+    output,
+    queries,
+    groups::Int,
+)
+    total = groups * size(queries, 1) * size(output, 3)
+    threads = 128
+    blocks = cld(total, threads)
+    CUDA.@cuda threads=threads blocks=blocks _qwen3_cuda_load_query_kernel!(
+        output,
+        queries,
+        groups,
+    )
+    return output
+end
+
+function LifeAI._qwen3_vl_device_copy_kv!(
+    dest::CUDA.CuArray{BFloat16},
+    src,
+)
+    total = size(dest, 1) * size(dest, 2) * size(dest, 3)
+    threads = 128
+    blocks = cld(total, threads)
+    CUDA.@cuda threads=threads blocks=blocks _qwen3_cuda_copy_kv_kernel!(dest, src)
+    return dest
+end
+
+function LifeAI._qwen3_vl_device_permute_weights!(
+    dest::CUDA.CuArray{BFloat16},
+    src,
+)
+    total = size(dest, 1) * size(dest, 2) * size(dest, 3)
+    threads = 128
+    blocks = cld(total, threads)
+    CUDA.@cuda threads=threads blocks=blocks _qwen3_cuda_permute_weights_kernel!(
+        dest,
+        src,
+    )
+    return dest
+end
+
+function LifeAI._qwen3_vl_device_store_context!(
+    output::CUDA.CuArray{BFloat16},
+    context,
+    groups::Int,
+)
+    total = size(context, 1) * groups * size(context, 3)
+    threads = 128
+    blocks = cld(total, threads)
+    CUDA.@cuda threads=threads blocks=blocks _qwen3_cuda_store_context_kernel!(
+        output,
+        context,
+        groups,
+    )
+    return output
+end
+
 function LifeAI._qwen3_vl_device_batched_mul!(
     ::CUDA.CuArray{BFloat16},
     dest::AbstractArray{BFloat16,3},

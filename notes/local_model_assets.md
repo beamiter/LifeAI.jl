@@ -1316,6 +1316,18 @@ Chapter 62—67 把元素广播收成 kernel 之后的一次 repeat 重测是
 GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 分配是 `2,168,720` bytes。
 32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 62—67 因此 Closed。
 该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 69 把 attention softmax 的 scale、exp、weight 收成 kernel 之后的一次
+repeat 重测是 `qwen3_vl_allocation_softmax_kernel.json`，SHA256 为
+`1d463083013c0076f62032731f14a02129e0eaced160ee09e4cdb87e79a5d638`。
+GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 分配是 `1,817,040` bytes。
+32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 69 因此 Closed。
+该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 70 把 attention 置换收成拷贝 kernel 之后的一次 repeat 重测是
+`qwen3_vl_allocation_permute_kernel.json`，SHA256 为
+`269aa7775f10056a8abe10a70f0180288db4b995b862e07a2f00761903e8244f`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `1,422,800`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 70 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
 
 默认 workload 为 32/128/256-token BF16 static generation、每个长度三次；可用
 `LIFEAI_QWEN3_VL_PROFILE_LENGTHS` 和 `LIFEAI_QWEN3_VL_PROFILE_REPEATS`

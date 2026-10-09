@@ -166,7 +166,13 @@ function _qwen3_vl_copy_kv_prefix!(dest, src)
         "Qwen3-VL decode attention sequence exceeds scratch capacity",
     ))
     parent_keys = _qwen3_vl_dense_kv_parent(src, size(dest, 2))
-    permutedims!(reshape(dest, head_dim, size(dest, 2), num_kv_heads, 1), parent_keys, (1, 3, 2, 4))
+    if _qwen3_vl_device_copy_kv!(dest, parent_keys) === nothing
+        permutedims!(
+            reshape(dest, head_dim, size(dest, 2), num_kv_heads, 1),
+            parent_keys,
+            (1, 3, 2, 4),
+        )
+    end
     return view(dest, :, 1:seq, :)
 end
 
@@ -264,6 +270,58 @@ function _qwen3_vl_device_batched_mul!(::Any, dest, left, right)
     return dest
 end
 
+# GPU scale, exp, and weight each replace one broadcast chain. `maximum!`
+# and `sum!` stay between them, in that order. A non-CUDA array returns
+# nothing so the caller keeps the broadcasts.
+function _qwen3_vl_device_attention_scale!(
+    ::Any,
+    f32_scores,
+    scaled,
+    scores,
+    scaling::Float32,
+    seq::Int,
+)
+    return nothing
+end
+
+function _qwen3_vl_device_attention_exp!(
+    ::Any,
+    exponents,
+    f32_scores,
+    maxima,
+    seq::Int,
+)
+    return nothing
+end
+
+function _qwen3_vl_device_attention_weight!(
+    ::Any,
+    weights,
+    exponents,
+    maxima,
+    seq::Int,
+)
+    return nothing
+end
+
+# Pure index copies. A non-CUDA array returns nothing so the caller keeps
+# `permutedims!`.
+function _qwen3_vl_device_load_query!(::Any, output, queries, groups::Int)
+    return nothing
+end
+
+function _qwen3_vl_device_copy_kv!(::Any, src)
+    return nothing
+end
+
+function _qwen3_vl_device_permute_weights!(::Any, src)
+    return nothing
+end
+
+function _qwen3_vl_device_store_context!(::Any, context, groups::Int)
+    return nothing
+end
+
 function _qwen3_vl_batched_mul!(dest, left, right)
     storage = dest isa SubArray ? parent(dest) : dest
     if storage isa Array
@@ -288,13 +346,21 @@ function _qwen3_vl_load_decode_query!(scratch, queries)
     head_dim == scratch.head_dim || throw(DimensionMismatch(
         "Qwen3-VL reused decode attention head_dim does not match scratch",
     ))
-    permutedims!(
-        reshape(scratch.query5, 1, head_dim, num_heads, 1),
+    output = reshape(scratch.query3, scratch.groups, head_dim, scratch.num_kv_heads)
+    if _qwen3_vl_device_load_query!(
+        scratch.query3,
+        output,
         queries,
-        (3, 1, 2, 4),
-    )
-    permutedims!(scratch.query3, scratch.query5, (1, 3, 2, 4, 5))
-    return reshape(scratch.query3, scratch.groups, head_dim, scratch.num_kv_heads)
+        scratch.groups,
+    ) === nothing
+        permutedims!(
+            reshape(scratch.query5, 1, head_dim, num_heads, 1),
+            queries,
+            (3, 1, 2, 4),
+        )
+        permutedims!(scratch.query3, scratch.query5, (1, 3, 2, 4, 5))
+    end
+    return output
 end
 
 function _qwen3_vl_decode_attention!(
@@ -333,31 +399,66 @@ function _qwen3_vl_decode_attention!(
     _qwen3_vl_batched_mul!(score_view, q3, k3)
     scaled_view = view(scratch.scaled, :, 1:seq, :)
     f32_view = view(scratch.scores_f32, :, 1:seq, :)
-    f32_view .= 1.0f0 .* score_view
-    scaled_view .= BFloat16.(f32_view .* scaling)
-    f32_view .= 1.0f0 .* scaled_view
-    maximum!(scratch.maxima, f32_view)
     exp_view = view(scratch.exponents, :, 1:seq, :)
-    exp_view .= exp.(f32_view .- scratch.maxima)
-    sum!(scratch.maxima, exp_view)
     weight_view = view(scratch.weights, :, 1:seq, :)
-    weight_view .= BFloat16.(exp_view ./ scratch.maxima)
-    permutedims!(scratch.weight_perm, scratch.weights, (2, 1, 3))
+    if _qwen3_vl_device_attention_scale!(
+        scratch.scores,
+        f32_view,
+        scaled_view,
+        score_view,
+        scaling,
+        seq,
+    ) === nothing
+        f32_view .= 1.0f0 .* score_view
+        scaled_view .= BFloat16.(f32_view .* scaling)
+        f32_view .= 1.0f0 .* scaled_view
+    end
+    maximum!(scratch.maxima, f32_view)
+    if _qwen3_vl_device_attention_exp!(
+        scratch.scores,
+        exp_view,
+        f32_view,
+        scratch.maxima,
+        seq,
+    ) === nothing
+        exp_view .= exp.(f32_view .- scratch.maxima)
+    end
+    sum!(scratch.maxima, exp_view)
+    if _qwen3_vl_device_attention_weight!(
+        scratch.scores,
+        weight_view,
+        exp_view,
+        scratch.maxima,
+        seq,
+    ) === nothing
+        weight_view .= BFloat16.(exp_view ./ scratch.maxima)
+    end
+    if _qwen3_vl_device_permute_weights!(
+        scratch.weight_perm,
+        scratch.weights,
+    ) === nothing
+        permutedims!(scratch.weight_perm, scratch.weights, (2, 1, 3))
+    end
     w3 = view(scratch.weight_perm, 1:seq, :, :)
     _qwen3_vl_batched_mul!(scratch.context, v3, w3)
-    packed = reshape(
+    if _qwen3_vl_device_store_context!(
         scratch.output,
-        head_dim,
+        scratch.context,
         scratch.groups,
-        num_kv_heads,
-        1,
-        1,
-    )
-    permutedims!(
-        packed,
-        reshape(scratch.context, head_dim, 1, scratch.groups, num_kv_heads, 1),
-        (1, 3, 4, 2, 5),
-    )
+    ) === nothing
+        permutedims!(
+            reshape(
+                scratch.output,
+                head_dim,
+                scratch.groups,
+                num_kv_heads,
+                1,
+                1,
+            ),
+            reshape(scratch.context, head_dim, 1, scratch.groups, num_kv_heads, 1),
+            (1, 3, 4, 2, 5),
+        )
+    end
     return scratch.output
 end
 
