@@ -43,6 +43,80 @@ CUDA Graph、零分配 decode 或长上下文部署已经完成。
 23. [`Chapter 68 — Qwen3-VL decode attention softmax 合成 kernel`](chapter68_qwen3_vl_fused_attention.md)（Closed）
 24. [`Chapter 69 — Qwen3-VL decode attention softmax 元素 kernel`](chapter69_qwen3_vl_softmax_kernel.md)（Closed）
 25. [`Chapter 70 — Qwen3-VL decode attention permute kernel`](chapter70_qwen3_vl_permute_kernel.md)（Closed）
+26. [`Chapter 71 — Qwen3-VL decode QK RMSNorm 的准备`](chapter71_qwen3_vl_qk_prepare.md)（Closed）
+27. [`Chapter 72 — Qwen3-VL decode cublasGemmEx 的启动对象`](chapter72_qwen3_vl_gemm_launch.md)（Closed）
+28. [`Chapter 73 — Qwen3-VL decode hidden RMSNorm 的准备`](chapter73_qwen3_vl_hidden_prepare.md)（Closed）
+29. [`Chapter 74 — Qwen3-VL decode attention maximum`](chapter74_qwen3_vl_attention_max.md)（Closed）
+30. [`Chapter 75 — Qwen3-VL decode per-head GEMM 的指针偏移`](chapter75_qwen3_vl_batched_pointer.md)（Closed）
+31. [`Chapter 76 — Qwen3-VL decode abs2 归约计划的具体类型`](chapter76_qwen3_vl_abs2_plan.md)（Closed）
+32. [`Chapter 77 — Qwen3-VL decode 单 token K/V 写入`](chapter77_qwen3_vl_kv_write.md)（Closed）
+33. [`Chapter 78 — Qwen3-VL decode attention softmax 分母`](chapter78_qwen3_vl_attention_sum.md)（Closed）
+34. [`Chapter 79 — Qwen3-VL decode QK abs2 的具体引用`](chapter79_qwen3_vl_qk_abs2_ref.md)（Closed）
+35. [`Chapter 80 — Qwen3-VL decode QK scale 的 reshape`](chapter80_qwen3_vl_qk_scale.md)（Closed）
+36. [`Chapter 81 — Qwen3-VL decode hidden abs2 的尾部归约`](chapter81_qwen3_vl_hidden_tail.md)（Closed）
+37. [`Chapter 82 — Qwen3-VL decode K/V 的同一次拷贝`](chapter82_qwen3_vl_kv_pair.md)（Closed）
+38. [`Chapter 83 — Qwen3-VL decode Q/K RoPE 的同一次启动`](chapter83_qwen3_vl_rope_pair.md)（Closed）
+39. [`Chapter 84 — Qwen3-VL decode attention 的准备启动`](chapter84_qwen3_vl_attn_prepare.md)（Closed）
+40. [`Chapter 85 — Qwen3-VL decode attention weight 的置换`](chapter85_qwen3_vl_weight_perm.md)（Closed）
+41. [`Chapter 86 — Qwen3-VL decode QK RMSNorm 的同一次启动`](chapter86_qwen3_vl_qk_fused.md)（Closed）
+42. [`Chapter 87 — Qwen3-VL decode attention softmax 的同一次启动`](chapter87_qwen3_vl_softmax.md)（Closed）
+43. [`Chapter 88 — Qwen3-VL decode mRoPE 频率表`](chapter88_qwen3_vl_mrope_tables.md)（Closed）
+44. [`Chapter 89 — Qwen3-VL decode 单 token GEMM`](chapter89_qwen3_vl_gemm_token.md)（Closed）
+45. [`Chapter 90 — Qwen3-VL decode hidden RMSNorm 的两次 kernel`](chapter90_qwen3_vl_hidden_fused.md)（Closed）
+46. [`Chapter 91 — Qwen3-VL decode attention softmax 的启动对象`](chapter91_qwen3_vl_softmax_launch.md)（Closed）
+47. [`Chapter 92 — Qwen3-VL decode cublasGemmEx 的 context`](chapter92_qwen3_vl_gemm_context.md)（Closed）
+48. [`Chapter 93 — Qwen3-VL decode attention query 的 reshape`](chapter93_qwen3_vl_query_matrix.md)（Closed）
+49. [`Chapter 94 — Qwen3-VL decode hidden RMSNorm 的一次启动`](chapter94_qwen3_vl_hidden_single.md)（Closed）
+50. [`Chapter 95 — Qwen3-VL decode attention softmax 的直接启动`](chapter95_qwen3_vl_softmax_raw.md)（Closed）
+51. [`Chapter 96 — Qwen3-VL decode attention 准备和写回的直接启动`](chapter96_qwen3_vl_attn_raw.md)（Closed）
+52. [`Chapter 97 — Qwen3-VL decode hidden RMSNorm 的直接启动`](chapter97_qwen3_vl_hidden_raw.md)（Closed）
+53. [`Chapter 98 — Qwen3-VL decode residual 加法的直接启动`](chapter98_qwen3_vl_residual_raw.md)（Closed）
+54. [`Chapter 99 — Qwen3-VL decode QKV 的 reshape`](chapter99_qwen3_vl_qkv_matrix.md)（Closed）
+55. [`Chapter 100 — Qwen3-VL decode QK RMSNorm 的直接启动`](chapter100_qwen3_vl_qk_raw.md)（Closed）
+56. [`Chapter 101 — Qwen3-VL decode QK RoPE 的直接启动`](chapter101_qwen3_vl_rope_raw.md)（Closed）
+57. [`Chapter 102 — Qwen3-VL decode K/V 写入的直接启动`](chapter102_qwen3_vl_kv_raw.md)（Closed）
+58. [`Chapter 103 — Qwen3-VL decode MLP SiLU 的直接启动`](chapter103_qwen3_vl_mlp_raw.md)（Closed）
+59. [`Chapter 104 — Qwen3-VL decode stage 不再包闭包`](chapter104_qwen3_vl_stage_inline.md)（Closed）
+60. [`Chapter 105 — Qwen3-VL decode 单 token 层走热路径`](chapter105_qwen3_vl_decode_block.md)（Closed）
+61. [`Chapter 106 — Qwen3-VL decode 28 层一次调用`](chapter106_qwen3_vl_decode_layers.md)（Closed）
+62. [`Chapter 107 — Qwen3-VL decode 复用 cache 重叠检查`](chapter107_qwen3_vl_seen_storage.md)（Closed）
+63. [`Chapter 108 — Qwen3-VL decode 不再拷贝整份参数`](chapter108_qwen3_vl_decode_pack.md)（Closed）
+64. [`Chapter 109 — Qwen3-VL 长生成计时不再捕获参数`](chapter109_qwen3_vl_time_decode.md)（Closed）
+65. [`Chapter 110 — Qwen3-VL decode token embedding 直接拷贝`](chapter110_qwen3_vl_embedding_copy.md)（Closed）
+66. [`Chapter 111 — Qwen3-VL decode mRoPE 不再传递整个 spec`](chapter111_qwen3_vl_mrope_fields.md)（Closed）
+67. [`Chapter 112 — Qwen3-VL decode 复用具体 scratch`](chapter112_qwen3_vl_decode_ready.md)（Closed）
+68. [`Chapter 113 — Qwen3-VL decode mRoPE 主机拷贝不再查询 context`](chapter113_qwen3_vl_mrope_copy.md)（Closed）
+69. [`Chapter 114 — Qwen3-VL decode tied logits 复用 reshape`](chapter114_qwen3_vl_tied_matrix.md)（Closed）
+70. [`Chapter 115 — Qwen3-VL 稳态循环只进入一次具体包装`](chapter115_qwen3_vl_ready_loop.md)（Closed）
+71. [`Chapter 116 — Qwen3-VL 稳态计时不再包一层 @sync`](chapter116_qwen3_vl_ready_timer.md)（Closed）
+72. [`Chapter 117 — Qwen3-VL 主机选 token 不再做全长排序`](chapter117_qwen3_vl_top_two.md)（Closed）
+73. [`Chapter 118 — Qwen3-VL 主机 logits 复用一块缓冲`](chapter118_qwen3_vl_logit_copy.md)（Closed）
+74. [`Chapter 119 — Qwen3-VL 第一次 decode 不再重拷 blocks`](chapter119_qwen3_vl_ready_install.md)（Closed）
+75. [`Chapter 120 — Qwen3-VL attention scratch 计字节不再装箱`](chapter120_qwen3_vl_attention_bytes.md)（Closed）
+76. [`Chapter 121 — Qwen3-VL attention scratch 共用两块存储`](chapter121_qwen3_vl_attention_pack.md)（Closed）
+77. [`Chapter 122 — Qwen3-VL QK RoPE scratch 共用两块存储`](chapter122_qwen3_vl_rope_pack.md)（Closed）
+78. [`Chapter 123 — Qwen3-VL QK norm scratch 共用两块存储`](chapter123_qwen3_vl_qk_norm_pack.md)（Closed）
+79. [`Chapter 124 — Qwen3-VL hidden norm scratch 共用两块存储`](chapter124_qwen3_vl_hidden_norm_pack.md)（Closed）
+80. [`Chapter 125 — Qwen3-VL MLP activation scratch 共用两块存储`](chapter125_qwen3_vl_mlp_pack.md)（Closed）
+81. [`Chapter 126 — Qwen3-VL hidden residual scratch 共用两块存储`](chapter126_qwen3_vl_residual_pack.md)（Closed）
+82. [`Chapter 127 — Qwen3-VL ready 不再拷贝 blocks`](chapter127_qwen3_vl_ready_pack.md)（Closed）
+83. [`Chapter 128 — Qwen3-VL 第一次 decode 不再包一层 @sync`](chapter128_qwen3_vl_first_timer.md)（Closed）
+84. [`Chapter 129 — Qwen3-VL 参数 pack 随 cache 创建`](chapter129_qwen3_vl_cache_pack.md)（Closed）
+85. [`Chapter 130 — Qwen3-VL 九块 BF16 scratch 共用一块存储`](chapter130_qwen3_vl_bf16_tails.md)（Closed）
+86. [`Chapter 131 — Qwen3-VL decode scratch 共用两块存储`](chapter131_qwen3_vl_decode_workspace.md)（Closed）
+87. [`Chapter 132 — Qwen3-VL 复用 kernel 参数盒`](chapter132_qwen3_vl_param_reuse.md)（Closed）
+88. [`Chapter 133 — Qwen3-VL scratch 切片共用父引用`](chapter133_qwen3_vl_shared_ref.md)（Closed）
+89. [`Chapter 134 — Qwen3-VL 复用 reshape 矩阵`](chapter134_qwen3_vl_reshape_reuse.md)（Closed）
+90. [`Chapter 135 — Qwen3-VL 复用 scratch 切片`](chapter135_qwen3_vl_slice_reuse.md)（Closed）
+91. [`Chapter 136 — Qwen3-VL 复用请求直接安装 Ready`](chapter136_qwen3_vl_shell_ready.md)（Closed）
+92. [`Chapter 137 — Qwen3-VL 复用 Ready`](chapter137_qwen3_vl_ready_reuse.md)（Closed）
+93. [`Chapter 138 — Qwen3-VL 复用父缓冲`](chapter138_qwen3_vl_parent_reuse.md)（Closed）
+94. [`Chapter 139 — Qwen3-VL attention capacity 原地更新`](chapter139_qwen3_vl_attention_capacity.md)（Closed）
+95. [`Chapter 140 — Qwen3-VL 复用入口不再装箱 spec`](chapter140_qwen3_vl_reuse_entry.md)（Closed）
+96. [`Chapter 141 — Qwen3-VL 静态 Ready 调用`](chapter141_qwen3_vl_static_ready.md)（Closed）
+97. [`Chapter 142 — Qwen3-VL 第一次 decode 直接调用 Ready`](chapter142_qwen3_vl_ready_call.md)（Closed）
+98. [`Chapter 143 — Qwen3-VL GPU 的 BF16 转 Float32 直接拷贝`](chapter143_qwen3_vl_f32_copy.md)（Closed）
+99. [`Chapter 144 — Qwen3-VL GPU 的 BF16 转 Float32 复用 kernel`](chapter144_qwen3_vl_promote_kernel.md)（Closed）
 
 ## 预期能力变化
 
@@ -203,5 +277,165 @@ Chapter 69 把 scale、exp、weight 分成三次 kernel，`maximum!` 和 `sum!` 
 一致。GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 分配从 `2,168,720`
 降到 `1,817,040`。Chapter 70 把 query、K/V、weight 和 context 的置换收成
 拷贝 kernel。GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 分配降到
-`1,422,800`。Episode 10 保持 Open，不能把这些 scratch 写成整条 decode
-零分配。
+`1,422,800`。Chapter 71 把 QK norm 的升精度和除以 `head_dim` 收进 kernel，
+`sum!` 改走缓存的同一条归约。GPU 最后一步仍是 `0`。256-token 稳态一步的
+CPU 分配降到 `1,126,224`。Chapter 72 把 `cublasGemmEx` 的 handle、数据类型
+和 device 地址收成持久对象。GPU 最后一步仍是 `0`。256-token 稳态一步的
+CPU 分配降到 `873,104`。Chapter 73 把 hidden RMSNorm 的升精度和除法收进
+kernel。GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 分配降到
+`677,920`。Chapter 74 把 attention 的 `maximum!` 换成逐 head 顺序扫描。
+GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 分配降到 `617,440`。
+Chapter 75 用 stride 偏移代替 per-head GEMM 的 `view`。GPU 最后一步仍是
+`0`。256-token 稳态一步的 CPU 分配降到 `581,600`。Chapter 76 把 abs2
+归约计划收成具体类型，归约本身不变。GPU 最后一步仍是 `0`。256-token 稳态
+一步的 CPU 分配降到 `513,152`。Chapter 77 把单 token 的 K/V `copyto!` 换成
+拷贝 kernel。GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 分配降到
+`441,024`。Chapter 78 把 attention softmax 分母换成与 `sum!` 相同的单 block
+warp 树。GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是
+`424,896`。Chapter 79 把 Q/K 的 abs2 计划放进具体 `Ref`。GPU 最后一步仍是
+`0`。position `107 / 203 / 331` 的 CPU 都是 `415,936`。Chapter 80 复用
+Q/K scale 的 reshape。GPU 最后一步仍是 `0`。position `107 / 203 / 331`
+的 CPU 都是 `415,744`。Chapter 81 把 hidden abs2 的 4 块尾部换成同一条
+warp 树。GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是
+`394,768`。Chapter 82 把 K/V 的两次拷贝和两次写回收成各一次启动。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `388,496`。
+Chapter 83 把 Q/K RoPE 收成一次启动。GPU 最后一步仍是 `0`。position
+`107 / 203 / 331` 的 CPU 都是 `384,464`。Chapter 84 把 query 载入和 K/V
+拷贝收成一次启动。GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的
+CPU 都是 `381,328`。Chapter 85 把 softmax 权重和它的置换收成一次启动。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `377,744`。
+Chapter 86 把 Q/K RMSNorm 收成一次启动。GPU 最后一步仍是 `0`。position
+`107 / 203 / 331` 的 CPU 都是 `365,648`。Chapter 87 把 attention softmax
+收成一次启动。GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU
+都是 `344,144`。Chapter 88 复用 mRoPE 的 inv frequency 和 host 缓冲。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `342,672`。
+Chapter 89 让单 token GEMM 直接使用原来的 stride。GPU 最后一步仍是 `0`。
+position `107 / 203 / 331` 的 CPU 都是 `312,208`。Chapter 90 把长度
+`2048` 的 hidden RMSNorm 收成两次 kernel。GPU 最后一步仍是 `0`。
+position `107 / 203 / 331` 的 CPU 都是 `297,952`。Chapter 91 把 attention
+softmax 的 kernel 留在具体 `Ref` 里。GPU 最后一步仍是 `0`。position
+`107 / 203 / 331` 的 CPU 都是 `288,544`。Chapter 92 让 `cublasGemmEx`
+不再每次查询 context。GPU 最后一步仍是 `0`。position `107 / 203 / 331`
+的 CPU 都是 `278,224`。Chapter 93 复用 attention query 的 reshape。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `275,536`。
+Chapter 94 把长度 `2048` 的 hidden RMSNorm 收成一次启动。GPU 最后一步
+仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `266,416`。Chapter 95
+直接启动 attention softmax。GPU 最后一步仍是 `0`。position
+`107 / 203 / 331` 的 CPU 都是 `260,144`。Chapter 96 直接启动 attention
+的准备和 context 写回。GPU 最后一步仍是 `0`。position `107 / 203 / 331`
+的 CPU 都是 `250,288`。Chapter 97 直接启动 hidden RMSNorm。GPU 最后一步
+仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `240,256`。Chapter 98
+直接启动 residual 加法。GPU 最后一步仍是 `0`。position `107 / 203 / 331`
+的 CPU 都是 `231,296`。Chapter 99 复用 QKV 的 reshape。GPU 最后一步仍是
+`0`。position `107 / 203 / 331` 的 CPU 都是 `223,232`。Chapter 100
+直接启动 QK RMSNorm。GPU 最后一步仍是 `0`。position `107 / 203 / 331`
+的 CPU 都是 `211,776`。Chapter 101 直接启动 QK RoPE。GPU 最后一步仍是
+`0`。position `107 / 203 / 331` 的 CPU 都是 `205,952`。Chapter 102
+直接启动 K/V 写入。GPU 最后一步仍是 `0`。position `107 / 203 / 331`
+的 CPU 都是 `201,024`。Chapter 103 直接启动 MLP SiLU。GPU 最后一步仍是
+`0`。position `107 / 203 / 331` 的 CPU 都是 `196,544`。Chapter 104
+在没有 profiler 时直接执行 stage。GPU 最后一步仍是 `0`。position
+`107 / 203` 的 CPU 是 `129,616`，`331` 是 `129,600`。Chapter 105
+在没有 profiler 时让单 token 层只走热路径。GPU 最后一步仍是 `0`。
+position `107 / 203` 的 CPU 是 `22,096`，`331` 是 `22,080`。Chapter 106
+把 28 层收成一次调用。GPU 最后一步仍是 `0`。position `107 / 203`
+的 CPU 是 `16,784`，`331` 是 `16,768`。Chapter 107 复用 cache
+重叠检查的数组。GPU 最后一步仍是 `0`。position `107 / 203` 的 CPU 是
+`13,360`，`331` 是 `13,344`。Chapter 108 不再在稳态调用里拷贝整份
+参数。GPU 最后一步仍是 `0`。position `107 / 203` 的 CPU 是 `10,288`，
+`331` 是 `10,272`。Chapter 109 把长生成的 decode 计时放进小函数。
+GPU 最后一步仍是 `0`。position `107 / 203` 的 CPU 是 `7,216`，`331`
+是 `7,200`。Chapter 110 直接拷贝 token embedding 的一列。GPU 最后一步
+仍是 `0`。position `107 / 203` 的 CPU 是 `5,360`，`331` 是 `5,344`。
+Chapter 111 让 mRoPE 只接收 `head_dim`、`rope_theta` 和
+`mrope_section`。GPU 最后一步仍是 `0`。position `107 / 203` 的 CPU 是
+`5,264`，`331` 是 `5,248`。Chapter 112 把 scratch 留在具体类型的
+包装里。GPU 最后一步仍是 `0`。position `107 / 203` 的 CPU 是 `4,416`，
+`331` 是 `4,400`。Chapter 113 直接把 mRoPE 的主机表抄到设备。GPU
+最后一步仍是 `0`。position `107 / 203` 的 CPU 是 `4,352`，`331` 是
+`4,336`。Chapter 114 复用 tied logits 的两张矩阵。GPU 最后一步仍是
+`0`。position `107 / 203` 的 CPU 是 `4,192`，`331` 是 `4,176`。
+Chapter 115 让稳态循环只进入一次具体包装。GPU 最后一步仍是 `0`。
+position `107 / 203 / 331` 的 CPU 都是 `4,144`。Chapter 116 让稳态
+计时不再包一层 `@sync`。GPU 最后一步仍是 `0`。position
+`107 / 203 / 331` 的 CPU 都是 `0`。Chapter 117 用线性扫描代替主机
+选择的全长排序。GPU 最后一步仍是 `0`。position `107 / 203 / 331`
+的 CPU 仍是 `0`。256-token 主机选择从 `2,739,400` 降到 `308,232`。
+Chapter 118 复用一块主机 logits 缓冲。GPU 最后一步仍是 `0`。
+position `107 / 203 / 331` 的 CPU 仍是 `0`。256-token 主机选择
+从 `308,232` 降到 `0`。Chapter 119 让第一次 decode 沿用 pack 里的
+blocks。GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU
+仍是 `0`。128/256 的第一次 decode CPU 从 `40,368` 降到 `37,664`。
+Chapter 120 让 attention scratch 的字节核对不再装箱。GPU 最后一步
+仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`。128/256 的
+第一次 decode CPU 从 `37,664` 降到 `35,904`。Chapter 121 让
+attention scratch 的 13 块数组共用两块存储。GPU 最后一步仍是 `0`。
+position `107 / 203 / 331` 的 CPU 仍是 `0`。128/256 的第一次 decode
+CPU 从 `35,904` 降到 `34,304`。Chapter 122 让 QK RoPE scratch 的
+12 块数组共用两块存储。GPU 最后一步仍是 `0`。position
+`107 / 203 / 331` 的 CPU 仍是 `0`。128/256 的第一次 decode CPU 从
+`34,304` 降到 `32,864`。Chapter 123 让 QK norm scratch 的 7 块数组
+共用两块存储。GPU 最后一步仍是 `0`。position `107 / 203 / 331`
+的 CPU 仍是 `0`。128/256 的第一次 decode CPU 从 `32,864` 降到
+`32,224`。Chapter 124 让 hidden norm scratch 的 6 块数组共用两块
+存储。GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是
+`0`。128/256 的第一次 decode CPU 从 `32,224` 降到 `31,744`。
+Chapter 125 让 MLP activation scratch 的 5 块数组共用两块存储。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`。
+128/256 的第一次 decode CPU 从 `31,744` 降到 `31,424`。Chapter 126
+让 hidden residual scratch 的 4 块数组共用两块存储。GPU 最后一步
+仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`。128/256 的
+第一次 decode CPU 从 `31,424` 降到 `31,264`。Chapter 127 让 ready
+只留着 pack，不再拷贝 blocks。GPU 最后一步仍是 `0`。position
+`107 / 203 / 331` 的 CPU 仍是 `0`。128/256 的第一次 decode CPU 从
+`31,264` 降到 `25,856`。Chapter 128 让第一次 decode 的计时不再包
+一层 `@sync`。GPU 最后一步仍是 `0`。position `107 / 203 / 331`
+的 CPU 仍是 `0`。128/256 的第一次 decode CPU 从 `25,856` 降到
+`21,712`。Chapter 129 让参数 pack 随 cache 创建。GPU 最后一步仍是
+`0`。position `107 / 203 / 331` 的 CPU 仍是 `0`。128/256 的第一次
+decode CPU 从 `21,712` 降到 `19,024`。Chapter 130 让 QKV、gate/up、
+mRoPE、token embedding 和 tied logits 这 9 块 BF16 数组共用一块
+存储。GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是
+`0`。128/256 的第一次 decode CPU 从 `19,024` 降到 `17,872`。
+Chapter 131 让全部 decode scratch 切自一块 BF16 和一块 Float32。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`。
+128/256 的第一次 decode CPU 从 `17,872` 降到 `14,912`。
+Chapter 132 让新的 scratch 复用已经建好的 kernel 参数盒。GPU
+最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`。
+128/256 的第一次 decode CPU 从 `14,912` 降到 `9,168`。
+Chapter 133 让 scratch 切片共用父缓冲的引用。GPU 最后一步仍是
+`0`。position `107 / 203 / 331` 的 CPU 仍是 `0`。32/128/256 的第一次
+decode CPU 都从 `9,168` 降到 `7,408`。Chapter 134 让 QKV、tied、
+query 和 attention 投影复用已经建好的 reshape。GPU 最后一步仍是
+`0`。position `107 / 203 / 331` 的 CPU 仍是 `0`。32/128/256 的第一次
+decode CPU 都从 `7,408` 降到 `6,768`。Chapter 135 让后来的请求复用
+这 56 张 scratch 切片，只改指针和形状。GPU 最后一步仍是 `0`。
+position `107 / 203 / 331` 的 CPU 仍是 `0`。32/128/256 的第一次
+decode CPU 都从 `6,768` 降到 `3,264`。Chapter 136 让后来的请求直接把
+这些 scratch 装进 Ready，不再装进 `Any` 字段。GPU 最后一步仍是 `0`。
+position `107 / 203 / 331` 的 CPU 仍是 `0`。32/128/256 的第一次
+decode CPU 都从 `3,264` 降到 `1,312`。Chapter 137 让后来的请求复用
+同一个 Ready，只换新容量的 attention scratch。GPU 最后一步仍是 `0`。
+position `107 / 203 / 331` 的 CPU 仍是 `0`。32/128/256 的第一次
+decode CPU 都从 `1,312` 降到 `800`。Chapter 138 让后来的请求在父缓冲
+装得下时不再重新分配。GPU 最后一步仍是 `0`。position
+`107 / 203 / 331` 的 CPU 仍是 `0`。32/128/256 的第一次 decode CPU
+都从 `800` 降到 `352`。Chapter 139 让后来的请求原地改 attention
+scratch 的 `capacity`。GPU 最后一步仍是 `0`。position
+`107 / 203 / 331` 的 CPU 仍是 `0`。32/128/256 的第一次 decode CPU
+都从 `352` 降到 `192`。Chapter 140 让复用入口不再装箱 text spec。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`。
+32/128/256 的第一次 decode CPU 都从 `192` 降到 `48`。Chapter 141
+让 BF16 Ready 的具体类型把 steady 调用收成静态调用。GPU 最后一步仍是
+`0`。position `107 / 203 / 331` 的 CPU 仍是 `0`。32/128/256 的第一次
+decode CPU 都从 `48` 降到 `32`。Chapter 142 让第一次 decode 的计时窗口
+和稳态步一样，直接调用具体 Ready。GPU 最后一步仍是 `0`。position
+`107 / 203 / 331` 的 CPU 仍是 `0`。32/128/256 的第一次 decode CPU
+都从 `32` 降到 `0`。Chapter 143 让 GPU 上的 BF16 转 Float32 走
+`copyto!`。GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU
+仍是 `0`。32/128/256 的第一次 decode CPU 仍是 `0`。256 的 prefill
+CPU 从 `8,007,336` 降到 `6,918,616`。Chapter 144 让连续 GPU 数组的
+BF16 转 Float32 复用同一个 kernel。GPU 最后一步仍是 `0`。position
+`107 / 203 / 331` 的 CPU 仍是 `0`。32/128/256 的第一次 decode CPU
+仍是 `0`。256 的 prefill CPU 从 `6,918,616` 降到 `5,657,880`。
+Episode 10 保持 Open，不能把这些 scratch 写成整条 decode 零分配。

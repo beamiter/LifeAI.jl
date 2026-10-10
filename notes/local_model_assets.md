@@ -1328,6 +1328,526 @@ Chapter 70 把 attention 置换收成拷贝 kernel 之后的一次 repeat 重测
 GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `1,422,800`
 bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 70 因此
 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 71 把 QK norm 的升精度和均值除法收进 kernel 之后的一次 repeat 重测是
+`qwen3_vl_allocation_qk_prepare.json`，SHA256 为
+`ab40b3fee9c35b43385c32d5c70dbffff01f44ccfc548b76cd2ceac1bd8d1da6`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `1,126,224`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 71 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 72 把 `cublasGemmEx` 的启动对象收成持久状态之后的一次 repeat 重测是
+`qwen3_vl_allocation_gemm_launch.json`，SHA256 为
+`33a5f3d04f0bdc2cf405358585cec60a26607e0fe259453f331ca9452b36c355`。
+GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 是 `873,104` bytes。
+32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 72 因此 Closed。
+该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 73 把 hidden RMSNorm 的升精度和除法收进 kernel 之后的一次 repeat
+重测是 `qwen3_vl_allocation_hidden_prepare.json`，SHA256 为
+`aa375cd1d1ea25041f1bf50259838af4c0f176253c77b90b4a6d794d34861fa0`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `677,920`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 73 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 74 把 attention `maximum!` 换成顺序扫描之后的一次 repeat 重测是
+`qwen3_vl_allocation_attention_max.json`，SHA256 为
+`030d937ac838355235bed889beac2720c496a1707b6e0db364a06421e6c28d2a`。
+GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 是 `617,440` bytes。
+32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 74 因此 Closed。
+该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 75 用 stride 偏移代替 per-head GEMM view 之后的一次 repeat 重测是
+`qwen3_vl_allocation_batched_pointer.json`，SHA256 为
+`8cfa7b7f67eb1f0c241b751d6a047a68c997e1e25db81a7d58143eca6485beae`。
+GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 是 `581,600` bytes。
+32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 75 因此 Closed。
+该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 76 把 abs2 归约计划收成具体类型之后的一次 repeat 重测是
+`qwen3_vl_allocation_abs2_plan.json`，SHA256 为
+`7aad1e4a7a720fe31136200fd016125e0ed48d002e073b62ed4e16f1060d6fd1`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `513,152`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 76 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 77 把单 token K/V 写入换成拷贝 kernel 之后的一次 repeat 重测是
+`qwen3_vl_allocation_kv_write.json`，SHA256 为
+`20917f6fd9f56e3f2cfa8752c14f857d7d72ad99268c35ac6dc16a17347fc792`。
+GPU 最后一步仍是 `0`。256-token 稳态一步的 CPU 是 `441,024` bytes。
+`kv_write` 从 `110,976` 降到 `34,080`。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 77 因此 Closed。该文件同样是 allocation 记录，不是
+BF16 strict parity。
+Chapter 78 把 attention softmax 分母换成单 block warp 树之后的一次 repeat
+重测是 `qwen3_vl_allocation_attention_sum.json`，SHA256 为
+`ea2340ed9ab2231f79a1e93490d72c2cd17b5411e51b8a2f2dda00c93aed0290`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `424,896`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 78 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 79 把 Q/K 的 abs2 计划放进具体 `Ref` 之后的一次 repeat 重测是
+`qwen3_vl_allocation_qk_abs2.json`，SHA256 为
+`10da9cdb7e18588ce9431f3a8dcc9b719a9062ea12d53cb107304f1d4396fcc2`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `415,936`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 79 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 80 复用 Q/K scale reshape 之后的一次 repeat 重测是
+`qwen3_vl_allocation_qk_scale.json`，SHA256 为
+`9105965aca4d2c296b5f41b34f4820af00a60ee277153fb38db3dc0ed129fb50`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `415,744`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 80 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 81 把 hidden abs2 的 4 块尾部换成 warp 树之后的一次 repeat 重测是
+`qwen3_vl_allocation_hidden_tail.json`，SHA256 为
+`73e26bcfc57fea24cd2ba006b1aa51fe2ca5b245bb73f00c32766f6151dd9721`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `394,768`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 81 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 82 把 K/V 的两次拷贝和两次写回收成各一次启动之后的一次 repeat
+重测是 `qwen3_vl_allocation_kv_pair.json`，SHA256 为
+`adbfdda29a4aa59a751cd48f5547822b8d21fd947225efdd5b28225a68e9da6c`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `388,496`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 82 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 83 把 Q/K RoPE 收成一次启动之后的一次 repeat 重测是
+`qwen3_vl_allocation_rope_pair.json`，SHA256 为
+`39f8c6ab8f0320a24c27c7f5af400ea98c45322fe91282be5893fbc96ca80fad`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `384,464`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 83 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 84 把 query 载入和 K/V 拷贝收成一次启动之后的一次 repeat 重测是
+`qwen3_vl_allocation_attn_prepare.json`，SHA256 为
+`fe36b8825d6582c932c9bf264db617d04a1276bff0210987320c78f001d54a35`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `381,328`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 84 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 85 把 softmax 权重和它的置换收成一次启动之后的一次 repeat 重测是
+`qwen3_vl_allocation_weight_perm.json`，SHA256 为
+`922a55bc3533657cc5a09278239cd6e64d20c443147215edd441ab69b58fcda7`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `377,744`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 85 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 86 把 Q/K RMSNorm 收成一次启动之后的一次 repeat 重测是
+`qwen3_vl_allocation_qk_fused.json`，SHA256 为
+`1f6e990c7b7e060edd280755d60ff385279370538e3f81a038e71eeaa78d9f3c`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `365,648`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 86 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 87 把 attention softmax 收成一次启动之后的一次 repeat 重测是
+`qwen3_vl_allocation_softmax.json`，SHA256 为
+`9d41f7461c0387d88d2333f6c9184108380140695af958ca2c6940af7673c331`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `344,144`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 87 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 88 复用 mRoPE 频率表之后的一次 repeat 重测是
+`qwen3_vl_allocation_mrope.json`，SHA256 为
+`9d3a146875250b9dcfa4ded7b7c617620903cd20f21279d71973660b0a9965f5`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `342,672`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 88 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 89 让单 token GEMM 直接使用原来的 stride 之后的一次 repeat 重测是
+`qwen3_vl_allocation_gemm_token.json`，SHA256 为
+`4c20846e26ec45e49530b9e5568a7f0f75f15741a84154ac5834030cd1d896a6`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `312,208`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 89 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 90 把长度 `2048` 的 hidden RMSNorm 收成两次 kernel 之后的一次
+repeat 重测是 `qwen3_vl_allocation_hidden_fused.json`，SHA256 为
+`5cea2add288724b3126c025c3ca3f0ca05352ea5d6f387288516a292d77f6ccf`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `297,952`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 90 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 91 把 attention softmax 的 kernel 留在具体 `Ref` 里之后的一次
+repeat 重测是 `qwen3_vl_allocation_softmax_launch.json`，SHA256 为
+`00534ab94c2fa492f615082b041b007f042cf72e0f907bb2a5f19ec8d0d4ea09`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `288,544`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 91 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 92 让 `cublasGemmEx` 不再每次查询 context 之后的一次 repeat 重测是
+`qwen3_vl_allocation_gemm_context.json`，SHA256 为
+`5ca785fc6469ce8cd9abc963e9a7a362126eb2f01bf3fb490e5bcf272ab708e3`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `278,224`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 92 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 93 复用 attention query 的 reshape 之后的一次 repeat 重测是
+`qwen3_vl_allocation_query_matrix.json`，SHA256 为
+`5337c63eef2bf9bfaacdd1929ee173744b7acc6cfac967f87310299341895fca`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `275,536`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 93 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 94 把长度 `2048` 的 hidden RMSNorm 收成一次启动之后的一次 repeat
+重测是 `qwen3_vl_allocation_hidden_single.json`，SHA256 为
+`9e122b995b02a9c2d85b6b1ae67491aa8ea541adb581160493d00d30f398bd10`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `266,416`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 94 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 95 直接启动 attention softmax 之后的一次 repeat 重测是
+`qwen3_vl_allocation_softmax_raw.json`，SHA256 为
+`c1f8e35ac1c364dd29d19c2814e1198406e3133fee7cec71d215bdea99463d9b`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `260,144`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 95 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 96 直接启动 attention 的准备和 context 写回之后的一次 repeat
+重测是 `qwen3_vl_allocation_attn_raw.json`，SHA256 为
+`24cd654c35811cc9375573995687bbfc47fb207237a28d2b9b1d7d8f0b616896`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `250,288`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 96 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 97 直接启动 hidden RMSNorm 之后的一次 repeat 重测是
+`qwen3_vl_allocation_hidden_raw.json`，SHA256 为
+`dc1a6db24f75ade00da6e847ca52996b11d3770537823b755cf2519003ab08db`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `240,256`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 97 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 98 直接启动 residual 加法之后的一次 repeat 重测是
+`qwen3_vl_allocation_residual_raw.json`，SHA256 为
+`3db90548a5f9e730f543a5db2dd4885817d8b325d2b198407a090d404c3a9d2b`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `231,296`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 98 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 99 复用 QKV 的 reshape 之后的一次 repeat 重测是
+`qwen3_vl_allocation_qkv_matrix.json`，SHA256 为
+`e1f0049928c88d1aa76b452ac8ca9400266bbd526717d9218eb572384036f1bf`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `223,232`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 99 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 100 直接启动 QK RMSNorm 之后的一次 repeat 重测是
+`qwen3_vl_allocation_qk_raw.json`，SHA256 为
+`cc01142c0d717ac61f2e769e90e88ff6f0a6c41a34311fdd33833c0e8ef1e84d`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `211,776`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 100 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 101 直接启动 QK RoPE 之后的一次 repeat 重测是
+`qwen3_vl_allocation_rope_raw.json`，SHA256 为
+`4eb335b744abf30c86693f3faf560c4d6d45b6a4908ac878d414d67bc37fb104`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `205,952`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 101 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 102 直接启动 K/V 写入之后的一次 repeat 重测是
+`qwen3_vl_allocation_kv_raw.json`，SHA256 为
+`545067cbab352dc90671bfa184b221e01c9b51c7cebdd18154a3894459992cc2`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `201,024`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 102 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 103 直接启动 MLP SiLU 之后的一次 repeat 重测是
+`qwen3_vl_allocation_mlp_raw.json`，SHA256 为
+`7b293b12258a3be217777064f9d1b4ad2d3e534c03ff2fb05a952eb0c7d8d576`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `196,544`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 103 因此
+Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 104 在没有 profiler 时直接执行 stage 之后的一次 repeat 重测是
+`qwen3_vl_allocation_stage_inline.json`，SHA256 为
+`942e68a633d89d896a587e7c7786f03da1a293ef0da916df20f0cf35e2e9e125`。
+GPU 最后一步仍是 `0`。position `331` 的 CPU 是 `129,600` bytes，
+`107 / 203` 是 `129,616` bytes。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 104 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
+Chapter 105 在没有 profiler 时让单 token 层只走热路径之后的一次 repeat
+重测是 `qwen3_vl_allocation_decode_block.json`，SHA256 为
+`414590cfcf94ced3dd4d15f83cdd5a392e8bd584d07e2d4f52d6dc516c894135`。
+GPU 最后一步仍是 `0`。position `331` 的 CPU 是 `22,080` bytes，
+`107 / 203` 是 `22,096` bytes。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 105 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
+Chapter 106 把 28 层收成一次调用之后的一次 repeat 重测是
+`qwen3_vl_allocation_decode_layers.json`，SHA256 为
+`8e06c526e0bd0c6a12572979034dccd8c0a38475d10a525411b5c1dab547bb6b`。
+GPU 最后一步仍是 `0`。position `331` 的 CPU 是 `16,768` bytes，
+`107 / 203` 是 `16,784` bytes。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 106 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
+Chapter 107 复用 cache 重叠检查的数组之后的一次 repeat 重测是
+`qwen3_vl_allocation_seen_storage.json`，SHA256 为
+`0e9e3ec5332667677e006ddda68de743ff39071effd1bdcdae4624ad7eae3273`。
+GPU 最后一步仍是 `0`。position `331` 的 CPU 是 `13,344` bytes，
+`107 / 203` 是 `13,360` bytes。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 107 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
+Chapter 108 不再在稳态调用里拷贝整份参数之后的一次 repeat 重测是
+`qwen3_vl_allocation_decode_pack.json`，SHA256 为
+`192477eaa948f93a095264f64205930cbaa87b75f8570e9eee22c25256b4f22b`。
+GPU 最后一步仍是 `0`。position `331` 的 CPU 是 `10,272` bytes，
+`107 / 203` 是 `10,288` bytes。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 108 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
+Chapter 109 把长生成的 decode 计时放进小函数之后的一次 repeat 重测是
+`qwen3_vl_allocation_time_decode.json`，SHA256 为
+`d82e5e953538c6d1631e09ac9bfe887325439f4055831627371c1378dbfa74aa`。
+GPU 最后一步仍是 `0`。position `331` 的 CPU 是 `7,200` bytes，
+`107 / 203` 是 `7,216` bytes。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 109 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
+Chapter 110 直接拷贝 token embedding 的一列之后的一次 repeat 重测是
+`qwen3_vl_allocation_embedding_copy.json`，SHA256 为
+`ddd117e0443de28401032c581f353bfcdf8f983894b3a2a42ec2d01a5bb3655b`。
+GPU 最后一步仍是 `0`。position `331` 的 CPU 是 `5,344` bytes，
+`107 / 203` 是 `5,360` bytes。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 110 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
+Chapter 111 让 mRoPE 只接收 `head_dim`、`rope_theta` 和 `mrope_section`
+之后的一次 repeat 重测是 `qwen3_vl_allocation_mrope_fields.json`，
+SHA256 为
+`a0cd3dc851bc37e61cf7e6d978514651fbcf51ae340b3e91ee461bc5d1f6778d`。
+GPU 最后一步仍是 `0`。position `331` 的 CPU 是 `5,248` bytes，
+`107 / 203` 是 `5,264` bytes。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 111 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
+Chapter 112 把 scratch 留在具体类型的包装里之后的一次 repeat 重测是
+`qwen3_vl_allocation_decode_ready.json`，SHA256 为
+`232a29ef3afb41f19c443d3aa2a5006cf13691c8e232afb609ea7b2422ed644d`。
+GPU 最后一步仍是 `0`。position `331` 的 CPU 是 `4,400` bytes，
+`107 / 203` 是 `4,416` bytes。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 112 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
+Chapter 113 直接把 mRoPE 的主机表抄到设备之后的一次 repeat 重测是
+`qwen3_vl_allocation_mrope_copy.json`，SHA256 为
+`c29c0a498bb5eb7f421effdc7212f3205599d968fedc39e13fce7670602def1d`。
+GPU 最后一步仍是 `0`。position `331` 的 CPU 是 `4,336` bytes，
+`107 / 203` 是 `4,352` bytes。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 113 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
+Chapter 114 复用 tied logits 的两张矩阵之后的一次 repeat 重测是
+`qwen3_vl_allocation_tied_matrix.json`，SHA256 为
+`791f7e29a744f4402f061e12dc81ab1c6cc01ee386fa227ff7a04c8415387cb3`。
+GPU 最后一步仍是 `0`。position `331` 的 CPU 是 `4,176` bytes，
+`107 / 203` 是 `4,192` bytes。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 114 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
+Chapter 115 让稳态循环只进入一次具体包装之后的一次 repeat 重测是
+`qwen3_vl_allocation_ready_loop.json`，SHA256 为
+`4caaf5d2593f99549eb761f7285bd1d9e4911bba253ed76e33739a2c6145bd3c`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `4,144`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 115
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 116 让稳态计时不再包一层 `@sync` 之后的一次 repeat 重测是
+`qwen3_vl_allocation_ready_timer.json`，SHA256 为
+`36246c5cc9e2d2e47fc1392db105143c6375c87f46109ac803cb65f41699576a`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 都是 `0`
+bytes。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 116
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 117 用线性扫描代替主机选择的全长排序之后的一次 repeat 重测是
+`qwen3_vl_allocation_top_two.json`，SHA256 为
+`978dd531c9f64d4f0deda0237ce67d62db75712d312bb6406826da636112a02e`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。256-token 主机选择从 `2,739,400` 降到 `308,232` bytes。
+32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 117
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 118 复用一块主机 logits 缓冲之后的一次 repeat 重测是
+`qwen3_vl_allocation_logit_copy.json`，SHA256 为
+`1a5ee12eadee76b467864460e202d2a371532eb5637337e1c06056abc882722c`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。256-token 主机选择从 `308,232` 降到 `0` bytes。
+32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 118
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 119 让第一次 decode 沿用 pack 里的 blocks 之后的一次 repeat
+重测是 `qwen3_vl_allocation_ready_install.json`，SHA256 为
+`ec735216c159c84be0712a9bbe46c35df4600d4bf40e5a5eb7c35667f0d1bbc2`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `40,368` 降到 `37,664` bytes。
+32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 119
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 120 让 attention scratch 的字节核对不再装箱之后的一次 repeat
+重测是 `qwen3_vl_allocation_attention_bytes.json`，SHA256 为
+`16645b1138ca6369ca3a0b386ad53422680ae645765a2cc1addbf27d76abebcf`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `37,664` 降到 `35,904` bytes。
+32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 120
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 121 让 attention scratch 的 13 块数组共用两块存储之后的一次
+repeat 重测是 `qwen3_vl_allocation_attention_pack.json`，SHA256 为
+`bab6018c177ba1083c6aa1a7e956180d6156b582e0bdd317fa53d65f1f800708`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `35,904` 降到 `34,304` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数从 `56`
+降到 `45`。32-token prefix exact，128/256 仍在 step 70 分叉。
+Chapter 121 因此 Closed。该文件同样是 allocation 记录，不是 BF16
+strict parity。
+Chapter 122 让 QK RoPE scratch 的 12 块数组共用两块存储之后的一次
+repeat 重测是 `qwen3_vl_allocation_rope_pack.json`，SHA256 为
+`1a3c49ac4089ae92e1365725899c42fdea28cc98328b0112816e47348944ad97`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `34,304` 降到 `32,864` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数从 `45`
+降到 `35`。32-token prefix exact，128/256 仍在 step 70 分叉。
+Chapter 122 因此 Closed。该文件同样是 allocation 记录，不是 BF16
+strict parity。
+Chapter 123 让 QK norm scratch 的 7 块数组共用两块存储之后的一次
+repeat 重测是 `qwen3_vl_allocation_qk_norm_pack.json`，SHA256 为
+`802f5ab3a2f4499dfff4f5b7de66b639145ae70a950128ec592976e69edf434f`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `32,864` 降到 `32,224` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数从 `35`
+降到 `30`。32-token prefix exact，128/256 仍在 step 70 分叉。
+Chapter 123 因此 Closed。该文件同样是 allocation 记录，不是 BF16
+strict parity。
+Chapter 124 让 hidden norm scratch 的 6 块数组共用两块存储之后的一次
+repeat 重测是 `qwen3_vl_allocation_hidden_norm_pack.json`，SHA256 为
+`02074e31b3194d537e593cc6289178fb862cd088544710a6d8958db55a75bccc`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `32,224` 降到 `31,744` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数从 `30`
+降到 `26`。32-token prefix exact，128/256 仍在 step 70 分叉。
+Chapter 124 因此 Closed。该文件同样是 allocation 记录，不是 BF16
+strict parity。
+Chapter 125 让 MLP activation scratch 的 5 块数组共用两块存储之后的一次
+repeat 重测是 `qwen3_vl_allocation_mlp_pack.json`，SHA256 为
+`7ffc03b19d4421bd06c3a98c583664b2765261adeab657554d01bfdfde9353d2`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `31,744` 降到 `31,424` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数从 `26`
+降到 `23`。32-token prefix exact，128/256 仍在 step 70 分叉。
+Chapter 125 因此 Closed。该文件同样是 allocation 记录，不是 BF16
+strict parity。
+Chapter 126 让 hidden residual scratch 的 4 块数组共用两块存储之后的一次
+repeat 重测是 `qwen3_vl_allocation_residual_pack.json`，SHA256 为
+`6db4aa2978fc8e80b064352f4968d6ccbeb236c6057f852244907eb84cff5336`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `31,424` 降到 `31,264` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数从 `23`
+降到 `21`。32-token prefix exact，128/256 仍在 step 70 分叉。
+Chapter 126 因此 Closed。该文件同样是 allocation 记录，不是 BF16
+strict parity。
+Chapter 127 让 ready 只留着 pack、不再拷贝 blocks 之后的一次 repeat
+重测是 `qwen3_vl_allocation_ready_pack.json`，SHA256 为
+`e5f49acc926b4b205186f93ed9f42c8e3c21583ffc5f1b4c01085e6f6594ed73`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `31,264` 降到 `25,856` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数仍是
+`21`。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 127
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 128 让第一次 decode 的计时不再包一层 `@sync` 之后的一次
+repeat 重测是 `qwen3_vl_allocation_first_timer.json`，SHA256 为
+`ee02b9b657eaef91346f255c6c2401ff1ba2a4e92f5756d6f8ef4952e7ce4016`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `25,856` 降到 `21,712` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数仍是
+`21`。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 128
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 129 让参数 pack 随 cache 创建之后的一次 repeat 重测是
+`qwen3_vl_allocation_cache_pack.json`，SHA256 为
+`137d69319e472b2faaf15ca5e89b097ebf87d09142d668a64fec64ba12b677c5`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `21,712` 降到 `19,024` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数仍是
+`21`。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 129
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 130 让 QKV、gate/up、mRoPE、token embedding 和 tied logits
+这 9 块 BF16 数组共用一块存储之后的一次 repeat 重测是
+`qwen3_vl_allocation_bf16_tails.json`，SHA256 为
+`31ee2e77b9a8bb327e803e73521791ba66eff6e5abb6e0b6770b89ca7b89c469`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `19,024` 降到 `17,872` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数从
+`21` 降到 `13`。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 130
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 131 让全部 decode scratch 切自一块 BF16 和一块 Float32 之后的一次
+repeat 重测是 `qwen3_vl_allocation_decode_workspace.json`，SHA256 为
+`2bc4e279c7355bd436203dd0982ce47b88b07c837d99911eecab08a0f49b8487`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `17,872` 降到 `14,912` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数从
+`13` 降到 `2`。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 131
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 132 让新的 scratch 复用已经建好的 kernel 参数盒之后的一次
+repeat 重测是 `qwen3_vl_allocation_param_reuse.json`，SHA256 为
+`1fb6be933ff633abbcd6c6126cf3924496534843d9871915d929efd07d97138b`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。128/256 的第一次 decode CPU 从 `14,912` 降到 `9,168` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数仍是
+`2`。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 132
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 133 让 scratch 切片共用父缓冲的引用之后的一次 repeat 重测是
+`qwen3_vl_allocation_shared_ref.json`，SHA256 为
+`103dc1d18457d27054ddad1215f1d0b777b98694747e9b426f5101e0cc9230dd`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。32/128/256 的第一次 decode CPU 都从 `9,168` 降到 `7,408` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数仍是
+`2`。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 133
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 134 让 QKV、tied、query 和 attention 投影复用已经建好的
+reshape 之后的一次 repeat 重测是 `qwen3_vl_allocation_reshape_reuse.json`，
+SHA256 为
+`92cce38e05d6123d6f55f4a520cbc4c7df36ce3be53339690296fafa904cb17a`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。32/128/256 的第一次 decode CPU 都从 `7,408` 降到 `6,768` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数仍是
+`2`。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 134
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 135 让后来的请求复用第一次 decode 的 56 张 scratch 切片之后的
+一次 repeat 重测是 `qwen3_vl_allocation_slice_reuse.json`，SHA256 为
+`526066a3cdf57673e5384c36a625c1acd2861a451a5dd47a24c1c5f9af48640b`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。32/128/256 的第一次 decode CPU 都从 `6,768` 降到 `3,264` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数仍是
+`2`。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 135
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 136 让后来的请求把复用的 scratch 直接装进 Ready 之后的一次
+repeat 重测是 `qwen3_vl_allocation_shell_ready.json`，SHA256 为
+`1cad8aca2a56b0149cd8533d45bb3d3230e1b16529216408bf1c8caa408454bf`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。32/128/256 的第一次 decode CPU 都从 `3,264` 降到 `1,312` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数仍是
+`2`。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 136
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 137 让后来的请求复用同一个 Ready 之后的一次 repeat 重测是
+`qwen3_vl_allocation_ready_reuse.json`，SHA256 为
+`72409ccf67d9ceb0848d2a1de2fc82e7aa0a2c654ac81a66d336faa3a19e1365`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。32/128/256 的第一次 decode CPU 都从 `1,312` 降到 `800` bytes。
+256-token 第一次 decode 的 GPU 字节仍是 `2,018,180`，分配次数仍是
+`2`。32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 137
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 138 让后来的请求在已有父缓冲装得下时不再重新分配之后的一次
+repeat 重测是 `qwen3_vl_allocation_parent_reuse.json`，SHA256 为
+`1111c98b93bca2cd344bb4cc4468898b8d2a77fb9b5dc4ceebb21e48b80a3ccd`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。32/128/256 的第一次 decode CPU 都从 `800` 降到 `352` bytes。
+这三次的第一次 decode GPU 字节都降到 `0`，分配次数都从 `2` 降到 `0`。
+32-token prefix exact，128/256 仍在 step 70 分叉。Chapter 138
+因此 Closed。该文件同样是 allocation 记录，不是 BF16 strict parity。
+Chapter 139 让后来的请求原地改 attention scratch 的 `capacity` 之后的
+一次 repeat 重测是 `qwen3_vl_allocation_attention_capacity.json`，
+SHA256 为
+`d3597accee924dba321e9252a6f9411fbd6838152971d5a9c28302ba1a3fca42`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。32/128/256 的第一次 decode CPU 都从 `352` 降到 `192` bytes。
+第一次 decode 的 GPU 字节仍是 `0`，分配次数仍是 `0`。32-token prefix
+exact，128/256 仍在 step 70 分叉。Chapter 139 因此 Closed。该文件同样是
+allocation 记录，不是 BF16 strict parity。
+Chapter 140 让复用入口不再装箱 text spec 之后的一次 repeat 重测是
+`qwen3_vl_allocation_reuse_entry.json`，SHA256 为
+`65ce9f34941b20837d9aeae43badbf13e7bc03366a1ba0c1a26ce8303bda0bf4`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。32/128/256 的第一次 decode CPU 都从 `192` 降到 `48` bytes。
+第一次 decode 的 GPU 字节仍是 `0`，分配次数仍是 `0`。32-token prefix
+exact，128/256 仍在 step 70 分叉。Chapter 140 因此 Closed。该文件同样是
+allocation 记录，不是 BF16 strict parity。
+Chapter 141 用 BF16 Ready 的具体类型把 steady 调用收成静态调用之后的
+一次 repeat 重测是 `qwen3_vl_allocation_static_ready.json`，SHA256 为
+`f9a66705ccb388606f478839ac20770733c0c008905ccdcd53f35ee599362831`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。32/128/256 的第一次 decode CPU 都从 `48` 降到 `32` bytes。
+第一次 decode 的 GPU 字节仍是 `0`，分配次数仍是 `0`。32-token prefix
+exact，128/256 仍在 step 70 分叉。Chapter 141 因此 Closed。该文件同样是
+allocation 记录，不是 BF16 strict parity。
+Chapter 142 让第一次 decode 的计时窗口和稳态步一样，直接调用具体 Ready
+之后的一次 repeat 重测是 `qwen3_vl_allocation_ready_call.json`，SHA256 为
+`c838c5f037c16a35820eb45aa8fbe7d93139a519ab7fac1f3946e6947053ccc6`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。32/128/256 的第一次 decode CPU 都从 `32` 降到 `0` bytes。
+第一次 decode 的 GPU 字节仍是 `0`，分配次数仍是 `0`。32-token prefix
+exact，128/256 仍在 step 70 分叉。Chapter 142 因此 Closed。该文件同样是
+allocation 记录，不是 BF16 strict parity。
+Chapter 143 让 GPU 上的 BF16 转 Float32 直接 `copyto!` 之后的一次 repeat
+重测是 `qwen3_vl_allocation_f32_copy.json`，SHA256 为
+`f132e3624ccb19b175babe19eafd447c3300356e738edeada965fc11a6a4f0ad`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。32/128/256 的第一次 decode CPU 仍是 `0` bytes。256 的 prefill
+CPU 从 `8,007,336` 降到 `6,918,616` bytes，prefill GPU 仍是
+`858,377,949` bytes、`4240` 次。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 143 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
+Chapter 144 让连续 GPU 数组的 BF16 转 Float32 复用同一个 kernel 之后的
+一次 repeat 重测是 `qwen3_vl_allocation_promote.json`，SHA256 为
+`25f498529f6e84e7a8e2902b5e02c79e5fb62519a1472e5e015d8b0fcb9ab0a7`。
+GPU 最后一步仍是 `0`。position `107 / 203 / 331` 的 CPU 仍是 `0`
+bytes。32/128/256 的第一次 decode CPU 仍是 `0` bytes。256 的 prefill
+CPU 从 `6,918,616` 降到 `5,657,880` bytes，prefill GPU 仍是
+`858,377,949` bytes、`4240` 次。32-token prefix exact，128/256 仍在
+step 70 分叉。Chapter 144 因此 Closed。该文件同样是 allocation 记录，
+不是 BF16 strict parity。
 
 默认 workload 为 32/128/256-token BF16 static generation、每个长度三次；可用
 `LIFEAI_QWEN3_VL_PROFILE_LENGTHS` 和 `LIFEAI_QWEN3_VL_PROFILE_REPEATS`

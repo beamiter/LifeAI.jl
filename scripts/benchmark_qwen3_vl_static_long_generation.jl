@@ -35,11 +35,15 @@ length(ARGS) <= 3 || begin
     error("expected at most three positional arguments")
 end
 
+using BFloat16s: BFloat16
 using CUDA
 using JSON3
 using LifeAI
 using SHA: sha256
 using Statistics: mean, median, quantile
+
+const _CH47_CUDA = parentmodule(CUDA.CuArray)
+const _CH47_LOGIT_BUFFER = Ref{Vector{BFloat16}}()
 
 # Chapter 46 now exposes its frozen single-image BF16 preparation as an
 # import-safe script helper. Importing this file does not execute its verifier.
@@ -189,13 +193,62 @@ function _ch47_host_timing(timed)
     )
 end
 
+function _ch47_top_two(values::AbstractVector)
+    # Same order as partialsortperm(values, 1:2; rev=true): larger value first,
+    # and the smaller index first when the values compare equal. A linear scan
+    # does not build the length-vocab index and quicksort scratch.
+    n = length(values)
+    n == 0 && throw(ArgumentError("empty logits"))
+    top = 1
+    second = 1
+    @inbounds for index in 2:n
+        value = values[index]
+        if isless(values[top], value)
+            second = top
+            top = index
+        elseif second == top || isless(values[second], value)
+            second = index
+        end
+    end
+    return top, second
+end
+
+function _ch47_host_logits(logits::CUDA.CuArray{BFloat16,3})
+    # Array(view) allocates a fresh vocab vector every selection. The column
+    # is already contiguous, so reuse one host buffer. The synchronous copy
+    # accepts pageable memory; the async copy faulted on the real logits.
+    size(logits, 2) == 1 && size(logits, 3) == 1 && stride(logits, 1) == 1 ||
+        return vec(Array(@view(logits[:, end, 1])))
+    n = size(logits, 1)
+    dest = if isassigned(_CH47_LOGIT_BUFFER) && length(_CH47_LOGIT_BUFFER[]) == n
+        _CH47_LOGIT_BUFFER[]
+    else
+        buffer = Vector{BFloat16}(undef, n)
+        _CH47_LOGIT_BUFFER[] = buffer
+        buffer
+    end
+    nbytes = n * sizeof(BFloat16)
+    status = GC.@preserve dest logits begin
+        src = convert(CUDA.CuPtr{BFloat16}, logits.data[].mem) + logits.offset
+        @ccall gc_safe=true _CH47_CUDA.libcuda.cuMemcpyDtoH_v2(
+            pointer(dest)::Ptr{Cvoid},
+            src::CUDA.CuPtr{BFloat16},
+            nbytes::Csize_t,
+        )::_CH47_CUDA.CUresult
+    end
+    status == _CH47_CUDA.CUDA_SUCCESS ||
+        error("Qwen3-VL logit copy failed: $status")
+    return dest
+end
+
+function _ch47_host_logits(logits)
+    return vec(Array(@view(logits[:, end, 1])))
+end
+
 function _ch47_select_token(logits)
     timed = @timed begin
-        values = vec(Array(@view(logits[:, end, 1])))
-        count = min(2, length(values))
-        top_ids = partialsortperm(values, 1:count; rev=true)
-        token = first(top_ids)
-        second_token = count == 2 ? top_ids[2] : token
+        values = _ch47_host_logits(logits)
+        token, second_token = _ch47_top_two(values)
         top_logit = Float32(values[token])
         second_logit = Float32(values[second_token])
         (;
@@ -313,6 +366,126 @@ function _ch47_selection_summary(records)
     )
 end
 
+@noinline function _ch47_timed_call(
+    ::Type{R},
+    parameters::NamedTuple,
+    token::Int,
+    cache::LifeAI.Qwen3VLStaticKVCache,
+) where {R<:LifeAI._Qwen3VLDecodeReady}
+    # Same window as the steady step: the concrete ready call stays in this
+    # small function, so its return tuple is not boxed before gc_num returns.
+    cpu_before = Base.gc_num()
+    embedding = parameters.embedding
+    LifeAI._qwen3_vl_device_decode_workspace!(cache, parameters.spec, embedding)
+    installed = cache.decode_pack
+    installed isa R || error("Qwen3-VL reuse did not install ready")
+    value = LifeAI._qwen3_vl_text_decode_ready!(installed, token, cache)
+    diff = Base.GC_Diff(Base.gc_num(), cpu_before)
+    return value, diff.allocd, diff.total_time / 1e9
+end
+
+function _ch47_time_decode(
+    parameters::NamedTuple,
+    token::Int,
+    cache::LifeAI.Qwen3VLStaticKVCache,
+)
+    cuda_core = parentmodule(CUDA.CuArray)
+    CUDA.synchronize()
+    gpu_before = copy(cuda_core.alloc_stats)
+    started_at = time_ns()
+    value, cpu_bytes, cpu_gctime = _ch47_timed_call(
+        LifeAI._qwen3_vl_bf16_ready_type(parameters.embedding),
+        parameters,
+        token,
+        cache,
+    )
+    finished_at = time_ns()
+    gpu_after = copy(cuda_core.alloc_stats)
+    gpu_diff = gpu_after - gpu_before
+    return (;
+        value,
+        time=(finished_at - started_at) / 1e9,
+        cpu_bytes,
+        cpu_gctime,
+        gpu_bytes=gpu_diff.alloc_bytes,
+        gpu_memtime=gpu_diff.total_time,
+        gpu_memstats=gpu_diff,
+    )
+end
+
+function _ch47_time_ready(ready::R, token, cache) where {R<:LifeAI._Qwen3VLDecodeReady}
+    # CUDA.@timed wraps the call in @sync. That task is about 4 KiB even when
+    # the ready step itself allocates nothing. Count the step directly.
+    cuda_core = parentmodule(CUDA.CuArray)
+    CUDA.synchronize()
+    gpu_before = copy(cuda_core.alloc_stats)
+    cpu_before = Base.gc_num()
+    started_at = time_ns()
+    value = LifeAI._qwen3_vl_text_decode_ready!(ready, token, cache)
+    finished_at = time_ns()
+    cpu_after = Base.gc_num()
+    gpu_after = copy(cuda_core.alloc_stats)
+    cpu_diff = Base.GC_Diff(cpu_after, cpu_before)
+    gpu_diff = gpu_after - gpu_before
+    return (;
+        value,
+        time=(finished_at - started_at) / 1e9,
+        cpu_bytes=cpu_diff.allocd,
+        cpu_gctime=cpu_diff.total_time / 1e9,
+        gpu_bytes=gpu_diff.alloc_bytes,
+        gpu_memtime=gpu_diff.total_time,
+        gpu_memstats=gpu_diff,
+    )
+end
+
+function _ch47_record_decode!(
+    decode_timed,
+    cache,
+    snapshot,
+    append_index,
+    decode_records,
+    selection_records,
+    generated_ids,
+)
+    logits, returned = decode_timed.value
+    returned === cache || error("static decode replaced the request cache")
+    _ch47_assert_storage_identity(cache, snapshot)
+    push!(decode_records, merge(
+        (; append_index, cache_position=cache.position),
+        _ch47_timing(decode_timed),
+    ))
+    selection = _ch47_select_token(logits)
+    push!(selection_records, selection)
+    push!(generated_ids, selection.token)
+    return selection.token, selection.logits_sha256
+end
+
+function _ch47_steady_decode!(
+    ready::R,
+    cache,
+    snapshot,
+    token,
+    selection_records,
+    generated_ids,
+    decode_records,
+    start_index::Int,
+    stop_index::Int,
+) where {R<:LifeAI._Qwen3VLDecodeReady}
+    final_logits_sha256 = ""
+    for append_index in start_index:stop_index
+        token, final_logits_sha256 = _ch47_record_decode!(
+            _ch47_time_ready(ready, token, cache),
+            cache,
+            snapshot,
+            append_index,
+            decode_records,
+            selection_records,
+            generated_ids,
+        )
+    end
+    return token, final_logits_sha256
+end
+
 function _ch47_run_generation(prepared, generated_tokens::Int)
     prompt_tokens = length(prepared.input_ids)
     capacity = prompt_tokens + generated_tokens - 1
@@ -351,24 +524,34 @@ function _ch47_run_generation(prepared, generated_tokens::Int)
     final_logits_sha256 = first_selection.logits_sha256
     decode_records = NamedTuple[]
     token = first_selection.token
-    for append_index in 1:(generated_tokens - 1)
-        decode_timed = CUDA.@timed hf_qwen3_vl_text_decode_step_static(
-            prepared.text_parameters,
-            token,
+    if generated_tokens > 1
+        token, final_logits_sha256 = _ch47_record_decode!(
+            _ch47_time_decode(prepared.text_parameters, token, cache),
             cache,
+            snapshot,
+            1,
+            decode_records,
+            selection_records,
+            generated_ids,
         )
-        logits, returned = decode_timed.value
-        returned === cache || error("static decode replaced the request cache")
-        _ch47_assert_storage_identity(cache, snapshot)
-        push!(decode_records, merge(
-            (; append_index, cache_position=cache.position),
-            _ch47_timing(decode_timed),
-        ))
-        selection = _ch47_select_token(logits)
-        push!(selection_records, selection)
-        token = selection.token
-        push!(generated_ids, token)
-        final_logits_sha256 = selection.logits_sha256
+    end
+    ready = cache.decode_pack
+    if generated_tokens > 2
+        ready isa LifeAI._Qwen3VLDecodeReady ||
+            error("static decode did not keep a concrete scratch pack")
+        ready.pack.embedding === prepared.text_parameters.embedding ||
+            error("static decode scratch pack does not match the text parameters")
+        token, final_logits_sha256 = _ch47_steady_decode!(
+            ready,
+            cache,
+            snapshot,
+            token,
+            selection_records,
+            generated_ids,
+            decode_records,
+            2,
+            generated_tokens - 1,
+        )
     end
     CUDA.synchronize()
     cache.position == capacity || error("final static cache position changed")
