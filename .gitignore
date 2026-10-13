@@ -7,6 +7,12 @@ notebook/assets/
 # are reproducible, so the binaries do not belong in the repository.
 artifacts/
 benchmark_results/*
+!benchmark_results/qwen3_vl_workspace_ownership/
+benchmark_results/qwen3_vl_workspace_ownership/*
+!benchmark_results/qwen3_vl_workspace_ownership/summary.json
+!benchmark_results/qwen3_vl_generation_reuse/
+benchmark_results/qwen3_vl_generation_reuse/*
+!benchmark_results/qwen3_vl_generation_reuse/summary.json
 !benchmark_results/qwen3_0.6b_xla_gpu_e2e_cachebusted_packed_prefill_repeat_a.json
 !benchmark_results/qwen3_0.6b_xla_gpu_e2e_cachebusted_packed_prefill_repeat_b.json
 !benchmark_results/week20/

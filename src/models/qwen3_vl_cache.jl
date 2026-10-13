@@ -1731,11 +1731,36 @@ function _qwen3_vl_load_scratch(
     return installed isa T ? installed : scratch
 end
 
+@inline function _qwen3_vl_decode_pack_matches(pack::_Qwen3VLDecodePack, parameters)
+    return pack.embedding === parameters.embedding &&
+        pack.blocks === parameters.blocks &&
+        pack.final_norm === parameters.final_norm &&
+        pack.spec === parameters.spec
+end
+
 function _qwen3_vl_decode_pack(cache::Qwen3VLStaticKVCache, parameters)
-    pack = cache.decode_pack
-    if pack isa _Qwen3VLDecodePack && pack.embedding === parameters.embedding
+    installed = cache.decode_pack
+    pack = installed isa _Qwen3VLDecodeReady ? installed.pack : installed
+    if pack isa _Qwen3VLDecodePack &&
+        _qwen3_vl_decode_pack_matches(pack, parameters)
         return pack
     end
+    # A reset preserves Ready and its workspaces. A subsequent request may
+    # use new weights with the same embedding, or a different text spec.
+    # Rebuild the derived state together so no old pack or device workspace
+    # can be installed again after prefill has used the new parameters.
+    cache.attention_scratch = nothing
+    cache.mlp_activation_scratch = nothing
+    cache.qk_rope_scratch = nothing
+    cache.qk_norm_scratch = nothing
+    cache.hidden_norm_scratch = nothing
+    cache.gate_up_scratch = nothing
+    cache.hidden_residual_scratch = nothing
+    cache.tied_logits_scratch = nothing
+    cache.qkv_scratch = nothing
+    cache.token_embedding_scratch = nothing
+    cache.mrope_scratch = nothing
+    cache.decode_workspace = nothing
     pack = _Qwen3VLDecodePack(
         parameters.blocks,
         parameters.embedding,
@@ -2241,7 +2266,7 @@ function _qwen3_vl_text_decode_step_static_impl(
     ready = cache.decode_pack
     if profile_runner === nothing &&
         ready isa _Qwen3VLDecodeReady &&
-        ready.pack.embedding === parameters.embedding
+        _qwen3_vl_decode_pack_matches(ready.pack, parameters)
         return _qwen3_vl_text_decode_ready!(ready, token, cache)
     end
     spec = _qwen3_vl_cache_spec(parameters)
@@ -2262,6 +2287,7 @@ function _qwen3_vl_text_decode_step_static_impl(
         "Qwen3-VL decode token is outside the vocabulary",
     ))
     if eltype(parameters.embedding) === BFloat16
+        _qwen3_vl_decode_pack(cache, parameters)
         _qwen3_vl_device_decode_workspace!(cache, spec, parameters.embedding)
     end
     token_embedding_scratch = if eltype(parameters.embedding) === BFloat16
@@ -2549,6 +2575,11 @@ Write one token in place at physical slot `cache.position + 1`, attend only to
 the valid `1:cache.position+1` prefix, and return `(logits, cache)`. The next
 mRoPE coordinate remains `cache.position + cache.rope_delta` before the
 position increment.
+
+Optimized decode state is bound to the embedding, blocks, final norm, and
+text spec. Replacing any of these rebuilds that derived state. Reset and
+prefill the cache when changing model weights so its valid K/V prefix also
+belongs to the new parameters.
 """
 function hf_qwen3_vl_text_decode_step_static(
     parameters,
@@ -2557,7 +2588,7 @@ function hf_qwen3_vl_text_decode_step_static(
 )
     ready = cache.decode_pack
     if ready isa _Qwen3VLDecodeReady &&
-        ready.pack.embedding === parameters.embedding
+        _qwen3_vl_decode_pack_matches(ready.pack, parameters)
         return _qwen3_vl_text_decode_ready!(ready, token, cache)
     end
     return _qwen3_vl_text_decode_step_static_impl(

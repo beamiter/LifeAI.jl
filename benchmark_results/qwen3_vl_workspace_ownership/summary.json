@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "chapter": 146,
+  "date": "2026-10-13",
+  "device": "NVIDIA GeForce RTX 4090 D",
+  "acceptance_fixture": false,
+  "hf_bf16_strict_parity_claimed": false,
+  "comparison": "same frozen workload, one independent process per implementation, one repeat per length",
+  "all_generated_tokens_and_step_logits_bitwise_equal": true,
+  "regressions": {
+    "pre_fix_ownership": {
+      "passed": 0,
+      "failed": 6
+    },
+    "post_fix_ownership": {
+      "passed": 26,
+      "failed": 0
+    },
+    "post_fix_parameter_binding_cuda": {
+      "passed": 456,
+      "failed": 0
+    }
+  },
+  "workload": {
+    "model_id": "Qwen/Qwen3-VL-2B-Instruct",
+    "modelscope_revision": "ae9985b208c074c10cfbe3a61b5cb7268cdc9c53",
+    "huggingface_revision": "78448d793a7eb2f7a987a1da76d464384aa1becd",
+    "dtype": "bfloat16",
+    "batch_size": 1,
+    "images": 1,
+    "prompt_tokens": 76,
+    "rope_delta": -56,
+    "generated_token_lengths": [
+      32,
+      128,
+      256
+    ],
+    "repeats": 1,
+    "warmup_generated_tokens": 256,
+    "stop_token_ids": [],
+    "greedy": true
+  },
+  "oracle_file_sha256": "72461330a8c5a0e74e7489abfdd481223aeb47d6c161fdc12dc0048e82690140",
+  "runs": {
+    "before": {
+      "raw_file": "chapter145_long_profile.json",
+      "raw_sha256": "8963edea2ca1a8d20cb9a2401affdfa80768ce76e27da8f73f67c3ba99b87fb9",
+      "source_sha256": {
+        "scripts/qwen3_vl_long_reference_contract.jl": "4cb11e6b95541c36eb6049979fc3b1af94f8913dc13214fba4331eb17fad1fa2",
+        "scripts/export_qwen3_vl_decode_reference.py": "a309de0a3bd92c67f5f70821eaaf53ee1be2cafa4199b3fbf108ef7d0cb1f26a",
+        "src/generation/qwen3_vl_generation.jl": "e048c07dc4b197aa62e132b5bfddc590a518a4e3baa7a7702994630d435fefc8",
+        "scripts/export_qwen3_vl_prefill_reference.py": "951ebfd1a7a1eea2f28b803913972e27c6bb76e4bedab6570f34d03a1c962064",
+        "scripts/benchmark_qwen3_vl_static_long_generation.jl": "4ff742d722e1e015a2b1104c53bb3c41ebd9ea9e7f8a24c0406684c33c0632e8",
+        "src/models/bf16_accel.jl": "4c52502adcc118f32404ace18c06c4c809176aaff222bdc304e0ea999fdba3bd",
+        "src/models/qwen3_vl_decoder.jl": "e987921d48c8f3a69b3aecdee2c83485bdeca566e00db92b0052b42a008e968c",
+        "src/models/qwen3_vl_vision.jl": "b5ba8849b1c92c839e4c3b6e2a5d26ca0d996facb29565564b117dd5678e53d2",
+        "src/models/qwen3_vl_cache.jl": "71c89329570a3381f338c961a28896b2d1e991eb72cd05154c443d375642e9f7",
+        "scripts/export_qwen3_vl_long_generation_reference.py": "b4c73c1b4542e08290e58e6a6fbacf9ef346c66928d5e5564077cf2894548fe9",
+        "src/LifeAI.jl": "01cbd4434bb5c83d04c97edc35f34ce31b61ef8221ce8c128b9f2ad756487f3f",
+        "src/generation/hf_text_generation.jl": "d1f5490249db9c73a2e089401d1b7f838fe52151da335b2ecd0a216ecadce29b",
+        "scripts/verify_qwen3_vl_static_cache_cuda.jl": "e0c2b76e92053c163c6b29f42314f593d1319fa289d1fdd5a07263fa2470a4bb",
+        "src/io/hf_qwen3_vl.jl": "e9ad5b99eafc1b7287da192477e1f4adac913d4771d3b6929445696679ad7774",
+        "src/data/hf_qwen3_vl_processor.jl": "dac7b90e9d32b6d03105a142fd589574c982ac3c91a85f311054212636034858",
+        "ext/LifeAICUDAExt.jl": "fb87790e97ebf1c6e85206721b04a13342cc10f45e2bdbdd5f8a2ccde7a8f55b",
+        "src/models/qwen3_vl_attention_scratch.jl": "310d4a6297d52a84acb548ac8eda4641e19ef2b6ed30cef62bedceaa4faa67c3"
+      },
+      "samples": {
+        "32": {
+          "first_decode": {
+            "cpu_bytes": 10816,
+            "gpu_bytes": 0,
+            "gpu_allocation_count": 0
+          },
+          "steady_cpu_bytes": [
+            0
+          ],
+          "steady_gpu_bytes": [
+            0
+          ],
+          "steady_gpu_allocations": [
+            0
+          ],
+          "generated_ids_sha256": "5ce57acc8e0aa5d7ff7624e548e1e289eb7c727f7f634fdf4c4342678a8187d6",
+          "final_logits_sha256": "36cf4caf02eea1998a122b03d2bdefce4809680ba8fc56834ef09bba4bf810b0",
+          "oracle_divergence": null
+        },
+        "128": {
+          "first_decode": {
+            "cpu_bytes": 10816,
+            "gpu_bytes": 0,
+            "gpu_allocation_count": 0
+          },
+          "steady_cpu_bytes": [
+            0
+          ],
+          "steady_gpu_bytes": [
+            0
+          ],
+          "steady_gpu_allocations": [
+            0
+          ],
+          "generated_ids_sha256": "67b0714eb54e13f9e6a3494f455381be23842651d408babd7b3863f9ab0cfb08",
+          "final_logits_sha256": "e5a7a4680c1dfc81519a110ad0305cd76c568deee32f71d409efc03d244ba536",
+          "oracle_divergence": {
+            "generated_step": 70,
+            "lifeai_token_id_1_based": 21240,
+            "lifeai_token_id_0_based": 21239,
+            "hf_token_id_1_based": 64693,
+            "hf_token_id_0_based": 64692,
+            "hf_top2_token_id_0_based": 21239,
+            "hf_top1_logit_f32": 32.250805,
+            "hf_top2_logit_f32": 32.222828,
+            "hf_margin_f32": 0.02797699
+          }
+        },
+        "256": {
+          "first_decode": {
+            "cpu_bytes": 10816,
+            "gpu_bytes": 0,
+            "gpu_allocation_count": 0
+          },
+          "steady_cpu_bytes": [
+            0
+          ],
+          "steady_gpu_bytes": [
+            0
+          ],
+          "steady_gpu_allocations": [
+            0
+          ],
+          "generated_ids_sha256": "d712e8da98437749bca79fcf1e0b2c9c0c51422674e3a31b806a0e42a8fcac9c",
+          "final_logits_sha256": "1967e3677eb444943bbfda228ac6aeb73c701fa59008b6d897692675eb693eb9",
+          "oracle_divergence": {
+            "generated_step": 70,
+            "lifeai_token_id_1_based": 21240,
+            "lifeai_token_id_0_based": 21239,
+            "hf_token_id_1_based": 64693,
+            "hf_token_id_0_based": 64692,
+            "hf_top2_token_id_0_based": 21239,
+            "hf_top1_logit_f32": 32.250805,
+            "hf_top2_logit_f32": 32.222828,
+            "hf_margin_f32": 0.02797699
+          }
+        }
+      }
+    },
+    "after": {
+      "raw_file": "chapter146_long_profile.json",
+      "raw_sha256": "0ff9ed9b4d4714c13cd45775a478ac214eb15b48415a5537b459176f2ba559ef",
+      "source_sha256": {
+        "src/models/qwen3_vl_attention_scratch.jl": "310d4a6297d52a84acb548ac8eda4641e19ef2b6ed30cef62bedceaa4faa67c3",
+        "scripts/qwen3_vl_long_reference_contract.jl": "4cb11e6b95541c36eb6049979fc3b1af94f8913dc13214fba4331eb17fad1fa2",
+        "src/generation/qwen3_vl_generation.jl": "e048c07dc4b197aa62e132b5bfddc590a518a4e3baa7a7702994630d435fefc8",
+        "scripts/export_qwen3_vl_decode_reference.py": "a309de0a3bd92c67f5f70821eaaf53ee1be2cafa4199b3fbf108ef7d0cb1f26a",
+        "scripts/export_qwen3_vl_prefill_reference.py": "951ebfd1a7a1eea2f28b803913972e27c6bb76e4bedab6570f34d03a1c962064",
+        "scripts/benchmark_qwen3_vl_static_long_generation.jl": "dfa93a2648858caceef7712c0037f54bae1a49311dcb8384ae74b2d5387cefa9",
+        "src/models/bf16_accel.jl": "4c52502adcc118f32404ace18c06c4c809176aaff222bdc304e0ea999fdba3bd",
+        "src/models/qwen3_vl_decoder.jl": "e987921d48c8f3a69b3aecdee2c83485bdeca566e00db92b0052b42a008e968c",
+        "src/models/qwen3_vl_vision.jl": "b5ba8849b1c92c839e4c3b6e2a5d26ca0d996facb29565564b117dd5678e53d2",
+        "src/models/qwen3_vl_cache.jl": "71c89329570a3381f338c961a28896b2d1e991eb72cd05154c443d375642e9f7",
+        "scripts/export_qwen3_vl_long_generation_reference.py": "b4c73c1b4542e08290e58e6a6fbacf9ef346c66928d5e5564077cf2894548fe9",
+        "src/LifeAI.jl": "01cbd4434bb5c83d04c97edc35f34ce31b61ef8221ce8c128b9f2ad756487f3f",
+        "src/generation/hf_text_generation.jl": "d1f5490249db9c73a2e089401d1b7f838fe52151da335b2ecd0a216ecadce29b",
+        "scripts/verify_qwen3_vl_static_cache_cuda.jl": "e0c2b76e92053c163c6b29f42314f593d1319fa289d1fdd5a07263fa2470a4bb",
+        "src/io/hf_qwen3_vl.jl": "e9ad5b99eafc1b7287da192477e1f4adac913d4771d3b6929445696679ad7774",
+        "ext/LifeAICUDAExt.jl": "46c6d07985860fe92b29a963457fe28ea582a816af99b0db2ba405a0f54a9722",
+        "src/data/hf_qwen3_vl_processor.jl": "dac7b90e9d32b6d03105a142fd589574c982ac3c91a85f311054212636034858"
+      },
+      "samples": {
+        "32": {
+          "first_decode": {
+            "cpu_bytes": 10528,
+            "gpu_bytes": 1043332,
+            "gpu_allocation_count": 2
+          },
+          "steady_cpu_bytes": [
+            0
+          ],
+          "steady_gpu_bytes": [
+            0
+          ],
+          "steady_gpu_allocations": [
+            0
+          ],
+          "generated_ids_sha256": "5ce57acc8e0aa5d7ff7624e548e1e289eb7c727f7f634fdf4c4342678a8187d6",
+          "final_logits_sha256": "36cf4caf02eea1998a122b03d2bdefce4809680ba8fc56834ef09bba4bf810b0",
+          "oracle_divergence": null
+        },
+        "128": {
+          "first_decode": {
+            "cpu_bytes": 10528,
+            "gpu_bytes": 1461124,
+            "gpu_allocation_count": 2
+          },
+          "steady_cpu_bytes": [
+            0
+          ],
+          "steady_gpu_bytes": [
+            0
+          ],
+          "steady_gpu_allocations": [
+            0
+          ],
+          "generated_ids_sha256": "67b0714eb54e13f9e6a3494f455381be23842651d408babd7b3863f9ab0cfb08",
+          "final_logits_sha256": "e5a7a4680c1dfc81519a110ad0305cd76c568deee32f71d409efc03d244ba536",
+          "oracle_divergence": {
+            "generated_step": 70,
+            "lifeai_token_id_1_based": 21240,
+            "lifeai_token_id_0_based": 21239,
+            "hf_token_id_1_based": 64693,
+            "hf_token_id_0_based": 64692,
+            "hf_top2_token_id_0_based": 21239,
+            "hf_top1_logit_f32": 32.250805,
+            "hf_top2_logit_f32": 32.222828,
+            "hf_margin_f32": 0.02797699
+          }
+        },
+        "256": {
+          "first_decode": {
+            "cpu_bytes": 10528,
+            "gpu_bytes": 2018180,
+            "gpu_allocation_count": 2
+          },
+          "steady_cpu_bytes": [
+            0
+          ],
+          "steady_gpu_bytes": [
+            0
+          ],
+          "steady_gpu_allocations": [
+            0
+          ],
+          "generated_ids_sha256": "d712e8da98437749bca79fcf1e0b2c9c0c51422674e3a31b806a0e42a8fcac9c",
+          "final_logits_sha256": "1967e3677eb444943bbfda228ac6aeb73c701fa59008b6d897692675eb693eb9",
+          "oracle_divergence": {
+            "generated_step": 70,
+            "lifeai_token_id_1_based": 21240,
+            "lifeai_token_id_0_based": 21239,
+            "hf_token_id_1_based": 64693,
+            "hf_token_id_0_based": 64692,
+            "hf_top2_token_id_0_based": 21239,
+            "hf_top1_logit_f32": 32.250805,
+            "hf_top2_logit_f32": 32.222828,
+            "hf_margin_f32": 0.02797699
+          }
+        }
+      }
+    }
+  }
+}

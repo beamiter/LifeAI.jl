@@ -4942,7 +4942,7 @@ function _qwen3_place!(
 end
 
 # The 56 carve shells stay in the scratch objects built by the first decode.
-# Later requests only retarget those CuArrays onto a new parent pair. The
+# The same request may retarget those CuArrays onto a new parent pair. The
 # holder is parametric so the retarget function specializes on the real
 # scratch types; a Ref{Any} call must not be the body that touches them.
 mutable struct _Qwen3ReuseShells{A,R,Q,H,M,RS,QV,G,MR,E,T,B,F,P}
@@ -4963,6 +4963,9 @@ mutable struct _Qwen3ReuseShells{A,R,Q,H,M,RS,QV,G,MR,E,T,B,F,P}
     f32::F
     # Parameter pack from the first decode. It does not hold the KV cache.
     pack::P
+    # Outputs can outlive their cache, so even an expired owner does not
+    # make these mutable arrays available to another request.
+    owner::WeakRef
 end
 
 const _QWEN3_SHELLS = Ref{Any}()
@@ -4979,7 +4982,7 @@ function _qwen3_capture_shells!(
         error("Qwen3-VL reuse requires the decode pack")
     return _Qwen3ReuseShells(
         attention, rope, qk, hidden, mlp, residual, qkv, gate_up, mrope,
-        embedding, tied, bf16, f32, pack,
+        embedding, tied, bf16, f32, pack, WeakRef(cache),
     )
 end
 
@@ -5075,7 +5078,9 @@ function _qwen3_place_workspace!(
     offset == n_f32 || error("Qwen3-VL reused workspace Float32 span does not match")
     shells.bf16 = bf16
     shells.f32 = f32
-    if isassigned(_QWEN3_READY)
+    if isassigned(_QWEN3_READY) &&
+        _QWEN3_READY[] === cache.decode_pack &&
+        LifeAI._qwen3_vl_decode_pack_matches(_QWEN3_READY[].pack, shells.pack)
         _qwen3_reuse_ready!(_QWEN3_READY[], cache, capacity)
         return true
     end
@@ -5599,7 +5604,11 @@ function _qwen3_build_workspace!(
         2 * hidden_size
     if isassigned(_QWEN3_SHELLS)
         shells = _QWEN3_SHELLS[]
-        if shells isa _Qwen3ReuseShells
+        pack = cache.decode_pack
+        if shells isa _Qwen3ReuseShells &&
+            shells.owner.value === cache &&
+            pack isa LifeAI._Qwen3VLDecodePack &&
+            LifeAI._qwen3_vl_decode_pack_matches(shells.pack, pack)
             _qwen3_reuse_place!(cache, prototype, shells)
             return true
         end
@@ -5879,7 +5888,11 @@ function LifeAI._qwen3_vl_device_decode_workspace!(
         return true
     if isassigned(_QWEN3_SHELLS)
         shells = _QWEN3_SHELLS[]
-        if shells isa _Qwen3ReuseShells
+        pack = cache.decode_pack
+        if shells isa _Qwen3ReuseShells &&
+            shells.owner.value === cache &&
+            pack isa LifeAI._Qwen3VLDecodePack &&
+            LifeAI._qwen3_vl_decode_pack_matches(shells.pack, pack)
             _qwen3_reuse_place!(cache, prototype, shells)
             return true
         end
@@ -6006,15 +6019,19 @@ end
 )
     ready = cache.decode_pack
     if ready isa _Qwen3BF16Ready &&
-            ready.pack.embedding === parameters.embedding
+            LifeAI._qwen3_vl_decode_pack_matches(ready.pack, parameters)
         return LifeAI._qwen3_vl_text_decode_ready!(ready, token, cache)
     end
     if ready isa LifeAI._Qwen3VLDecodeReady &&
-            ready.pack.embedding === parameters.embedding
+            LifeAI._qwen3_vl_decode_pack_matches(ready.pack, parameters)
         return LifeAI._qwen3_vl_text_decode_ready!(ready, token, cache)
     end
     embedding = parameters.embedding
-    if embedding isa CUDA.CuArray{BFloat16} && isassigned(_QWEN3_SHELLS)
+    if embedding isa CUDA.CuArray{BFloat16} && isassigned(_QWEN3_SHELLS) &&
+        _QWEN3_SHELLS[].owner.value === cache &&
+        ready isa LifeAI._Qwen3VLDecodePack &&
+        LifeAI._qwen3_vl_decode_pack_matches(ready, parameters) &&
+        LifeAI._qwen3_vl_decode_pack_matches(_QWEN3_SHELLS[].pack, parameters)
         LifeAI._qwen3_vl_device_decode_workspace!(
             cache, parameters.spec, embedding,
         )

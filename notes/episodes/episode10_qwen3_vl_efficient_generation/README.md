@@ -117,6 +117,9 @@ CUDA Graph、零分配 decode 或长上下文部署已经完成。
 97. [`Chapter 142 — Qwen3-VL 第一次 decode 直接调用 Ready`](chapter142_qwen3_vl_ready_call.md)（Closed）
 98. [`Chapter 143 — Qwen3-VL GPU 的 BF16 转 Float32 直接拷贝`](chapter143_qwen3_vl_f32_copy.md)（Closed）
 99. [`Chapter 144 — Qwen3-VL GPU 的 BF16 转 Float32 复用 kernel`](chapter144_qwen3_vl_promote_kernel.md)（Closed）
+100. [`Chapter 145 — Qwen3-VL 静态 decode 的完整参数绑定`](chapter145_qwen3_vl_parameter_binding.md)（Closed）
+101. [`Chapter 146 — Qwen3-VL CUDA 工作区的请求所有权`](chapter146_qwen3_vl_workspace_ownership.md)（Closed）
+102. [`Chapter 147 — Qwen3-VL 显式复用高层生成 cache`](chapter147_qwen3_vl_generation_reuse.md)（Closed）
 
 ## 预期能力变化
 

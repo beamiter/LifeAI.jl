@@ -376,6 +376,7 @@ end
     # small function, so its return tuple is not boxed before gc_num returns.
     cpu_before = Base.gc_num()
     embedding = parameters.embedding
+    LifeAI._qwen3_vl_decode_pack(cache, parameters)
     LifeAI._qwen3_vl_device_decode_workspace!(cache, parameters.spec, embedding)
     installed = cache.decode_pack
     installed isa R || error("Qwen3-VL reuse did not install ready")
@@ -539,7 +540,7 @@ function _ch47_run_generation(prepared, generated_tokens::Int)
     if generated_tokens > 2
         ready isa LifeAI._Qwen3VLDecodeReady ||
             error("static decode did not keep a concrete scratch pack")
-        ready.pack.embedding === prepared.text_parameters.embedding ||
+        LifeAI._qwen3_vl_decode_pack_matches(ready.pack, prepared.text_parameters) ||
             error("static decode scratch pack does not match the text parameters")
         token, final_logits_sha256 = _ch47_steady_decode!(
             ready,
@@ -920,11 +921,13 @@ source_files = [
     "src/io/hf_qwen3_vl.jl",
     "src/data/hf_qwen3_vl_processor.jl",
     "src/models/bf16_accel.jl",
+    "src/models/qwen3_vl_attention_scratch.jl",
     "src/models/qwen3_vl_vision.jl",
     "src/models/qwen3_vl_decoder.jl",
     "src/models/qwen3_vl_cache.jl",
     "src/generation/hf_text_generation.jl",
     "src/generation/qwen3_vl_generation.jl",
+    "ext/LifeAICUDAExt.jl",
     "scripts/verify_qwen3_vl_static_cache_cuda.jl",
     "scripts/qwen3_vl_long_reference_contract.jl",
     "scripts/export_qwen3_vl_long_generation_reference.py",

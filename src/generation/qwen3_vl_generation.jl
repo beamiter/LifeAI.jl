@@ -29,11 +29,26 @@ function _qwen3_vl_generation_stop_ids(parameters, stop_token_ids)
     return stops
 end
 
+function _qwen3_vl_generation_validate_existing_cache(
+    text_parameters,
+    cache::Qwen3VLStaticKVCache,
+)
+    # Validation reuses a seen-storage vector internally. Give it a metadata
+    # wrapper so rejected generation requests do not modify even bookkeeping
+    # fields on the caller's cache. K/V tensors are never copied or written.
+    validation_cache = Qwen3VLStaticKVCache(
+        cache.layers, cache.position, cache.rope_delta, cache.batch_size,
+        cache.capacity,
+    )
+    _validate_qwen3_vl_static_kv_cache(text_parameters, validation_cache)
+    return nothing
+end
+
 function _qwen3_vl_generation_preflight(
     text_parameters,
     stop_token_ids,
     max_new_tokens,
-    cache::Symbol,
+    cache::Union{Symbol,Qwen3VLStaticKVCache},
     static_capacity,
     decode_errors::Symbol,
 )
@@ -45,7 +60,13 @@ function _qwen3_vl_generation_preflight(
         "decode_errors must be :strict or :replace",
     ))
 
-    normalized_capacity = if cache === :dynamic
+    normalized_capacity = if cache isa Qwen3VLStaticKVCache
+        static_capacity === nothing || throw(ArgumentError(
+            "static_capacity cannot be supplied with an existing static cache",
+        ))
+        _qwen3_vl_generation_validate_existing_cache(text_parameters, cache)
+        nothing
+    elseif cache === :dynamic
         static_capacity === nothing || throw(ArgumentError(
             "static_capacity is only valid when cache=:static",
         ))
@@ -62,7 +83,9 @@ function _qwen3_vl_generation_preflight(
             capacity
         end
     else
-        throw(ArgumentError("Qwen3-VL cache must be :dynamic or :static"))
+        throw(ArgumentError(
+            "Qwen3-VL cache must be :dynamic, :static, or Qwen3VLStaticKVCache",
+        ))
     end
 
     stops = _qwen3_vl_generation_stop_ids(text_parameters, stop_token_ids)
@@ -70,6 +93,7 @@ function _qwen3_vl_generation_preflight(
         stops,
         static_capacity=normalized_capacity,
         max_new_tokens=requested,
+        cache_mode=cache isa Qwen3VLStaticKVCache ? :static : cache,
     )
 end
 
@@ -297,6 +321,31 @@ function _qwen3_vl_generation_cache(
     throw(ArgumentError("Qwen3-VL cache must be :dynamic or :static"))
 end
 
+function _qwen3_vl_generation_existing_capacity(cache, required_capacity::Int)
+    if cache isa Qwen3VLStaticKVCache
+        cache.capacity >= required_capacity || throw(ArgumentError(
+            "existing static cache is smaller than the processed generation context",
+        ))
+    end
+    return nothing
+end
+
+function _qwen3_vl_generation_cache(
+    text_parameters,
+    required_capacity::Int,
+    cache::Qwen3VLStaticKVCache,
+    static_capacity,
+)
+    static_capacity === nothing || throw(ArgumentError(
+        "static_capacity cannot be supplied with an existing static cache",
+    ))
+    _qwen3_vl_generation_validate_existing_cache(text_parameters, cache)
+    _qwen3_vl_generation_existing_capacity(cache, required_capacity)
+    # Called only after the complete prompt contract has passed. The new
+    # request reuses allocations and starts from an empty logical prefix.
+    return reset_qwen3_vl_static_kv_cache!(cache)
+end
+
 function _qwen3_vl_generation_prefill(
     text_parameters,
     tokens,
@@ -389,7 +438,10 @@ Token ids use LifeAI's one-based convention. The returned cache therefore
 contains `prompt_length + generated_count - 1` valid tokens unless generation
 stops before a decode is needed. `cache=:static` selects preallocated storage;
 `static_capacity` defaults to the exact processed context. The returned static
-cache can be reset and reused through the low-level static-cache API.
+cache can also be passed as `cache=existing_cache` to start another request
+with the same allocations. Its capacity must fit the new request, and
+`static_capacity` must be omitted. Prompt validation completes before the
+existing cache is reset; a zero-token request also resets it to empty.
 The requested length must fit both physical cache positions and mRoPE
 coordinates before cache allocation or decoder computation begins.
 By default the returned prefill keeps only its last-token logits and layout;
@@ -405,7 +457,7 @@ function generate_hf_qwen3_vl_tokens(
     max_new_tokens::Integer=32,
     stop_token_ids=nothing,
     capture_logits::Bool=false,
-    cache::Symbol=:dynamic,
+    cache::Union{Symbol,Qwen3VLStaticKVCache}=:dynamic,
     static_capacity=nothing,
     capture_prefill_states::Bool=false,
 )
@@ -425,6 +477,7 @@ function generate_hf_qwen3_vl_tokens(
         prompt_length,
         requested,
     )
+    _qwen3_vl_generation_existing_capacity(cache, required_capacity)
     prompt_rope_layout = _qwen3_vl_generation_rope_snapshot(rope_layout)
     prompt_contract = _qwen3_vl_generation_prompt_contract(
         text_parameters,
@@ -455,7 +508,7 @@ function generate_hf_qwen3_vl_tokens(
             trace=Tuple(trace),
             prefill=nothing,
             cache=cache_state,
-            cache_mode=cache,
+            cache_mode=preflight.cache_mode,
         )
     end
 
@@ -501,7 +554,7 @@ function generate_hf_qwen3_vl_tokens(
         trace=Tuple(trace),
         prefill=prefill_result,
         cache=cache_state,
-        cache_mode=cache,
+        cache_mode=preflight.cache_mode,
     )
 end
 
@@ -629,7 +682,9 @@ content-list rendering, per-grid placeholder expansion, tokenizer encoding,
 mRoPE layout, vision tower, cached multimodal prefill, and greedy incremental
 decode. Image content must carry either a local path or an HWC/CHW UInt8 array
 in its `image` field. URL, video, multi-image, padding, and batched generation
-remain explicit non-goals.
+remain explicit non-goals. Pass `cache=existing_cache` to reuse a bounded
+static cache across requests; validation and vision preparation complete before
+the existing cache is reset.
 """
 function generate_hf_qwen3_vl(
     vision_parameters,
@@ -644,7 +699,7 @@ function generate_hf_qwen3_vl(
     decode_errors::Symbol=:replace,
     skip_special_tokens::Bool=true,
     processor_spec::Qwen3VLProcessorSpec=qwen3_vl_processor_spec(),
-    cache::Symbol=:dynamic,
+    cache::Union{Symbol,Qwen3VLStaticKVCache}=:dynamic,
     static_capacity=nothing,
     capture_prefill_states::Bool=false,
 )
@@ -692,12 +747,13 @@ function generate_hf_qwen3_vl(
         spec=processor_spec,
     )
     prompt_ids = encode(tokenizer, expanded_prompt; add_special_tokens=false)
-    _qwen3_vl_generation_prompt_preflight(
+    required_capacity = _qwen3_vl_generation_prompt_preflight(
         text_parameters,
         prompt_ids,
         requested,
         preflight.static_capacity,
     )
+    _qwen3_vl_generation_existing_capacity(cache, required_capacity)
     rope_layout = qwen3_vl_rope_layout(
         prompt_ids,
         processed.grid_thw;

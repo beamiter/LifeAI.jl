@@ -465,6 +465,20 @@ end
             "test_qwen3_vl_mrope.jl",
         ))
     end
+    @testset "Chapter 145 — decode parameter binding" begin
+        include(chapter_test(
+            "episode10_qwen3_vl_efficient_generation",
+            "chapter145_qwen3_vl_parameter_binding",
+            "test_qwen3_vl_parameter_binding.jl",
+        ))
+    end
+    @testset "Chapter 147 — explicit generation cache reuse" begin
+        include(chapter_test(
+            "episode10_qwen3_vl_efficient_generation",
+            "chapter147_qwen3_vl_generation_reuse",
+            "test_qwen3_vl_generation_reuse.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
@@ -485,6 +499,12 @@ end
 
 if lowercase(get(ENV, "LIFEAI_TEST_CUDA", "false")) in ("1", "true", "yes")
     @testset "CUDA episode extensions" begin
+        include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_qwen3_vl_parameter_binding_cuda.jl"))
+        include(chapter_test(
+            "episode10_qwen3_vl_efficient_generation",
+            "chapter146_qwen3_vl_workspace_ownership",
+            "test_qwen3_vl_workspace_ownership_cuda.jl",
+        ))
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter24_qwen3_moe_architecture", "qwen3_moe_device_sparse_dispatch_cuda_test.jl"))
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter28_qwen3_moe_scattered_cache", "qwen3_moe_scattered_cache_cuda_test.jl"))
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter29_qwen3_moe_scattered_reuse", "qwen3_moe_scattered_reuse_cuda_test.jl"))
