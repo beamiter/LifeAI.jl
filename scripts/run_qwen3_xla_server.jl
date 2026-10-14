@@ -31,6 +31,7 @@ options:
   --max-body-bytes N         maximum JSON request body (default: 1048576)
   --allow-non-loopback       explicitly permit a non-loopback bind
   --skip-asset-verification  trust local files without the frozen hash check
+  --quiet-startup            omit detailed session loading progress
   -h, --help                 show this help
 
 The server loads and compiles one Qwen3-8B XLA session, then reuses it for
@@ -52,12 +53,15 @@ function parse_args(args)
         :max_body_bytes => 1024^2,
         :allow_non_loopback => false,
         :skip_asset_verification => false,
+        :quiet_startup => false,
     )
     index = 2
     while index <= length(args)
         option = args[index]
         if option == "--allow-non-loopback"
             options[:allow_non_loopback] = true
+        elseif option == "--quiet-startup"
+            options[:quiet_startup] = true
         elseif option == "--skip-asset-verification"
             options[:skip_asset_verification] = true
         elseif option in ("--host", "--port", "--profile", "--max-body-bytes")
@@ -82,6 +86,17 @@ end
 function format_gib(bytes)
     bytes === nothing && return "unavailable"
     return "$(round(Int(bytes) / 2.0^30; digits=2))GiB"
+end
+
+function report_startup_progress(event)
+    if event.status === :start
+        println(stderr, "startup $(event.stage)…")
+    else
+        println(stderr, "startup $(event.stage) done in " *
+            "$(round(event.seconds; digits=2))s")
+    end
+    flush(stderr)
+    return nothing
 end
 
 model_dir, options = parse_args(ARGS)
@@ -147,6 +162,7 @@ service = load_qwen3_xla_http_service(
     max_body_bytes=Int(options[:max_body_bytes]),
     revision=profile.revision,
     variant=profile.variant,
+    on_progress=options[:quiet_startup] ? nothing : report_startup_progress,
 )
 metrics = service.session.load_metrics
 println(

@@ -717,6 +717,12 @@ function HFQwen3BF16XLASession(;
     )
 end
 
+_qwen3_xla_load_progress(::Nothing, stage, status, seconds=nothing) = nothing
+function _qwen3_xla_load_progress(callback, stage, status, seconds=nothing)
+    callback((; stage, status, seconds))
+    return nothing
+end
+
 """
     load_hf_qwen3_bf16_xla_session(
         model_dir;
@@ -725,12 +731,20 @@ end
         strategy=:greedy,
         revision="",
         variant=nothing,
+        on_progress=nothing,
     )
 
 Stream a compact host parameter tree, recursively transfer that tree exactly
 once, allocate static K/V, and compile fixed-shape prefill/decode executables.
 The ordinary unpacked parameter topology is never built or transferred.
 Callers must select the desired Reactant backend before invoking this function.
+
+`on_progress=nothing` keeps library calls silent. An optional callable receives
+`(; stage, status, seconds)` at the start and completion of `:host_load`,
+`:parameter_transfer`, `:runtime_allocation`, `:prefill_compile`, and
+`:decode_compile`. `status` is `:start` or `:done`; `seconds` is `nothing` at
+start and the measured stage duration at completion. Callback time is excluded
+from these stage timings. Callback errors propagate and abort startup.
 """
 function load_hf_qwen3_bf16_xla_session(
     model_dir::AbstractString;
@@ -740,6 +754,7 @@ function load_hf_qwen3_bf16_xla_session(
     sample_top_k=nothing,
     revision::AbstractString="",
     variant=nothing,
+    on_progress=nothing,
 )
     strategy in (:greedy, :sample, :device_sample) || throw(ArgumentError(
         "XLA strategy must be :greedy, :sample, or :device_sample",
@@ -768,6 +783,7 @@ function load_hf_qwen3_bf16_xla_session(
     ))
 
     allocator_before_load = _qwen3_xla_allocator_snapshot()
+    _qwen3_xla_load_progress(on_progress, :host_load, :start)
     load_started = time_ns()
     loaded = load_hf_qwen3_compact_bundle(
         model_dir;
@@ -777,6 +793,7 @@ function load_hf_qwen3_bf16_xla_session(
         variant,
     )
     host_load_seconds = (time_ns() - load_started) / 1.0e9
+    _qwen3_xla_load_progress(on_progress, :host_load, :done, host_load_seconds)
     model = loaded.model
     tokenizer = loaded.tokenizer
     generation_config = loaded.generation_config
@@ -785,9 +802,11 @@ function load_hf_qwen3_bf16_xla_session(
     parameter_tensor_count = _qwen3_xla_tensor_leaves(host_parameters)
     rope = first(values(model.blocks.layers)).attn.rope
 
+    _qwen3_xla_load_progress(on_progress, :parameter_transfer, :start)
     transfer_started = time_ns()
     parameters = Reactant.to_rarray(host_parameters)
     parameter_transfer_seconds = (time_ns() - transfer_started) / 1.0e9
+    _qwen3_xla_load_progress(on_progress, :parameter_transfer, :done, parameter_transfer_seconds)
     allocator_after_parameter_transfer = _qwen3_xla_allocator_snapshot()
 
     # Remove every host reference to the large tree before allocating K/V or
@@ -796,6 +815,7 @@ function load_hf_qwen3_bf16_xla_session(
     host_parameters = nothing
     GC.gc(true)
 
+    _qwen3_xla_load_progress(on_progress, :runtime_allocation, :start)
     runtime_started = time_ns()
     cos_table = Reactant.to_rarray(BFloat16.(rope.cos_cache[:, 1:context]))
     sin_table = Reactant.to_rarray(BFloat16.(rope.sin_cache[:, 1:context]))
@@ -814,6 +834,7 @@ function load_hf_qwen3_bf16_xla_session(
         for _ in 1:model.num_layers
     )
     runtime_allocation_seconds = (time_ns() - runtime_started) / 1.0e9
+    _qwen3_xla_load_progress(on_progress, :runtime_allocation, :done, runtime_allocation_seconds)
     allocator_after_runtime_allocation = _qwen3_xla_allocator_snapshot()
 
     compile_tokens = Reactant.to_rarray(ones(Int, chunk, 1))
@@ -930,6 +951,7 @@ function load_hf_qwen3_bf16_xla_session(
         end
     end
 
+    _qwen3_xla_load_progress(on_progress, :prefill_compile, :start)
     prefill_compile_started = time_ns()
     compiled_prefill = if strategy === :device_sample
         Reactant.@compile prefill_kernel(
@@ -959,7 +981,9 @@ function load_hf_qwen3_bf16_xla_session(
     end
     prefill_compile_seconds =
         (time_ns() - prefill_compile_started) / 1.0e9
+    _qwen3_xla_load_progress(on_progress, :prefill_compile, :done, prefill_compile_seconds)
 
+    _qwen3_xla_load_progress(on_progress, :decode_compile, :start)
     decode_compile_started = time_ns()
     compiled_decode = if strategy === :device_sample
         Reactant.@compile decode_kernel(
@@ -989,6 +1013,7 @@ function load_hf_qwen3_bf16_xla_session(
     end
     decode_compile_seconds =
         (time_ns() - decode_compile_started) / 1.0e9
+    _qwen3_xla_load_progress(on_progress, :decode_compile, :done, decode_compile_seconds)
     allocator_ready = _qwen3_xla_allocator_snapshot()
     load_metrics = (;
         host_load_seconds,

@@ -454,6 +454,39 @@ XLA allocator 默认 fraction 为 `0.87` 且不预分配。首次进程仍需约
 1.5 分钟编译 prefill/decode executable；Reactant 0.2.275 当前只持久化
 autotune cache，不持久化完整 kernel executable。
 
+需要跨请求复用模型时，可启动常驻 HTTP 服务：
+
+```bash
+scripts/launch_qwen3_xla_server.sh /path/to/Qwen3-8B
+```
+
+启动器默认保持 Julia 的 CPU 编译选项。Linux/x86-64 上，Julia 1.12.6 /
+LLVM 18 的 AVX-512-BF16 批量转换可能在 CPU RoPE 表转换阶段报
+`Cannot select ... v16bf16 ... insert_subvector`。遇到该错误时，可显式启用：
+
+```bash
+scripts/launch_qwen3_xla_server.sh /path/to/Qwen3-8B --cpu-bf16-compat
+```
+
+该开关在 Julia 启动前设置 `--cpu-target=native,-avx512bf16`，只调整
+CPU 指令生成；模型权重、GPU 计算和 XLA 缓存仍使用 BF16。
+`LIFEAI_JULIA_BIN=/path/to/julia` 可选择 Julia 可执行文件。也可直接把
+上述 CPU target 参数加到既有 `julia` 启动命令中。
+
+服务会即时输出 host load、参数传输、runtime allocation、prefill compile、
+decode compile 的开始及完成耗时。`--quiet-startup` 可关闭这些详细阶段日志，
+保留原有启动摘要。库函数默认不输出阶段日志；调用
+`load_hf_qwen3_bf16_xla_session` 或 `load_qwen3_xla_http_service` 时，可传入
+`on_progress=event -> ...`，接收 `(; stage, status, seconds)`。开始事件的
+`seconds` 为 `nothing`，完成事件为阶段耗时；回调抛错会终止加载。
+
+在需要固定 Julia CUDA.jl toolkit 的环境，可将
+`configs/deployment/LocalPreferences.cuda12_9.example.toml` 中的配置合并到
+仓库根目录的 `LocalPreferences.toml`，再启动新的 Julia 进程。
+示例选择 12.9，但不会改变其他用户的默认配置；实际版本应与驱动和可用
+artifacts 匹配。该偏好不设置 Reactant_jll 自带 XLA 的 CUDA toolkit。
+`LocalPreferences.toml` 是忽略的机器本地文件，请保留已有的其他偏好。
+
 需要 temperature/top-k/top-p sampling 时保留 Chapter 19 CUDA eager 入口：
 
 ```bash

@@ -96,3 +96,6 @@ benchmark_results/chapter42_qwen3_environment_memory/writer_attempts/*
 benchmark_results/chapter42_qwen3_environment_memory_pilot_attempt001/*
 !benchmark_results/chapter42_qwen3_environment_memory_pilot_attempt001/failure.json
 !benchmark_results/chapter42_qwen3_environment_memory_pilot_attempt001/environment-memory.jsonl
+
+# Machine-local CUDA preferences; copy the deployment example when needed.
+LocalPreferences.toml

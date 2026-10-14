@@ -190,7 +190,8 @@ end
 
 Load and compile one production BF16 XLA session, then expose it through the
 injectable HTTP service core. Callers must select the Reactant backend before
-calling this function.
+calling this function. `on_progress` is forwarded to the session loader;
+it defaults to `nothing` and does not affect request handling.
 """
 function load_qwen3_xla_http_service(
     model_dir::AbstractString;
@@ -201,6 +202,7 @@ function load_qwen3_xla_http_service(
     max_body_bytes::Integer=1024^2,
     revision::AbstractString="",
     variant=nothing,
+    on_progress=nothing,
 )
     loader = () -> load_hf_qwen3_bf16_xla_session(
         model_dir;
@@ -209,6 +211,7 @@ function load_qwen3_xla_http_service(
         strategy=:greedy,
         revision,
         variant,
+        on_progress,
     )
     return Qwen3XLAHTTPService(;
         loader,

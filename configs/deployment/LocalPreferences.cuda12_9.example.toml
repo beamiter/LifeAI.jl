@@ -1,0 +1,10 @@
+# Optional preferences for the Julia CUDA.jl backend. Copy to the repository's
+# LocalPreferences.toml before starting Julia; merge with existing preferences.
+# Select a toolkit compatible with your driver and locally available artifacts.
+# This does not select the CUDA toolkit bundled by Reactant_jll's XLA backend.
+
+[CUDA_Runtime_jll]
+version = "12.9"
+
+[CUDA_Compiler_jll]
+version = "12.9"

@@ -119,6 +119,7 @@ end
 
     @testset "Chapter 21 — Resident HTTP service" begin
         include(chapter_test("episode05_deployment_memory_and_sampling", "chapter21_qwen3_xla_resident_service", "test_qwen3_resident_http_service.jl"))
+        include(joinpath(LIFEAI_TEST_ROOT, "test_qwen3_xla_startup.jl"))
     end
 
     @testset "Chapter 22 — Embedding and semantic memory" begin
