@@ -65,6 +65,19 @@ Base.getindex(::OversizedSamplingVector, ::Int) = 0.0f0
     @test findall(isfinite, top_k_only) == [1, 2]
     @test top_k_probabilities[3:4] == zeros(Float32, 2)
 
+    for p in (1, 1.0f0, 1.0)
+        tail_scores, tail_probabilities = _sampling_distribution(Float32[0, -20]; top_p=p)
+        @test all(isfinite, tail_scores)
+        @test all(>(0), tail_probabilities)
+        @test tail_scores == Float32[0, -20]
+        limited, limited_probabilities = _sampling_distribution(Float32[0, -20]; top_k=1, top_p=p)
+        @test findall(isfinite, limited) == [1]
+        @test limited_probabilities == Float32[1, 0]
+    end
+    for invalid in (true, 0, -1, Inf, NaN, 1.01)
+        @test_throws ArgumentError _sampling_distribution(Float32[0, -20]; top_p=invalid)
+    end
+
     nucleus_logits = log.(Float32[0.4, 0.3, 0.2, 0.1])
     filtered, probabilities = _sampling_distribution(nucleus_logits; top_p=0.6)
     @test findall(isfinite, filtered) == [1, 2]

@@ -197,6 +197,8 @@ Chapter 01—147 均已 Closed，Episode 06/07/09 已 Closed，Episode 08/10 已
 
 [`Chapter 147 — Qwen3-VL 显式复用高层生成 cache`](notes/episodes/episode10_qwen3_vl_efficient_generation/chapter147_qwen3_vl_generation_reuse.md) 支持在 token 与原始图文接口中传入 `cache=existing_cache`。完整输入准备通过后才 reset，失败保留旧请求。421 项 CPU 回归通过；真实 RTX 4090 D 上 image → image → text → image 的 token、逐步 logits 和有效 K/V 与 fresh 对照一致，Ready、工作区和 K/V 存储身份保留，独立 cache 地址不重叠。
 
+[`Chapter 148 — Qwen3-VL 可重放采样生成`](notes/episodes/episode10_qwen3_vl_efficient_generation/chapter148_qwen3_vl_sampling.md) 已 Closed：token/raw 图文接口支持 temperature、top-k、top-p、固定 uniform 与采样分布 trace；CPU 专项 `1345/1345` 与 RTX PRO 5000 72GB BF16 的 32/128/256-token fresh/reused 对照通过，逐步 logits、分布和有效 K/V exact，独立采样 oracle 与 top-k=1/greedy 对照通过。DSW 默认集成 `16,825` 项通过；[GPU 报告](benchmark_results/qwen3_vl_sampling/summary.json)。默认 greedy 保持原行为。
+
 [`Chapter 42 — 显式环境事件记忆写回与因果验收`](notes/episodes/episode08_environment_action_loop/chapter42_environment_event_memory.md) 在 ModelScope Qwen3-8B / RTX 4090 D 上让 8 个 full-feedback writer 以 BFS 最短路 `8/8` clean success，显式写出 8 条事件；fresh-load 后 CPU Qwen3-Embedding raw top-1 / exact-spec 都是 `8/8`。三个无中间反馈 reader 臂为 no-memory `0/8`、retrieved `7/8`、等 token 且机械 non-solving 的 mirrored distractor `0/8`，相关记忆相对两组对照的双侧精确 McNemar p 均为 `0.015625`。`grid/08` 是正确检索后的执行失败，不是 retrieval miss；32 条轨迹已在不加载两套模型且不追加 journal 的第二进程完整 replay。环境事件记忆条目已关闭；Episode 08 仍保留跨 adapter timeout / execution failure / e-stop / idempotent action safety 缺口。
 
 [`Chapter 41 — Qwen3 MoE grouped scattered expert-cache dispatch`](notes/episodes/episode06_qwen3_moe_and_model_expansion/chapter41_qwen3_moe_grouped_scattered.md) 在官方 30B 同进程 2-token 与 32-token 三路对照中，让 grouped WMMA 直接读取 generation-safe expert pointer tables；两条 grouped 路径的 prefill/decode logits、逐层 routes 与每次 I/O/cache traffic 全部 exact，并消除 `10.560 / 16.930 GB` logical active concat。它选择的下一架构 Qwen3-VL 已由 Chapter 43 启动并关闭 vision-only 第一阶段。
@@ -318,12 +320,14 @@ Chapter 01—147 均已 Closed，Episode 06/07/09 已 Closed，Episode 08/10 已
 - Qwen3-VL 当前已从 raw PNG/JPEG/RGB image 接到 content-list chat、vision、
   decoder prefill、dynamic KV 与 bounded static KV、增量 decode、可 reset request
   state 和 greedy image-to-text generation；
-  尚无 sampled generation 或 video。真实权重验收仍只覆盖单图、batch 1、
-  sequence 76 和全一 attention mask。256-token HF Float32/CPU oracle 已冻结，但
-  RTX 4090 D 的 BF16 static warmup 在 generated step 79 分叉；同前缀的 Float32
-  CUDA 路径 79/79 与 HF argmax 一致，所以这是 BF16 舍入边界，不是 cache 几何错误。
-  长生成 allocation profile 因此尚未完成。padding/multi-image、长上下文、整条 decode
-  执行图的零分配/静态编译、音频与其他传感器输入也未实现。
+  Chapter 147 已在真实 2B GPU 上验证显式 cache 的图像/文本/图像请求复用。
+  Chapter 148 已实现可重放的 temperature/top-k/top-p 采样，CPU 专项 `1345/1345`
+  及 RTX PRO 5000 72GB BF16 的 32/128/256-token GPU 采样验收通过；DSW 默认
+  集成 suite `16,825` 项通过，章节已 Closed。现有真实权重验收保持单图、batch 1 与全一
+  attention mask 边界。256-token HF Float32/CPU oracle 与 allocation profile 已完成；
+  目前 BF16 自由生成在 step 70 与 HF Float32 分叉，这是已记录的跨 dtype 边界。
+  稳态单步 CPU/GPU 零分配不等于整条生成调用零分配。padding/multi-image、video、
+  长上下文、整条执行图静态编译、音频与其他传感器输入仍未实现。
 - 连续控制、动力学、外部 simulator 与实体机器人 adapter；Chapter 40/42 只有离散确定性 GridWorld，
   生产记忆强制 exact-spec，cross-spec 只用于 diagnostic control。timeout、execution failure、e-stop 与
   idempotent action safety 尚未定义，不等于具备真实设备控制或物理安全。
@@ -459,6 +463,33 @@ autotune cache，不持久化完整 kernel executable。
 ```bash
 scripts/launch_qwen3_xla_server.sh /path/to/Qwen3-8B
 ```
+
+RTX PRO 5000 72GB 的原生 40,960-token profile 与独立输出上限可这样配置：
+
+```bash
+XLA_REACTANT_GPU_MEM_FRACTION=0.95 \
+  scripts/launch_qwen3_xla_server.sh /path/to/Qwen3-8B --cpu-bf16-compat \
+  --profile configs/deployment/qwen3_8b_pro5000_72gb_bf16_xla_40k.json \
+  --max-new-tokens 40896
+```
+
+该 profile 的默认输出仍为 `512`；`--max-new-tokens 40896` 设置服务允许的输出
+上限。请求通过 `options.num_predict` 显式选择更大的预算，省略时仍使用 `512`。
+输入会向上补齐到 `64` token 的 prefill bucket；每次请求必须满足
+`prompt_bucket_tokens + num_predict <= 40960`，因此最大输出预算只适用于输入
+落在一个 bucket 的短请求。上下文与输出预算共用容量，不能同时各取最大值。
+`0.95` 是按显存余量选择的 XLA allocator fraction，不是额外上下文或输出容量；
+可按同卡其他进程的占用调整。
+
+该配置现已在 DSW 的 RTX PRO 5000 72GB 上启动，原 loopback `11435` 服务 ready，
+`load_count=1`，HTTP `6/6` 请求成功。实跑 `40896` prompt + `64` output 的
+prefill/decode 为 `55.9126 / 7.7723` 秒；`64` prompt + `2048` output 的 decode
+为 `99.2522` 秒（`20.6242` tok/s）。最大 `40896` 输出预算已通过请求准入，
+`40897` 被拒绝；这不等于实际生成了 40K 输出。中文 NDJSON streaming 与两个
+CLI 客户端均已实跑。服务进程实测显存 `34,833,694,720` bytes（约 `32.44 GiB`）；
+全机采样峰值 `41,372,614,656` bytes 包含并行 VL 验证进程，不能作为服务独占峰值。
+[完整部署验证报告](benchmark_results/qwen3_8b_pro5000_40k/summary.json) SHA256 为
+`d2d32c47deb1301f073d0a7fcec2566d7e570c7a3a20fcee27da8b60256efbbb`。
 
 启动器默认保持 Julia 的 CPU 编译选项。Linux/x86-64 上，Julia 1.12.6 /
 LLVM 18 的 AVX-512-BF16 批量转换可能在 CPU RoPE 表转换阶段报

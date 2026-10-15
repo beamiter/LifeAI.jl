@@ -145,3 +145,20 @@ end
         @test_skip get(ENV, "LIFEAI_TEST_QWEN3_XLA_STARTUP_GPU", "0") == "1"
     end
 end
+
+@testset "Server CLI accepts a separate output cap" begin
+    server_path = joinpath(_QWEN3_STARTUP_ROOT, "scripts", "run_qwen3_xla_server.jl")
+    source = read(server_path, String)
+    first_definition = findfirst("const DEFAULT_PROFILE =", source)
+    runtime_start = findfirst("\nmodel_dir, options = parse_args(ARGS)", source)
+    cli = Module(gensym(:Qwen3ServerCLI))
+    # Evaluate only CLI definitions, before any model or backend startup.
+    include_string(cli, source[first(first_definition):(first(runtime_start) - 1)], server_path)
+    _, defaults = cli.parse_args(["model"])
+    @test defaults[:max_new_tokens] === nothing
+    _, capped = cli.parse_args(["model", "--max-new-tokens", "40896", "--port", "11435"])
+    @test capped[:max_new_tokens] == 40896
+    @test capped[:port] == 11435
+    @test_throws ErrorException cli.parse_args(["model", "--max-new-tokens"])
+    @test_throws ArgumentError cli.parse_args(["model", "--max-new-tokens", "invalid"])
+end

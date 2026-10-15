@@ -1,4 +1,65 @@
 using MLDataDevices: cpu_device, get_device
+using Random: AbstractRNG, default_rng
+
+function _qwen3_vl_generation_sampling(
+    vocab_size::Int,
+    requested::Int;
+    strategy::Symbol,
+    temperature,
+    top_k,
+    top_p,
+    sample_uniforms,
+    capture_distribution::Bool,
+)
+    strategy in (:greedy, :sample) || throw(ArgumentError(
+        "Qwen3-VL strategy must be :greedy or :sample",
+    ))
+    if strategy === :greedy
+        (temperature === nothing && top_k === nothing && top_p === nothing &&
+         sample_uniforms === nothing && !capture_distribution) ||
+            throw(ArgumentError("sampling options require strategy=:sample"))
+        return (; strategy, temperature=nothing, top_k=nothing, top_p=nothing,
+                uniforms=nothing)
+    end
+
+    resolved_temperature = temperature === nothing ? 1.0f0 : temperature
+    resolved_temperature isa Real && !(resolved_temperature isa Bool) &&
+        isfinite(resolved_temperature) && resolved_temperature > 0 ||
+        throw(ArgumentError("temperature must be a finite positive number"))
+    float_temperature = Float32(resolved_temperature)
+    isfinite(float_temperature) && float_temperature > 0 || throw(ArgumentError(
+        "temperature must remain finite and positive at Float32 sampling precision",
+    ))
+    resolved_top_k = top_k === nothing ? vocab_size :
+        _strict_host_int(top_k, "top_k")
+    resolved_top_k > 0 || throw(ArgumentError("top_k must be positive"))
+    resolved_top_p = top_p === nothing ? 1.0f0 : top_p
+    resolved_top_p isa Real && !(resolved_top_p isa Bool) &&
+        isfinite(resolved_top_p) && 0 < resolved_top_p <= 1 ||
+        throw(ArgumentError("top_p must be finite and in (0, 1]"))
+    float_top_p = Float32(resolved_top_p)
+    isfinite(float_top_p) && 0 < float_top_p <= 1 || throw(ArgumentError(
+        "top_p must remain finite and positive at Float32 sampling precision",
+    ))
+
+    # Own the draw sequence before vision computation or an existing cache is
+    # reset. Preserve explicit Float64 thresholds at their original precision.
+    uniforms = sample_uniforms === nothing ? nothing : collect(sample_uniforms)
+    if uniforms !== nothing
+        uniforms isa AbstractVector || throw(ArgumentError(
+            "sample_uniforms must be a one-dimensional sequence",
+        ))
+        length(uniforms) >= requested || throw(ArgumentError(
+            "sample_uniforms must contain at least max_new_tokens values",
+        ))
+        all(value -> value isa Real && !(value isa Bool) &&
+            isfinite(value) && 0 <= value < 1, uniforms) || throw(ArgumentError(
+                "sample_uniforms values must be finite and in [0, 1)",
+            ))
+    end
+    return (; strategy, temperature=float_temperature, top_k=resolved_top_k,
+            top_p=float_top_p, uniforms)
+end
 
 function _qwen3_vl_generation_stop_ids(parameters, stop_token_ids)
     raw = if stop_token_ids === nothing
@@ -426,9 +487,13 @@ _qwen3_vl_generation_decode(
                                 max_new_tokens=32, stop_token_ids=nothing,
                                 capture_logits=false, cache=:dynamic,
                                 static_capacity=nothing,
-                                capture_prefill_states=false)
+                                capture_prefill_states=false,
+                                strategy=:greedy, temperature=nothing,
+                                top_k=nothing, top_p=nothing,
+                                rng=Random.default_rng(), sample_uniforms=nothing,
+                                capture_distribution=false)
 
-Greedily generate one Qwen3-VL sequence from already-tokenized multimodal
+Generate one Qwen3-VL sequence from already-tokenized multimodal
 prefill inputs. The first output token is selected from the final prefill
 logits. Only that selected token is then appended through incremental decode
 to obtain the next token, avoiding an extra prompt-token decode and the usual
@@ -447,7 +512,15 @@ coordinates before cache allocation or decoder computation begins.
 By default the returned prefill keeps only its last-token logits and layout;
 set `capture_prefill_states=true` to retain full prompt input embeddings and
 final hidden states for diagnostics.
-Generation intentionally supports batch size one and greedy selection only.
+Generation supports batch size one. The default `strategy=:greedy` is
+unchanged. `strategy=:sample` selects host categorical sampling after
+temperature, stable top-k, and top-p filtering, with defaults `1`, the full
+vocabulary, and `1`. Supply an RNG or a `sample_uniforms` sequence with at least
+`max_new_tokens` values in `[0, 1)` for replay independent of RNG algorithms.
+Each sampled trace records the draw and selected probability;
+`capture_distribution=true` also retains the filtered candidates. Sampling
+options are validated before vision work or cache reset and require
+`strategy=:sample`. A zero-token request consumes no random draws.
 """
 function generate_hf_qwen3_vl_tokens(
     text_parameters,
@@ -460,6 +533,13 @@ function generate_hf_qwen3_vl_tokens(
     cache::Union{Symbol,Qwen3VLStaticKVCache}=:dynamic,
     static_capacity=nothing,
     capture_prefill_states::Bool=false,
+    strategy::Symbol=:greedy,
+    temperature=nothing,
+    top_k=nothing,
+    top_p=nothing,
+    rng::AbstractRNG=default_rng(),
+    sample_uniforms=nothing,
+    capture_distribution::Bool=false,
 )
     preflight = _qwen3_vl_generation_preflight(
         text_parameters,
@@ -470,6 +550,10 @@ function generate_hf_qwen3_vl_tokens(
         :replace,
     )
     requested = preflight.max_new_tokens
+    sampling = _qwen3_vl_generation_sampling(
+        text_parameters.spec.vocab_size, requested;
+        strategy, temperature, top_k, top_p, sample_uniforms, capture_distribution,
+    )
     tokens = _qwen3_vl_token_matrix(input_ids)
     prompt_length = size(tokens, 1)
     required_capacity = _qwen3_vl_generation_limits(
@@ -504,7 +588,7 @@ function generate_hf_qwen3_vl_tokens(
             generated_ids,
             token_ids=copy(prompt_ids),
             stop_reason,
-            strategy=:greedy,
+            strategy=sampling.strategy,
             trace=Tuple(trace),
             prefill=nothing,
             cache=cache_state,
@@ -525,11 +609,19 @@ function generate_hf_qwen3_vl_tokens(
     host = cpu_device()
 
     for step in 1:requested
-        token_id, token_trace = _hf_greedy_choice(
-            logits,
-            host,
-            capture_logits,
-        )
+        token_id, token_trace = if sampling.strategy === :greedy
+            _hf_greedy_choice(logits, host, capture_logits)
+        else
+            _hf_sample_choice(
+                logits, host, rng;
+                temperature=sampling.temperature,
+                top_k=sampling.top_k,
+                top_p=sampling.top_p,
+                sample_uniform=sampling.uniforms === nothing ? nothing :
+                    sampling.uniforms[step],
+                capture_logits, capture_distribution,
+            )
+        end
         push!(generated_ids, token_id)
         push!(trace, merge((; step), token_trace))
         if token_id in stops
@@ -550,7 +642,7 @@ function generate_hf_qwen3_vl_tokens(
         generated_ids,
         token_ids=vcat(prompt_ids, generated_ids),
         stop_reason,
-        strategy=:greedy,
+        strategy=sampling.strategy,
         trace=Tuple(trace),
         prefill=prefill_result,
         cache=cache_state,
@@ -679,12 +771,14 @@ end
 
 Run the raw single-image Qwen3-VL chat path: exact image processing,
 content-list rendering, per-grid placeholder expansion, tokenizer encoding,
-mRoPE layout, vision tower, cached multimodal prefill, and greedy incremental
+mRoPE layout, vision tower, cached multimodal prefill, and incremental
 decode. Image content must carry either a local path or an HWC/CHW UInt8 array
 in its `image` field. URL, video, multi-image, padding, and batched generation
 remain explicit non-goals. Pass `cache=existing_cache` to reuse a bounded
 static cache across requests; validation and vision preparation complete before
 the existing cache is reset.
+The `strategy`, sampling options, RNG, and trace options have the same
+semantics as `generate_hf_qwen3_vl_tokens` and are validated before image work.
 """
 function generate_hf_qwen3_vl(
     vision_parameters,
@@ -702,6 +796,13 @@ function generate_hf_qwen3_vl(
     cache::Union{Symbol,Qwen3VLStaticKVCache}=:dynamic,
     static_capacity=nothing,
     capture_prefill_states::Bool=false,
+    strategy::Symbol=:greedy,
+    temperature=nothing,
+    top_k=nothing,
+    top_p=nothing,
+    rng::AbstractRNG=default_rng(),
+    sample_uniforms=nothing,
+    capture_distribution::Bool=false,
 )
     tokenizer.profile === :qwen3_vl_generation || throw(ArgumentError(
         "generate_hf_qwen3_vl requires a Qwen3-VL tokenizer",
@@ -730,6 +831,10 @@ function generate_hf_qwen3_vl(
         decode_errors,
     )
     requested = preflight.max_new_tokens
+    sampling = _qwen3_vl_generation_sampling(
+        text_parameters.spec.vocab_size, requested;
+        strategy, temperature, top_k, top_p, sample_uniforms, capture_distribution,
+    )
 
     message_list = collect(Any, messages)
     image = _qwen3_vl_generation_image(message_list)
@@ -789,6 +894,13 @@ function generate_hf_qwen3_vl(
         cache,
         static_capacity=preflight.static_capacity,
         capture_prefill_states,
+        strategy=sampling.strategy,
+        temperature=sampling.temperature,
+        top_k=sampling.top_k,
+        top_p=sampling.top_p,
+        rng,
+        sample_uniforms=sampling.uniforms,
+        capture_distribution,
     )
     completion = decode(
         tokenizer,

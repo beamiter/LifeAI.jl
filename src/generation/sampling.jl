@@ -113,15 +113,19 @@ function _sampling_distribution(
         isfinite(resolved_top_p) && 0 < resolved_top_p <= 1 || throw(ArgumentError(
             "`top_p` must remain finite and positive at Float32 sampling precision",
         ))
-        # Stable descending rank plus the first cumulative cutoff implements
-        # the smallest nucleus whose probability mass reaches `top_p`.
-        # MergeSort makes exact-score ties deterministic by original index.
-        sorted_ids = sortperm(scores; rev=true, alg=Base.Sort.MergeSort)
-        sorted_probabilities = softmax(scores[sorted_ids])
-        cumulative = cumsum(sorted_probabilities)
-        cutoff = something(findfirst(>=(resolved_top_p), cumulative), length(cumulative))
-        if cutoff < length(sorted_ids)
-            scores[sorted_ids[(cutoff + 1):end]] .= Float32(-Inf)
+        # At p=1 every top-k candidate remains eligible. A rounded Float32
+        # cumulative sum may reach one before small positive tail masses.
+        if resolved_top_p < 1.0f0
+            # Stable descending rank plus the first cumulative cutoff implements
+            # the smallest nucleus whose probability mass reaches `top_p`.
+            # MergeSort makes exact-score ties deterministic by original index.
+            sorted_ids = sortperm(scores; rev=true, alg=Base.Sort.MergeSort)
+            sorted_probabilities = softmax(scores[sorted_ids])
+            cumulative = cumsum(sorted_probabilities)
+            cutoff = something(findfirst(>=(resolved_top_p), cumulative), length(cumulative))
+            if cutoff < length(sorted_ids)
+                scores[sorted_ids[(cutoff + 1):end]] .= Float32(-Inf)
+            end
         end
     end
 

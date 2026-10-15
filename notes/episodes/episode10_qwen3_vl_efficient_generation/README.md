@@ -120,6 +120,7 @@ CUDA Graph、零分配 decode 或长上下文部署已经完成。
 100. [`Chapter 145 — Qwen3-VL 静态 decode 的完整参数绑定`](chapter145_qwen3_vl_parameter_binding.md)（Closed）
 101. [`Chapter 146 — Qwen3-VL CUDA 工作区的请求所有权`](chapter146_qwen3_vl_workspace_ownership.md)（Closed）
 102. [`Chapter 147 — Qwen3-VL 显式复用高层生成 cache`](chapter147_qwen3_vl_generation_reuse.md)（Closed）
+103. [`Chapter 148 — Qwen3-VL 可重放采样生成`](chapter148_qwen3_vl_sampling.md)（Closed；CPU/GPU 与 DSW 默认集成 `16,825` 项通过）
 
 ## 预期能力变化
 
@@ -133,6 +134,9 @@ CUDA Graph、零分配 decode 或长上下文部署已经完成。
   记账，再以真实 GPU 长生成证据决定下一章优化对象。
 
 ## 当前进展
+
+Chapter 147 已完成真实 2B GPU 的显式请求 cache 复用；Chapter 148 继续把高层 token/raw 图文接口扩展为可重放采样。temperature/top-k/top-p、固定 uniform、RNG 与 distribution trace 的 CPU 专项 `1345/1345` 已通过。真实 RTX PRO 5000 72GB BF16 的 32/128/256-token sampling 与复用已通过，逐步 logits、分布与有效 K/V exact，独立 oracle 和 top-k=1/greedy 对照通过。[报告](../../../benchmark_results/qwen3_vl_sampling/summary.json) 冻结模型、源码与随机流 provenance。DSW 默认集成 suite `16,825` 项通过，Chapter 148 于 2026-10-15 Closed；Episode 10 继续 Open。默认 greedy 及已记录的 BF16/HF Float32 数值边界不变。
+
 
 Chapter 46 已 Closed。`Qwen3VLStaticKVCache` 为每层预分配
 `(head_dim, kv_heads, capacity, batch)` K/V，`position` 只标记有效 prefix；prefill
@@ -235,7 +239,7 @@ prefix 仍与 HF exact，128/256 仍在 step 70 分叉。最终 logits 没有升
 - 识别并有界复用主要 per-token decoder workspace；若暂不消除，必须量化并记录
   剩余分配来源，不能把 fixed K/V storage 写成 whole-loop zero allocation。
 - 为 BF16 strict oracle、长上下文和失败恢复建立各自的门禁；batch/padding、
-  multi-image/video 与 sampling 若不在本卷处理，继续作为显式非目标保留。
+  multi-image/video 继续作为显式边界；sampling 已由 Chapter 148 开始处理，需独立验收。
 
 ## 为什么仍是 Open
 

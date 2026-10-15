@@ -28,6 +28,7 @@ options:
   --host HOST                bind address (default: 127.0.0.1)
   --port PORT                listen port (default: 11435)
   --profile PATH             deployment profile
+  --max-new-tokens N         output cap (default: profile max_new_tokens)
   --max-body-bytes N         maximum JSON request body (default: 1048576)
   --allow-non-loopback       explicitly permit a non-loopback bind
   --skip-asset-verification  trust local files without the frozen hash check
@@ -37,6 +38,8 @@ options:
 The server loads and compiles one Qwen3-8B XLA session, then reuses it for
 every request. It implements GET /healthz and a strict POST /api/generate
 subset. The default port intentionally differs from Ollama's 11434.
+Raising --max-new-tokens preserves the profile default for requests that omit
+options.num_predict. Explicit requests must still fit the padded context window.
 """)
 end
 
@@ -50,6 +53,7 @@ function parse_args(args)
         :host => "127.0.0.1",
         :port => 11435,
         :profile => DEFAULT_PROFILE,
+        :max_new_tokens => nothing,
         :max_body_bytes => 1024^2,
         :allow_non_loopback => false,
         :skip_asset_verification => false,
@@ -64,11 +68,11 @@ function parse_args(args)
             options[:quiet_startup] = true
         elseif option == "--skip-asset-verification"
             options[:skip_asset_verification] = true
-        elseif option in ("--host", "--port", "--profile", "--max-body-bytes")
+        elseif option in ("--host", "--port", "--profile", "--max-body-bytes", "--max-new-tokens")
             index < length(args) || error("$option requires a value")
             value = args[index + 1]
             key = Symbol(replace(option[3:end], "-" => "_"))
-            options[key] = option in ("--port", "--max-body-bytes") ?
+            options[key] = option in ("--port", "--max-body-bytes", "--max-new-tokens") ?
                 parse(Int, value) : value
             index += 1
         elseif option in ("-h", "--help")
@@ -120,6 +124,9 @@ profile.variant === :qwen3_8b ||
     error("the resident XLA server requires the qwen3_8b variant")
 profile.strategy === :greedy ||
     error("the resident XLA server currently supports greedy decode only")
+max_new_tokens = something(options[:max_new_tokens], profile.max_new_tokens)
+profile.max_new_tokens <= max_new_tokens < profile.context_tokens ||
+    error("--max-new-tokens must be at least the profile default and less than context_tokens")
 profile.context_tokens % profile.prefill_chunk_tokens == 0 ||
     error("profile context must be divisible by its prefill chunk")
 
@@ -158,7 +165,8 @@ service = load_qwen3_xla_http_service(
     model_id=profile.model_id,
     context_tokens=profile.context_tokens,
     prefill_chunk_tokens=profile.prefill_chunk_tokens,
-    max_new_tokens=profile.max_new_tokens,
+    max_new_tokens,
+    default_new_tokens=profile.max_new_tokens,
     max_body_bytes=Int(options[:max_body_bytes]),
     revision=profile.revision,
     variant=profile.variant,

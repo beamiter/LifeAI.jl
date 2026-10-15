@@ -920,3 +920,54 @@ if lowercase(get(ENV, "LIFEAI_TEST_HTTP_SOCKET", "false")) in
         end
     end
 end
+
+@testset "service output cap and request default are independent" begin
+    requested_outputs = Int[]
+    loads = Ref(0)
+    service = Qwen3XLAHTTPService(;
+        loader=() -> (loads[] += 1; nothing),
+        prompt_encoder=(session, prompt) -> fill(7, length(prompt)),
+        generator=(session, ids, count, callback) -> begin
+            push!(requested_outputs, count)
+            (generated_ids=fill(101, count), completion=repeat("a", count))
+        end,
+        token_decoder=(session, ids) -> fill(UInt8('a'), length(ids)),
+        context_tokens=64, prefill_chunk_tokens=8,
+        max_new_tokens=56, default_new_tokens=8,
+    )
+    request = function (prompt; count=nothing)
+        object = JSON3.read(_qwen3_resident_service_payload(; prompt), Dict{String,Any})
+        delete!(object["options"], "num_predict")
+        count === nothing || (object["options"]["num_predict"] = count)
+        return _qwen3_resident_service_request("POST", "/api/generate";
+            body=JSON3.write(object), content_type="application/json")
+    end
+    @test qwen3_xla_service_status(service).max_new_tokens == 56
+    @test qwen3_xla_service_status(service).default_new_tokens == 8
+    @test qwen3_xla_http_handler(service, request(repeat("x", 49))).status == 200
+    @test requested_outputs == [8]
+    @test qwen3_xla_http_handler(service, request("hi"; count=56)).status == 200
+    @test requested_outputs == [8, 56]
+    over_cap = qwen3_xla_http_handler(service, request("hi"; count=57))
+    @test over_cap.status == 400
+    @test JSON3.read(String(over_cap.body))["code"] == "invalid_num_predict"
+    over_window = qwen3_xla_http_handler(service, request(repeat("x", 49); count=56))
+    @test over_window.status == 400
+    @test JSON3.read(String(over_window.body))["code"] == "context_length_exceeded"
+    @test requested_outputs == [8, 56]
+    @test loads[] == 1
+    @test _qwen3_resident_service_fake_service().service.default_new_tokens == 16
+
+    for invalid in (0, -1, 57, true, big(typemax(Int)) + 1)
+        attempted_loads = Ref(0)
+        @test_throws ArgumentError Qwen3XLAHTTPService(;
+            loader=() -> (attempted_loads[] += 1),
+            context_tokens=64, prefill_chunk_tokens=8,
+            max_new_tokens=56, default_new_tokens=invalid)
+        @test attempted_loads[] == 0
+    end
+    # Production loader wiring also rejects the default before touching assets.
+    @test_throws ArgumentError LifeAI.load_qwen3_xla_http_service("/missing/model";
+        context_tokens=64, prefill_chunk_tokens=8,
+        max_new_tokens=56, default_new_tokens=57)
+end

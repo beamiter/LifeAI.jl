@@ -1,0 +1,298 @@
+{
+  "passed": true,
+  "device": "NVIDIA RTX PRO 5000 72GB Blackwell",
+  "allocator_fraction": 0.95,
+  "native_context": {
+    "passed": true,
+    "context_tokens": 40960,
+    "max_new_tokens": 40896,
+    "default_new_tokens": 512,
+    "load_count": 1,
+    "full_window": {
+      "prompt_tokens": 40896,
+      "generated_tokens": 64,
+      "final_cache_position": 40959,
+      "prefill_seconds": 55.91261355,
+      "decode_seconds": 7.772339182,
+      "token_sha256": "beead4e9c1329492cfce526cea7e8ff11a8d58c48a75d7e81e1407a032e0a060"
+    },
+    "long_output": {
+      "prompt_tokens": 64,
+      "generated_tokens": 2048,
+      "final_cache_position": 2111,
+      "prefill_seconds": 0.080502255,
+      "decode_seconds": 99.252216709,
+      "tokens_per_second": 20.62422450474481,
+      "token_sha256": "6d9513984f6953900b5898459ab46a9eb6819812116d46f48acc638b31815417"
+    },
+    "max_output_plan_validated": true,
+    "max_output_plus_one_rejected": true,
+    "memory_before": {
+      "total_bytes": 76981207040,
+      "used_bytes": 34824257536,
+      "free_bytes": 41545629696,
+      "process_used_bytes": 34810626048
+    },
+    "memory_full_window": {
+      "total_bytes": 76981207040,
+      "used_bytes": 34847326208,
+      "free_bytes": 41522561024,
+      "process_used_bytes": 34833694720
+    },
+    "memory_after": {
+      "total_bytes": 76981207040,
+      "used_bytes": 35236347904,
+      "free_bytes": 41132490752,
+      "process_used_bytes": 34833694720
+    },
+    "allocator": {
+      "host_load_seconds": 56.918721699,
+      "parameter_transfer_seconds": 1.908415409,
+      "runtime_allocation_seconds": 1.383101164,
+      "prefill_compile_seconds": 87.471772367,
+      "decode_compile_seconds": 35.904386386,
+      "parameter_logical_bytes": 16381470720,
+      "parameter_tensor_count": 291,
+      "device_parameter_tree_count": 1,
+      "device_parameter_tree_transfer_count": 1,
+      "original_parameter_tree_constructed": false,
+      "original_parameter_tree_transferred": false,
+      "separate_packed_projection_tree_transferred": false,
+      "allocator_before_load": {
+        "num_allocs": 0,
+        "bytes_in_use": 0,
+        "peak_bytes_in_use": 0,
+        "largest_alloc_size": 0,
+        "bytes_limit": 72550973440,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "bytes_reservable_limit": null,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 0,
+        "peak_pool_bytes": 0
+      },
+      "allocator_after_parameter_transfer": {
+        "num_allocs": 291,
+        "bytes_in_use": 16495444480,
+        "peak_bytes_in_use": 16495444480,
+        "largest_alloc_size": 1244659712,
+        "bytes_limit": 72550973440,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "bytes_reservable_limit": null,
+        "largest_free_block_bytes": 684424704,
+        "pool_bytes": 17179869184,
+        "peak_pool_bytes": 17179869184
+      },
+      "allocator_after_runtime_allocation": {
+        "num_allocs": 365,
+        "bytes_in_use": 22548578304,
+        "peak_bytes_in_use": 22548578304,
+        "largest_alloc_size": 1244659712,
+        "bytes_limit": 72550973440,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "bytes_reservable_limit": null,
+        "largest_free_block_bytes": 11811160064,
+        "pool_bytes": 34359738368,
+        "peak_pool_bytes": 34359738368
+      },
+      "allocator_ready": {
+        "num_allocs": 1126,
+        "bytes_in_use": 22548743936,
+        "peak_bytes_in_use": 23144335360,
+        "largest_alloc_size": 1244659712,
+        "bytes_limit": 72550973440,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "bytes_reservable_limit": null,
+        "largest_free_block_bytes": 11810994432,
+        "pool_bytes": 34359738368,
+        "peak_pool_bytes": 34359738368
+      }
+    }
+  },
+  "http": {
+    "passed": true,
+    "health_before": {
+      "status": "ok",
+      "ready": true,
+      "model": "Qwen/Qwen3-8B",
+      "context_tokens": 40960,
+      "max_new_tokens": 40896,
+      "default_new_tokens": 512,
+      "load_seconds": 187.537856949,
+      "load_count": 1,
+      "requests": {
+        "total": 0,
+        "completed": 0,
+        "failed": 0,
+        "queued": 0,
+        "active": 0,
+        "max_active": 0
+      }
+    },
+    "health_after": {
+      "status": "ok",
+      "ready": true,
+      "model": "Qwen/Qwen3-8B",
+      "context_tokens": 40960,
+      "max_new_tokens": 40896,
+      "default_new_tokens": 512,
+      "load_seconds": 187.537856949,
+      "load_count": 1,
+      "requests": {
+        "total": 4,
+        "completed": 4,
+        "failed": 0,
+        "queued": 0,
+        "active": 0,
+        "max_active": 1
+      }
+    },
+    "max_output_request": {
+      "text": "4",
+      "metrics": {
+        "model": "Qwen/Qwen3-8B",
+        "response": "4",
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 267169332,
+        "load_duration": 0,
+        "prompt_eval_count": 26,
+        "prompt_eval_duration": 89135021,
+        "eval_count": 2,
+        "eval_duration": 49535007,
+        "lifeai": {
+          "request_id": 1,
+          "queue_duration_ns": 920,
+          "prefill_seconds": 0.089135021,
+          "decode_seconds": 0.049535007,
+          "decode_token_count": 1,
+          "decode_tokens_per_second": 20.187743185339613,
+          "prompt_bucket_tokens": 64,
+          "cache_tokens": 65
+        }
+      }
+    },
+    "default_output_request": {
+      "text": "6",
+      "metrics": {
+        "model": "Qwen/Qwen3-8B",
+        "response": "6",
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 131051247,
+        "load_duration": 0,
+        "prompt_eval_count": 26,
+        "prompt_eval_duration": 80755025,
+        "eval_count": 2,
+        "eval_duration": 49703409,
+        "lifeai": {
+          "request_id": 2,
+          "queue_duration_ns": 490,
+          "prefill_seconds": 0.080755025,
+          "decode_seconds": 0.049703409,
+          "decode_token_count": 1,
+          "decode_tokens_per_second": 20.119344329078114,
+          "prompt_bucket_tokens": 64,
+          "cache_tokens": 65
+        }
+      }
+    },
+    "chinese": {
+      "text": "我是通义千问，一个由通义实验室研发的超大规模语言模型，能够帮助用户进行各种文本生成、回答问题和创作任务。",
+      "metrics": {
+        "model": "Qwen/Qwen3-8B",
+        "response": "我是通义千问，一个由通义实验室研发的超大规模语言模型，能够帮助用户进行各种文本生成、回答问题和创作任务。",
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 1623929643,
+        "load_duration": 0,
+        "prompt_eval_count": 19,
+        "prompt_eval_duration": 80434214,
+        "eval_count": 33,
+        "eval_duration": 1542997147,
+        "lifeai": {
+          "request_id": 3,
+          "queue_duration_ns": 400,
+          "prefill_seconds": 0.080434214,
+          "decode_seconds": 1.542997147,
+          "decode_token_count": 32,
+          "decode_tokens_per_second": 20.73885882564111,
+          "prompt_bucket_tokens": 64,
+          "cache_tokens": 96
+        }
+      }
+    },
+    "streamed": {
+      "text": "我是通义千问，一个由通义实验室研发的超大规模语言模型，能够帮助用户进行各种文本生成、回答问题和创作任务。",
+      "chunks": 33,
+      "metrics": {
+        "model": "Qwen/Qwen3-8B",
+        "response": "",
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 1872829996,
+        "load_duration": 0,
+        "prompt_eval_count": 19,
+        "prompt_eval_duration": 80673376,
+        "eval_count": 33,
+        "eval_duration": 1551009820,
+        "lifeai": {
+          "request_id": 4,
+          "queue_duration_ns": 1260,
+          "prefill_seconds": 0.080673376,
+          "decode_seconds": 1.55100982,
+          "decode_token_count": 32,
+          "decode_tokens_per_second": 20.6317197914324,
+          "prompt_bucket_tokens": 64,
+          "cache_tokens": 96
+        }
+      }
+    },
+    "rejections": [
+      {
+        "error": "options.num_predict must be in 1:40896",
+        "code": "invalid_num_predict"
+      },
+      {
+        "error": "ArgumentError: prompt plus requested output exceeds context_tokens",
+        "code": "context_length_exceeded"
+      }
+    ]
+  },
+  "final_health": {
+    "status": "ok",
+    "ready": true,
+    "model": "Qwen/Qwen3-8B",
+    "context_tokens": 40960,
+    "max_new_tokens": 40896,
+    "default_new_tokens": 512,
+    "load_seconds": 187.537856949,
+    "load_count": 1,
+    "requests": {
+      "total": 6,
+      "completed": 6,
+      "failed": 0,
+      "queued": 0,
+      "active": 0,
+      "max_active": 1
+    }
+  },
+  "memory_trace": {
+    "samples": 2725,
+    "sample_interval_ms": 200,
+    "maximum_device_used_bytes": 41372614656,
+    "minimum_device_free_bytes": 34996224000,
+    "includes_parallel_validation_processes": true,
+    "sha256": "34945ca6ba97b876df6c49662e792b8403a30ccd81085600e16ad7acad688082"
+  },
+  "source_sha256": {
+    "src/generation/qwen3_xla_service.jl": "be2b53b4163c5f837ca6ea586e7aca43145f326d6ba51e2ea0984a064732c486",
+    "src/generation/qwen3_xla_deployment.jl": "b7985e77ce4cdc744208ee5e44ff76b5f710aa0140f5e23f123860e0fd7c2af8",
+    "scripts/run_qwen3_xla_server.jl": "19776763acc5b5b2a8493a517ea44f41649549bfb721bd8505973b3319c7e6b2",
+    "configs/deployment/qwen3_8b_pro5000_72gb_bf16_xla_40k.json": "cb64d135b2262f2d4e58bc0d8f4a357eec927037ec13a8664f5eda3d5431fb4b"
+  },
+  "validation_script_sha256": "7d4cae0ec1f4e4ab6323f3fb2f01042278a8e56bbfb156bb9b4b7e0afa5483f1"
+}

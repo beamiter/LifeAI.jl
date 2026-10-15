@@ -20,6 +20,8 @@ const _QWEN3_XLA_HTTP_SERVICE_VALIDATED = _Qwen3XLAHTTPServiceValidated()
 A process-local HTTP façade around one reusable Qwen3 XLA session. The session
 loader is called by the constructor exactly once. All generation calls share a
 single lock because the underlying static K/V cache is mutated in place.
+`max_new_tokens` is the request output cap; `default_new_tokens` is used when
+`options.num_predict` is omitted and defaults to the cap for compatibility.
 
 The callable contracts are intentionally small so protocol tests can inject a
 fake runtime without loading Reactant or allocating a GPU:
@@ -38,6 +40,7 @@ mutable struct Qwen3XLAHTTPService
     context_tokens::Int
     prefill_chunk_tokens::Int
     max_new_tokens::Int
+    default_new_tokens::Int
     max_body_bytes::Int
     load_seconds::Float64
     load_count::Int
@@ -60,6 +63,7 @@ mutable struct Qwen3XLAHTTPService
         context_tokens::Int,
         prefill_chunk_tokens::Int,
         max_new_tokens::Int,
+        default_new_tokens::Int,
         max_body_bytes::Int,
         load_seconds::Float64,
         load_count::Int,
@@ -81,6 +85,7 @@ mutable struct Qwen3XLAHTTPService
             context_tokens,
             prefill_chunk_tokens,
             max_new_tokens,
+            default_new_tokens,
             max_body_bytes,
             load_seconds,
             load_count,
@@ -135,12 +140,14 @@ function Qwen3XLAHTTPService(;
     context_tokens::Integer=4096,
     prefill_chunk_tokens::Integer=64,
     max_new_tokens::Integer=512,
+    default_new_tokens::Integer=max_new_tokens,
     max_body_bytes::Integer=1024^2,
 )
     model = String(model_id)
     context = _strict_host_int(context_tokens, "context_tokens")
     chunk = _strict_host_int(prefill_chunk_tokens, "prefill_chunk_tokens")
     output = _strict_host_int(max_new_tokens, "max_new_tokens")
+    default_output = _strict_host_int(default_new_tokens, "default_new_tokens")
     body_limit = _strict_host_int(max_body_bytes, "max_body_bytes")
     !isempty(model) || throw(ArgumentError("model_id must not be empty"))
     context > 0 || throw(ArgumentError("context_tokens must be positive"))
@@ -155,6 +162,9 @@ function Qwen3XLAHTTPService(;
     ))
     0 < output < context || throw(ArgumentError(
         "max_new_tokens must be in 1:(context_tokens - 1)",
+    ))
+    0 < default_output <= output || throw(ArgumentError(
+        "default_new_tokens must be in 1:max_new_tokens",
     ))
     body_limit > 0 || throw(ArgumentError("max_body_bytes must be positive"))
 
@@ -171,6 +181,7 @@ function Qwen3XLAHTTPService(;
         context,
         chunk,
         output,
+        default_output,
         body_limit,
         load_seconds,
         1,
@@ -199,6 +210,7 @@ function load_qwen3_xla_http_service(
     context_tokens::Integer=4096,
     prefill_chunk_tokens::Integer=64,
     max_new_tokens::Integer=512,
+    default_new_tokens::Integer=max_new_tokens,
     max_body_bytes::Integer=1024^2,
     revision::AbstractString="",
     variant=nothing,
@@ -219,6 +231,7 @@ function load_qwen3_xla_http_service(
         context_tokens,
         prefill_chunk_tokens,
         max_new_tokens,
+        default_new_tokens,
         max_body_bytes,
     )
 end
@@ -231,6 +244,7 @@ function qwen3_xla_service_status(service::Qwen3XLAHTTPService)
             model=service.model_id,
             context_tokens=service.context_tokens,
             max_new_tokens=service.max_new_tokens,
+            default_new_tokens=service.default_new_tokens,
             load_seconds=service.load_seconds,
             load_count=service.load_count,
             requests=(;
@@ -449,7 +463,7 @@ function _qwen3_service_prepare_generate(
         "options.repeat_last_n must be 0",
     ))
     output = _qwen3_service_integer(
-        get(options, "num_predict", service.max_new_tokens),
+        get(options, "num_predict", service.default_new_tokens),
         "options.num_predict",
     )
     0 < output <= service.max_new_tokens || throw(_qwen3_service_error(

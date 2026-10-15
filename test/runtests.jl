@@ -15,6 +15,8 @@ include(joinpath(LIFEAI_TEST_ROOT, "test_diffusion_sampling.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_sampling_core.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_memory_core.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_semantic_memory_ranking.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "test_qwen3_xla_chat.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "test_qwen3_xla_client_limits.jl"))
 
 chapter_test(episode, chapter, filename) =
     joinpath(LIFEAI_TEST_EPISODES, episode, chapter, filename)
@@ -478,6 +480,13 @@ end
             "episode10_qwen3_vl_efficient_generation",
             "chapter147_qwen3_vl_generation_reuse",
             "test_qwen3_vl_generation_reuse.jl",
+        ))
+    end
+    @testset "Chapter 148 — reproducible sampled generation" begin
+        include(chapter_test(
+            "episode10_qwen3_vl_efficient_generation",
+            "chapter148_qwen3_vl_sampling",
+            "test_qwen3_vl_sampling.jl",
         ))
     end
 end

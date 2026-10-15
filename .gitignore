@@ -99,3 +99,11 @@ benchmark_results/chapter42_qwen3_environment_memory_pilot_attempt001/*
 
 # Machine-local CUDA preferences; copy the deployment example when needed.
 LocalPreferences.toml
+
+# Reproducible Qwen3-VL sampled-generation validation.
+!benchmark_results/qwen3_vl_sampling/
+benchmark_results/qwen3_vl_sampling/*
+!benchmark_results/qwen3_vl_sampling/summary.json
+!benchmark_results/qwen3_8b_pro5000_40k/
+benchmark_results/qwen3_8b_pro5000_40k/*
+!benchmark_results/qwen3_8b_pro5000_40k/summary.json
