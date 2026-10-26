@@ -489,6 +489,18 @@ end
             "test_qwen3_vl_sampling.jl",
         ))
     end
+    @testset "Chapter 149 — multi-image generation" begin
+        include(chapter_test(
+            "episode10_qwen3_vl_efficient_generation",
+            "chapter149_qwen3_vl_multi_image",
+            "test_qwen3_vl_multi_image.jl",
+        ))
+        include(chapter_test(
+            "episode10_qwen3_vl_efficient_generation",
+            "chapter149_qwen3_vl_multi_image",
+            "test_qwen3_vl_attention_context_stride.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

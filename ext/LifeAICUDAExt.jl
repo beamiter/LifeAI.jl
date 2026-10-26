@@ -3318,6 +3318,17 @@ function _qwen3_launch_attention_softmax!(
     return true
 end
 
+function LifeAI._qwen3_vl_attention_weight_prefix!(
+    weight_perm::CUDA.CuArray{BFloat16,3},
+    seq::Int,
+)
+    # The surrounding attention call checks seq against the reserved capacity.
+    # Keep storage, offset, and object identity while packing head columns at
+    # the same leading dimension as dynamic attention's weight matrix.
+    setfield!(weight_perm, :dims, (seq, size(weight_perm, 2), size(weight_perm, 3)))
+    return nothing
+end
+
 function LifeAI._qwen3_vl_device_attention_softmax!(
     ::CUDA.CuArray{BFloat16},
     f32_scores,
@@ -3351,7 +3362,8 @@ function LifeAI._qwen3_vl_device_attention_softmax!(
             existing = _QWEN3_SOFT_RAW[]
             if existing.scores_id != objectid(dense_scores) ||
                     _qwen3_binding_stale(existing.scores.val, dense_scores) ||
-                    _qwen3_binding_stale(existing.f32.val, dense_f32)
+                    _qwen3_binding_stale(existing.f32.val, dense_f32) ||
+                    _qwen3_binding_stale(existing.weight_perm.val, dense_perm)
                 existing.f32.val = _qwen3_device_array(dense_f32)
                 existing.scaled.val = _qwen3_device_array(dense_scaled)
                 existing.scores.val = _qwen3_device_array(dense_scores)

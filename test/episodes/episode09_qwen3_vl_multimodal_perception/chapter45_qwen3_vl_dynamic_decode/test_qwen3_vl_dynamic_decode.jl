@@ -1915,11 +1915,11 @@ end
         role=SubString("xuser", 2),
         content=Any[(type="image", image=image)],
     )]
-    @test LifeAI._qwen3_vl_generation_image(valid_messages) === image
+    @test only(LifeAI._qwen3_vl_generation_images(valid_messages)) === image
 
     for invalid_role in (1, true, :user)
         failure = _ch45_captured_error() do
-            LifeAI._qwen3_vl_generation_image([(
+            LifeAI._qwen3_vl_generation_images([(
                 role=invalid_role,
                 content=Any[(type="image", image=image)],
             )])
@@ -2108,7 +2108,7 @@ end
         Int[],
     )
     small_grid = reshape(Int[1, spec.merge_size, spec.merge_size], 3, 1)
-    long_prompt = fill(1, parameters.spec.max_position_embeddings)
+    long_prompt = fill(1, parameters.spec.max_position_embeddings + 1)
     @test_throws ArgumentError LifeAI._qwen3_vl_generation_visual_token_preflight(
         parameters,
         small_grid,
@@ -2125,11 +2125,11 @@ end
     )
 end
 
-@testset "Chapter 45 — direct tokens combined horizon preflight" begin
+@testset "Chapter 45 — direct tokens physical horizon preflight" begin
     parameters = _ch45_tiny_text_parameters()
     inputs = _ch45_tiny_prefill_inputs()
     limit = parameters.spec.max_position_embeddings
-    prompt_len = limit - count(inputs.rope_layout.visual_mask)
+    prompt_len = limit
     long_ids = fill(1, prompt_len)
     long_mask = falses(prompt_len, 1)
     long_mask[1:4, 1] .= true
@@ -2155,7 +2155,7 @@ end
         long_ids,
         long_layout;
         vision_features=(; visual_embeddings, deepstack),
-        max_new_tokens=1,
+        max_new_tokens=2,
     )
 end
 
@@ -2163,7 +2163,7 @@ end
     parameters = _ch45_tiny_text_parameters()
     inputs = _ch45_tiny_prefill_inputs()
     limit = parameters.spec.max_position_embeddings
-    prompt_len = limit - count(inputs.rope_layout.visual_mask) + 1
+    prompt_len = limit + 1
     long_ids = fill(1, prompt_len)
     long_mask = falses(prompt_len, 1)
     long_mask[1:4, 1] .= true

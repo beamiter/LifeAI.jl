@@ -121,6 +121,7 @@ CUDA Graph、零分配 decode 或长上下文部署已经完成。
 101. [`Chapter 146 — Qwen3-VL CUDA 工作区的请求所有权`](chapter146_qwen3_vl_workspace_ownership.md)（Closed）
 102. [`Chapter 147 — Qwen3-VL 显式复用高层生成 cache`](chapter147_qwen3_vl_generation_reuse.md)（Closed）
 103. [`Chapter 148 — Qwen3-VL 可重放采样生成`](chapter148_qwen3_vl_sampling.md)（Closed；CPU/GPU 与 DSW 默认集成 `16,825` 项通过）
+104. [`Chapter 149 — Qwen3-VL 多图生成与上下文预算`](chapter149_qwen3_vl_multi_image.md)（Closed；双图 CPU/真实 GPU 验收通过，并修复 BF16 context GEMM 步长差异）
 
 ## 预期能力变化
 
@@ -239,7 +240,7 @@ prefix 仍与 HF exact，128/256 仍在 step 70 分叉。最终 logits 没有升
 - 识别并有界复用主要 per-token decoder workspace；若暂不消除，必须量化并记录
   剩余分配来源，不能把 fixed K/V storage 写成 whole-loop zero allocation。
 - 为 BF16 strict oracle、长上下文和失败恢复建立各自的门禁；batch/padding、
-  multi-image/video 继续作为显式边界；sampling 已由 Chapter 148 开始处理，需独立验收。
+  Chapter 149 已完成 raw 双图 CPU/真实 GPU 验收；长多图生成与 video 继续作为显式边界。sampling 已由 Chapter 148 完成独立验收。
 
 ## 为什么仍是 Open
 

@@ -274,13 +274,9 @@ function _qwen3_vl_generation_prompt_contract(
     sequence_length = size(tokens, 1)
     visual_mask = rope_layout.visual_mask
 
-    if max_new_tokens == 0 && vision_features !== nothing
-        visual_count = count(visual_mask)
-        limit = spec.max_position_embeddings
-        sequence_length + visual_count <= limit || throw(ArgumentError(
-            "Qwen3-VL prompt and visual merge exceed max_position_embeddings",
-        ))
-    end
+    # Visual placeholders already occupy positions in the expanded prompt.
+    # Count them once, just like text tokens, in the physical cache budget.
+    _qwen3_vl_generation_limits(spec, sequence_length, max_new_tokens)
     # A zero-token request deliberately skips both vision and text prefill.
     # Its prompt layout is still part of the public input contract, but vision
     # features are not required because they would never be consumed.
@@ -314,11 +310,6 @@ function _qwen3_vl_generation_prompt_contract(
             "Qwen3-VL visual_embeddings must be a matrix",
         ))
         visual_count = count(visual_mask)
-        limit = spec.max_position_embeddings
-        sequence_length + visual_count + max_new_tokens <= limit ||
-            throw(ArgumentError(
-                "Qwen3-VL prompt, visual merge, and generation horizon exceed max_position_embeddings",
-            ))
         size(visual_embeddings, 2) == visual_count || throw(DimensionMismatch(
             "Qwen3-VL main visual feature count does not match image placeholders",
         ))
@@ -650,7 +641,7 @@ function generate_hf_qwen3_vl_tokens(
     )
 end
 
-function _qwen3_vl_generation_image(messages)
+function _qwen3_vl_generation_images(messages)
     images = Any[]
     for message in messages
         role = _hf_message_value(message, :role; required=true)
@@ -688,10 +679,10 @@ function _qwen3_vl_generation_image(messages)
             push!(images, image)
         end
     end
-    length(images) == 1 || throw(ArgumentError(
-        "Qwen3-VL generation requires exactly one image; got $(length(images))",
+    isempty(images) && throw(ArgumentError(
+        "Qwen3-VL raw generation requires at least one image",
     ))
-    return only(images)
+    return images
 end
 
 function _qwen3_vl_generation_process_image(image, processor_spec)
@@ -715,6 +706,22 @@ function _qwen3_vl_generation_process_image(image, processor_spec)
     ))
 end
 
+function _qwen3_vl_generation_process_images(images, processor_spec)
+    isempty(images) && throw(ArgumentError(
+        "Qwen3-VL raw generation requires at least one image",
+    ))
+    # Keep media in exactly the traversal order used by the chat renderer.
+    # Each image owns its resize geometry and patch sequence. The vision tower
+    # uses the grid columns to keep attention isolated between image frames.
+    processed = map(image -> _qwen3_vl_generation_process_image(image, processor_spec), images)
+    return (;
+        pixel_values=reduce(hcat, [item.pixel_values for item in processed]),
+        grid_thw=reduce(hcat, [item.grid_thw for item in processed]),
+        original_sizes=[item.original_size for item in processed],
+        resized_sizes=[item.resized_size for item in processed],
+    )
+end
+
 function _qwen3_vl_generation_visual_token_preflight(
     text_parameters,
     grid_thw,
@@ -722,26 +729,24 @@ function _qwen3_vl_generation_visual_token_preflight(
     max_new_tokens::Int,
     prompt_ids::AbstractVector{<:Integer},
 )
-    visual_tokens = qwen3_vl_image_token_count(
-        (grid_thw[1, 1], grid_thw[2, 1], grid_thw[3, 1]);
-        spec=processor_spec,
-    )
+    size(grid_thw, 1) == 3 && size(grid_thw, 2) > 0 || throw(DimensionMismatch(
+        "Qwen3-VL image grids must have shape (3, image_count) with at least one image",
+    ))
+    visual_tokens = sum(big(qwen3_vl_image_token_count(
+        Tuple(grid_thw[:, image]); spec=processor_spec,
+    )) for image in axes(grid_thw, 2))
     limit = text_parameters.spec.max_position_embeddings
     visual_tokens <= limit ||
         throw(ArgumentError(
             "Qwen3-VL visual merge token count exceeds max_position_embeddings",
         ))
-    prompt_len = length(prompt_ids)
-    if max_new_tokens == 0
-        prompt_len + visual_tokens <= limit || throw(ArgumentError(
-            "Qwen3-VL prompt and visual merge exceed max_position_embeddings",
-        ))
-        return nothing
-    end
-    prompt_len + visual_tokens + max_new_tokens <= limit ||
-        throw(ArgumentError(
-            "Qwen3-VL prompt, visual merge, and generation horizon exceed max_position_embeddings",
-        ))
+    # The mRoPE builder checks the exact placeholder runs against every grid.
+    # This budget check also remains usable for parameter trees without a
+    # checkpoint (for example the independent tiny decoder fixtures).
+    visual_tokens <= length(prompt_ids) || throw(ArgumentError(
+        "Qwen3-VL visual tokens exceed the expanded prompt length",
+    ))
+    _qwen3_vl_generation_limits(text_parameters.spec, length(prompt_ids), max_new_tokens)
     return nothing
 end
 
@@ -769,12 +774,16 @@ end
     generate_hf_qwen3_vl(vision_parameters, text_parameters, tokenizer,
                          messages; max_new_tokens=32, ...)
 
-Run the raw single-image Qwen3-VL chat path: exact image processing,
+Run the raw image Qwen3-VL chat path: exact image processing,
 content-list rendering, per-grid placeholder expansion, tokenizer encoding,
 mRoPE layout, vision tower, cached multimodal prefill, and incremental
 decode. Image content must carry either a local path or an HWC/CHW UInt8 array
-in its `image` field. URL, video, multi-image, padding, and batched generation
-remain explicit non-goals. Pass `cache=existing_cache` to reuse a bounded
+in its `image` field. One or more images may occur in user messages; image
+patches, grid columns, and visual features follow message/content order.
+`original_image_sizes` and `resized_image_sizes` report each image's geometry;
+the legacy singular fields contain a tuple for one image and `nothing` for
+multiple images. URL, video, padding, and batched generation remain explicit
+non-goals. Pass `cache=existing_cache` to reuse a bounded
 static cache across requests; validation and vision preparation complete before
 the existing cache is reset.
 The `strategy`, sampling options, RNG, and trace options have the same
@@ -837,8 +846,8 @@ function generate_hf_qwen3_vl(
     )
 
     message_list = collect(Any, messages)
-    image = _qwen3_vl_generation_image(message_list)
-    processed = _qwen3_vl_generation_process_image(image, processor_spec)
+    images = _qwen3_vl_generation_images(message_list)
+    processed = _qwen3_vl_generation_process_images(images, processor_spec)
     prompt = apply_qwen3_vl_chat_template(
         tokenizer,
         message_list;
@@ -920,8 +929,10 @@ function generate_hf_qwen3_vl(
         completion,
         text,
         image_grid_thw=copy(processed.grid_thw),
-        original_image_size=processed.original_size,
-        resized_image_size=processed.resized_size,
+        original_image_sizes=processed.original_sizes,
+        resized_image_sizes=processed.resized_sizes,
+        original_image_size=length(images) == 1 ? only(processed.original_sizes) : nothing,
+        resized_image_size=length(images) == 1 ? only(processed.resized_sizes) : nothing,
         rope_layout,
     ))
 end

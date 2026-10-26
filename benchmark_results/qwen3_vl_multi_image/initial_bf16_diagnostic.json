@@ -1,0 +1,1422 @@
+{
+    "sample": {
+        "dynamic": {
+            "generated_ids": [
+                786,
+                1379,
+                5336,
+                526,
+                7010,
+                19517,
+                12,
+                715
+            ],
+            "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+            "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+            "distribution_sha256": "639e01744e4a734f46d1b7f512b113e4f62bb424a2358a2e3744fba58345587e",
+            "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+            "position": 157,
+            "rope_delta": -116
+        },
+        "static": {
+            "generated_ids": [
+                786,
+                1379,
+                5336,
+                526,
+                7010,
+                19517,
+                12,
+                715
+            ],
+            "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+            "logits_sha256": "8e7701953c797bdece4cd48f6427fa5f230c03642dd1395f8cf9b25b8b305a76",
+            "distribution_sha256": "639e01744e4a734f46d1b7f512b113e4f62bb424a2358a2e3744fba58345587e",
+            "kv_sha256": "0fd9a208dc6ee119611850847ae900996249805fbff73842a76c51293548fbdd",
+            "position": 157,
+            "rope_delta": -116
+        },
+        "dynamic_static_logits_metrics": [
+            {
+                "max_abs": 0,
+                "mean_abs": 0,
+                "relative_l2": 0,
+                "cosine": 0.9999999999999999
+            },
+            {
+                "max_abs": 0,
+                "mean_abs": 0,
+                "relative_l2": 0,
+                "cosine": 1.0000000000000002
+            },
+            {
+                "max_abs": 0.5,
+                "mean_abs": 0.05067946565382202,
+                "relative_l2": 0.01135543916986017,
+                "cosine": 0.9999361043548293
+            },
+            {
+                "max_abs": 0.25,
+                "mean_abs": 0.04274472945292104,
+                "relative_l2": 0.008547539183982569,
+                "cosine": 0.9999700466410902
+            },
+            {
+                "max_abs": 0.3125,
+                "mean_abs": 0.05084794304995047,
+                "relative_l2": 0.012844659768895483,
+                "cosine": 0.9999240604014935
+            },
+            {
+                "max_abs": 0.265625,
+                "mean_abs": 0.04224528213170464,
+                "relative_l2": 0.008676834269196503,
+                "cosine": 0.9999623850011138
+            },
+            {
+                "max_abs": 0.375,
+                "mean_abs": 0.05254821242449182,
+                "relative_l2": 0.012570429086150926,
+                "cosine": 0.9999217312283923
+            },
+            {
+                "max_abs": 0.375,
+                "mean_abs": 0.047128368362865984,
+                "relative_l2": 0.014106999197145234,
+                "cosine": 0.9999004918548543
+            }
+        ],
+        "dynamic_static_kv": [
+            {
+                "layer": 1,
+                "name": "keys",
+                "differing": 0,
+                "metrics": {
+                    "max_abs": 0,
+                    "mean_abs": 0,
+                    "relative_l2": 0,
+                    "cosine": 0.9999999999999997
+                }
+            },
+            {
+                "layer": 1,
+                "name": "values",
+                "differing": 0,
+                "metrics": {
+                    "max_abs": 0,
+                    "mean_abs": 0,
+                    "relative_l2": 0,
+                    "cosine": 1
+                }
+            },
+            {
+                "layer": 2,
+                "name": "keys",
+                "differing": 0,
+                "metrics": {
+                    "max_abs": 0,
+                    "mean_abs": 0,
+                    "relative_l2": 0,
+                    "cosine": 1
+                }
+            },
+            {
+                "layer": 2,
+                "name": "values",
+                "differing": 0,
+                "metrics": {
+                    "max_abs": 0,
+                    "mean_abs": 0,
+                    "relative_l2": 0,
+                    "cosine": 0.9999999999999999
+                }
+            },
+            {
+                "layer": 3,
+                "name": "keys",
+                "differing": 224,
+                "metrics": {
+                    "max_abs": 0.0625,
+                    "mean_abs": 7.974138115621675e-6,
+                    "relative_l2": 4.219231739812062e-5,
+                    "cosine": 0.9999999991099048
+                }
+            },
+            {
+                "layer": 3,
+                "name": "values",
+                "differing": 369,
+                "metrics": {
+                    "max_abs": 0.001953125,
+                    "mean_abs": 8.313700105923756e-7,
+                    "relative_l2": 0.00014441390858211588,
+                    "cosine": 0.999999989572323
+                }
+            },
+            {
+                "layer": 4,
+                "name": "keys",
+                "differing": 1852,
+                "metrics": {
+                    "max_abs": 0.5,
+                    "mean_abs": 8.001452561017055e-5,
+                    "relative_l2": 0.00042315823895622176,
+                    "cosine": 0.9999999104687562
+                }
+            },
+            {
+                "layer": 4,
+                "name": "values",
+                "differing": 2454,
+                "metrics": {
+                    "max_abs": 0.015625,
+                    "mean_abs": 2.300827721338482e-5,
+                    "relative_l2": 0.0006092951762428908,
+                    "cosine": 0.9999998143843337
+                }
+            },
+            {
+                "layer": 5,
+                "name": "keys",
+                "differing": 2291,
+                "metrics": {
+                    "max_abs": 1,
+                    "mean_abs": 0.00019667724111847057,
+                    "relative_l2": 0.0005262350721549964,
+                    "cosine": 0.9999998617031964
+                }
+            },
+            {
+                "layer": 5,
+                "name": "values",
+                "differing": 3014,
+                "metrics": {
+                    "max_abs": 0.015625,
+                    "mean_abs": 4.424460552585353e-5,
+                    "relative_l2": 0.0010600676176226646,
+                    "cosine": 0.9999994381321299
+                }
+            },
+            {
+                "layer": 6,
+                "name": "keys",
+                "differing": 2793,
+                "metrics": {
+                    "max_abs": 0.75,
+                    "mean_abs": 0.0002433103123667893,
+                    "relative_l2": 0.0007051238472197246,
+                    "cosine": 0.9999997515660521
+                }
+            },
+            {
+                "layer": 6,
+                "name": "values",
+                "differing": 3335,
+                "metrics": {
+                    "max_abs": 0.021484375,
+                    "mean_abs": 7.177394841483254e-5,
+                    "relative_l2": 0.001449801044064755,
+                    "cosine": 0.9999989491956085
+                }
+            },
+            {
+                "layer": 7,
+                "name": "keys",
+                "differing": 2857,
+                "metrics": {
+                    "max_abs": 0.5,
+                    "mean_abs": 0.0002827410864981876,
+                    "relative_l2": 0.0008182386601597145,
+                    "cosine": 0.9999996652811066
+                }
+            },
+            {
+                "layer": 7,
+                "name": "values",
+                "differing": 3516,
+                "metrics": {
+                    "max_abs": 0.0234375,
+                    "mean_abs": 7.945042886551779e-5,
+                    "relative_l2": 0.0017286156049494152,
+                    "cosine": 0.9999985068994703
+                }
+            },
+            {
+                "layer": 8,
+                "name": "keys",
+                "differing": 3053,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.0002460449364534609,
+                    "relative_l2": 0.0007286619982955637,
+                    "cosine": 0.9999997345978803
+                }
+            },
+            {
+                "layer": 8,
+                "name": "values",
+                "differing": 3582,
+                "metrics": {
+                    "max_abs": 0.046875,
+                    "mean_abs": 0.00013546792754701747,
+                    "relative_l2": 0.0020413442593963226,
+                    "cosine": 0.9999979165162333
+                }
+            },
+            {
+                "layer": 9,
+                "name": "keys",
+                "differing": 3208,
+                "metrics": {
+                    "max_abs": 0.125,
+                    "mean_abs": 0.00028756836275006554,
+                    "relative_l2": 0.001221640039434632,
+                    "cosine": 0.9999992539288506
+                }
+            },
+            {
+                "layer": 9,
+                "name": "values",
+                "differing": 3619,
+                "metrics": {
+                    "max_abs": 0.03515625,
+                    "mean_abs": 0.000158705700976347,
+                    "relative_l2": 0.0018203344105027098,
+                    "cosine": 0.999998343537717
+                }
+            },
+            {
+                "layer": 10,
+                "name": "keys",
+                "differing": 3132,
+                "metrics": {
+                    "max_abs": 0.15625,
+                    "mean_abs": 0.0002851171454616413,
+                    "relative_l2": 0.0008923974226707852,
+                    "cosine": 0.9999996018199728
+                }
+            },
+            {
+                "layer": 10,
+                "name": "values",
+                "differing": 3665,
+                "metrics": {
+                    "max_abs": 0.0625,
+                    "mean_abs": 0.0002335071278985139,
+                    "relative_l2": 0.002549954162776556,
+                    "cosine": 0.9999967488659498
+                }
+            },
+            {
+                "layer": 11,
+                "name": "keys",
+                "differing": 3225,
+                "metrics": {
+                    "max_abs": 0.5,
+                    "mean_abs": 0.0003131871129486971,
+                    "relative_l2": 0.0008699369192547801,
+                    "cosine": 0.9999996216088847
+                }
+            },
+            {
+                "layer": 11,
+                "name": "values",
+                "differing": 3670,
+                "metrics": {
+                    "max_abs": 0.0625,
+                    "mean_abs": 0.00021973904667149305,
+                    "relative_l2": 0.002090326764922669,
+                    "cosine": 0.9999978155921143
+                }
+            },
+            {
+                "layer": 12,
+                "name": "keys",
+                "differing": 3189,
+                "metrics": {
+                    "max_abs": 0.1875,
+                    "mean_abs": 0.00032551167829401173,
+                    "relative_l2": 0.0013913973112696105,
+                    "cosine": 0.9999990320610294
+                }
+            },
+            {
+                "layer": 12,
+                "name": "values",
+                "differing": 3615,
+                "metrics": {
+                    "max_abs": 0.0625,
+                    "mean_abs": 0.0002559367685940615,
+                    "relative_l2": 0.0019047290346438765,
+                    "cosine": 0.999998186123737
+                }
+            },
+            {
+                "layer": 13,
+                "name": "keys",
+                "differing": 3373,
+                "metrics": {
+                    "max_abs": 0.5,
+                    "mean_abs": 0.0003339114011662781,
+                    "relative_l2": 0.0010475682529858881,
+                    "cosine": 0.9999994513018623
+                }
+            },
+            {
+                "layer": 13,
+                "name": "values",
+                "differing": 3677,
+                "metrics": {
+                    "max_abs": 0.09765625,
+                    "mean_abs": 0.0003481659397577784,
+                    "relative_l2": 0.0017031279489015873,
+                    "cosine": 0.9999985497250111
+                }
+            },
+            {
+                "layer": 14,
+                "name": "keys",
+                "differing": 3325,
+                "metrics": {
+                    "max_abs": 0.1875,
+                    "mean_abs": 0.00033803644833291414,
+                    "relative_l2": 0.0017113395426843672,
+                    "cosine": 0.9999985356580406
+                }
+            },
+            {
+                "layer": 14,
+                "name": "values",
+                "differing": 3695,
+                "metrics": {
+                    "max_abs": 0.121826171875,
+                    "mean_abs": 0.0004143583778125845,
+                    "relative_l2": 0.0017771741060634914,
+                    "cosine": 0.9999984208973248
+                }
+            },
+            {
+                "layer": 15,
+                "name": "keys",
+                "differing": 3403,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.0003876572201965721,
+                    "relative_l2": 0.0016117555704682947,
+                    "cosine": 0.9999987014304722
+                }
+            },
+            {
+                "layer": 15,
+                "name": "values",
+                "differing": 3722,
+                "metrics": {
+                    "max_abs": 0.125,
+                    "mean_abs": 0.0005562786638712997,
+                    "relative_l2": 0.002008772446939081,
+                    "cosine": 0.9999979824655669
+                }
+            },
+            {
+                "layer": 16,
+                "name": "keys",
+                "differing": 3273,
+                "metrics": {
+                    "max_abs": 0.5,
+                    "mean_abs": 0.0003882006498848557,
+                    "relative_l2": 0.0010582933040794553,
+                    "cosine": 0.9999994404841459
+                }
+            },
+            {
+                "layer": 16,
+                "name": "values",
+                "differing": 3704,
+                "metrics": {
+                    "max_abs": 0.171875,
+                    "mean_abs": 0.0007707090131867274,
+                    "relative_l2": 0.003042330614174035,
+                    "cosine": 0.999995372142497
+                }
+            },
+            {
+                "layer": 17,
+                "name": "keys",
+                "differing": 3268,
+                "metrics": {
+                    "max_abs": 0.203125,
+                    "mean_abs": 0.00034507159974165024,
+                    "relative_l2": 0.0015118579469266607,
+                    "cosine": 0.9999988571431675
+                }
+            },
+            {
+                "layer": 17,
+                "name": "values",
+                "differing": 3694,
+                "metrics": {
+                    "max_abs": 0.1875,
+                    "mean_abs": 0.0007881834379332081,
+                    "relative_l2": 0.0030201478508583533,
+                    "cosine": 0.9999954422592378
+                }
+            },
+            {
+                "layer": 18,
+                "name": "keys",
+                "differing": 3157,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.00030444780732416044,
+                    "relative_l2": 0.0011328822704045496,
+                    "cosine": 0.999999358314944
+                }
+            },
+            {
+                "layer": 18,
+                "name": "values",
+                "differing": 3648,
+                "metrics": {
+                    "max_abs": 0.3671875,
+                    "mean_abs": 0.0013153430810020229,
+                    "relative_l2": 0.002815591978216672,
+                    "cosine": 0.9999960372470587
+                }
+            },
+            {
+                "layer": 19,
+                "name": "keys",
+                "differing": 3174,
+                "metrics": {
+                    "max_abs": 0.125,
+                    "mean_abs": 0.0002917505705812175,
+                    "relative_l2": 0.0013207222853633587,
+                    "cosine": 0.9999991278459994
+                }
+            },
+            {
+                "layer": 19,
+                "name": "values",
+                "differing": 3578,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.0011723097057858849,
+                    "relative_l2": 0.0027920434322782507,
+                    "cosine": 0.999996102647215
+                }
+            },
+            {
+                "layer": 20,
+                "name": "keys",
+                "differing": 3132,
+                "metrics": {
+                    "max_abs": 0.125,
+                    "mean_abs": 0.0002852855309559281,
+                    "relative_l2": 0.0012640565647812313,
+                    "cosine": 0.9999992011890848
+                }
+            },
+            {
+                "layer": 20,
+                "name": "values",
+                "differing": 3621,
+                "metrics": {
+                    "max_abs": 0.43359375,
+                    "mean_abs": 0.0017639541061251027,
+                    "relative_l2": 0.0031147302699100076,
+                    "cosine": 0.999995149261897
+                }
+            },
+            {
+                "layer": 21,
+                "name": "keys",
+                "differing": 3248,
+                "metrics": {
+                    "max_abs": 0.28125,
+                    "mean_abs": 0.00032913143847398697,
+                    "relative_l2": 0.0014283978223953533,
+                    "cosine": 0.9999989798498736
+                }
+            },
+            {
+                "layer": 21,
+                "name": "values",
+                "differing": 3634,
+                "metrics": {
+                    "max_abs": 0.375,
+                    "mean_abs": 0.0019560107949433054,
+                    "relative_l2": 0.00263856545020574,
+                    "cosine": 0.9999965190367697
+                }
+            },
+            {
+                "layer": 22,
+                "name": "keys",
+                "differing": 3320,
+                "metrics": {
+                    "max_abs": 0.375,
+                    "mean_abs": 0.00032386003035435063,
+                    "relative_l2": 0.0014983776198365937,
+                    "cosine": 0.9999988774438651
+                }
+            },
+            {
+                "layer": 22,
+                "name": "values",
+                "differing": 3618,
+                "metrics": {
+                    "max_abs": 1.0625,
+                    "mean_abs": 0.0026894611318352495,
+                    "relative_l2": 0.0029099022366407294,
+                    "cosine": 0.9999957662743677
+                }
+            },
+            {
+                "layer": 23,
+                "name": "keys",
+                "differing": 3491,
+                "metrics": {
+                    "max_abs": 0.125,
+                    "mean_abs": 0.00028352465504293987,
+                    "relative_l2": 0.0014254233583337007,
+                    "cosine": 0.9999989841083722
+                }
+            },
+            {
+                "layer": 23,
+                "name": "values",
+                "differing": 3965,
+                "metrics": {
+                    "max_abs": 0.75,
+                    "mean_abs": 0.003082376092102877,
+                    "relative_l2": 0.0025535674223178526,
+                    "cosine": 0.9999967400885287
+                }
+            },
+            {
+                "layer": 24,
+                "name": "keys",
+                "differing": 4023,
+                "metrics": {
+                    "max_abs": 0.3125,
+                    "mean_abs": 0.00039216380115527255,
+                    "relative_l2": 0.001446830863750538,
+                    "cosine": 0.9999989533722666
+                }
+            },
+            {
+                "layer": 24,
+                "name": "values",
+                "differing": 4661,
+                "metrics": {
+                    "max_abs": 0.875,
+                    "mean_abs": 0.0036033037931296474,
+                    "relative_l2": 0.002959380542905438,
+                    "cosine": 0.9999956216999878
+                }
+            },
+            {
+                "layer": 25,
+                "name": "keys",
+                "differing": 4450,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.0004671703472401306,
+                    "relative_l2": 0.0015370975656694835,
+                    "cosine": 0.9999988186710804
+                }
+            },
+            {
+                "layer": 25,
+                "name": "values",
+                "differing": 5060,
+                "metrics": {
+                    "max_abs": 1.125,
+                    "mean_abs": 0.005173457228833703,
+                    "relative_l2": 0.00325655304903586,
+                    "cosine": 0.9999946987733599
+                }
+            },
+            {
+                "layer": 26,
+                "name": "keys",
+                "differing": 4689,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.00046285811313398327,
+                    "relative_l2": 0.0015656365721158584,
+                    "cosine": 0.9999987744180081
+                }
+            },
+            {
+                "layer": 26,
+                "name": "values",
+                "differing": 5258,
+                "metrics": {
+                    "max_abs": 1.875,
+                    "mean_abs": 0.006536199171452006,
+                    "relative_l2": 0.00314876949958986,
+                    "cosine": 0.9999950465072177
+                }
+            },
+            {
+                "layer": 27,
+                "name": "keys",
+                "differing": 4658,
+                "metrics": {
+                    "max_abs": 0.2233562469482422,
+                    "mean_abs": 0.0004278613509503519,
+                    "relative_l2": 0.0018050886422619969,
+                    "cosine": 0.9999983708695457
+                }
+            },
+            {
+                "layer": 27,
+                "name": "values",
+                "differing": 5419,
+                "metrics": {
+                    "max_abs": 1.3125,
+                    "mean_abs": 0.0071378788157443335,
+                    "relative_l2": 0.0028874690743123893,
+                    "cosine": 0.9999958319987567
+                }
+            },
+            {
+                "layer": 28,
+                "name": "keys",
+                "differing": 4772,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.00040484691975982326,
+                    "relative_l2": 0.0010589783785215834,
+                    "cosine": 0.9999994398645234
+                }
+            },
+            {
+                "layer": 28,
+                "name": "values",
+                "differing": 5430,
+                "metrics": {
+                    "max_abs": 0.875,
+                    "mean_abs": 0.005756759434748607,
+                    "relative_l2": 0.002759752905914016,
+                    "cosine": 0.9999961920739021
+                }
+            }
+        ],
+        "dynamic_raw_tokens_exact": true,
+        "static_raw_tokens_exact": true,
+        "static_reuse_exact": true,
+        "static_reuse_storage_identity": true
+    },
+    "greedy": {
+        "dynamic": {
+            "generated_ids": [
+                786,
+                1379,
+                5336,
+                526,
+                7010,
+                19517,
+                12,
+                715
+            ],
+            "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+            "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+            "distribution_sha256": null,
+            "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+            "position": 157,
+            "rope_delta": -116
+        },
+        "static": {
+            "generated_ids": [
+                786,
+                1379,
+                5336,
+                526,
+                7010,
+                19517,
+                12,
+                715
+            ],
+            "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+            "logits_sha256": "8e7701953c797bdece4cd48f6427fa5f230c03642dd1395f8cf9b25b8b305a76",
+            "distribution_sha256": null,
+            "kv_sha256": "0fd9a208dc6ee119611850847ae900996249805fbff73842a76c51293548fbdd",
+            "position": 157,
+            "rope_delta": -116
+        },
+        "dynamic_static_logits_metrics": [
+            {
+                "max_abs": 0,
+                "mean_abs": 0,
+                "relative_l2": 0,
+                "cosine": 0.9999999999999999
+            },
+            {
+                "max_abs": 0,
+                "mean_abs": 0,
+                "relative_l2": 0,
+                "cosine": 1.0000000000000002
+            },
+            {
+                "max_abs": 0.5,
+                "mean_abs": 0.05067946565382202,
+                "relative_l2": 0.01135543916986017,
+                "cosine": 0.9999361043548293
+            },
+            {
+                "max_abs": 0.25,
+                "mean_abs": 0.04274472945292104,
+                "relative_l2": 0.008547539183982569,
+                "cosine": 0.9999700466410902
+            },
+            {
+                "max_abs": 0.3125,
+                "mean_abs": 0.05084794304995047,
+                "relative_l2": 0.012844659768895483,
+                "cosine": 0.9999240604014935
+            },
+            {
+                "max_abs": 0.265625,
+                "mean_abs": 0.04224528213170464,
+                "relative_l2": 0.008676834269196503,
+                "cosine": 0.9999623850011138
+            },
+            {
+                "max_abs": 0.375,
+                "mean_abs": 0.05254821242449182,
+                "relative_l2": 0.012570429086150926,
+                "cosine": 0.9999217312283923
+            },
+            {
+                "max_abs": 0.375,
+                "mean_abs": 0.047128368362865984,
+                "relative_l2": 0.014106999197145234,
+                "cosine": 0.9999004918548543
+            }
+        ],
+        "dynamic_static_kv": [
+            {
+                "layer": 1,
+                "name": "keys",
+                "differing": 0,
+                "metrics": {
+                    "max_abs": 0,
+                    "mean_abs": 0,
+                    "relative_l2": 0,
+                    "cosine": 0.9999999999999997
+                }
+            },
+            {
+                "layer": 1,
+                "name": "values",
+                "differing": 0,
+                "metrics": {
+                    "max_abs": 0,
+                    "mean_abs": 0,
+                    "relative_l2": 0,
+                    "cosine": 1
+                }
+            },
+            {
+                "layer": 2,
+                "name": "keys",
+                "differing": 0,
+                "metrics": {
+                    "max_abs": 0,
+                    "mean_abs": 0,
+                    "relative_l2": 0,
+                    "cosine": 1
+                }
+            },
+            {
+                "layer": 2,
+                "name": "values",
+                "differing": 0,
+                "metrics": {
+                    "max_abs": 0,
+                    "mean_abs": 0,
+                    "relative_l2": 0,
+                    "cosine": 0.9999999999999999
+                }
+            },
+            {
+                "layer": 3,
+                "name": "keys",
+                "differing": 224,
+                "metrics": {
+                    "max_abs": 0.0625,
+                    "mean_abs": 7.974138115621675e-6,
+                    "relative_l2": 4.219231739812062e-5,
+                    "cosine": 0.9999999991099048
+                }
+            },
+            {
+                "layer": 3,
+                "name": "values",
+                "differing": 369,
+                "metrics": {
+                    "max_abs": 0.001953125,
+                    "mean_abs": 8.313700105923756e-7,
+                    "relative_l2": 0.00014441390858211588,
+                    "cosine": 0.999999989572323
+                }
+            },
+            {
+                "layer": 4,
+                "name": "keys",
+                "differing": 1852,
+                "metrics": {
+                    "max_abs": 0.5,
+                    "mean_abs": 8.001452561017055e-5,
+                    "relative_l2": 0.00042315823895622176,
+                    "cosine": 0.9999999104687562
+                }
+            },
+            {
+                "layer": 4,
+                "name": "values",
+                "differing": 2454,
+                "metrics": {
+                    "max_abs": 0.015625,
+                    "mean_abs": 2.300827721338482e-5,
+                    "relative_l2": 0.0006092951762428908,
+                    "cosine": 0.9999998143843337
+                }
+            },
+            {
+                "layer": 5,
+                "name": "keys",
+                "differing": 2291,
+                "metrics": {
+                    "max_abs": 1,
+                    "mean_abs": 0.00019667724111847057,
+                    "relative_l2": 0.0005262350721549964,
+                    "cosine": 0.9999998617031964
+                }
+            },
+            {
+                "layer": 5,
+                "name": "values",
+                "differing": 3014,
+                "metrics": {
+                    "max_abs": 0.015625,
+                    "mean_abs": 4.424460552585353e-5,
+                    "relative_l2": 0.0010600676176226646,
+                    "cosine": 0.9999994381321299
+                }
+            },
+            {
+                "layer": 6,
+                "name": "keys",
+                "differing": 2793,
+                "metrics": {
+                    "max_abs": 0.75,
+                    "mean_abs": 0.0002433103123667893,
+                    "relative_l2": 0.0007051238472197246,
+                    "cosine": 0.9999997515660521
+                }
+            },
+            {
+                "layer": 6,
+                "name": "values",
+                "differing": 3335,
+                "metrics": {
+                    "max_abs": 0.021484375,
+                    "mean_abs": 7.177394841483254e-5,
+                    "relative_l2": 0.001449801044064755,
+                    "cosine": 0.9999989491956085
+                }
+            },
+            {
+                "layer": 7,
+                "name": "keys",
+                "differing": 2857,
+                "metrics": {
+                    "max_abs": 0.5,
+                    "mean_abs": 0.0002827410864981876,
+                    "relative_l2": 0.0008182386601597145,
+                    "cosine": 0.9999996652811066
+                }
+            },
+            {
+                "layer": 7,
+                "name": "values",
+                "differing": 3516,
+                "metrics": {
+                    "max_abs": 0.0234375,
+                    "mean_abs": 7.945042886551779e-5,
+                    "relative_l2": 0.0017286156049494152,
+                    "cosine": 0.9999985068994703
+                }
+            },
+            {
+                "layer": 8,
+                "name": "keys",
+                "differing": 3053,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.0002460449364534609,
+                    "relative_l2": 0.0007286619982955637,
+                    "cosine": 0.9999997345978803
+                }
+            },
+            {
+                "layer": 8,
+                "name": "values",
+                "differing": 3582,
+                "metrics": {
+                    "max_abs": 0.046875,
+                    "mean_abs": 0.00013546792754701747,
+                    "relative_l2": 0.0020413442593963226,
+                    "cosine": 0.9999979165162333
+                }
+            },
+            {
+                "layer": 9,
+                "name": "keys",
+                "differing": 3208,
+                "metrics": {
+                    "max_abs": 0.125,
+                    "mean_abs": 0.00028756836275006554,
+                    "relative_l2": 0.001221640039434632,
+                    "cosine": 0.9999992539288506
+                }
+            },
+            {
+                "layer": 9,
+                "name": "values",
+                "differing": 3619,
+                "metrics": {
+                    "max_abs": 0.03515625,
+                    "mean_abs": 0.000158705700976347,
+                    "relative_l2": 0.0018203344105027098,
+                    "cosine": 0.999998343537717
+                }
+            },
+            {
+                "layer": 10,
+                "name": "keys",
+                "differing": 3132,
+                "metrics": {
+                    "max_abs": 0.15625,
+                    "mean_abs": 0.0002851171454616413,
+                    "relative_l2": 0.0008923974226707852,
+                    "cosine": 0.9999996018199728
+                }
+            },
+            {
+                "layer": 10,
+                "name": "values",
+                "differing": 3665,
+                "metrics": {
+                    "max_abs": 0.0625,
+                    "mean_abs": 0.0002335071278985139,
+                    "relative_l2": 0.002549954162776556,
+                    "cosine": 0.9999967488659498
+                }
+            },
+            {
+                "layer": 11,
+                "name": "keys",
+                "differing": 3225,
+                "metrics": {
+                    "max_abs": 0.5,
+                    "mean_abs": 0.0003131871129486971,
+                    "relative_l2": 0.0008699369192547801,
+                    "cosine": 0.9999996216088847
+                }
+            },
+            {
+                "layer": 11,
+                "name": "values",
+                "differing": 3670,
+                "metrics": {
+                    "max_abs": 0.0625,
+                    "mean_abs": 0.00021973904667149305,
+                    "relative_l2": 0.002090326764922669,
+                    "cosine": 0.9999978155921143
+                }
+            },
+            {
+                "layer": 12,
+                "name": "keys",
+                "differing": 3189,
+                "metrics": {
+                    "max_abs": 0.1875,
+                    "mean_abs": 0.00032551167829401173,
+                    "relative_l2": 0.0013913973112696105,
+                    "cosine": 0.9999990320610294
+                }
+            },
+            {
+                "layer": 12,
+                "name": "values",
+                "differing": 3615,
+                "metrics": {
+                    "max_abs": 0.0625,
+                    "mean_abs": 0.0002559367685940615,
+                    "relative_l2": 0.0019047290346438765,
+                    "cosine": 0.999998186123737
+                }
+            },
+            {
+                "layer": 13,
+                "name": "keys",
+                "differing": 3373,
+                "metrics": {
+                    "max_abs": 0.5,
+                    "mean_abs": 0.0003339114011662781,
+                    "relative_l2": 0.0010475682529858881,
+                    "cosine": 0.9999994513018623
+                }
+            },
+            {
+                "layer": 13,
+                "name": "values",
+                "differing": 3677,
+                "metrics": {
+                    "max_abs": 0.09765625,
+                    "mean_abs": 0.0003481659397577784,
+                    "relative_l2": 0.0017031279489015873,
+                    "cosine": 0.9999985497250111
+                }
+            },
+            {
+                "layer": 14,
+                "name": "keys",
+                "differing": 3325,
+                "metrics": {
+                    "max_abs": 0.1875,
+                    "mean_abs": 0.00033803644833291414,
+                    "relative_l2": 0.0017113395426843672,
+                    "cosine": 0.9999985356580406
+                }
+            },
+            {
+                "layer": 14,
+                "name": "values",
+                "differing": 3695,
+                "metrics": {
+                    "max_abs": 0.121826171875,
+                    "mean_abs": 0.0004143583778125845,
+                    "relative_l2": 0.0017771741060634914,
+                    "cosine": 0.9999984208973248
+                }
+            },
+            {
+                "layer": 15,
+                "name": "keys",
+                "differing": 3403,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.0003876572201965721,
+                    "relative_l2": 0.0016117555704682947,
+                    "cosine": 0.9999987014304722
+                }
+            },
+            {
+                "layer": 15,
+                "name": "values",
+                "differing": 3722,
+                "metrics": {
+                    "max_abs": 0.125,
+                    "mean_abs": 0.0005562786638712997,
+                    "relative_l2": 0.002008772446939081,
+                    "cosine": 0.9999979824655669
+                }
+            },
+            {
+                "layer": 16,
+                "name": "keys",
+                "differing": 3273,
+                "metrics": {
+                    "max_abs": 0.5,
+                    "mean_abs": 0.0003882006498848557,
+                    "relative_l2": 0.0010582933040794553,
+                    "cosine": 0.9999994404841459
+                }
+            },
+            {
+                "layer": 16,
+                "name": "values",
+                "differing": 3704,
+                "metrics": {
+                    "max_abs": 0.171875,
+                    "mean_abs": 0.0007707090131867274,
+                    "relative_l2": 0.003042330614174035,
+                    "cosine": 0.999995372142497
+                }
+            },
+            {
+                "layer": 17,
+                "name": "keys",
+                "differing": 3268,
+                "metrics": {
+                    "max_abs": 0.203125,
+                    "mean_abs": 0.00034507159974165024,
+                    "relative_l2": 0.0015118579469266607,
+                    "cosine": 0.9999988571431675
+                }
+            },
+            {
+                "layer": 17,
+                "name": "values",
+                "differing": 3694,
+                "metrics": {
+                    "max_abs": 0.1875,
+                    "mean_abs": 0.0007881834379332081,
+                    "relative_l2": 0.0030201478508583533,
+                    "cosine": 0.9999954422592378
+                }
+            },
+            {
+                "layer": 18,
+                "name": "keys",
+                "differing": 3157,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.00030444780732416044,
+                    "relative_l2": 0.0011328822704045496,
+                    "cosine": 0.999999358314944
+                }
+            },
+            {
+                "layer": 18,
+                "name": "values",
+                "differing": 3648,
+                "metrics": {
+                    "max_abs": 0.3671875,
+                    "mean_abs": 0.0013153430810020229,
+                    "relative_l2": 0.002815591978216672,
+                    "cosine": 0.9999960372470587
+                }
+            },
+            {
+                "layer": 19,
+                "name": "keys",
+                "differing": 3174,
+                "metrics": {
+                    "max_abs": 0.125,
+                    "mean_abs": 0.0002917505705812175,
+                    "relative_l2": 0.0013207222853633587,
+                    "cosine": 0.9999991278459994
+                }
+            },
+            {
+                "layer": 19,
+                "name": "values",
+                "differing": 3578,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.0011723097057858849,
+                    "relative_l2": 0.0027920434322782507,
+                    "cosine": 0.999996102647215
+                }
+            },
+            {
+                "layer": 20,
+                "name": "keys",
+                "differing": 3132,
+                "metrics": {
+                    "max_abs": 0.125,
+                    "mean_abs": 0.0002852855309559281,
+                    "relative_l2": 0.0012640565647812313,
+                    "cosine": 0.9999992011890848
+                }
+            },
+            {
+                "layer": 20,
+                "name": "values",
+                "differing": 3621,
+                "metrics": {
+                    "max_abs": 0.43359375,
+                    "mean_abs": 0.0017639541061251027,
+                    "relative_l2": 0.0031147302699100076,
+                    "cosine": 0.999995149261897
+                }
+            },
+            {
+                "layer": 21,
+                "name": "keys",
+                "differing": 3248,
+                "metrics": {
+                    "max_abs": 0.28125,
+                    "mean_abs": 0.00032913143847398697,
+                    "relative_l2": 0.0014283978223953533,
+                    "cosine": 0.9999989798498736
+                }
+            },
+            {
+                "layer": 21,
+                "name": "values",
+                "differing": 3634,
+                "metrics": {
+                    "max_abs": 0.375,
+                    "mean_abs": 0.0019560107949433054,
+                    "relative_l2": 0.00263856545020574,
+                    "cosine": 0.9999965190367697
+                }
+            },
+            {
+                "layer": 22,
+                "name": "keys",
+                "differing": 3320,
+                "metrics": {
+                    "max_abs": 0.375,
+                    "mean_abs": 0.00032386003035435063,
+                    "relative_l2": 0.0014983776198365937,
+                    "cosine": 0.9999988774438651
+                }
+            },
+            {
+                "layer": 22,
+                "name": "values",
+                "differing": 3618,
+                "metrics": {
+                    "max_abs": 1.0625,
+                    "mean_abs": 0.0026894611318352495,
+                    "relative_l2": 0.0029099022366407294,
+                    "cosine": 0.9999957662743677
+                }
+            },
+            {
+                "layer": 23,
+                "name": "keys",
+                "differing": 3491,
+                "metrics": {
+                    "max_abs": 0.125,
+                    "mean_abs": 0.00028352465504293987,
+                    "relative_l2": 0.0014254233583337007,
+                    "cosine": 0.9999989841083722
+                }
+            },
+            {
+                "layer": 23,
+                "name": "values",
+                "differing": 3965,
+                "metrics": {
+                    "max_abs": 0.75,
+                    "mean_abs": 0.003082376092102877,
+                    "relative_l2": 0.0025535674223178526,
+                    "cosine": 0.9999967400885287
+                }
+            },
+            {
+                "layer": 24,
+                "name": "keys",
+                "differing": 4023,
+                "metrics": {
+                    "max_abs": 0.3125,
+                    "mean_abs": 0.00039216380115527255,
+                    "relative_l2": 0.001446830863750538,
+                    "cosine": 0.9999989533722666
+                }
+            },
+            {
+                "layer": 24,
+                "name": "values",
+                "differing": 4661,
+                "metrics": {
+                    "max_abs": 0.875,
+                    "mean_abs": 0.0036033037931296474,
+                    "relative_l2": 0.002959380542905438,
+                    "cosine": 0.9999956216999878
+                }
+            },
+            {
+                "layer": 25,
+                "name": "keys",
+                "differing": 4450,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.0004671703472401306,
+                    "relative_l2": 0.0015370975656694835,
+                    "cosine": 0.9999988186710804
+                }
+            },
+            {
+                "layer": 25,
+                "name": "values",
+                "differing": 5060,
+                "metrics": {
+                    "max_abs": 1.125,
+                    "mean_abs": 0.005173457228833703,
+                    "relative_l2": 0.00325655304903586,
+                    "cosine": 0.9999946987733599
+                }
+            },
+            {
+                "layer": 26,
+                "name": "keys",
+                "differing": 4689,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.00046285811313398327,
+                    "relative_l2": 0.0015656365721158584,
+                    "cosine": 0.9999987744180081
+                }
+            },
+            {
+                "layer": 26,
+                "name": "values",
+                "differing": 5258,
+                "metrics": {
+                    "max_abs": 1.875,
+                    "mean_abs": 0.006536199171452006,
+                    "relative_l2": 0.00314876949958986,
+                    "cosine": 0.9999950465072177
+                }
+            },
+            {
+                "layer": 27,
+                "name": "keys",
+                "differing": 4658,
+                "metrics": {
+                    "max_abs": 0.2233562469482422,
+                    "mean_abs": 0.0004278613509503519,
+                    "relative_l2": 0.0018050886422619969,
+                    "cosine": 0.9999983708695457
+                }
+            },
+            {
+                "layer": 27,
+                "name": "values",
+                "differing": 5419,
+                "metrics": {
+                    "max_abs": 1.3125,
+                    "mean_abs": 0.0071378788157443335,
+                    "relative_l2": 0.0028874690743123893,
+                    "cosine": 0.9999958319987567
+                }
+            },
+            {
+                "layer": 28,
+                "name": "keys",
+                "differing": 4772,
+                "metrics": {
+                    "max_abs": 0.25,
+                    "mean_abs": 0.00040484691975982326,
+                    "relative_l2": 0.0010589783785215834,
+                    "cosine": 0.9999994398645234
+                }
+            },
+            {
+                "layer": 28,
+                "name": "values",
+                "differing": 5430,
+                "metrics": {
+                    "max_abs": 0.875,
+                    "mean_abs": 0.005756759434748607,
+                    "relative_l2": 0.002759752905914016,
+                    "cosine": 0.9999961920739021
+                }
+            }
+        ],
+        "dynamic_raw_tokens_exact": true,
+        "static_raw_tokens_exact": true,
+        "static_reuse_exact": true,
+        "static_reuse_storage_identity": true
+    }
+}

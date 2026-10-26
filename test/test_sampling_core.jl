@@ -1,5 +1,6 @@
 using Test
 using Random: Xoshiro
+using NNlib: softmax
 
 if isdefined(@__MODULE__, :LifeAI)
     using .LifeAI:
@@ -13,6 +14,64 @@ if isdefined(@__MODULE__, :LifeAI)
 else
     include(joinpath(@__DIR__, "..", "src", "generation", "sampling.jl"))
     include(joinpath(@__DIR__, "..", "src", "generation", "xla_sampling.jl"))
+end
+
+@testset "sampling temperature overflow fallback" begin
+    for logits in (Float32[10, 9, 8], Float32[-8, -9, -10],
+                   Float32[floatmax(Float32), 0, -floatmax(Float32)])
+        scores, probabilities = _sampling_distribution(logits;
+            temperature=nextfloat(0.0f0))
+        @test all(isfinite, scores)
+        @test probabilities == [1.0, 0.0, 0.0]
+        @test _sample_categorical(probabilities, prevfloat(1.0)) == 1
+    end
+    for logits in (Float32[10, 10, 9], Float32[-9, -9, -10],
+                   fill(floatmax(Float32), 3))
+        scores, probabilities = _sampling_distribution(logits; temperature=1f-38)
+        @test all(isfinite, scores)
+        expected = logits[1] == logits[3] ? fill(1 / 3, 3) : [0.5, 0.5, 0.0]
+        @test probabilities ≈ expected
+        filtered, kept = _sampling_distribution(logits;
+            temperature=1f-38, top_k=1, top_p=0.5)
+        @test findall(isfinite, filtered) == [1]
+        @test kept == [1, 0, 0]
+    end
+    # Ordinary inputs still return the original, uncentered Float32 scores and
+    # use exactly the existing Float32 softmax path.
+    logits = Float32[4, 3, 2, 1]
+    scores, probabilities = _sampling_distribution(logits; temperature=0.7f0)
+    @test eltype(scores) === Float32
+    @test scores == logits ./ 0.7f0
+    @test probabilities == softmax(logits ./ 0.7f0)
+    for logits in (Float32[Inf, 0], Float32[-Inf, 0], Float32[NaN, 0],
+                   Float64[floatmax(Float64), 0])
+        @test_throws ArgumentError _sampling_distribution(logits; temperature=1f-38)
+    end
+end
+
+if isdefined(@__MODULE__, :LifeAI)
+    @testset "sampling trace preserves overflow fallback precision" begin
+        for (logits, temperature) in ((Float32[10, 10, 9], 1f-38),
+                                      (Float32[4, 3, 2], 0.7f0))
+            for uniform in (prevfloat(0.5), 0.5, prevfloat(1.0))
+                token, trace = LifeAI._hf_sample_choice(
+                    reshape(logits, :, 1, 1), identity, Xoshiro(148);
+                    temperature, top_k=length(logits), top_p=1.0f0,
+                    sample_uniform=uniform, capture_distribution=true,
+                )
+                scores, probabilities = _sampling_distribution(logits; temperature)
+                expected_type = temperature == 0.7f0 ? Float32 : Float64
+                @test eltype(trace.distribution.logits) === expected_type
+                @test eltype(trace.distribution.probabilities) === expected_type
+                @test all(isfinite, trace.distribution.logits)
+                @test trace.distribution.logits == scores
+                @test trace.distribution.probabilities == probabilities
+                @test token == _sample_categorical(probabilities, uniform)
+                @test trace.sampled_probability === probabilities[token]
+                @test trace.candidate_count == length(scores)
+            end
+        end
+    end
 end
 
 struct OversizedSamplingVector <: AbstractVector{Float32} end

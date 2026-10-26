@@ -1,0 +1,585 @@
+{
+    "schema_version": 1,
+    "accepted": true,
+    "model_id": "Qwen/Qwen3-VL-2B-Instruct",
+    "model_dir": "/home/ubuntu/models/modelscope/Qwen/Qwen3-VL-2B-Instruct",
+    "reference_dir": "/tmp/lifeai-ch149-oracle",
+    "device": "NVIDIA GeForce RTX 4090 D",
+    "modelscope_revision": "ae9985b208c074c10cfbe3a61b5cb7268cdc9c53",
+    "huggingface_revision": "78448d793a7eb2f7a987a1da76d464384aa1becd",
+    "model_assets_sha256": {
+        "chat_template.json": "6f8a6a55027e3da5160105556cda5dd69f6423f1c32645f6730d32de7773d0c4",
+        "config.json": "bec4b3d446efa05807365c9e1cec03ac590836879d02f3a6da879971154bdd3b",
+        "generation_config.json": "1e241830b48b397cb0900101421df5450baddc7adf01e5fc86b5615865f3bae4",
+        "model.safetensors": "7de1838c87a5349b016c26a1c3f7d2bc400a3d485f95ef39a7059ffd734977a0",
+        "preprocessor_config.json": "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516",
+        "tokenizer.json": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
+        "tokenizer_config.json": "c2da771801886ad9ae98181793ffd3dfb7f1af30f6f7c6a4e15d7dbba52e2399"
+    },
+    "oracle_compute_device": "cpu",
+    "oracle_metadata_sha256": "d0ce46eb851c371620897d31e72621610852bed26757e3a12e02ba5ef97b83eb",
+    "oracle_tensors_sha256": "b9e7a8735c5c2ab36bb89f9dc7079715fe001027a9bc7552ac49ea468e2e226e",
+    "source_sha256": {
+        "src/data/hf_qwen3_vl_processor.jl": "dac7b90e9d32b6d03105a142fd589574c982ac3c91a85f311054212636034858",
+        "scripts/verify_qwen3_vl_sampling_cuda.jl": "0abcea56bdde942279a70793acc9e887c23d1ecf77cca240d8d2c7f1692b32ef",
+        "scripts/verify_qwen3_vl_multi_image_cuda.jl": "99dfb3f3ce6d88073d650124c317a902d93c3338fe74d824a0557eefc3e967b4",
+        "scripts/export_qwen3_vl_prefill_reference.py": "951ebfd1a7a1eea2f28b803913972e27c6bb76e4bedab6570f34d03a1c962064",
+        "src/generation/qwen3_vl_generation.jl": "f7154dfbeef93d971d1ae665fbde1f618050bb7aad9d141ae6d638ca46708ec7",
+        "src/generation/sampling.jl": "07e03e59c55ade50562053f6905ddadaf645b3ed2d416709b51741c3f5457a60",
+        "src/models/qwen3_vl_attention_scratch.jl": "af0aefe69a0e4ed8e1de0af0f27f73220ac7c0ac7f040dc9893e3441dc85081d",
+        "scripts/export_qwen3_vl_multi_image_reference.py": "0ce6998c387f4ca3f6784ebe69387e98b0fd5791a62be0a2ee6ed3091f8ef4e1",
+        "src/models/qwen3_vl_decoder.jl": "e987921d48c8f3a69b3aecdee2c83485bdeca566e00db92b0052b42a008e968c",
+        "src/models/qwen3_vl_vision.jl": "b5ba8849b1c92c839e4c3b6e2a5d26ca0d996facb29565564b117dd5678e53d2",
+        "src/models/qwen3_vl_cache.jl": "71c89329570a3381f338c961a28896b2d1e991eb72cd05154c443d375642e9f7",
+        "scripts/verify_qwen3_vl_generation_reuse_cuda.jl": "eff9b7af045c9199ced26bb396bf340afad864c56e7406de4fb744eabcbd1606",
+        "src/generation/hf_text_generation.jl": "3ce044f4baefdcbd091985bf110940b13f3e7c6d3fb281afa7f562b797f56499",
+        "scripts/verify_qwen3_vl_static_cache_cuda.jl": "e0c2b76e92053c163c6b29f42314f593d1319fa289d1fdd5a07263fa2470a4bb",
+        "ext/LifeAICUDAExt.jl": "0e454784e4c5278544a6a8f5eed1848552be8c0de7c6512c8d35ab4047b9eb92",
+        "scripts/export_qwen3_vl_decode_reference.py": "a309de0a3bd92c67f5f70821eaaf53ee1be2cafa4199b3fbf108ef7d0cb1f26a"
+    },
+    "uniform_formula": "Float64(mod(104729*i+12345,1048576))/1048576; i=1:TOKENS",
+    "uniforms": [
+        0.11165046691894531,
+        0.21152782440185547,
+        0.3114051818847656,
+        0.4112825393676758,
+        0.5111598968505859,
+        0.6110372543334961,
+        0.7109146118164062,
+        0.8107919692993164
+    ],
+    "dtype_reports": [
+        {
+            "compute_dtype": "Float32",
+            "generated_tokens": 8,
+            "reports": {
+                "sample": {
+                    "raw_dynamic": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "8f6743c14a1916af9af8de21703099d6157126d8584bdba06d8799121dae5974",
+                        "distribution_sha256": "ca12ac0846b08d24c61529c7efd089d44d8949bb85cb5700f854d10a5a7b1c2d",
+                        "kv_sha256": "4739eab8f745378c7fd5ccca3226f4f9798d1bc634d2820720396610607684a9",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "tokens_reused": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "8f6743c14a1916af9af8de21703099d6157126d8584bdba06d8799121dae5974",
+                        "distribution_sha256": "ca12ac0846b08d24c61529c7efd089d44d8949bb85cb5700f854d10a5a7b1c2d",
+                        "kv_sha256": "4739eab8f745378c7fd5ccca3226f4f9798d1bc634d2820720396610607684a9",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "raw_reused": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "8f6743c14a1916af9af8de21703099d6157126d8584bdba06d8799121dae5974",
+                        "distribution_sha256": "ca12ac0846b08d24c61529c7efd089d44d8949bb85cb5700f854d10a5a7b1c2d",
+                        "kv_sha256": "4739eab8f745378c7fd5ccca3226f4f9798d1bc634d2820720396610607684a9",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "tokens_dynamic": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "8f6743c14a1916af9af8de21703099d6157126d8584bdba06d8799121dae5974",
+                        "distribution_sha256": "ca12ac0846b08d24c61529c7efd089d44d8949bb85cb5700f854d10a5a7b1c2d",
+                        "kv_sha256": "4739eab8f745378c7fd5ccca3226f4f9798d1bc634d2820720396610607684a9",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "raw_static": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "8f6743c14a1916af9af8de21703099d6157126d8584bdba06d8799121dae5974",
+                        "distribution_sha256": "ca12ac0846b08d24c61529c7efd089d44d8949bb85cb5700f854d10a5a7b1c2d",
+                        "kv_sha256": "4739eab8f745378c7fd5ccca3226f4f9798d1bc634d2820720396610607684a9",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "tokens_static": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "8f6743c14a1916af9af8de21703099d6157126d8584bdba06d8799121dae5974",
+                        "distribution_sha256": "ca12ac0846b08d24c61529c7efd089d44d8949bb85cb5700f854d10a5a7b1c2d",
+                        "kv_sha256": "4739eab8f745378c7fd5ccca3226f4f9798d1bc634d2820720396610607684a9",
+                        "position": 157,
+                        "rope_delta": -116
+                    }
+                },
+                "greedy": {
+                    "raw_dynamic": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "8f6743c14a1916af9af8de21703099d6157126d8584bdba06d8799121dae5974",
+                        "distribution_sha256": null,
+                        "kv_sha256": "4739eab8f745378c7fd5ccca3226f4f9798d1bc634d2820720396610607684a9",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "tokens_reused": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "8f6743c14a1916af9af8de21703099d6157126d8584bdba06d8799121dae5974",
+                        "distribution_sha256": null,
+                        "kv_sha256": "4739eab8f745378c7fd5ccca3226f4f9798d1bc634d2820720396610607684a9",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "raw_reused": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "8f6743c14a1916af9af8de21703099d6157126d8584bdba06d8799121dae5974",
+                        "distribution_sha256": null,
+                        "kv_sha256": "4739eab8f745378c7fd5ccca3226f4f9798d1bc634d2820720396610607684a9",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "tokens_dynamic": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "8f6743c14a1916af9af8de21703099d6157126d8584bdba06d8799121dae5974",
+                        "distribution_sha256": null,
+                        "kv_sha256": "4739eab8f745378c7fd5ccca3226f4f9798d1bc634d2820720396610607684a9",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "raw_static": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "8f6743c14a1916af9af8de21703099d6157126d8584bdba06d8799121dae5974",
+                        "distribution_sha256": null,
+                        "kv_sha256": "4739eab8f745378c7fd5ccca3226f4f9798d1bc634d2820720396610607684a9",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "tokens_static": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "8f6743c14a1916af9af8de21703099d6157126d8584bdba06d8799121dae5974",
+                        "distribution_sha256": null,
+                        "kv_sha256": "4739eab8f745378c7fd5ccca3226f4f9798d1bc634d2820720396610607684a9",
+                        "position": 157,
+                        "rope_delta": -116
+                    }
+                }
+            },
+            "hf_metrics": [
+                {
+                    "phase": "prefill.logits",
+                    "hf_greedy_margin": 6.327371597290039,
+                    "max_abs": 4.279613494873047e-5,
+                    "mean_abs": 6.915941404782098e-6,
+                    "relative_l2": 2.0071686113506134e-6,
+                    "cosine": 0.9999999999980089
+                },
+                {
+                    "phase": "decode.0.logits",
+                    "hf_greedy_margin": 6.36346435546875,
+                    "max_abs": 3.4332275390625e-5,
+                    "mean_abs": 5.935490742975433e-6,
+                    "relative_l2": 1.6533839459831857e-6,
+                    "cosine": 0.9999999999987106
+                },
+                {
+                    "phase": "decode.1.logits",
+                    "hf_greedy_margin": 10.735862731933594,
+                    "max_abs": 3.230571746826172e-5,
+                    "mean_abs": 5.360441531993059e-6,
+                    "relative_l2": 1.1691127901302637e-6,
+                    "cosine": 0.9999999999993303
+                },
+                {
+                    "phase": "decode.2.logits",
+                    "hf_greedy_margin": 2.0148773193359375,
+                    "max_abs": 2.765655517578125e-5,
+                    "mean_abs": 4.648527108123424e-6,
+                    "relative_l2": 9.126874855969683e-7,
+                    "cosine": 0.999999999999644
+                },
+                {
+                    "phase": "decode.3.logits",
+                    "hf_greedy_margin": 1.0076217651367188,
+                    "max_abs": 4.482269287109375e-5,
+                    "mean_abs": 6.747575463623549e-6,
+                    "relative_l2": 1.658088218622804e-6,
+                    "cosine": 0.9999999999986545
+                },
+                {
+                    "phase": "decode.4.logits",
+                    "hf_greedy_margin": 12.587547302246094,
+                    "max_abs": 2.47955322265625e-5,
+                    "mean_abs": 3.7082941641108382e-6,
+                    "relative_l2": 7.349585286144792e-7,
+                    "cosine": 0.9999999999997357
+                },
+                {
+                    "phase": "decode.5.logits",
+                    "hf_greedy_margin": 4.195667266845703,
+                    "max_abs": 5.817413330078125e-5,
+                    "mean_abs": 5.792625335326831e-6,
+                    "relative_l2": 1.3714327871512536e-6,
+                    "cosine": 0.9999999999990649
+                },
+                {
+                    "phase": "decode.6.logits",
+                    "hf_greedy_margin": 2.865253448486328,
+                    "max_abs": 3.814697265625e-5,
+                    "mean_abs": 7.239491556670671e-6,
+                    "relative_l2": 1.9779071740151176e-6,
+                    "cosine": 0.9999999999980648
+                }
+            ],
+            "raw_preprocessing_exact": true,
+            "same_dtype_logits_distributions_and_kv_exact": true,
+            "storage_identity_preserved": true,
+            "independent_sampling_oracle_passed": true,
+            "hf_float32_strict_gate_passed": true,
+            "hf_cross_dtype_parity_claimed": false
+        },
+        {
+            "compute_dtype": "BFloat16",
+            "generated_tokens": 8,
+            "reports": {
+                "sample": {
+                    "raw_dynamic": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+                        "distribution_sha256": "639e01744e4a734f46d1b7f512b113e4f62bb424a2358a2e3744fba58345587e",
+                        "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "tokens_reused": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+                        "distribution_sha256": "639e01744e4a734f46d1b7f512b113e4f62bb424a2358a2e3744fba58345587e",
+                        "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "raw_reused": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+                        "distribution_sha256": "639e01744e4a734f46d1b7f512b113e4f62bb424a2358a2e3744fba58345587e",
+                        "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "tokens_dynamic": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+                        "distribution_sha256": "639e01744e4a734f46d1b7f512b113e4f62bb424a2358a2e3744fba58345587e",
+                        "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "raw_static": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+                        "distribution_sha256": "639e01744e4a734f46d1b7f512b113e4f62bb424a2358a2e3744fba58345587e",
+                        "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "tokens_static": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+                        "distribution_sha256": "639e01744e4a734f46d1b7f512b113e4f62bb424a2358a2e3744fba58345587e",
+                        "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+                        "position": 157,
+                        "rope_delta": -116
+                    }
+                },
+                "greedy": {
+                    "raw_dynamic": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+                        "distribution_sha256": null,
+                        "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "tokens_reused": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+                        "distribution_sha256": null,
+                        "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "raw_reused": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+                        "distribution_sha256": null,
+                        "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "tokens_dynamic": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+                        "distribution_sha256": null,
+                        "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "raw_static": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+                        "distribution_sha256": null,
+                        "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+                        "position": 157,
+                        "rope_delta": -116
+                    },
+                    "tokens_static": {
+                        "generated_ids": [
+                            786,
+                            1379,
+                            5336,
+                            526,
+                            7010,
+                            19517,
+                            12,
+                            715
+                        ],
+                        "token_sha256": "756ddd2c200741086d865b3eefb805cffc9a938b734710d4f27b620e62c863d0",
+                        "logits_sha256": "803a2e4b7c97cd1fc32b39e68069ff6dfe0ca8938eabfb4e6af5ef8f6c0a8271",
+                        "distribution_sha256": null,
+                        "kv_sha256": "0444f578a72165236222111fdbeee373a07722e6e4f93aebb1f0a4086e1cc8ea",
+                        "position": 157,
+                        "rope_delta": -116
+                    }
+                }
+            },
+            "hf_metrics": null,
+            "raw_preprocessing_exact": true,
+            "same_dtype_logits_distributions_and_kv_exact": true,
+            "storage_identity_preserved": true,
+            "independent_sampling_oracle_passed": true,
+            "hf_float32_strict_gate_passed": false,
+            "hf_cross_dtype_parity_claimed": false
+        }
+    ],
+    "performance_improvement_claimed": false
+}

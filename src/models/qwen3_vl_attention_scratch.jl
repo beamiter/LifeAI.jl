@@ -89,7 +89,10 @@ function qwen3_vl_decode_attention_scratch_bytes(
         sizeof(scratch.maxima) +
         sizeof(scratch.exponents) +
         sizeof(scratch.weights) +
-        sizeof(scratch.weight_perm) +
+        # CUDA's weight matrix has a dense logical prefix during decode;
+        # account for its full reserved slot, not the current logical size.
+        scratch.capacity * scratch.groups * scratch.num_kv_heads *
+            sizeof(eltype(scratch.weight_perm)) +
         sizeof(scratch.context) +
         sizeof(scratch.output)
 end
@@ -507,6 +510,10 @@ function _qwen3_vl_device_permute_weights!(::Any, src)
     return nothing
 end
 
+function _qwen3_vl_attention_weight_prefix!(weight_perm, seq::Int)
+    return nothing
+end
+
 function _qwen3_vl_device_store_context!(::Any, context, groups::Int)::Bool
     return false
 end
@@ -610,6 +617,11 @@ function _qwen3_vl_decode_attention!(
     f32_view = view(scratch.scores_f32, :, 1:seq, :)
     exp_view = view(scratch.exponents, :, 1:seq, :)
     weight_view = view(scratch.weights, :, 1:seq, :)
+    # Match dynamic attention's context-GEMM leading dimension. A capacity
+    # stride can select a different cuBLAS BF16 accumulation path even when
+    # every valid weight is identical. CUDA retargets only the logical shape;
+    # CPU arrays retain the existing capacity-strided implementation.
+    _qwen3_vl_attention_weight_prefix!(scratch.weight_perm, seq)
     if !_qwen3_vl_device_attention_softmax!(
         scratch.scores,
         f32_view,

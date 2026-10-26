@@ -107,3 +107,12 @@ benchmark_results/qwen3_vl_sampling/*
 !benchmark_results/qwen3_8b_pro5000_40k/
 benchmark_results/qwen3_8b_pro5000_40k/*
 !benchmark_results/qwen3_8b_pro5000_40k/summary.json
+
+# Reproducible multi-image acceptance and the retained BF16 stride diagnosis.
+!benchmark_results/qwen3_vl_multi_image/
+benchmark_results/qwen3_vl_multi_image/*
+!benchmark_results/qwen3_vl_multi_image/summary.json
+!benchmark_results/qwen3_vl_multi_image/oracle_metadata.json
+!benchmark_results/qwen3_vl_multi_image/initial_bf16_diagnostic.json
+!benchmark_results/qwen3_vl_multi_image/initial_attention_stride_diagnostic.json
+!benchmark_results/qwen3_vl_multi_image/context_view_probe.json

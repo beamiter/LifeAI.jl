@@ -71,11 +71,13 @@ function _hf_sample_choice(
     top_ids = partialsortperm(values, 1:count; rev=true)
     second_id = count == 2 ? top_ids[2] : token_id
     candidate_ids = findall(isfinite, filtered_logits)
+    # The overflow fallback uses Float64 scores. Preserve that precision in
+    # the trace so finite candidates are not recorded as Float32 infinities.
     distribution = capture_distribution ? (;
         token_ids=copy(candidate_ids),
         hf_token_ids=candidate_ids .- 1,
-        logits=Float32.(filtered_logits[candidate_ids]),
-        probabilities=Float32.(probabilities[candidate_ids]),
+        logits=collect(filtered_logits[candidate_ids]),
+        probabilities=collect(probabilities[candidate_ids]),
     ) : nothing
     return token_id, (;
         token_id,
@@ -87,7 +89,7 @@ function _hf_sample_choice(
         margin=Float32(values[top_ids[1]] - values[second_id]),
         logits=capture_logits ? Float32.(collect(values)) : nothing,
         sample_uniform=uniform,
-        sampled_probability=Float32(probabilities[token_id]),
+        sampled_probability=probabilities[token_id],
         candidate_count=length(candidate_ids),
         temperature=Float32(temperature),
         top_k=Int(top_k),

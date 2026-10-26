@@ -77,9 +77,16 @@ function _sampling_distribution(
         "`logits` must remain finite at Float32 sampling precision",
     ))
     scores ./= resolved_temperature
-    all(isfinite, scores) || throw(ArgumentError(
-        "temperature scaling produced non-finite sampling scores",
-    ))
+    if !all(isfinite, scores)
+        # Keep the ordinary Float32 path bitwise unchanged. For a finite but
+        # very small temperature, unshifted logits can overflow before softmax
+        # has a chance to subtract their maximum. Float64 can represent every
+        # difference/temperature ratio of finite Float32 inputs; centering also
+        # keeps tied maxima at zero rather than turning them into Inf - Inf.
+        scores = Float64.(Float32.(logits))
+        scores .-= maximum(scores)
+        scores ./= Float64(resolved_temperature)
+    end
     if top_k !== nothing
         top_k isa Integer && !(top_k isa Bool) || throw(ArgumentError(
             "`top_k` must be an integer other than Bool, or nothing",

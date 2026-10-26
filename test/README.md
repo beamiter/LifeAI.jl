@@ -96,6 +96,8 @@ test/
 | 10 | 145 | static BF16 参数替换后的 pack/Ready 失效、reset/re-prefill 与新 cache 的 logits/KV exact、同参数复用及失败前状态保护 |
 | 10 | 146 | CUDA live cache 工作区独立性、同 cache reset、owner 回收后保留输出的生命周期 |
 | 10 | 147 | 高层显式 cache 复用、Float32/BF16 请求对照、零生成/EOS 与准备失败时保留旧请求 |
+| 10 | 148 | 独立采样 oracle、固定 uniform/RNG、dynamic/static/reuse 与 raw 入口失败原子性 |
+| 10 | 149 | 多图顺序/geometry、Float32/BF16 raw 生成、dynamic/static/reuse、精确上下文预算、坏图保留旧 cache，以及 BF16 context GEMM 步长/动态形状 GPU 回归 |
 
 `fixtures/` 只存在于拥有该证据的 Chapter 目录中。跨 Chapter 复用 fixture 时，
 测试显式引用其原始 Chapter，不复制第二份数据。`support/` 只存放无独立产品能力
