@@ -17,6 +17,10 @@ include(joinpath(LIFEAI_TEST_ROOT, "test_memory_core.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_semantic_memory_ranking.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_qwen3_xla_chat.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_qwen3_xla_client_limits.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "test_flint_io.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "test_flint_quantization.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "test_nvfp4.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "flint", "test_flint.jl"))
 
 chapter_test(episode, chapter, filename) =
     joinpath(LIFEAI_TEST_EPISODES, episode, chapter, filename)
@@ -521,6 +525,7 @@ end
 
 if lowercase(get(ENV, "LIFEAI_TEST_CUDA", "false")) in ("1", "true", "yes")
     @testset "CUDA episode extensions" begin
+        include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_flint_cuda.jl"))
         include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_qwen3_vl_parameter_binding_cuda.jl"))
         include(chapter_test(
             "episode10_qwen3_vl_efficient_generation",
@@ -533,5 +538,11 @@ if lowercase(get(ENV, "LIFEAI_TEST_CUDA", "false")) in ("1", "true", "yes")
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter30_qwen3_moe_async_miss_pipeline", "qwen3_moe_async_miss_pipeline_cuda_test.jl"))
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter35_qwen3_moe_host_buffer_reuse", "qwen3_moe_host_buffer_reuse_cuda_test.jl"))
         include(chapter_test("episode06_qwen3_moe_and_model_expansion", "chapter41_qwen3_moe_grouped_scattered", "qwen3_moe_grouped_scattered_cuda_test.jl"))
+    end
+end
+
+if lowercase(get(ENV, "LIFEAI_TEST_NATIVE_FP4", "false")) in ("1", "true", "yes")
+    @testset "Native NVFP4 CUDA GEMM" begin
+        include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_flint_nvfp4_native.jl"))
     end
 end

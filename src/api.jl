@@ -47,6 +47,17 @@ export TextDocument, load_text_documents, split_documents, build_document_datase
 export DATASET_ARTIFACT_VERSION, save_dataset_artifact, load_dataset_artifact
 
 # Models and HuggingFace interoperability
+export FlintConfig, load_hf_flint_config, flint_expected_tensor_shapes
+export load_hf_flint_model, verify_flint_checkpoint
+export HFFlintTokenizer, load_hf_flint_tokenizer, apply_flint_chat_template
+export FlintKVCache, reset_flint_cache!, hf_flint_forward, flint_topk_routing
+export generate_flint_tokens, generate_flint
+export quantize_flint_parameters, load_hf_flint_quantized
+export NVFP4Weight, NVFP4_BLOCK_SIZE, quantize_nvfp4, dequantize_nvfp4
+export AbstractNativeNVFP4Weight, prepare_nvfp4_gemm, native_nvfp4_gemm
+export nvfp4_weight, native_nvfp4_stats, native_nvfp4_supported
+export prepare_flint_nvfp4, flint_native_fp4_stats
+export FLINT_QUANTIZED_FORMAT_VERSION, save_flint_quantized, load_flint_quantized
 export GPTModel, TiedOutputProjection, gpt_config
 export Qwen3DenseSpec, qwen3_dense_specs, qwen3_dense_spec
 export qwen3_dense_parameter_count

@@ -6060,4 +6060,6 @@ end
     )
 end
 
+include("flint_nvfp4_native.jl")
+
 end # module LifeAICUDAExt

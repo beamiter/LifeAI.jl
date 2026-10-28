@@ -1,0 +1,148 @@
+[
+  {
+    "text": "Hello, world!",
+    "ids": [
+      9479,
+      11,
+      1571,
+      0
+    ],
+    "tokens": [
+      "Hello",
+      ",",
+      "Ġworld",
+      "!"
+    ],
+    "decoded": "Hello, world!",
+    "decoded_all": "Hello, world!"
+  },
+  {
+    "text": "你好，世界！12345",
+    "ids": [
+      131780,
+      852,
+      21367,
+      10582,
+      4051,
+      1362
+    ],
+    "tokens": [
+      "ä½łå¥½",
+      "ï¼Į",
+      "ä¸ĸçķĮ",
+      "ï¼ģ",
+      "123",
+      "45"
+    ],
+    "decoded": "你好，世界！12345",
+    "decoded_all": "你好，世界！12345"
+  },
+  {
+    "text": "a\n\nB",
+    "ids": [
+      64,
+      284,
+      33
+    ],
+    "tokens": [
+      "a",
+      "ĊĊ",
+      "B"
+    ],
+    "decoded": "a\n\nB",
+    "decoded_all": "a\n\nB"
+  },
+  {
+    "text": "Café café",
+    "ids": [
+      104377,
+      805,
+      51096,
+      40152
+    ],
+    "tokens": [
+      "Caf",
+      "Ã©",
+      "Ġcafe",
+      "Ìģ"
+    ],
+    "decoded": "Café café",
+    "decoded_all": "Café café"
+  },
+  {
+    "text": "<|user|>hi<|assistant|>",
+    "ids": [
+      150003,
+      5921,
+      150004
+    ],
+    "tokens": [
+      "<|user|>",
+      "hi",
+      "<|assistant|>"
+    ],
+    "decoded": "hi",
+    "decoded_all": "<|user|>hi<|assistant|>"
+  },
+  {
+    "text": "def foo(x):\n    return x + 1234\n",
+    "ids": [
+      1182,
+      18482,
+      1940,
+      1080,
+      279,
+      597,
+      782,
+      541,
+      220,
+      4051,
+      19,
+      198
+    ],
+    "tokens": [
+      "def",
+      "Ġfoo",
+      "(x",
+      "):Ċ",
+      "ĠĠĠ",
+      "Ġreturn",
+      "Ġx",
+      "Ġ+",
+      "Ġ",
+      "123",
+      "4",
+      "Ċ"
+    ],
+    "decoded": "def foo(x):\n    return x + 1234\n",
+    "decoded_all": "def foo(x):\n    return x + 1234\n"
+  },
+  {
+    "text": "hello world",
+    "ids": [
+      14347,
+      1571
+    ],
+    "tokens": [
+      "hello",
+      "Ġworld"
+    ],
+    "decoded": "hello world",
+    "decoded_all": "hello world"
+  },
+  {
+    "text": "<think>abc</think>",
+    "ids": [
+      150006,
+      14070,
+      150007
+    ],
+    "tokens": [
+      "<think>",
+      "abc",
+      "</think>"
+    ],
+    "decoded": "<think>abc</think>",
+    "decoded_all": "<think>abc</think>"
+  }
+]

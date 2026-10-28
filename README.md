@@ -654,3 +654,134 @@ LIFEAI_XLA_BACKEND=cpu julia --project=. examples/minigpt.jl
 ```
 
 该脚本使用三个固定 seed 汇总短程 validation 结果，并将 cold compile、warm-up 与 steady-state 性能分开记录。实验用于验证组件可归因性和后端兼容性，不代表真实模型质量排名。
+
+## Flint：原生推理与权重量化
+
+当前 DSW 的 Julia 路径、`-O1` 编译参数及运行命令见 [Flint DSW 说明](notes/flint_dsw.md)。
+
+支持 [RecursiveSI/flint](https://huggingface.co/RecursiveSI/flint) 的 HuggingFace
+safetensors 检查点。实现按官方 [Transformers 参考代码](https://github.com/huggingface/transformers/blob/main/src/transformers/models/flint/modeling_flint.py)
+对齐：前两层 dense SwiGLU，后续 sigmoid top-k MoE 与无门控共享专家，
+逐头 Q/K RMSNorm，带 learned sink 的注意力，以及只在滑窗层应用的 RoPE。
+Flint 的 Q 投影维度可以大于 hidden size。全局层不应用 RoPE。
+
+```bash
+# 先将官方检查点下载到有足够空间的位置（原始权重约 80 GB）
+hf download RecursiveSI/flint --local-dir /path/to/flint
+
+# 在当前项目环境生成 INT4 产物；也支持 int8 与 INT4 mse 校准
+julia --project=. scripts/quantize_flint.jl /path/to/flint /path/to/flint-int4 int4 128
+
+# 直接加载保存的产物，执行带 KV cache 的 CUDA 推理
+julia --project=. scripts/run_flint.jl /path/to/flint-int4 \
+  --device cuda --prompt '写一个 Julia 二分查找函数。' --max-new-tokens 128
+
+# 也可从原始检查点边加载边量化，或选择 --scheme float / int8
+julia --project=. scripts/run_flint.jl /path/to/flint \
+  --scheme int4 --group 128 --device cpu --temperature 0
+```
+
+Julia 接口：
+
+```julia
+using LifeAI
+bundle = load_hf_flint_quantized("/path/to/flint"; scheme=:int4, group=128)
+tokenizer = load_hf_flint_tokenizer("/path/to/flint")
+result = generate_flint(bundle, tokenizer,
+    [(role="user", content="你好")]; max_new_tokens=64, temperature=0)
+println(result.text)
+save_flint_quantized("/path/to/flint-int4", bundle)
+restored = load_flint_quantized("/path/to/flint-int4")
+```
+
+`load_hf_flint_model` 为浮点权重加载入口；`hf_flint_forward` 接受一条非空的
+**1-based** token ID 向量，返回 `(vocab_size, sequence_length)` logits。
+可传入 `FlintKVCache(model)` 做分块 prefill 或逐 token decode。
+滑窗 KV 仅保留后续计算需要的历史，全局层保留完整历史；`reset_flint_cache!`
+用于新会话。`generate_flint_tokens` 返回新增 token（含命中的停止 token）。
+原始 HuggingFace 配置中的 ID 仍为 0-based。
+
+量化支持逐输出通道 INT8、按输入维分组的对称 INT4，以及下节说明的 NVFP4。
+INT4 默认 group=128；嵌入、router、norm、sink 保留浮点。支持 INT4 `calibration=:mse`
+权重重建误差校准。保存目录有版本化 manifest 和 SHA-256 校验，逐 tensor
+加载/保存，避免同时保留整份浮点与量化模型。输出目录必须不存在。
+
+参考推理路径使用 Float32 运算，量化权重按当前投影临时反量化。
+NVFP4 还提供下述原生 FP4 GEMM 路径；INT4/INT8 仍采用反量化计算。CUDA 路由结果回传 CPU，
+适合正确性验证与后续优化；尚未实现 MTP、工具调用模板和长上下文高吞吐内核。
+文本聊天支持 system/developer/user/assistant 与 reasoning 历史。
+
+```bash
+# 独立 NumPy 数值参考、滑窗边界、量化、保存恢复与输入校验
+julia --project=. -e 'include("test/flint/test_flint.jl"); include("test/test_flint_quantization.jl"); include("test/test_flint_io.jl")'
+# 需 CUDA，验证 float / INT8 / INT4 与 CPU logits 及生成结果一致
+julia --project=. scripts/verify_flint_cuda.jl
+# 重建 tiny 检查点与独立参考数据（依赖 Python numpy）
+python3 scripts/export_flint_reference.py
+```
+
+### Flint NVFP4
+
+使用 `scheme=:nvfp4` 或命令行 `--scheme nvfp4`。此模式采用 NVIDIA NVFP4
+的 E2M1 数值、每 16 个连续输入维元素一个 E4M3FN 缩放因子，以及每张权重
+一个 Float32 全局缩放因子；参见 [NVIDIA NVFP4 文档](https://nvidia.github.io/TransformerEngine/features/low_precision_training/nvfp4/nvfp4.html)。
+采用确定性的就近偶数舍入与饱和。非 16 整除的输入维会补零打包，推理时
+恢复原始形状；不会改变模型的实际输入维度。
+
+```bash
+# group 固定为 16；省略 group 时自动选择 16
+julia -O1 --project=. scripts/quantize_flint.jl /path/to/flint /path/to/flint-nvfp4 nvfp4
+julia -O1 --project=. scripts/run_flint.jl /path/to/flint-nvfp4 \
+  --device cuda --prompt '写一个 Julia 二分查找函数。' --max-new-tokens 128
+# 从原始权重直接加载并量化
+julia -O1 --project=. scripts/run_flint.jl /path/to/flint --scheme nvfp4 --device cuda
+```
+
+```julia
+bundle = load_hf_flint_quantized("/path/to/flint"; scheme=:nvfp4)
+packed = quantize_nvfp4(randn(Float32, 32, 65))
+restored_weight = dequantize_nvfp4(packed)  # 原始 32×65 形状
+save_flint_quantized("/path/to/flint-nvfp4", bundle)
+```
+
+独立编码、舍入、推理和持久化验证可运行 `julia -O1 --project=. test/test_nvfp4.jl`。
+
+NVFP4 固定使用 `group=16`、`calibration=:maxabs`；显式传入其他值会报错。
+INT4 的默认 group 仍为 128，INT4/INT8 原有 API 不变。NVFP4 产物使用
+LifeAI 格式版本 2，包含原始形状、编码名称、打包字节、FP8 缩放字节和
+FP32 全局缩放的校验信息；读取器继续支持旧版本 1 的 INT4/INT8 产物。
+
+#### 原生 FP4 GEMM
+
+Blackwell CUDA 设备上可将 NVFP4 投影准备为 cuBLASLt 原生 FP4 GEMM。
+权重保持打包格式，准备时重排数据和 block scales；每次调用量化激活，
+使用 FP4×FP4、Float32 累加和输出。原生路径不会先展开成浮点权重。
+
+```julia
+using LifeAI, CUDA
+bundle = load_hf_flint_quantized("/path/to/flint"; scheme=:nvfp4, device=CUDA.cu)
+native = prepare_flint_nvfp4(bundle)
+tokenizer = load_hf_flint_tokenizer("/path/to/flint")
+result = generate_flint(native, tokenizer, [(role="user", content="你好")]; max_new_tokens=128)
+flint_native_fp4_stats(native) # backend、native_calls、准备缓存和共享 workspace
+```
+
+```bash
+# CUDA + NVFP4 默认 auto 选择原生路径；也可显式指定
+julia -O1 --project=. scripts/run_flint.jl /path/to/flint-nvfp4 \
+  --device cuda --nvfp4-backend native --prompt '你好'
+# 保留权重反量化参考路径
+julia -O1 --project=. scripts/run_flint.jl /path/to/flint-nvfp4 \
+  --device cuda --nvfp4-backend reference --prompt '你好'
+julia -O1 --project=. scripts/verify_flint_nvfp4_native.jl
+julia -O1 --project=. scripts/benchmark_flint_nvfp4_native.jl --quick
+```
+
+原生计算会量化激活（W4A4），所以与保留浮点激活的参考路径（W4A16）不等价。
+激活的全局缩放按每次调用计算，因此分块 prefill 与逐 token decode 也可能有
+额外舍入差异。验证脚本使用同样激活量化边界的独立参考。
+准备缓存会额外占用显存；workspace 在同一 CUDA context 中共享且有界。
+原始权重变更后需重新准备。保存 native bundle 仍导出可移植 NVFP4 产物，
+加载后按需重新准备。CPU 使用参考路径；不支持原生 FP4 的 GPU/runtime
+应显式选择 reference。具体 GEMM 限制见 [cuBLASLt 文档](https://docs.nvidia.com/cuda/cublas/index.html#cublasltmatmul)。
+性能取决于矩阵尺寸和激活量化开销，以本机 benchmark 为准。
