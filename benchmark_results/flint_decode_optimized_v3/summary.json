@@ -1,0 +1,323 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-28",
+  "baseline_commit": "5d61acf9901702a459808a08009390e745be7f2c",
+  "device": "NVIDIA RTX PRO 5000 72GB Blackwell",
+  "model_revision": "2a247be0c0aec895ccb0ac7ca92229ec6df37288",
+  "backend": "cublaslt_nvfp4",
+  "precision": "NVFP4 W4A4; floating norms, routers and KV",
+  "request": {
+    "prompt": "请用中文解释什么是递归，并给出一个简单例子。",
+    "prompt_tokens": 15,
+    "generated_tokens": 64,
+    "temperature": 0,
+    "concurrent_requests": 1
+  },
+  "method": {
+    "baseline": "Three requests after isolated GPU tests exited; already-warmed v2 service.",
+    "candidate": "One excluded 64-token warmup then three measured requests.",
+    "decode_formula": "(eval_count-1)/((total_duration-time_to_first_token)/1e9)",
+    "includes_load": false,
+    "decode_excludes_prefill": true,
+    "scope": "Short context, batch1. Six measured requests total; not a long-context/concurrency evaluation."
+  },
+  "before": {
+    "runs": [
+      {
+        "tokens": 64,
+        "wall_seconds": 4.971770740001375,
+        "server_ttft_seconds": 1.645729341,
+        "server_seconds": 4.953793296,
+        "decode_tokens_per_second": 19.04437183107604,
+        "end_to_end_tokens_per_second": 12.919392509105613
+      },
+      {
+        "tokens": 64,
+        "wall_seconds": 6.646684119001293,
+        "server_ttft_seconds": 2.76742996,
+        "server_seconds": 6.622945411,
+        "decode_tokens_per_second": 16.340227603979585,
+        "end_to_end_tokens_per_second": 9.663374228285633
+      },
+      {
+        "tokens": 64,
+        "wall_seconds": 4.717271146997518,
+        "server_ttft_seconds": 1.424080406,
+        "server_seconds": 4.699449094,
+        "decode_tokens_per_second": 19.234475871621324,
+        "end_to_end_tokens_per_second": 13.618617569815088
+      }
+    ],
+    "median_decode_tokens_per_second": 19.04437183107604,
+    "gpu_mean": {
+      "utilization.gpu": 33.40625,
+      "utilization.memory": 2.375,
+      "power.draw": 70.6759375,
+      "clocks.current.sm": 2448.5,
+      "clocks.current.memory": 12960.0,
+      "memory.used": 45981.5
+    },
+    "gpu_max": {
+      "utilization.gpu": 71.0,
+      "utilization.memory": 6.0,
+      "power.draw": 81.07,
+      "clocks.current.sm": 2595.0,
+      "clocks.current.memory": 13365.0,
+      "memory.used": 45984.0
+    }
+  },
+  "after": {
+    "runs": [
+      {
+        "tokens": 64,
+        "wall_seconds": 3.579949499999202,
+        "server_ttft_seconds": 1.182253063,
+        "server_seconds": 3.559117383,
+        "decode_tokens_per_second": 26.505509578266548,
+        "end_to_end_tokens_per_second": 17.98198629404407
+      },
+      {
+        "tokens": 64,
+        "wall_seconds": 3.3540742619989032,
+        "server_ttft_seconds": 1.301986953,
+        "server_seconds": 3.333246986,
+        "decode_tokens_per_second": 31.015231421136324,
+        "end_to_end_tokens_per_second": 19.200497373524065
+      },
+      {
+        "tokens": 64,
+        "wall_seconds": 3.4709359500011487,
+        "server_ttft_seconds": 1.401008687,
+        "server_seconds": 3.450053074,
+        "decode_tokens_per_second": 30.746039665952832,
+        "end_to_end_tokens_per_second": 18.550439262025105
+      }
+    ],
+    "median_decode_tokens_per_second": 30.746039665952832,
+    "gpu_mean": {
+      "utilization.gpu": 47.80952380952381,
+      "utilization.memory": 4.476190476190476,
+      "power.draw": 80.98619047619047,
+      "clocks.current.sm": 2595.0,
+      "clocks.current.memory": 13365.0,
+      "memory.used": 45242.42857142857
+    },
+    "gpu_max": {
+      "utilization.gpu": 79.0,
+      "utilization.memory": 9.0,
+      "power.draw": 87.88,
+      "clocks.current.sm": 2595.0,
+      "clocks.current.memory": 13365.0,
+      "memory.used": 45559.0
+    }
+  },
+  "comparison": {
+    "baseline_decode_tps": 19.04437183107604,
+    "optimized_decode_tps": 30.746039665952832,
+    "speedup": 1.6144423107609334,
+    "generated_text_identical": [
+      false,
+      false,
+      false
+    ],
+    "optimized_repeat_text_identical": true,
+    "native_fp4_calls_delta": [
+      82742,
+      82742,
+      82742
+    ]
+  },
+  "fused_microbenchmarks": [
+    {
+      "kind": "norm",
+      "shape": [
+        2048,
+        1
+      ],
+      "old_seconds": 1.7850375e-05,
+      "new_seconds": 4.6023e-06,
+      "speedup": 3.878577015839906,
+      "max_absolute_error": 0
+    },
+    {
+      "kind": "norm",
+      "shape": [
+        128,
+        32,
+        1
+      ],
+      "old_seconds": 1.0897825000000001e-05,
+      "new_seconds": 3.670525e-06,
+      "speedup": 2.9690098827824363,
+      "max_absolute_error": 7.1525574e-07
+    },
+    {
+      "kind": "norm",
+      "shape": [
+        128,
+        4,
+        1
+      ],
+      "old_seconds": 1.0589825e-05,
+      "new_seconds": 3.5783e-06,
+      "speedup": 2.959457004722913,
+      "max_absolute_error": 4.7683716e-07
+    },
+    {
+      "kind": "rope",
+      "shape": [
+        128,
+        32,
+        1
+      ],
+      "old_seconds": 3.0673700000000004e-05,
+      "new_seconds": 3.934775e-06,
+      "speedup": 7.795541041101462,
+      "max_absolute_error": 0
+    },
+    {
+      "kind": "rope",
+      "shape": [
+        128,
+        4,
+        1
+      ],
+      "old_seconds": 3.0575975000000005e-05,
+      "new_seconds": 4.057e-06,
+      "speedup": 7.5365972393394145,
+      "max_absolute_error": 0
+    },
+    {
+      "kind": "rope",
+      "shape": [
+        128,
+        32,
+        16
+      ],
+      "old_seconds": 4.10243e-05,
+      "new_seconds": 4.0398e-06,
+      "speedup": 10.155032427347889,
+      "max_absolute_error": 0
+    },
+    {
+      "kind": "greedy",
+      "shape": null,
+      "old_seconds": 0.0003051913,
+      "new_seconds": 2.563515e-05,
+      "speedup": 11.905188774007563,
+      "max_absolute_error": null
+    }
+  ],
+  "kv_microbenchmarks": [
+    {
+      "window": 0,
+      "past_tokens": 129,
+      "old_seconds": 2.5369533333333335e-05,
+      "new_seconds": 3.227666666666667e-06,
+      "speedup": 7.860022720231333
+    },
+    {
+      "window": 0,
+      "past_tokens": 512,
+      "old_seconds": 7.06862e-05,
+      "new_seconds": 1.1098766666666666e-05,
+      "speedup": 6.368833774323273
+    },
+    {
+      "window": 512,
+      "past_tokens": 129,
+      "old_seconds": 2.533683333333333e-05,
+      "new_seconds": 3.2873666666666667e-06,
+      "speedup": 7.707334137759705
+    },
+    {
+      "window": 512,
+      "past_tokens": 511,
+      "old_seconds": 0.00010353543333333333,
+      "new_seconds": 3.389033333333333e-06,
+      "speedup": 30.550137207266577
+    }
+  ],
+  "expert14_microbenchmark": {
+    "scope": "ActualFlintMoEgate/upshapes:6routedM512+sharedM1024,K2048. Sevenpairs vsone14-projectioncall, same exact outputs.12samplesof20iterations;notfullmodelclaim.",
+    "speedup": 1.3330682567989545,
+    "groups": 7,
+    "projections": 14,
+    "trace_calls": 10,
+    "kernel_counts": {
+      "_native_fp4_decode_multi_amax_kernel_(CuDeviceArray<Float32, 1, 1>, CuDeviceArray<Float32, 1, 1>, CuDeviceArray<Float32, 2, 1>, Tuple<Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32, Float32>)": 10,
+      "cutlass3x_sm120_bstensorop_s16864gemm_block_scaled_ue4m3xe2m1_ue4m3xe2m1_f32_f32_f32_128x128x256_1x1x1_0_tnn_align32_o_vs16_bias_bf16_relu": 140,
+      "[copy pageable to device memory]": 1,
+      "_native_fp4_decode_pack_kernel_(CuDeviceArray<UInt8, 2, 1>, CuDeviceArray<UInt8, 1, 1>, CuDeviceArray<Float32, 1, 1>, CuDeviceArray<Float32, 2, 1>, Int64)": 10
+    },
+    "native_kernels": [
+      "cutlass3x_sm120_bstensorop_s16864gemm_block_scaled_ue4m3xe2m1_ue4m3xe2m1_f32_f32_f32_128x128x256_1x1x1_0_tnn_align32_o_vs16_bias_bf16_relu"
+    ]
+  },
+  "expert14_times": {
+    "paired_seconds": 0.00024466055000000003,
+    "shared_seconds": 0.0001835319
+  },
+  "validation": {
+    "cpu_model_quantization_and_streaming": 420,
+    "cpu_kv_invariants": 15928,
+    "cuda_attention": 25,
+    "cuda_multi_projection": 1874,
+    "cuda_old_decode_regression": 185,
+    "cuda_fused_kernels": 126,
+    "cuda_native_model_regression": 81,
+    "cuda_long_kv": 52,
+    "cuda_kv_invariants": 15929,
+    "worker_http_utf8": 43,
+    "tiny_flint_relative_l2_error": 6.684555e-08,
+    "long_kv_relative_l2_max": 3.15e-07,
+    "greedy_and_rope": "GPU greedy IDs (including signed-zero/first-index ties) and cached RoPE matched old GPU reference on test cases.",
+    "quality_scope": "RMS reduction order changes floating arithmetic. Whole-model greedy text differs; this is not a full model-quality evaluation.",
+    "live_tui": "Actual PTY generation/exit passed; terminal restored."
+  },
+  "functional_smoke": {
+    "passed": true,
+    "scope": "Three basic functional smoke checks, not a model-quality benchmark",
+    "results": [
+      {
+        "name": "addition",
+        "passed": true,
+        "seconds": 3.548993136999343,
+        "tokens": 51,
+        "done_reason": "stop",
+        "answer": "42"
+      },
+      {
+        "name": "prime",
+        "passed": true,
+        "seconds": 6.850255001998448,
+        "tokens": 152,
+        "done_reason": "stop",
+        "answer": "是"
+      },
+      {
+        "name": "python_add",
+        "passed": true,
+        "seconds": 6.932375798998692,
+        "tokens": 99,
+        "done_reason": "stop",
+        "answer": "def add(a, b):\n    return a + b"
+      }
+    ]
+  },
+  "candidate_source_sha256": {
+    "ext/LifeAICUDAExt.jl": "06cd3656cd82d8416554bbe5353d42a4b8865daf699736492c1b1d54002e7045",
+    "ext/flint_nvfp4_native.jl": "814a17eef3ac993c9f686c944f05d0bccaef94723a35a1a6999b3c89e0e88395",
+    "ext/flint_decode_kernels.jl": "e904b598063d24be3c7baacfee5b2d8043557b386715632888575241136aab00",
+    "ext/flint_kv_decode.jl": "32e1a46d31031e9bf9e440f1f90ce0270c86b938bff813afcb7dae9e6a418183",
+    "src/models/flint.jl": "0458b879a3c1a3746446886da3f598f9f903e8a3c0797bafb2389feefa7950bd",
+    "src/models/nvfp4.jl": "5764acf0caa7cbd0837945294b2e58d377b6a795e1962ea67708603792e49e33",
+    "src/api.jl": "3be6d806745108fcd944faa5fb78a91316c53050e2619ada4a4b1dbbef4d04c2",
+    "scripts/run_flint_server.jl": "12ef5bea705ff99d104bafc353b24b4381bfb19c1e4432dc2bb5bad06b97c091",
+    "test/test_flint_decode_kernels.jl": "f2b936e6fa1437df18a63e42f4d2659d228e28f16dd00082c4c60d3050d7ab02",
+    "test/test_flint_kv_decode.jl": "fd6319c681a85344c9af9d922966ead2714fdbd39053f2b623e7aac7fc0f74e7",
+    "test/test_nvfp4_multi_projection.jl": "5212e6cbe69bd577e28efdd28c7d33c9e418c0d030929ffebf23cd8db23b88f9",
+    "test/test_flint_server.jl": "168d5bfe909e6257000309177af083b184537148c3c0b1030e1a472b05b5882c",
+    "test/runtests.jl": "0043852a5691a8ed9575d1e558d8e68e274d3a2f3b967bc864492792939dbd2a"
+  }
+}

@@ -55,7 +55,7 @@ end
         health=JSON3.read(String(HTTP.get(base*"/healthz").body))
         @test health.ready && health.model == "RecursiveSI/flint"
         @test health.context_tokens == 32 && health.max_new_tokens == 8
-        @test health.inference_engine == "lifeai_flint_decode_v2"
+        @test health.inference_engine == "lifeai_flint_decode_v3"
         response=post(payload)
         @test response.status == 200
         object=JSON3.read(String(response.body))

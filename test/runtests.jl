@@ -21,6 +21,7 @@ include(joinpath(LIFEAI_TEST_ROOT, "test_flint_io.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_quantization.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_streaming.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_decode_optimized.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "test_flint_kv_decode.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_server.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_device_quantization.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_bf16_device_quantization.jl"))
@@ -530,6 +531,8 @@ end
 
 if lowercase(get(ENV, "LIFEAI_TEST_CUDA", "false")) in ("1", "true", "yes")
     @testset "CUDA episode extensions" begin
+        include(joinpath(LIFEAI_TEST_ROOT, "test_flint_decode_kernels.jl"))
+        flint_kv_decode_checks(CUDA.cu)
         include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_flint_cuda.jl"))
         include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_qwen3_vl_parameter_binding_cuda.jl"))
         include(chapter_test(
@@ -550,5 +553,6 @@ if lowercase(get(ENV, "LIFEAI_TEST_NATIVE_FP4", "false")) in ("1", "true", "yes"
     @testset "Native NVFP4 CUDA GEMM" begin
         include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_flint_nvfp4_native.jl"))
         include(joinpath(LIFEAI_TEST_ROOT, "test_nvfp4_decode_optimized.jl"))
+        include(joinpath(LIFEAI_TEST_ROOT, "test_nvfp4_multi_projection.jl"))
     end
 end

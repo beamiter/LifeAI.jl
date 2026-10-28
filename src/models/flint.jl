@@ -53,6 +53,10 @@ end
 # back to the host for every expert projection. The public GEMM keeps checks.
 _flint_linear(weight::AbstractNativeNVFP4Weight, x) = native_nvfp4_gemm(weight, x; check_finite=false)
 
+_flint_linear_multi(weights::Tuple, x) = map(weight -> _flint_linear(weight, x), weights)
+_flint_linear_multi(weights::NTuple{N,AbstractNativeNVFP4Weight}, x) where {N} =
+    native_nvfp4_gemm_multi(weights, x; check_finite=false)
+
 """
     prepare_flint_nvfp4(bundle; kwargs...)
 
@@ -73,14 +77,19 @@ end
 
 """Aggregate evidence of native GEMM use in a prepared Flint bundle."""
 function flint_native_fp4_stats(bundle)
-    weights = [weight for weight in values(bundle.parameters) if weight isa AbstractNativeNVFP4Weight]
-    stats = native_nvfp4_stats.(weights)
+    prepared_weights = native_calls = prepared_weight_bytes = shared_workspace_bytes = 0
+    for weight in values(bundle.parameters)
+        weight isa AbstractNativeNVFP4Weight || continue
+        stats = native_nvfp4_stats(weight)
+        prepared_weights += 1
+        native_calls += Int(get(stats, :native_calls, 0))
+        prepared_weight_bytes += Int(get(stats, :prepared_weight_bytes, 0))
+        shared_workspace_bytes = max(shared_workspace_bytes, Int(get(stats, :workspace_bytes, 0)))
+    end
     return (
-        backend=isempty(weights) ? :reference : :cublaslt_nvfp4,
-        prepared_weights=length(weights),
-        native_calls=sum((get(stat, :native_calls, 0) for stat in stats); init=0),
-        prepared_weight_bytes=sum((get(stat, :prepared_weight_bytes, 0) for stat in stats); init=0),
-        shared_workspace_bytes=maximum((get(stat, :workspace_bytes, 0) for stat in stats); init=0),
+        backend=iszero(prepared_weights) ? :reference : :cublaslt_nvfp4,
+        prepared_weights=prepared_weights, native_calls=native_calls,
+        prepared_weight_bytes=prepared_weight_bytes, shared_workspace_bytes=shared_workspace_bytes,
     )
 end
 
@@ -121,23 +130,41 @@ function _flint_attention_context(q, k, v, sinks, mask)
         reshape(permutedims(reshape(context, d, group, n, kvheads), (1, 2, 4, 3)), d, heads, n)
 end
 
-function _flint_attention(model, parameters, prefix, x, layer, past, position)
-    d, heads, kvheads = model.head_dim, model.num_attention_heads, model.num_key_value_heads
-    n = size(x, 2)
-    q = _flint_norm(reshape(_flint_linear(parameters[prefix * "q_proj.weight"], x), d, heads, n), parameters[prefix * "q_norm.weight"], model.rms_norm_eps)
-    k = _flint_norm(reshape(_flint_linear(parameters[prefix * "k_proj.weight"], x), d, kvheads, n), parameters[prefix * "k_norm.weight"], model.rms_norm_eps)
-    v = reshape(_flint_linear(parameters[prefix * "v_proj.weight"], x), d, kvheads, n)
-    local_attention = model.layer_types[layer] == "sliding_attention"
-    if local_attention
-        q = _flint_rope(q, position:position+n-1, model.rope_theta)
-        k = _flint_rope(k, position:position+n-1, model.rope_theta)
-    end
+# Device extensions can append in reusable storage while preserving these
+# logical views and positions. The reference keeps ordinary immutable records.
+function _flint_kv_append_reference(k, v, past, position, window::Int)
+    n = size(k, 3)
     first_position = position
     if past !== nothing
         k = cat(past.key, k; dims=3)
         v = cat(past.value, v; dims=3)
         first_position = past.first_position
     end
+    keep = window > 0 ? min(size(k, 3), window-1) : size(k, 3)
+    start = size(k, 3)-keep+1
+    updated = keep == size(k, 3) ? (key=k, value=v, first_position=first_position) :
+        (key=k[:, :, start:end], value=v[:, :, start:end], first_position=position+n-keep)
+    return (key=k, value=v, first_position=first_position, updated=updated)
+end
+_flint_kv_append(k, v, past, position, window::Int) =
+    _flint_kv_append_reference(k, v, past, position, window)
+
+function _flint_attention(model, parameters, prefix, x, layer, past, position)
+    d, heads, kvheads = model.head_dim, model.num_attention_heads, model.num_key_value_heads
+    n = size(x, 2)
+    q_projection, k_projection, v_projection = _flint_linear_multi((
+        parameters[prefix * "q_proj.weight"], parameters[prefix * "k_proj.weight"],
+        parameters[prefix * "v_proj.weight"]), x)
+    q = _flint_norm(reshape(q_projection, d, heads, n), parameters[prefix * "q_norm.weight"], model.rms_norm_eps)
+    k = _flint_norm(reshape(k_projection, d, kvheads, n), parameters[prefix * "k_norm.weight"], model.rms_norm_eps)
+    v = reshape(v_projection, d, kvheads, n)
+    local_attention = model.layer_types[layer] == "sliding_attention"
+    if local_attention
+        q = _flint_rope(q, position:position+n-1, model.rope_theta)
+        k = _flint_rope(k, position:position+n-1, model.rope_theta)
+    end
+    appended = _flint_kv_append(k, v, past, position, local_attention ? model.sliding_window : 0)
+    k, v, first_position = appended.key, appended.value, appended.first_position
     key_positions = first_position:position+n-1
     query_positions = position:position+n-1
     allowed = [kp <= qp && (!local_attention || kp > qp-model.sliding_window) for kp in key_positions, qp in query_positions]
@@ -146,19 +173,16 @@ function _flint_attention(model, parameters, prefix, x, layer, past, position)
     mask = all(allowed) ? nothing : _flint_like(x, ifelse.(allowed, 0f0, -Inf32))
     sinks = parameters[prefix * "softmax_offset"]
     output = _flint_attention_context(q, k, v, sinks, mask)
-    # A local layer only needs the preceding W-1 entries at the next call.
-    keep = local_attention ? min(size(k, 3), model.sliding_window-1) : size(k, 3)
-    start = size(k, 3)-keep+1
-    updated = keep == size(k, 3) ? (key=k, value=v, first_position=first_position) :
-        (key=k[:, :, start:end], value=v[:, :, start:end], first_position=position+n-keep)
-    return _flint_linear(parameters[prefix * "o_proj.weight"], reshape(output, d*heads, n)), updated
+    return _flint_linear(parameters[prefix * "o_proj.weight"], reshape(output, d*heads, n)), appended.updated
 end
 
 function _flint_mlp(parameters, prefix, x)
-    gate = _flint_linear(parameters[prefix * "gate_proj.weight"], x)
-    up = _flint_linear(parameters[prefix * "up_proj.weight"], x)
+    gate, up = _flint_linear_multi((parameters[prefix * "gate_proj.weight"],
+        parameters[prefix * "up_proj.weight"]), x)
     return _flint_linear(parameters[prefix * "down_proj.weight"], (gate ./ (1f0 .+ exp.(-gate))) .* up)
 end
+
+_flint_sample_token(logits, rng; kwargs...) = _sample_token(vec(Array(logits)), rng; kwargs...)
 
 """Sigmoid top-k routing. Returns one-based expert IDs and normalized scores."""
 function flint_topk_routing(logits::AbstractMatrix, k::Integer; normalize::Bool=true)
@@ -188,6 +212,25 @@ function flint_topk_routing(logits::AbstractMatrix, k::Integer; normalize::Bool=
     return (expert_ids=ids, weights=weights)
 end
 
+function _flint_expert_gate_up_batch(parameters, prefix, x, expert_ids)
+    # The routed and shared experts all consume this same normalized token.
+    # Keep the portable path for other weight types and unusually large top-k.
+    length(expert_ids) <= 7 || return nothing
+    prefixes = (map(expert -> prefix * "experts.$(expert-1).", Tuple(expert_ids))...,
+        prefix * "shared_expert.")
+    projections = map(prefixes) do expert_prefix
+        (parameters[expert_prefix * "gate_proj.weight"],
+            parameters[expert_prefix * "up_proj.weight"],
+            parameters[expert_prefix * "down_proj.weight"])
+    end
+    all(weights -> all(weight -> weight isa AbstractNativeNVFP4Weight, weights), projections) ||
+        return nothing
+    shared_inputs = ntuple(2length(projections)) do index
+        projections[cld(index,2)][isodd(index) ? 1 : 2]
+    end
+    return (weights=projections, values=_flint_linear_multi(shared_inputs,x))
+end
+
 function _flint_feedforward(model, parameters, prefix, x, layer)
     sparse = !(layer-1 in model.mlp_only_layers) && model.num_experts > 0 && layer % model.decoder_sparse_step == 0
     sparse || return _flint_mlp(parameters, prefix, x)
@@ -198,7 +241,21 @@ function _flint_feedforward(model, parameters, prefix, x, layer)
         # Decode routes contain one column: every selected expert consumes the
         # same activation. Avoid gathering x, uploading one-element factors,
         # and gathering/scattering the sole result column for each expert.
-        for route in sortperm(vec(routes.expert_ids))
+        order = sortperm(vec(routes.expert_ids))
+        batched = _flint_expert_gate_up_batch(parameters,prefix,x,routes.expert_ids[order])
+        if batched !== nothing
+            for (index,route) in enumerate(order)
+                gate,up = batched.values[2index-1],batched.values[2index]
+                values = _flint_linear(batched.weights[index][3],
+                    (gate ./ (1f0 .+ exp.(-gate))) .* up)
+                result .+= values .* routes.weights[route]
+            end
+            index = length(order)+1
+            gate,up = batched.values[2index-1],batched.values[2index]
+            return result .+ _flint_linear(batched.weights[index][3],
+                (gate ./ (1f0 .+ exp.(-gate))) .* up)
+        end
+        for route in order
             expert = routes.expert_ids[route]
             values = _flint_mlp(parameters, prefix * "experts.$(expert-1).", x)
             result .+= values .* routes.weights[route]
@@ -271,7 +328,7 @@ function generate_flint_tokens(bundle, prompt::AbstractVector{<:Integer}; max_ne
     cache = FlintKVCache(bundle.model)
     logits = hf_flint_forward(bundle.model, bundle.parameters, prompt; cache, last_only=true)
     for step in 1:max_new_tokens
-        token = _sample_token(vec(Array(logits)), rng; temperature, top_k, top_p)
+        token = _flint_sample_token(logits, rng; temperature, top_k, top_p)
         push!(generated, token)
         on_token === nothing || on_token(token) !== false || break
         (token in eos_ids || step == max_new_tokens) && break

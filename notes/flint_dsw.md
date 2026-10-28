@@ -117,6 +117,10 @@ GQA attention heads. Final packets separately publish `prompt_eval_duration`,
 `decode_duration`, and `lifeai.decode_tokens_per_second`; `eval_duration` retains
 its previous total-generation meaning. See [performance analysis](flint_performance.md)
 for the measured 1.24 to 18.02 tok/s improvement, validation and remaining gaps.
+The v3 path adds shared Q/K/V and expert input quantization, fused normalization,
+cached RoPE, persistent CUDA KV storage and device greedy sampling. Its refreshed
+baseline measured 19.04 tok/s versus 30.75 tok/s after this round; see the
+[v3 analysis](flint_performance_v3.md) for the three-run protocol and numerical limits.
 
 The [Lumen Rust terminal](../tools/tui/README.md) uses `lifeai chat` or `lumen`
 and keeps a separate history and draft per model. The old `qwen` command and

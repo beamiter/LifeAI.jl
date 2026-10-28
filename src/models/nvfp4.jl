@@ -166,6 +166,21 @@ before sampling. Scratch space is shared within a CUDA context: same-stream
 calls execute in order and transfers to another stream wait for prior work.
 """
 function native_nvfp4_gemm end
+"""
+    native_nvfp4_gemm_multi(weights::Tuple, activations; check_finite=true)
+
+Apply one to sixteen prepared native FP4 projections to the same input and return
+an output tuple. CUDA single-token groups quantize the shared
+activation once, while retaining a separate device alpha for each weight.
+Other input shapes use the existing individual native GEMM calls.
+"""
+function native_nvfp4_gemm_multi end
+function native_nvfp4_gemm_multi(weights::Tuple, activations; check_finite::Bool=true)
+    1 <= length(weights) <= 16 || throw(ArgumentError("native NVFP4 multi-projection accepts one to sixteen weights"))
+    all(weight -> weight isa AbstractNativeNVFP4Weight,weights) ||
+        throw(ArgumentError("native NVFP4 multi-projection requires prepared native weights"))
+    return map(weight -> native_nvfp4_gemm(weight,activations;check_finite), weights)
+end
 """Return the original portable NVFP4 weight from a prepared native weight."""
 function nvfp4_weight end
 """Report successful native GEMM calls and backend resource usage."""

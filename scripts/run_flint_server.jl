@@ -40,7 +40,7 @@ function status(worker::Worker)
         worker.bundle.nvfp4_backend === :native ? "cublaslt_nvfp4" : "reference"
     return (ready=worker.ready, model=MODEL_ID, context_tokens=worker.context_tokens,
         max_new_tokens=worker.max_new_tokens, phase=worker.phase, error=worker.load_error,
-        native_fp4_backend=backend, inference_engine="lifeai_flint_decode_v2")
+        native_fp4_backend=backend, inference_engine="lifeai_flint_decode_v3")
 end
 
 json(value) = JSON3.write(value)

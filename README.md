@@ -796,6 +796,7 @@ julia -O1 --project=. scripts/benchmark_flint_nvfp4_native.jl --quick
 Flint 使用常驻 NVFP4 原生推理 worker，Qwen 复用 BF16/XLA 服务；
 一次驻留一个模型，切换时先释放旧进程的显存。
 
-Flint 解码已优化分组注意力、单 token MoE 和异步原生 FP4：本机短上下文
-稳定解码从 1.24 提升至约 18 tok/s。测试条件、数值范围和剩余瓶颈见
-[性能分析](notes/flint_performance.md)。
+Flint 已优化分组注意力、共享投影量化、融合归一化/RoPE、KV 复用和设备端
+贪心采样：本机短上下文稳定解码约 31 tok/s，本轮比复测基线提高约 61%。
+测试条件、数值范围和剩余瓶颈见 [第二轮性能分析](notes/flint_performance_v3.md)，
+早期 1.24 → 18 tok/s 的记录见 [第一轮分析](notes/flint_performance.md)。

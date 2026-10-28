@@ -55,6 +55,7 @@ export generate_flint_tokens, generate_flint
 export quantize_flint_parameters, load_hf_flint_quantized
 export NVFP4Weight, NVFP4_BLOCK_SIZE, quantize_nvfp4, dequantize_nvfp4
 export AbstractNativeNVFP4Weight, prepare_nvfp4_gemm, native_nvfp4_gemm
+export native_nvfp4_gemm_multi
 export nvfp4_weight, native_nvfp4_stats, native_nvfp4_supported
 export prepare_flint_nvfp4, flint_native_fp4_stats
 export FLINT_QUANTIZED_FORMAT_VERSION, save_flint_quantized, load_flint_quantized
