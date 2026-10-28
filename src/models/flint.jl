@@ -56,11 +56,13 @@ shares floating-point parameters with the input. Native GEMM quantizes each
 activation matrix too (W4A4), so results can differ from reference W4A16 mode.
 Saving the prepared bundle preserves the original portable NVFP4 weights.
 """
-function prepare_flint_nvfp4(bundle; kwargs...)
-    parameters = Dict{String,Any}(
-        name => (weight isa NVFP4Weight ? prepare_nvfp4_gemm(weight; kwargs...) : weight)
-        for (name, weight) in bundle.parameters
-    )
+function prepare_flint_nvfp4(bundle; on_progress=nothing, kwargs...)
+    parameters = Dict{String,Any}()
+    total = length(bundle.parameters)
+    for (index, (name, weight)) in enumerate(bundle.parameters)
+        parameters[name] = weight isa NVFP4Weight ? prepare_nvfp4_gemm(weight; kwargs...) : weight
+        on_progress === nothing || on_progress(name, index, total)
+    end
     return merge(bundle, (parameters=parameters, nvfp4_backend=:native))
 end
 
@@ -221,8 +223,13 @@ function hf_flint_forward(model::FlintConfig, parameters, token_ids::AbstractVec
     return logits
 end
 
-"""Generate one-based tokens with cached prefill/decode. Temperature zero is greedy."""
-function generate_flint_tokens(bundle, prompt::AbstractVector{<:Integer}; max_new_tokens::Integer=128, temperature::Real=1f0, top_k=20, top_p=0.95f0, rng=default_rng(), eos_ids=bundle.model.eos_token_id .+ 1)
+"""
+Generate one-based tokens with cached prefill/decode. Temperature zero is greedy.
+`on_token(token_id)` is called immediately after each sampled token (including
+EOS). Return `false` to stop early; callback exceptions propagate so disconnected
+streaming clients can cancel before the next decode step.
+"""
+function generate_flint_tokens(bundle, prompt::AbstractVector{<:Integer}; max_new_tokens::Integer=128, temperature::Real=1f0, top_k=20, top_p=0.95f0, rng=default_rng(), eos_ids=bundle.model.eos_token_id .+ 1, on_token=nothing)
     max_new_tokens isa Bool && throw(ArgumentError("max_new_tokens cannot be Bool"))
     max_new_tokens >= 0 || throw(ArgumentError("max_new_tokens must be nonnegative"))
     !isempty(prompt) || throw(ArgumentError("Flint prompt must not be empty"))
@@ -234,6 +241,7 @@ function generate_flint_tokens(bundle, prompt::AbstractVector{<:Integer}; max_ne
     for step in 1:max_new_tokens
         token = _sample_token(vec(Array(logits)), rng; temperature, top_k, top_p)
         push!(generated, token)
+        on_token === nothing || on_token(token) !== false || break
         (token in eos_ids || step == max_new_tokens) && break
         logits = hf_flint_forward(bundle.model, bundle.parameters, [token]; cache, last_only=true)
     end

@@ -1,0 +1,80 @@
+{
+  "load_timeout": 1800,
+  "request_timeout": 1800,
+  "models": [
+    {
+      "key": "qwen",
+      "id": "Qwen/Qwen3-8B",
+      "label": "Qwen3 8B",
+      "context_tokens": 40960,
+      "max_new_tokens": 512,
+      "url": "http://127.0.0.1:11436",
+      "cwd": "/jfs/application/user/bgl/LifeAI.jl",
+      "log": "/jfs/application/user/bgl/deployments/lifeai_console/logs/qwen.log",
+      "env": {
+        "JULIA_DEPOT_PATH": "/mnt/public_data/bgl/envs/lifeai/depot",
+        "JULIA_NUM_THREADS": "8",
+        "JULIA_NUM_PRECOMPILE_TASKS": "4",
+        "JULIA_PKG_PRECOMPILE_AUTO": "0",
+        "OPENBLAS_NUM_THREADS": "4",
+        "OMP_NUM_THREADS": "4",
+        "CUDA_CACHE_PATH": "/jfs/application/user/bgl/deployments/lifeai_console/cache/cuda",
+        "XDG_CACHE_HOME": "/jfs/application/user/bgl/deployments/lifeai_console/cache",
+        "TMPDIR": "/jfs/application/user/bgl/deployments/lifeai_console/tmp",
+        "LC_ALL": "C.UTF-8",
+        "XLA_REACTANT_GPU_MEM_FRACTION": "0.95",
+        "XLA_REACTANT_GPU_PREALLOCATE": "false"
+      },
+      "command": [
+        "/mnt/public_data/bgl/envs/lifeai/julia-1.12.6/bin/julia",
+        "--cpu-target=native,-avx512bf16",
+        "-O1",
+        "--startup-file=no",
+        "--project=/jfs/application/user/bgl/LifeAI.jl",
+        "/jfs/application/user/bgl/LifeAI.jl/scripts/run_qwen3_xla_server.jl",
+        "/jfs/application/user/bgl/models/Qwen/Qwen3-8B/b968826d9c46dd6066d109eabc6255188de91218",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "11436",
+        "--profile",
+        "/jfs/application/user/bgl/deployments/lifeai_console/qwen-profile.json"
+      ]
+    },
+    {
+      "key": "flint",
+      "id": "RecursiveSI/flint",
+      "label": "Flint NVFP4",
+      "context_tokens": 2048,
+      "max_new_tokens": 512,
+      "url": "http://127.0.0.1:11437",
+      "cwd": "/jfs/application/user/bgl/LifeAI.jl",
+      "log": "/jfs/application/user/bgl/deployments/lifeai_console/logs/flint.log",
+      "env": {
+        "JULIA_DEPOT_PATH": "/mnt/public_data/bgl/envs/lifeai/depot",
+        "JULIA_NUM_THREADS": "8",
+        "JULIA_NUM_PRECOMPILE_TASKS": "4",
+        "JULIA_PKG_PRECOMPILE_AUTO": "0",
+        "OPENBLAS_NUM_THREADS": "4",
+        "OMP_NUM_THREADS": "4",
+        "CUDA_CACHE_PATH": "/jfs/application/user/bgl/deployments/lifeai_console/cache/cuda",
+        "XDG_CACHE_HOME": "/jfs/application/user/bgl/deployments/lifeai_console/cache",
+        "TMPDIR": "/jfs/application/user/bgl/deployments/lifeai_console/tmp",
+        "LC_ALL": "C.UTF-8",
+        "XLA_REACTANT_GPU_MEM_FRACTION": "0.95",
+        "XLA_REACTANT_GPU_PREALLOCATE": "false"
+      },
+      "command": [
+        "/mnt/public_data/bgl/envs/lifeai/julia-1.12.6/bin/julia",
+        "-O1",
+        "--startup-file=no",
+        "--project=/jfs/application/user/bgl/LifeAI.jl",
+        "/jfs/application/user/bgl/LifeAI.jl/scripts/run_flint_server.jl",
+        "--model-dir",
+        "/jfs/application/user/bgl/models/RecursiveSI/flint",
+        "--port",
+        "11437"
+      ]
+    }
+  ]
+}

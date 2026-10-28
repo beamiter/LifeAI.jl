@@ -7,7 +7,7 @@ The public API is exported from `src/api.jl`.
 The DSW environment already provides Julia and its dependency depot:
 
 ```bash
-cd /mnt/public_data/bgl/LifeAI.jl
+cd /jfs/application/user/bgl/LifeAI.jl
 export JULIA_DEPOT_PATH=/mnt/public_data/bgl/envs/lifeai/depot
 LIFEAI_JULIA=/mnt/public_data/bgl/envs/lifeai/julia-1.12.6/bin/julia
 ```
@@ -47,8 +47,12 @@ Validation scripts and artifacts:
 - `scripts/verify_flint_cuda.jl`: float/INT8/INT4 CPU-CUDA parity and generation.
 - `benchmark_results/flint/`: DSW run logs and tiny synthetic CLI artifacts.
 
-All fixture weights are synthetic. No full RecursiveSI/flint checkpoint was
-available or downloaded; the user requested code and validation first.
+Fixture weights are synthetic. On 2026-10-28 the complete checkpoint was
+downloaded to `/jfs/application/user/bgl/models/RecursiveSI/flint` at revision
+`2a247be0c0aec895ccb0ac7ca92229ec6df37288`: all 37 upstream file hashes and
+36,734 tensor shapes passed verification. New code, models and logs use the
+JuiceFS workspace; the established Julia runtime/depot is retained during the
+gradual migration from CPFS.
 
 ## NVFP4
 
@@ -91,3 +95,26 @@ Native activation quantization makes this W4A4 arithmetic, unlike reference
 W4A16. Batch/chunk boundaries affect the activation global scale. Benchmark
 results include quantization/padding overhead and must not be interpreted as
 full-model performance. The portable format remains unchanged.
+
+## Resident service and terminal UI
+
+`scripts/run_flint_server.jl` holds one native NVFP4 bundle across requests.
+CUDA loading uses `quantize_on_device=true`: BF16 source projections retain
+their bits through host reading/upload, then are quantized on the GPU.
+`on_progress(name,index,total)` reports loading/preparation progress, and
+`generate_flint_tokens(...; on_token=callback)` supports incremental output and
+cooperative cancellation when the callback returns `false`.
+
+The loopback worker provides `/healthz` and `/api/chat`. It validates token
+budgets, serializes generation, preserves UTF-8 bytes across token boundaries,
+and reports native GEMM calls in the final NDJSON packet. Its default limits
+are 2048 total context tokens and 512 generated tokens.
+The CUDA/native worker warms prefill and decode before publishing readiness;
+`--no-warmup` is available for startup diagnostics. Final packets include the
+per-request native call delta separately from the cumulative count.
+
+The [terminal console](../tools/console/README.md) routes Qwen3-8B and Flint
+through one endpoint and keeps a separate history per model. Model switching
+waits for the previous worker to exit before starting another GPU process.
+The deployed controller is
+`/jfs/application/user/bgl/deployments/lifeai_console/control.py`.

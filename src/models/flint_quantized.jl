@@ -91,12 +91,18 @@ end
 
 """
     load_hf_flint_quantized(path; scheme=:int4, group=nothing, calibration=:maxabs,
-                            dtype=Float32, device=identity)
+                            dtype=Float32, device=identity, quantize_on_device=false)
 
 Load and quantize an HF Flint checkpoint one tensor at a time, without keeping
 an additional complete unquantized model. `device` is a function such as
 `CUDA.cu`; packed values and scales are transferred separately. The returned
 bundle has `model`, `parameters`, `source`, and `quantization` fields.
+With `quantize_on_device=true`, each floating-point projection is transferred
+by `device` before quantization, and its packed result stays on that device.
+This avoids CPU quantization and a second transfer of packed data. It requires
+`:maxabs` calibration; floating-point reserved tensors retain the usual path.
+BF16 source projections keep their exact bits through host loading and are
+converted to Float32 by the device quantizer, reducing host conversion and I/O.
 """
 function load_hf_flint_quantized(
     path::AbstractString;
@@ -105,9 +111,14 @@ function load_hf_flint_quantized(
     calibration::Symbol=:maxabs,
     dtype::Type=Float32,
     device=identity,
+    quantize_on_device::Bool=false,
+    on_progress=nothing,
 )
     dtype in (Float32, BFloat16) || throw(ArgumentError("Flint dtype must be Float32 or BFloat16"))
     spec = _flint_quantization_spec(scheme, group, calibration)
+    quantize_on_device && spec.calibration !== :maxabs && throw(ArgumentError(
+        "on-device Flint quantization supports only :maxabs calibration",
+    ))
     model = load_hf_flint_config(path)
     reader = open_safetensors_reader(path)
     shapes = flint_expected_tensor_shapes(model)
@@ -123,10 +134,20 @@ function load_hf_flint_quantized(
         end
     end
     parameters = Dict{String,Any}()
-    for name in sort!(collect(keys(shapes)))
+    for (index, name) in enumerate(sort!(collect(keys(shapes))))
         target_dtype = endswith(name, ".mlp.gate.weight") || endswith(name, ".softmax_offset") ? Float32 : dtype
+        if quantize_on_device && _flint_quantizable(name) && reader.locations[name].dtype == "BF16"
+            target_dtype = BFloat16
+        end
         weight = read_safetensors_tensor(reader, name; target_dtype)
-        parameters[name] = _flint_weight_to_device(device, _flint_quantize_tensor(name, weight, spec))
+        parameters[name] = if quantize_on_device && _flint_quantizable(name)
+            # Quantization preserves the placement of its input. Do not apply
+            # device again to the packed result (which would duplicate copies).
+            _flint_quantize_tensor(name, device(weight), spec)
+        else
+            _flint_weight_to_device(device, _flint_quantize_tensor(name, weight, spec))
+        end
+        on_progress === nothing || on_progress(name, index, length(shapes))
     end
     return (
         model=model, parameters=parameters, source=abspath(path),
