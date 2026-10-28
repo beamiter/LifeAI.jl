@@ -1,0 +1,59 @@
+{
+  "model": "RecursiveSI/flint",
+  "context_tokens": 262144,
+  "tokenizer_sha256": "a263cce0b7e2b03f7ee07ce809783ef4b47f160c3f268a4ea1524f638da45b68",
+  "renderer": "<|user|>{UTF8_FILE}<|assistant|>",
+  "expected_answer": {
+    "begin": "AMBER-4827-MICA",
+    "middle": "COBALT-9156-RIVER",
+    "end": "JADE-6732-ORBIT"
+  },
+  "cases": [
+    {
+      "file": "quality-262144-varied-prompt-260096-reserve-2048.txt",
+      "ids_file": "quality-262144-varied-prompt-260096-reserve-2048.ids.u32",
+      "style": "varied",
+      "prompt_tokens_official_tokenizers": 260096,
+      "requested_output_tokens": 2048,
+      "reserved_output_tokens": 2048,
+      "total_context_budget": 262144,
+      "prompt_utf8_bytes": 1234581,
+      "record_count": 10350,
+      "all_record_indices_unique": true,
+      "padding_words": 34,
+      "sha256": "8799543e94162d37f2531b894d65d69ae8d4c5f4c8ca1ed5a0697699dfeec537",
+      "token_ids_zero_based_u32le_sha256": "8ab0dbe2e06ebabb2e4651b322e28a0cb311f8121ec4e3e07373f69185d3d854",
+      "marker_spans": {
+        "begin": {
+          "value": "AMBER-4827-MICA",
+          "token_start_zero_based": 24,
+          "token_end_exclusive": 31,
+          "prompt_character_fraction": 0.00011339686797850643
+        },
+        "middle": {
+          "value": "COBALT-9156-RIVER",
+          "token_start_zero_based": 130033,
+          "token_end_exclusive": 130041,
+          "prompt_character_fraction": 0.49980317543629443
+        },
+        "end": {
+          "value": "JADE-6732-ORBIT",
+          "token_start_zero_based": 260054,
+          "token_end_exclusive": 260061,
+          "prompt_character_fraction": 0.9998420543624585
+        }
+      },
+      "first_record_samples": [
+        "Record 000001: A postcard from the riverside market described clear skies; Leon placed it next to a simple glass bottle.\n",
+        "Record 000002: A routine inventory at the public library listed a green canvas bag; Felix signed the page marked 844.\n"
+      ],
+      "last_record_samples": [
+        "Record 010349: The weekly report records 521 ordinary visits to the community workshop, where Clara displayed a blue notebook.\n",
+        "Record 010350: The visitor log for a small bakery says Leon arrived on day 115 during a calm afternoon.\n"
+      ]
+    }
+  ],
+  "prior_manifest_file": "quality-manifest.json",
+  "prior_manifest_sha256": "866b70bba4c77ed5cb9fed1df60c75331943f1106f7ce01ba1e54b628d1efd32",
+  "note": "Separate expanded output budget; all earlier 512-budget files and manifest are unchanged. EOS may stop early."
+}

@@ -20,6 +20,7 @@ include(joinpath(LIFEAI_TEST_ROOT, "test_qwen3_xla_client_limits.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_io.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_quantization.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_streaming.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "test_flint_prefill_chunks.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_decode_optimized.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_kv_decode.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_server.jl"))
@@ -533,6 +534,9 @@ if lowercase(get(ENV, "LIFEAI_TEST_CUDA", "false")) in ("1", "true", "yes")
     @testset "CUDA episode extensions" begin
         include(joinpath(LIFEAI_TEST_ROOT, "test_flint_decode_kernels.jl"))
         flint_kv_decode_checks(CUDA.cu)
+        include(joinpath(LIFEAI_TEST_ROOT, "test_flint_kv_long.jl"))
+        include(joinpath(LIFEAI_TEST_ROOT, "test_flint_long_attention.jl"))
+        include(joinpath(LIFEAI_TEST_ROOT, "test_flint_prefill_cuda.jl"))
         include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_flint_cuda.jl"))
         include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_qwen3_vl_parameter_binding_cuda.jl"))
         include(chapter_test(
@@ -554,5 +558,7 @@ if lowercase(get(ENV, "LIFEAI_TEST_NATIVE_FP4", "false")) in ("1", "true", "yes"
         include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_flint_nvfp4_native.jl"))
         include(joinpath(LIFEAI_TEST_ROOT, "test_nvfp4_decode_optimized.jl"))
         include(joinpath(LIFEAI_TEST_ROOT, "test_nvfp4_multi_projection.jl"))
+        include(joinpath(LIFEAI_TEST_ROOT, "test_nvfp4_host_portable.jl"))
+        include(joinpath(LIFEAI_TEST_ROOT, "test_nvfp4_token_activation.jl"))
     end
 end

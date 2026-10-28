@@ -1,4 +1,5 @@
-# Incremental CUDA KV storage. Full-attention layers grow geometrically;
+# Incremental CUDA KV storage. Full-attention layers reserve the requested
+# generation capacity, or grow geometrically when no reservation is provided;
 # sliding layers duplicate a circular window so attention always sees an
 # ordered, contiguous logical view without concatenating the whole prefix.
 struct _FlintCUDAKVStorage{K,V}
@@ -38,14 +39,15 @@ function _flint_kv_write!(storage::_FlintCUDAKVStorage, key, value, first_slot)
     return storage
 end
 
-function _flint_kv_storage(key, value, past, window, needed)
+function _flint_kv_storage(key, value, past, window, needed, capacity_hint)
     existing = past !== nothing && hasproperty(past, :storage) ? past.storage : nothing
     if existing isa _FlintCUDAKVStorage && existing.window == window &&
-            existing.capacity >= needed && size(existing.key,1) == size(key,1) &&
+            existing.capacity >= max(needed,window > 0 ? 0 : capacity_hint) && size(existing.key,1) == size(key,1) &&
             size(existing.key,2) == size(key,2)
         return existing, past.end_slot
     end
-    capacity = window > 0 ? window : max(16,nextpow(2,needed))
+    capacity = window > 0 ? window : capacity_hint > 0 ?
+        max(16,needed,capacity_hint) : max(16,nextpow(2,needed))
     slots = window > 0 ? 2capacity : capacity
     storage = _FlintCUDAKVStorage(
         CUDA.CuArray{Float32}(undef,size(key,1),size(key,2),slots),
@@ -58,20 +60,24 @@ function _flint_kv_storage(key, value, past, window, needed)
 end
 
 function LifeAI._flint_kv_append(key::CUDA.CuArray{Float32,3}, value::CUDA.CuArray{Float32,3},
-    past, position, window::Int)
-    # Prefill can contain multiple queries and require more than one sliding
-    # window temporarily. Keep the established general path for those calls.
-    size(key,3) == 1 || return LifeAI._flint_kv_append_reference(key,value,past,position,window)
+    past, position, window::Int; capacity_hint::Int=0)
     size(key) == size(value) || throw(DimensionMismatch("Flint key/value shapes differ"))
     window >= 0 || throw(ArgumentError("Flint KV window must be nonnegative"))
+    capacity_hint >= 0 || throw(ArgumentError("Flint KV capacity hint must be nonnegative"))
+    size(key,3) > 0 || throw(ArgumentError("Flint KV append requires tokens"))
+    # Multi-token sliding attention only needs W-1 old keys plus this chunk.
+    # Keeping that bounded temporary also avoids overwriting visible history
+    # before all the queries in the chunk have consumed it.
+    window > 0 && size(key,3) != 1 &&
+        return LifeAI._flint_kv_append_reference(key,value,past,position,window)
     old_tokens = past === nothing ? 0 : size(past.key,3)
     # A caller with a longer external history still needs its full causal mask.
     # The normal sliding cache already retains exactly window-1 old tokens.
     window > 0 && old_tokens >= window &&
         return LifeAI._flint_kv_append_reference(key,value,past,position,window)
-    needed = old_tokens+1
-    storage, end_slot = _flint_kv_storage(key,value,past,window,needed)
-    slot = window > 0 ? mod(end_slot,window)+1 : needed
+    needed = old_tokens+size(key,3)
+    storage, end_slot = _flint_kv_storage(key,value,past,window,needed,capacity_hint)
+    slot = window > 0 ? mod(end_slot,window)+1 : old_tokens+1
     _flint_kv_write!(storage,key,value,slot)
     first_slot = window > 0 ? mod(slot-needed,window)+1 : 1
     attention_slots = first_slot:first_slot+needed-1
@@ -81,6 +87,7 @@ function LifeAI._flint_kv_append(key::CUDA.CuArray{Float32,3}, value::CUDA.CuArr
     keep = window > 0 ? min(needed,window-1) : needed
     cache_slots = first_slot+needed-keep:first_slot+needed-1
     updated = (key=view(storage.key,:,:,cache_slots),value=view(storage.value,:,:,cache_slots),
-        first_position=position+1-keep,storage=storage,end_slot=slot)
+        first_position=position+size(key,3)-keep,storage=storage,
+        end_slot=window > 0 ? slot : needed)
     return (key=attention_key,value=attention_value,first_position=first_position,updated=updated)
 end

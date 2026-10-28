@@ -241,10 +241,32 @@ class RouterHTTPTests(unittest.TestCase):
                     for value in (-1, 3, True, float('nan'), float('inf'), .1)]
         invalid += [dict(stream=1), dict(options=[]), dict(messages=[]),
                     dict(messages=[{'role': 'tool', 'content': 'x'}]),
-                    dict(messages=[{'role': 'user', 'content': None}]), dict(model='unknown')]
+                    dict(messages=[{'role': 'user', 'content': None}]),
+                    dict(messages=[dict(role='user', content='x')] * 65), dict(model='unknown')]
         for payload in invalid:
             with self.subTest(payload=payload):
                 self.assertEqual(self.fixture.chat(**payload)[0], 400)
+        self.assertEqual([r for r in self.fixture.records() if r['event'] == 'REQUEST'], [])
+        self.assertEqual(self.fixture.manager.active_requests, 0)
+
+    def test_long_utf8_chat_exceeds_old_body_cap_and_is_preserved(self):
+        self.fixture.ready('flint')
+        content = '长上下文🌟' * 100000
+        self.assertGreater(len(content.encode()), 1024 * 1024)
+        code, packets = self.fixture.chat(messages=[dict(role='user', content=content)])
+        self.assertEqual(code, 200)
+        self.assertTrue(packets[-1]['done'])
+        request = [r for r in self.fixture.records() if r['event'] == 'REQUEST'][-1]
+        self.assertEqual(request['payload']['messages'][0]['content'], content)
+        self.assertEqual(self.fixture.manager.active_requests, 0)
+
+    def test_chat_character_limits_fail_before_worker_post(self):
+        self.fixture.ready('flint')
+        with patch.object(server, 'MAX_MESSAGE_CHARS', 8), patch.object(server, 'MAX_TOTAL_MESSAGE_CHARS', 12):
+            for messages in ([dict(role='user', content='长' * 9)],
+                             [dict(role='user', content='长' * 7), dict(role='user', content='文' * 6)]):
+                with self.subTest(lengths=[len(m['content']) for m in messages]):
+                    self.assertEqual(self.fixture.chat(messages=messages)[0], 413)
         self.assertEqual([r for r in self.fixture.records() if r['event'] == 'REQUEST'], [])
         self.assertEqual(self.fixture.manager.active_requests, 0)
 
@@ -309,7 +331,7 @@ class RouterHTTPTests(unittest.TestCase):
         response.read(); connection.close()
         connection = http.client.HTTPConnection('127.0.0.1', self.fixture.http.server_port, timeout=3)
         connection.putrequest('POST', '/api/select')
-        connection.putheader('Content-Length', str(1024*1024+1))
+        connection.putheader('Content-Length', str(server.MAX_BODY_BYTES + 1))
         connection.endheaders()
         response = connection.getresponse()
         self.assertEqual(response.status, 413)

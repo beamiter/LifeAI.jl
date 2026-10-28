@@ -174,7 +174,7 @@ fn read_request(stream: &mut TcpStream) -> Request {
                 .then(|| value.trim().parse::<usize>().unwrap())
         })
         .unwrap_or(0);
-    assert!(length < 2 * 1024 * 1024);
+    assert!(length <= 16 * 1024 * 1024);
     let mut body = vec![0; length];
     stream.read_exact(&mut body).unwrap();
     assert!(header_end > 0);
@@ -208,6 +208,46 @@ fn help_uses_lumen_brand_and_explains_model_option() {
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("Lumen"), "{text}");
     assert!(text.contains("--model"), "{text}");
+    assert!(text.contains("--file"), "{text}");
+}
+
+#[test]
+fn file_prompt_transports_over_one_mib_of_utf8() {
+    let service = Service::new(FLINT, Reply::Stream, 512);
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let content = "长上下文🌟".repeat(100_000);
+    assert!(content.len() > 1024 * 1024);
+    std::fs::write(file.path(), &content).unwrap();
+    let output = service
+        .command()
+        .args(["--model", "flint", "--file"])
+        .arg(file.path())
+        .output()
+        .unwrap();
+    success(&output);
+    let requests = service.captured();
+    let request = requests.iter().find(|r| r.path == "/api/chat").unwrap();
+    assert_eq!(request.body["messages"][0]["content"], content);
+}
+
+#[test]
+fn oversized_or_non_utf8_file_fails_before_connecting() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    for bytes in [vec![b'x'; 4 * 1024 * 1024 + 1], vec![0xff, 0xfe]] {
+        std::fs::write(file.path(), bytes).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_lifeai"))
+            .args(["--no-tunnel", "--url", "http://127.0.0.1:1", "--file"])
+            .arg(file.path())
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("4 MiB") || error.contains("UTF-8"),
+            "{error}"
+        );
+        assert!(!error.contains("无法连接"), "{error}");
+    }
 }
 
 #[test]

@@ -13,6 +13,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
+MAX_BODY_BYTES = 16 * 1024 * 1024
+MAX_MESSAGES = 64
+MAX_MESSAGE_CHARS = 4 * 1024 * 1024
+MAX_TOTAL_MESSAGE_CHARS = 4 * 1024 * 1024
+
 
 class APIError(Exception):
     def __init__(self, status, message):
@@ -190,14 +195,21 @@ class ModelManager:
             if self.models[model]['key'] != 'qwen' or not isinstance(payload.get('prompt'), str):
                 raise APIError(400, 'Use /api/chat with messages for Flint.')
             messages = None
+            if len(payload['prompt']) > MAX_TOTAL_MESSAGE_CHARS:
+                raise APIError(413, 'Prompt exceeds the 4 Mi character limit.')
         else:
             messages = payload.get('messages')
-            if not isinstance(messages, list) or not 1 <= len(messages) <= 128:
-                raise APIError(400, 'messages must contain 1 to 128 chat messages.')
+            if not isinstance(messages, list) or not 1 <= len(messages) <= MAX_MESSAGES:
+                raise APIError(400, f'messages must contain 1 to {MAX_MESSAGES} chat messages.')
+            total_chars = 0
             for message in messages:
                 if (not isinstance(message, dict) or message.get('role') not in ('system', 'user', 'assistant')
                         or not isinstance(message.get('content'), str)):
                     raise APIError(400, 'Each message needs a system/user/assistant role and string content.')
+                total_chars += len(message['content'])
+                if (len(message['content']) > MAX_MESSAGE_CHARS
+                        or total_chars > MAX_TOTAL_MESSAGE_CHARS):
+                    raise APIError(413, 'Chat content exceeds the 4 Mi character limit.')
         options = payload.get('options', {})
         if not isinstance(options, dict) or type(payload.get('stream', True)) is not bool:
             raise APIError(400, 'Invalid options or stream flag.')
@@ -280,8 +292,9 @@ def handler_for(manager):
                     length = int(self.headers.get('Content-Length', '0'))
                 except ValueError:
                     raise APIError(400, 'Invalid Content-Length.')
-                if not 0 < length <= 1024 * 1024:
-                    raise APIError(413, 'JSON request must be between 1 byte and 1 MiB.')
+                if not 0 < length <= MAX_BODY_BYTES:
+                    self.close_connection = True
+                    raise APIError(413, 'JSON request must be between 1 byte and 16 MiB.')
                 try:
                     payload = json.loads(self.rfile.read(length))
                 except (ValueError, UnicodeError):
@@ -296,7 +309,7 @@ def handler_for(manager):
                     raise APIError(404, 'Unknown endpoint.')
                 url, forwarded = manager.reserve(payload, raw=self.path == '/api/generate')
                 reserved = True
-                request = Request(url, data=json.dumps(forwarded).encode(),
+                request = Request(url, data=json.dumps(forwarded, ensure_ascii=False).encode(),
                                   headers={'Content-Type': 'application/json'}, method='POST')
                 with manager.opener.open(request, timeout=manager.config.get('request_timeout', 1800)) as response:
                     if not forwarded['stream']:

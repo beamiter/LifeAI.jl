@@ -1,0 +1,114 @@
+{
+  "profile": "per-token activation quantization",
+  "reserved_output_tokens": 512,
+  "runs": [
+    {
+      "label": "per-token-activation",
+      "style": "repeated",
+      "context_budget": 8192,
+      "prompt_tokens": 7680,
+      "reserved_output_tokens": 512,
+      "actual_output_tokens": 512,
+      "transport_status": "complete",
+      "first_token_seconds": 16.32406967199495,
+      "total_seconds": 33.702842407998105,
+      "peak_gpu_memory_MiB": 48713.0,
+      "done_reason": "length",
+      "expected_answer": {
+        "begin": "AMBER-4827-MICA",
+        "middle": "COBALT-9156-RIVER",
+        "end": "JADE-6732-ORBIT"
+      },
+      "final_answer_text": "",
+      "strict_json_pass": false,
+      "error": "Unterminated think block.",
+      "identifier_matches": {
+        "begin": false,
+        "middle": false,
+        "end": false
+      },
+      "raw_identifier_presence_including_reasoning": {
+        "begin": true,
+        "middle": false,
+        "end": true
+      },
+      "answer_sha256": "d40561f1ce314ecfc3fa08e98a05cb7d95c5b919e10b69c04df8cc15cbef841c",
+      "artifact_subdirectory": "token-8192-repeated"
+    },
+    {
+      "label": "per-token-activation",
+      "style": "varied",
+      "context_budget": 8192,
+      "prompt_tokens": 7680,
+      "reserved_output_tokens": 512,
+      "actual_output_tokens": 247,
+      "transport_status": "complete",
+      "first_token_seconds": 12.682898885002942,
+      "total_seconds": 20.619742900002166,
+      "peak_gpu_memory_MiB": 63305.0,
+      "done_reason": "stop",
+      "expected_answer": {
+        "begin": "AMBER-4827-MICA",
+        "middle": "COBALT-9156-RIVER",
+        "end": "JADE-6732-ORBIT"
+      },
+      "final_answer_text": "{\"begin\": \"AMBER-4827-MICA\", \"middle\": \"COBALT-9156-RIVER\", \"end\": \"JADE-6732-ORBIT\"}",
+      "strict_json_pass": true,
+      "identifier_matches": {
+        "begin": true,
+        "middle": true,
+        "end": true
+      },
+      "parsed_final_json": {
+        "begin": "AMBER-4827-MICA",
+        "middle": "COBALT-9156-RIVER",
+        "end": "JADE-6732-ORBIT"
+      },
+      "raw_identifier_presence_including_reasoning": {
+        "begin": true,
+        "middle": true,
+        "end": true
+      },
+      "answer_sha256": "32dade04599708aa8bb226c4ebd46e404098a1a5bc916458598d76db07a64d54",
+      "artifact_subdirectory": "token-8192-varied"
+    },
+    {
+      "label": "per-token-activation",
+      "style": "varied",
+      "context_budget": 32768,
+      "prompt_tokens": 32256,
+      "reserved_output_tokens": 512,
+      "actual_output_tokens": 191,
+      "transport_status": "complete",
+      "first_token_seconds": 57.17648373699922,
+      "total_seconds": 64.55524520199833,
+      "peak_gpu_memory_MiB": 63305.0,
+      "done_reason": "stop",
+      "expected_answer": {
+        "begin": "AMBER-4827-MICA",
+        "middle": "COBALT-9156-RIVER",
+        "end": "JADE-6732-ORBIT"
+      },
+      "final_answer_text": "{\"begin\":\"AMBER-4827-MICA\",\"middle\":\"COBALT-9156-RIVER\",\"end\":\"JADE-6732-ORBIT\"}",
+      "strict_json_pass": true,
+      "identifier_matches": {
+        "begin": true,
+        "middle": true,
+        "end": true
+      },
+      "parsed_final_json": {
+        "begin": "AMBER-4827-MICA",
+        "middle": "COBALT-9156-RIVER",
+        "end": "JADE-6732-ORBIT"
+      },
+      "raw_identifier_presence_including_reasoning": {
+        "begin": true,
+        "middle": true,
+        "end": true
+      },
+      "answer_sha256": "a1082d0f40199047eef0822cc187b80d9e7f9a4f4a9a2345c658940a4b017bd3",
+      "artifact_subdirectory": "token-32768-varied"
+    }
+  ],
+  "note": "Strict final JSON determines pass; raw identifier presence is a separate diagnostic and can include unfinished reasoning."
+}

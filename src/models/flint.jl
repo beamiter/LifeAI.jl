@@ -72,24 +72,30 @@ function prepare_flint_nvfp4(bundle; on_progress=nothing, kwargs...)
         parameters[name] = weight isa NVFP4Weight ? prepare_nvfp4_gemm(weight; kwargs...) : weight
         on_progress === nothing || on_progress(name, index, total)
     end
-    return merge(bundle, (parameters=parameters, nvfp4_backend=:native))
+    return merge(bundle, (parameters=parameters, nvfp4_backend=:native,
+        nvfp4_activation_scaling=get(kwargs,:activation_scaling,:global)))
 end
 
 """Aggregate evidence of native GEMM use in a prepared Flint bundle."""
 function flint_native_fp4_stats(bundle)
     prepared_weights = native_calls = prepared_weight_bytes = shared_workspace_bytes = 0
+    gpu_weight_bytes = host_portable_weight_bytes = 0
     for weight in values(bundle.parameters)
         weight isa AbstractNativeNVFP4Weight || continue
         stats = native_nvfp4_stats(weight)
         prepared_weights += 1
         native_calls += Int(get(stats, :native_calls, 0))
         prepared_weight_bytes += Int(get(stats, :prepared_weight_bytes, 0))
+        gpu_weight_bytes += Int(get(stats, :gpu_weight_bytes, 0))
+        get(stats,:portable_device,:cuda) === :cpu &&
+            (host_portable_weight_bytes += Int(get(stats,:portable_weight_bytes,0)))
         shared_workspace_bytes = max(shared_workspace_bytes, Int(get(stats, :workspace_bytes, 0)))
     end
     return (
         backend=iszero(prepared_weights) ? :reference : :cublaslt_nvfp4,
         prepared_weights=prepared_weights, native_calls=native_calls,
         prepared_weight_bytes=prepared_weight_bytes, shared_workspace_bytes=shared_workspace_bytes,
+        gpu_weight_bytes=gpu_weight_bytes,host_portable_weight_bytes=host_portable_weight_bytes,
     )
 end
 
@@ -130,9 +136,17 @@ function _flint_attention_context(q, k, v, sinks, mask)
         reshape(permutedims(reshape(context, d, group, n, kvheads), (1, 2, 4, 3)), d, heads, n)
 end
 
+function _flint_attention_long(q, k, v, sinks, first_key_position, query_position, window)
+    keys = first_key_position:first_key_position+size(k,3)-1
+    queries = query_position:query_position+size(q,3)-1
+    allowed = [kp <= qp && (window == 0 || kp > qp-window) for kp in keys, qp in queries]
+    mask = all(allowed) ? nothing : _flint_like(q, ifelse.(allowed, 0f0, -Inf32))
+    return _flint_attention_context(q,k,v,sinks,mask)
+end
+
 # Device extensions can append in reusable storage while preserving these
 # logical views and positions. The reference keeps ordinary immutable records.
-function _flint_kv_append_reference(k, v, past, position, window::Int)
+function _flint_kv_append_reference(k, v, past, position, window::Int; capacity_hint::Int=0)
     n = size(k, 3)
     first_position = position
     if past !== nothing
@@ -146,10 +160,10 @@ function _flint_kv_append_reference(k, v, past, position, window::Int)
         (key=k[:, :, start:end], value=v[:, :, start:end], first_position=position+n-keep)
     return (key=k, value=v, first_position=first_position, updated=updated)
 end
-_flint_kv_append(k, v, past, position, window::Int) =
-    _flint_kv_append_reference(k, v, past, position, window)
+_flint_kv_append(k, v, past, position, window::Int; capacity_hint::Int=0) =
+    _flint_kv_append_reference(k, v, past, position, window;capacity_hint)
 
-function _flint_attention(model, parameters, prefix, x, layer, past, position)
+function _flint_attention(model, parameters, prefix, x, layer, past, position; cache_capacity::Int=0)
     d, heads, kvheads = model.head_dim, model.num_attention_heads, model.num_key_value_heads
     n = size(x, 2)
     q_projection, k_projection, v_projection = _flint_linear_multi((
@@ -163,16 +177,11 @@ function _flint_attention(model, parameters, prefix, x, layer, past, position)
         q = _flint_rope(q, position:position+n-1, model.rope_theta)
         k = _flint_rope(k, position:position+n-1, model.rope_theta)
     end
-    appended = _flint_kv_append(k, v, past, position, local_attention ? model.sliding_window : 0)
+    window = local_attention ? model.sliding_window : 0
+    appended = _flint_kv_append(k, v, past, position, window;capacity_hint=cache_capacity)
     k, v, first_position = appended.key, appended.value, appended.first_position
-    key_positions = first_position:position+n-1
-    query_positions = position:position+n-1
-    allowed = [kp <= qp && (!local_attention || kp > qp-model.sliding_window) for kp in key_positions, qp in query_positions]
-    # All cached decode keys are causal; avoid a host-to-device mask transfer
-    # when there is no actual masked entry.
-    mask = all(allowed) ? nothing : _flint_like(x, ifelse.(allowed, 0f0, -Inf32))
     sinks = parameters[prefix * "softmax_offset"]
-    output = _flint_attention_context(q, k, v, sinks, mask)
+    output = _flint_attention_long(q,k,v,sinks,first_position,position,window)
     return _flint_linear(parameters[prefix * "o_proj.weight"], reshape(output, d*heads, n)), appended.updated
 end
 
@@ -273,15 +282,19 @@ function _flint_feedforward(model, parameters, prefix, x, layer)
 end
 
 """
-    hf_flint_forward(model, parameters, token_ids; cache=nothing, last_only=false)
+    hf_flint_forward(model, parameters, token_ids; cache=nothing, last_only=false,
+                     cache_capacity=0, output_logits=true)
 
 Native Float32 Flint reference inference with optional incremental KV caching.
 `token_ids` is a nonempty vector of LifeAI's **one-based** IDs. Result is a
 `(vocabulary, tokens)` logits matrix (one column if `last_only=true`). Parameters
 may contain packed INT4/INT8 matrices. CPU and CUDA arrays are supported; the
 reference CUDA path dequantizes only the current projection and routes on CPU.
+`cache_capacity` reserves CUDA KV storage without extending the model limit.
+`output_logits=false` updates the cache without computing an unused vocabulary
+projection, as used by intermediate prefill chunks.
 """
-function hf_flint_forward(model::FlintConfig, parameters, token_ids::AbstractVector{<:Integer}; cache::Union{Nothing,FlintKVCache}=nothing, last_only::Bool=false)
+function hf_flint_forward(model::FlintConfig, parameters, token_ids::AbstractVector{<:Integer}; cache::Union{Nothing,FlintKVCache}=nothing, last_only::Bool=false,cache_capacity::Integer=0,output_logits::Bool=true)
     isempty(token_ids) && throw(ArgumentError("Flint input must not be empty"))
     ids = Int.(collect(token_ids))
     eltype(token_ids) <: Bool && throw(ArgumentError("Flint token IDs cannot be Bool"))
@@ -289,20 +302,29 @@ function hf_flint_forward(model::FlintConfig, parameters, token_ids::AbstractVec
     position = cache === nothing ? 0 : cache.tokens
     cache === nothing || cache.model === model || throw(ArgumentError("cache belongs to another Flint model"))
     position + length(ids) <= model.max_position_embeddings || throw(ArgumentError("Flint context limit exceeded"))
+    !(cache_capacity isa Bool) && 0 <= cache_capacity <= model.max_position_embeddings ||
+        throw(ArgumentError("invalid Flint KV reservation"))
     x = permutedims(Float32.(parameters["model.embed_tokens.weight"][ids, :]))
     updates = Any[]
     for layer in 1:model.num_hidden_layers
         prefix = "model.layers.$(layer-1)."
         normalized = _flint_norm(x, parameters[prefix * "input_layernorm.weight"], model.rms_norm_eps)
         past = cache === nothing ? nothing : cache.layers[layer]
-        attention, updated = _flint_attention(model, parameters, prefix * "self_attn.", normalized, layer, past, position)
+        attention, updated = _flint_attention(model, parameters, prefix * "self_attn.", normalized, layer, past, position;cache_capacity=Int(cache_capacity))
         x = x .+ attention
         normalized = _flint_norm(x, parameters[prefix * "post_attention_layernorm.weight"], model.rms_norm_eps)
         x = x .+ _flint_feedforward(model, parameters, prefix * "mlp.", normalized, layer)
         push!(updates, updated)
     end
-    x = _flint_norm(x, parameters["model.norm.weight"], model.rms_norm_eps)
+    if !output_logits
+        if cache !== nothing
+            cache.layers = updates
+            cache.tokens += length(ids)
+        end
+        return nothing
+    end
     last_only && (x = x[:, end:end])
+    x = _flint_norm(x, parameters["model.norm.weight"], model.rms_norm_eps)
     head = model.tie_word_embeddings ? parameters["model.embed_tokens.weight"] : parameters["lm_head.weight"]
     logits = _flint_linear(head, x)
     if cache !== nothing
@@ -317,22 +339,38 @@ Generate one-based tokens with cached prefill/decode. Temperature zero is greedy
 `on_token(token_id)` is called immediately after each sampled token (including
 EOS). Return `false` to stop early; callback exceptions propagate so disconnected
 streaming clients can cancel before the next decode step.
+Prefill is processed in bounded `prefill_chunk_size` batches. After each batch,
+`on_prefill(processed,total)` reports progress; returning false cancels before
+sampling. Its exceptions propagate to stop disconnected streaming requests.
 """
-function generate_flint_tokens(bundle, prompt::AbstractVector{<:Integer}; max_new_tokens::Integer=128, temperature::Real=1f0, top_k=20, top_p=0.95f0, rng=default_rng(), eos_ids=bundle.model.eos_token_id .+ 1, on_token=nothing)
+function generate_flint_tokens(bundle, prompt::AbstractVector{<:Integer}; max_new_tokens::Integer=128, temperature::Real=1f0, top_k=20, top_p=0.95f0, rng=default_rng(), eos_ids=bundle.model.eos_token_id .+ 1, on_token=nothing,prefill_chunk_size::Integer=4096,on_prefill=nothing)
     max_new_tokens isa Bool && throw(ArgumentError("max_new_tokens cannot be Bool"))
     max_new_tokens >= 0 || throw(ArgumentError("max_new_tokens must be nonnegative"))
     !isempty(prompt) || throw(ArgumentError("Flint prompt must not be empty"))
-    length(prompt) + max_new_tokens <= bundle.model.max_position_embeddings || throw(ArgumentError("requested Flint generation exceeds context limit"))
+    max_new_tokens <= bundle.model.max_position_embeddings-length(prompt) || throw(ArgumentError("requested Flint generation exceeds context limit"))
+    !(prefill_chunk_size isa Bool) && prefill_chunk_size > 0 ||
+        throw(ArgumentError("prefill_chunk_size must be positive"))
+    eltype(prompt) <: Bool && throw(ArgumentError("Flint token IDs cannot be Bool"))
+    all(id -> 1 <= id <= bundle.model.vocab_size,prompt) ||
+        throw(ArgumentError("Flint token IDs are out of range"))
     generated = Int[]
     max_new_tokens == 0 && return generated
     cache = FlintKVCache(bundle.model)
-    logits = hf_flint_forward(bundle.model, bundle.parameters, prompt; cache, last_only=true)
+    capacity = length(prompt)+Int(max_new_tokens)
+    logits = nothing
+    chunk_size = Int(min(prefill_chunk_size,length(prompt)))
+    for first in 1:chunk_size:length(prompt)
+        last = min(length(prompt),first+chunk_size-1)
+        logits = hf_flint_forward(bundle.model,bundle.parameters,prompt[first:last];cache,
+            last_only=true,cache_capacity=capacity,output_logits=(last == length(prompt)))
+        on_prefill === nothing || on_prefill(last,length(prompt)) !== false || return generated
+    end
     for step in 1:max_new_tokens
         token = _flint_sample_token(logits, rng; temperature, top_k, top_p)
         push!(generated, token)
         on_token === nothing || on_token(token) !== false || break
         (token in eos_ids || step == max_new_tokens) && break
-        logits = hf_flint_forward(bundle.model, bundle.parameters, [token]; cache, last_only=true)
+        logits = hf_flint_forward(bundle.model, bundle.parameters, [token]; cache, last_only=true,cache_capacity=capacity)
     end
     return generated
 end

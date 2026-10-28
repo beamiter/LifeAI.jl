@@ -149,7 +149,19 @@ Adapt.adapt_structure(to, weight::NVFP4Weight) = NVFP4Weight(
 """Prepared native FP4 GEMM weights. Concrete implementations live in device extensions."""
 abstract type AbstractNativeNVFP4Weight end
 
-"""Prepare a CUDA NVFP4 weight for native cuBLASLt GEMM without expanding its values to floating point."""
+"""
+    prepare_nvfp4_gemm(weight; portable_device=:cuda, activation_scaling=:global)
+
+Prepare CUDA NVFP4 weights for native cuBLASLt GEMM without floating expansion.
+With `portable_device=:cpu`, retain the original serialization payload on the
+host and only the prepared GEMM layout on GPU; arithmetic is unchanged. The
+default retains the original CUDA payload. Callers must release their source
+weight references and reclaim unused CUDA allocations to realize the saving.
+`activation_scaling=:token` quantizes each activation column independently,
+then applies its Float32 scale to the native FP4 output. This keeps one token's
+scale independent of other tokens and prefill chunk boundaries. The default
+`:global` preserves the single scale for the complete activation matrix.
+"""
 function prepare_nvfp4_gemm end
 prepare_nvfp4_gemm(weight::NVFP4Weight; kwargs...) = throw(ArgumentError(
     "native NVFP4 GEMM requires a CUDA-resident weight and the LifeAI CUDA extension",

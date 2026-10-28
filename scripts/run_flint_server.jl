@@ -11,7 +11,8 @@ Profile.peek_report[] = () -> Profile.print(stderr; format=:flat, C=true,
     sortedby=:count, mincount=5, groupby=:thread)
 
 const MODEL_ID = "RecursiveSI/flint"
-const MAX_BODY_BYTES = 1024 * 1024
+const MAX_BODY_BYTES = 16 * 1024 * 1024
+const MAX_TEXT_CHARS = 4 * 1024 * 1024
 struct RequestError <: Exception
     status::Int
     code::String
@@ -27,20 +28,24 @@ mutable struct Worker
     load_error::Union{Nothing,String}
     context_tokens::Int
     max_new_tokens::Int
+    prefill_chunk_size::Int
     generation_lock::ReentrantLock
     load_ns::Int
     generator::Any
 end
-Worker(; context_tokens=2048, max_new_tokens=512, generator=generate_flint_tokens) =
+Worker(; context_tokens=262144, max_new_tokens=512, prefill_chunk_size=4096,generator=generate_flint_tokens) =
     Worker(nothing, nothing, false, "starting", nothing, context_tokens,
-        max_new_tokens, ReentrantLock(), 0, generator)
+        max_new_tokens, prefill_chunk_size,ReentrantLock(), 0, generator)
 
 function status(worker::Worker)
     backend = worker.bundle !== nothing && hasproperty(worker.bundle,:nvfp4_backend) &&
         worker.bundle.nvfp4_backend === :native ? "cublaslt_nvfp4" : "reference"
     return (ready=worker.ready, model=MODEL_ID, context_tokens=worker.context_tokens,
         max_new_tokens=worker.max_new_tokens, phase=worker.phase, error=worker.load_error,
-        native_fp4_backend=backend, inference_engine="lifeai_flint_decode_v3")
+        prefill_chunk_size=worker.prefill_chunk_size,max_body_bytes=MAX_BODY_BYTES,
+        activation_scaling=worker.bundle !== nothing && hasproperty(worker.bundle,:nvfp4_activation_scaling) ?
+            String(worker.bundle.nvfp4_activation_scaling) : "none",
+        native_fp4_backend=backend, inference_engine="lifeai_flint_context256k")
 end
 
 json(value) = JSON3.write(value)
@@ -76,7 +81,7 @@ function read_body(stream)
         end
     end
     HTTP.closeread(stream)
-    too_large && throw(RequestError(413, "body_too_large", "Request body exceeds 1 MiB"))
+    too_large && throw(RequestError(413, "body_too_large", "Request body exceeds 16 MiB"))
     return body
 end
 
@@ -97,9 +102,9 @@ function prepare_request(worker::Worker, body)
         role isa AbstractString && role in ("system","developer","user","assistant") ||
             throw(RequestError(400, "invalid_role", "Supported roles: system, developer, user, assistant"))
         content isa AbstractString || throw(RequestError(400, "invalid_content", "Message content must be text"))
-        length(content) <= 8192 || throw(RequestError(413, "message_too_large", "Each message is limited to 8192 characters"))
+        length(content) <= MAX_TEXT_CHARS || throw(RequestError(413, "message_too_large", "Each message is limited to $MAX_TEXT_CHARS characters"))
         total_chars += length(content)
-        total_chars <= 32768 || throw(RequestError(413, "messages_too_large", "Messages are limited to 32768 total characters"))
+        total_chars <= MAX_TEXT_CHARS || throw(RequestError(413, "messages_too_large", "Messages are limited to $MAX_TEXT_CHARS total characters"))
         calls = get(message,"tool_calls",nothing)
         (calls === nothing || (calls isa AbstractVector && isempty(calls))) ||
             throw(RequestError(400,"unsupported_tools","Tool calls are not supported by this worker"))
@@ -160,7 +165,7 @@ function take_text!(buffer::UTF8Buffer, bytes; final=false)
     return text
 end
 
-function generate(worker::Worker, request; write_piece=nothing)
+function generate(worker::Worker, request; write_piece=nothing,write_progress=nothing)
     started = time_ns()
     native_before = hasproperty(worker.bundle,:parameters) ?
         flint_native_fp4_stats(worker.bundle).native_calls : 0
@@ -175,7 +180,11 @@ function generate(worker::Worker, request; write_piece=nothing)
         return nothing
     end
     output = worker.generator(worker.bundle, request.ids; max_new_tokens=request.count,
-        temperature=request.temperature, on_token=callback)
+        temperature=request.temperature, on_token=callback,prefill_chunk_size=worker.prefill_chunk_size,
+        on_prefill=(processed,total)->begin
+            write_progress === nothing || write_progress(processed,total)
+            nothing
+        end)
     if write_piece !== nothing
         suffix = take_text!(buffer,UInt8[];final=true)
         isempty(suffix) || write_piece(suffix)
@@ -196,6 +205,8 @@ function generate(worker::Worker, request; write_piece=nothing)
         prompt_eval_duration=prefill_duration,decode_duration=decode_duration,
         lifeai=(decode_tokens_per_second=decode_rate,decode_eval_count=decode_count),
         native_fp4_backend=String(native_stats.backend),native_fp4_calls=native_stats.native_calls,
+        activation_scaling=hasproperty(worker.bundle,:nvfp4_activation_scaling) ?
+            String(worker.bundle.nvfp4_activation_scaling) : "none",
         native_fp4_calls_delta=native_stats.native_calls-native_before)
 end
 
@@ -211,9 +222,10 @@ function handler(worker::Worker, stream::HTTP.Stream)
         end
         path == "/api/chat" || throw(RequestError(404,"not_found","Unknown worker endpoint"))
         stream.message.method == "POST" || throw(RequestError(405,"method_not_allowed","Use POST /api/chat"))
-        request = prepare_request(worker,read_body(stream))
+        body = read_body(stream)
         owns_lock = trylock(worker.generation_lock)
         owns_lock || throw(RequestError(409,"worker_busy","Flint is generating another response"))
+        request = prepare_request(worker,body)
         if request.stream
             HTTP.setstatus(stream,200)
             HTTP.setheader(stream,"Content-Type"=>"application/x-ndjson; charset=utf-8")
@@ -224,7 +236,12 @@ function handler(worker::Worker, stream::HTTP.Stream)
                 write(stream,json((model=MODEL_ID,response=piece,done=false))*"\n")
                 flush(stream.stream)
             end
-            result = generate(worker,request;write_piece=piece_writer)
+            progress_writer = (processed,total) -> begin
+                write(stream,json((model=MODEL_ID,response="",done=false,phase="prefill",
+                    prefill_processed=processed,prompt_eval_count=total))*"\n")
+                flush(stream.stream)
+            end
+            result = generate(worker,request;write_piece=piece_writer,write_progress=progress_writer)
             write(stream,json(result)*"\n")
             flush(stream.stream)
         else
@@ -251,7 +268,7 @@ function handler(worker::Worker, stream::HTTP.Stream)
     end
 end
 
-function load_worker!(worker::Worker; model_dir, quantized_dir=nothing, device="cuda", backend="native", save_quantized=false, warmup=true)
+function load_worker!(worker::Worker; model_dir, quantized_dir=nothing, device="cuda", backend="native", activation_scaling=:token, save_quantized=false, warmup=true)
     started = time_ns()
     try
         mapper = if device == "cuda"
@@ -284,11 +301,25 @@ function load_worker!(worker::Worker; model_dir, quantized_dir=nothing, device="
         GC.gc()
         device == "cuda" && CUDA.reclaim()
         worker.phase = "preparing_native"
-        bundle = backend == "native" ? prepare_flint_nvfp4(raw;on_progress=progress) : raw
+        bundle = backend == "native" ? prepare_flint_nvfp4(raw;on_progress=progress,portable_device=:cpu,activation_scaling) : raw
+        # The loader owns this source dictionary. Break its GPU references
+        # explicitly: compiler roots may keep an earlier raw SSA value alive
+        # through GC inside this frame. Floating parameters remain owned by
+        # the prepared bundle's separate dictionary.
+        backend == "native" && empty!(raw.parameters)
+        raw = nothing
+        GC.gc()
+        device == "cuda" && CUDA.reclaim()
         worker.tokenizer = load_hf_flint_tokenizer(source)
         worker.context_tokens = min(worker.context_tokens,bundle.model.max_position_embeddings)
         worker.max_new_tokens = min(worker.max_new_tokens,worker.context_tokens-1)
         worker.bundle = bundle
+        if backend == "native"
+            memory = flint_native_fp4_stats(bundle)
+            println(stderr,"[Flint] native GPU weights=",memory.gpu_weight_bytes,
+                " bytes; host portable weights=",memory.host_portable_weight_bytes," bytes")
+            flush(stderr)
+        end
         if warmup && device == "cuda" && backend == "native"
             worker.phase = "warming"
             println(stderr,"[Flint] warming prefill/decode kernels"); flush(stderr)
@@ -313,7 +344,8 @@ function load_worker!(worker::Worker; model_dir, quantized_dir=nothing, device="
 end
 
 function main(args)
-    options = Dict("port"=>"11437","model-dir"=>"","quantized-dir"=>"","device"=>"cuda","backend"=>"native")
+    options = Dict("port"=>"11437","model-dir"=>"","quantized-dir"=>"","device"=>"cuda","backend"=>"native",
+        "context-tokens"=>"262144","prefill-chunk-size"=>"4096","activation-scaling"=>"token","max-new-tokens"=>"512")
     save = false
     warmup = true
     i = 1
@@ -335,15 +367,22 @@ function main(args)
     0 <= port <= 65535 || error("--port must be in 0:65535")
     options["device"] in ("cpu","cuda") || error("--device must be cpu or cuda")
     options["backend"] in ("native","reference") || error("--backend must be native or reference")
+    options["activation-scaling"] in ("global","token") || error("--activation-scaling must be global or token")
     options["backend"] == "native" && options["device"] != "cuda" && error("Native backend requires CUDA")
     model_dir = isempty(options["model-dir"]) ? nothing : abspath(options["model-dir"])
     quantized_dir = isempty(options["quantized-dir"]) ? nothing : abspath(options["quantized-dir"])
     model_dir === nothing && quantized_dir === nothing && error("Usage: run_flint_server.jl MODEL_DIR [--quantized-dir ARTIFACT] [--port 11437]")
-    worker = Worker()
+    context_tokens = parse(Int,options["context-tokens"])
+    prefill_chunk_size = parse(Int,options["prefill-chunk-size"])
+    max_new_tokens = parse(Int,options["max-new-tokens"])
+    2 <= context_tokens <= 262144 || error("--context-tokens must be in 2:262144")
+    1 <= prefill_chunk_size <= 16384 || error("--prefill-chunk-size must be in 1:16384")
+    1 <= max_new_tokens <= 262143 || error("--max-new-tokens must be in 1:262143")
+    worker = Worker(;context_tokens,prefill_chunk_size,max_new_tokens)
     server = HTTP.listen!(stream -> handler(worker,stream), ip"127.0.0.1",port;verbose=-1)
     println(stderr,"[Flint] listening on 127.0.0.1:",port,"; loading asynchronously")
     flush(stderr)
-    @async load_worker!(worker;model_dir,quantized_dir,device=options["device"],backend=options["backend"],save_quantized=save,warmup)
+    @async load_worker!(worker;model_dir,quantized_dir,device=options["device"],backend=options["backend"],activation_scaling=Symbol(options["activation-scaling"]),save_quantized=save,warmup)
     wait(server)
 end
 end # module

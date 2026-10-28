@@ -29,6 +29,15 @@ LifeAI NVFP4 与原生 cuBLASLt FP4 GEMM；首次加载在 GPU 上量化，并�
 `GET /healthz` 返回加载阶段与限制；`POST /api/chat` 接受 role/content 消息，
 支持逐 token NDJSON。提示词模板在服务端生成，客户端不用混用两个模型的模板。
 
+Flint 部署示例的总上下文为 262144 tokens，输出上限 4096；总预算包含提示词模板、
+历史和预留输出。worker 用 `--context-tokens` 与 `--prefill-chunk-size` 配置，
+默认每批预填充 4096 tokens，并通过 NDJSON 的 `phase=prefill` 发布进度。
+原生 FP4 服务使用 `--activation-scaling token` 避免跨 token 共用激活缩放；
+`--max-new-tokens` 配置输出上限，worker 命令本身的默认值为 512。
+路由和 worker 接受最多 16 MiB JSON 请求、64 条消息及合计 4 Mi 字符文本；
+实际 token 预算由 worker 编码后校验。部署示例的请求超时为 7200 秒。
+长上下文内存和整模型验收见 [256K 说明](../../notes/flint_context256k.md)。
+
 ```sh
 python3 -m unittest -v test_server.py test_control.py
 ```

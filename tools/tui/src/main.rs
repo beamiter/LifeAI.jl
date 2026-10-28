@@ -4,7 +4,7 @@ mod tunnel;
 mod ui;
 
 use anyhow::{Context, Result, bail};
-use api::{Api, Message, Model};
+use api::{Api, MAX_INPUT_BYTES, Message, Model};
 use clap::Parser;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
@@ -17,12 +17,15 @@ const DSW_HOST: &str = "dsw-notebook-dsw-l3wna78bngwh3pfple-22.vpc-0jlbz3pri2042
     name = "lifeai",
     version,
     about = "Lumen（流明） · LifeAI 的 Qwen / Flint 终端",
-    after_help = "lifeai chat --model flint       打开 Lumen\nlifeai chat --model qwen '你好'  单次提问\ncat question.txt | lifeai chat   从标准输入提问\nlifeai --install                安装 lifeai 与 lumen 命令\n\nTUI: Ctrl+T / F2 切换 · Ctrl+L 清空 · Ctrl+R 重连 · Ctrl+C 退出"
+    after_help = "lifeai chat --model flint       打开 Lumen\nlifeai chat --model qwen '你好'  单次提问\nlifeai chat --model flint --file prompt.txt\ncat question.txt | lifeai chat   从标准输入提问\nlifeai --install                安装 lifeai 与 lumen 命令\n\nTUI: /load 路径 导入草稿 · Ctrl+T / F2 切换 · Ctrl+L 清空 · Ctrl+R 重连 · Ctrl+C 退出"
 )]
 pub struct Args {
     /// 问题；省略时进入 TUI，也可通过标准输入提供
     #[arg(trailing_var_arg = true)]
     prompt: Vec<String>,
+    /// 从 UTF-8 文件读取问题（最多 4 MiB）；TUI 中可用 /load 路径
+    #[arg(long, conflicts_with = "prompt", conflicts_with = "status")]
+    file: Option<PathBuf>,
     /// qwen 或 flint
     #[arg(long, env = "LIFEAI_MODEL", default_value = "qwen")]
     model: Model,
@@ -48,7 +51,7 @@ pub struct Args {
     #[arg(short = 'n', long, default_value = "256", value_parser = clap::value_parser!(u32).range(1..))]
     max_tokens: u32,
     /// 生成超时秒数
-    #[arg(long, default_value = "300", value_parser = positive_seconds)]
+    #[arg(long, default_value = "7200", value_parser = positive_seconds)]
     timeout: f64,
     /// 模型加载超时秒数
     #[arg(long, default_value = "1800", value_parser = positive_seconds)]
@@ -112,16 +115,40 @@ fn main() {
     }
 }
 
+pub(crate) fn read_prompt_file(path: &Path) -> Result<String> {
+    let file =
+        std::fs::File::open(path).with_context(|| format!("无法读取文件 {}", path.display()))?;
+    read_prompt(file).with_context(|| format!("无法导入文件 {}", path.display()))
+}
+
+fn read_prompt(reader: impl Read) -> Result<String> {
+    let mut bytes = Vec::new();
+    reader
+        .take((MAX_INPUT_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .context("无法读取问题文本。")?;
+    if bytes.len() > MAX_INPUT_BYTES {
+        bail!("输入超过 4 MiB，请缩短问题");
+    }
+    String::from_utf8(bytes).context("问题必须是有效 UTF-8 文本。")
+}
+
 fn run(args: Args) -> Result<()> {
     if args.install {
         return install(args.prefix.as_deref());
     }
-    let mut prompt = args.prompt.join(" ");
+    let mut prompt = match &args.file {
+        Some(path) => read_prompt_file(path)?,
+        None => args.prompt.join(" "),
+    };
+    if prompt.len() > MAX_INPUT_BYTES {
+        bail!("输入超过 4 MiB，请缩短问题");
+    }
+    if args.file.is_some() && prompt.trim().is_empty() {
+        bail!("文件中没有问题内容");
+    }
     if prompt.is_empty() && !args.status && !io::stdin().is_terminal() {
-        io::stdin().take(1_048_577).read_to_string(&mut prompt)?;
-        if prompt.len() > 1_048_576 {
-            bail!("标准输入超过 1 MiB，请缩短问题");
-        }
+        prompt = read_prompt(io::stdin())?;
         prompt = prompt.trim().to_owned();
         if prompt.is_empty() {
             bail!("请输入问题，或在交互终端执行 lifeai chat");
@@ -165,12 +192,18 @@ fn run(args: Args) -> Result<()> {
             content: prompt,
         });
         let mut write_error = None;
-        let result = api.generate(args.model, &messages, |piece| {
-            let mut stdout = io::stdout().lock();
-            if let Err(error) = write!(stdout, "{}", clean(&piece)).and_then(|_| stdout.flush()) {
-                write_error = Some(error);
-            }
-        })?;
+        let result = api.generate_with_progress(
+            args.model,
+            &messages,
+            |piece| {
+                let mut stdout = io::stdout().lock();
+                if let Err(error) = write!(stdout, "{}", clean(&piece)).and_then(|_| stdout.flush())
+                {
+                    write_error = Some(error);
+                }
+            },
+            |phase| eprintln!("{}", clean(&phase)),
+        )?;
         if let Some(error) = write_error {
             return Err(error.into());
         }

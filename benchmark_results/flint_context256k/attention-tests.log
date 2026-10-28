@@ -1,0 +1,9 @@
+Test Summary:                                                     | Pass  Total   Time
+Flint split-K attention matches independent causal/sink reference |   53     53  18.2s
+Test Summary:                                                  | Pass  Total  Time
+Flint FP32 GEMM prefill matches split-K across tile boundaries |   16     16  0.0s
+Test Summary:                           | Pass  Total  Time
+Flint long attention scratch and guards |   35     35  0.1s
+Test Summary:                                  | Pass  Total  Time
+Flint full 256K attention uses bounded scratch |    4      4  0.2s
+LONG_ATTENTION_TESTS_COMPLETE

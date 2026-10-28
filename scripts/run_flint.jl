@@ -10,9 +10,9 @@ if any(i -> ARGS[i] == "--device" && i < length(ARGS) && ARGS[i+1] == "cuda", ea
 end
 
 function main(args)
-    isempty(args) && error("Usage: run_flint.jl MODEL_DIR [--prompt TEXT] [--device cpu|cuda] [--scheme float|int8|int4|nvfp4] [--nvfp4-backend auto|native|reference] [--group N] [--max-new-tokens 128] [--temperature 1.0] [--seed 42] [--save-quantized DIR] [--raw]")
+    isempty(args) && error("Usage: run_flint.jl MODEL_DIR [--prompt TEXT] [--device cpu|cuda] [--scheme float|int8|int4|nvfp4] [--nvfp4-backend auto|native|reference] [--activation-scaling global|token] [--group N] [--max-new-tokens 128] [--temperature 1.0] [--seed 42] [--save-quantized DIR] [--raw]")
     path = args[1]
-    options = Dict("prompt" => "请用中文简要介绍你自己。", "device" => "cpu", "scheme" => "int4", "nvfp4-backend" => "auto", "group" => "", "max-new-tokens" => "128", "temperature" => "1.0", "seed" => "42")
+    options = Dict("prompt" => "请用中文简要介绍你自己。", "device" => "cpu", "scheme" => "int4", "nvfp4-backend" => "auto", "activation-scaling" => "global", "group" => "", "max-new-tokens" => "128", "temperature" => "1.0", "seed" => "42")
     raw = false
     i = 2
     while i <= length(args)
@@ -29,6 +29,8 @@ function main(args)
     end
     options["device"] in ("cpu", "cuda") || error("--device must be cpu or cuda")
     options["nvfp4-backend"] in ("auto", "native", "reference") || error("--nvfp4-backend must be auto, native, or reference")
+    options["activation-scaling"] in ("global", "token") || error("--activation-scaling must be global or token")
+    options["activation-scaling"] == "token" && options["device"] != "cuda" && error("token activation scaling requires --device cuda")
     options["nvfp4-backend"] == "native" && options["device"] != "cuda" && error("native NVFP4 GEMM requires --device cuda")
     scheme = Symbol(options["scheme"])
     scheme in (:float, :int8, :int4, :nvfp4) || error("--scheme must be float, int8, int4, or nvfp4")
@@ -61,7 +63,9 @@ function main(args)
         (options["nvfp4-backend"] == "auto" && options["device"] == "cuda" && has_nvfp4)
     if use_native
         has_nvfp4 || error("native NVFP4 GEMM requires NVFP4 weights")
-        bundle = prepare_flint_nvfp4(bundle)
+        bundle = prepare_flint_nvfp4(bundle;activation_scaling=Symbol(options["activation-scaling"]))
+    elseif options["activation-scaling"] == "token"
+        error("--activation-scaling token requires native NVFP4 GEMM")
     end
     load_seconds = time() - started
     if haskey(options, "save-quantized")
@@ -77,6 +81,7 @@ function main(args)
         generated_tokens=length(result.token_ids), load_seconds=load_seconds,
         generation_seconds=time()-started, parameter_bytes=quantized_parameter_bytes(bundle.parameters),
         device=options["device"], nvfp4_backend=backend_stats.backend,
+        activation_scaling=use_native ? options["activation-scaling"] : "none",
         native_fp4_calls=backend_stats.native_calls))
     println()
 end

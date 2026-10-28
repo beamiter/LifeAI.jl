@@ -39,11 +39,110 @@ mutable struct CUDANVFP4Weight{W,P,S,C} <: LifeAI.AbstractNativeNVFP4Weight
     context::C
     padded_m::Int
     padded_k::Int
+    activation_scaling::Symbol
     plan::Union{Nothing,_NativeFP4Plan}
     decode_plan::Union{Nothing,_NativeFP4Plan}
     native_calls::Int
     last_n::Int
     closed::Bool
+end
+
+function _native_fp4_token_amax_kernel!(global_scales,x)
+    token=CUDA.blockIdx().x
+    thread=CUDA.threadIdx().x
+    maximum_value=0f0
+    row=thread
+    while row<=size(x,1)
+        @inbounds value=abs(x[row,token])
+        maximum_value=isfinite(value) ? max(maximum_value,value) : Inf32
+        row+=CUDA.blockDim().x
+    end
+    shared=CUDA.CuStaticSharedArray(Float32,256)
+    @inbounds shared[thread]=maximum_value
+    CUDA.sync_threads()
+    width=128
+    while width>0
+        if thread<=width
+            @inbounds shared[thread]=max(shared[thread],shared[thread+width])
+        end
+        CUDA.sync_threads()
+        width÷=2
+    end
+    if thread==1
+        @inbounds maximum_value=shared[1]
+        valid=isfinite(maximum_value)
+        scale=iszero(maximum_value) || !valid ? 1f0 :
+            max(maximum_value/2688f0,reinterpret(Float32,UInt32(1)))
+        if !isfinite(2688f0*scale)
+            scale=reinterpret(Float32,reinterpret(UInt32,scale)-UInt32(1))
+        end
+        @inbounds global_scales[token]=valid ? scale : NaN32
+    end
+    return
+end
+
+# Quantize every token independently into cuBLASLt's packed/swizzled layout.
+# The portable quantizer's division order and nearest-even codebooks match
+# decode, while an unrelated token cannot change this token's global scale.
+function _native_fp4_token_pack_kernel!(packed,scales,global_scales,x,padded_k)
+    index=(CUDA.blockIdx().x-1)*CUDA.blockDim().x+CUDA.threadIdx().x-1
+    blocks_per_token=padded_k÷16
+    index>=blocks_per_token*size(x,2) && return
+    token=index÷blocks_per_token+1
+    block=index%blocks_per_token
+    input=size(x,1)
+    first=16block+1
+    block_amax=0f0
+    for offset in 0:15
+        column=first+offset
+        @inbounds value=column<=input ? abs(x[column,token]) : 0f0
+        value=isfinite(value) ? value : 0f0
+        block_amax=max(block_amax,value)
+    end
+    @inbounds global_scale=global_scales[token]
+    global_scale=isfinite(global_scale) ? global_scale : 1f0
+    scale=LifeAI._nvfp4_encode_e4m3((block_amax/6f0)/global_scale)
+    decoded=LifeAI._nvfp4_decode_e4m3(scale)
+    denominator=iszero(decoded) ? 1f0 : decoded
+    block_width=cld(blocks_per_token,4)*4
+    @inbounds scales[_native_fp4_scale_offset(token-1,block,block_width)]=scale
+    for pair in 0:7
+        column=first+2pair
+        @inbounds low_value=column<=input ? x[column,token] : 0f0
+        @inbounds high_value=column+1<=input ? x[column+1,token] : 0f0
+        low_value=isfinite(low_value) ? low_value : 0f0
+        high_value=isfinite(high_value) ? high_value : 0f0
+        low=iszero(decoded) ? UInt8(0) : LifeAI._nvfp4_encode_e2m1((low_value/global_scale)/denominator)
+        high=iszero(decoded) ? UInt8(0) : LifeAI._nvfp4_encode_e2m1((high_value/global_scale)/denominator)
+        @inbounds packed[8block+pair+1,token]=low | (high<<UInt8(4))
+    end
+    return
+end
+
+function _native_fp4_token_scale_output_kernel!(output,global_scales)
+    index=(CUDA.blockIdx().x-1)*CUDA.blockDim().x+CUDA.threadIdx().x
+    stride=CUDA.blockDim().x*CUDA.gridDim().x
+    while index<=length(output)
+        token=(index-1)÷size(output,1)+1
+        @inbounds output[index]*=global_scales[token]
+        index+=stride
+    end
+    return
+end
+
+function _native_fp4_token_activation(x,padded_k;check_finite::Bool=true)
+    tokens=size(x,2)
+    global_scales=CUDA.CuArray{Float32}(undef,tokens)
+    packed=CUDA.CuArray{UInt8}(undef,padded_k÷2,tokens)
+    block_width=cld(padded_k÷16,4)*4
+    scales=CUDA.zeros(UInt8,cld(tokens,128)*128*block_width)
+    CUDA.@cuda threads=256 blocks=tokens _native_fp4_token_amax_kernel!(global_scales,x)
+    CUDA.@cuda threads=128 blocks=cld((padded_k÷16)*tokens,128) _native_fp4_token_pack_kernel!(
+        packed,scales,global_scales,x,padded_k)
+    if check_finite
+        all(isfinite,global_scales) || throw(ArgumentError("NVFP4 activations must be finite"))
+    end
+    return packed,scales,global_scales
 end
 
 function LifeAI.native_nvfp4_supported()
@@ -260,9 +359,12 @@ function Base.close(prepared::CUDANVFP4Weight)
     return nothing
 end
 
-function LifeAI.prepare_nvfp4_gemm(weight::LifeAI.NVFP4Weight{P,S}; kwargs...) where {
+function LifeAI.prepare_nvfp4_gemm(weight::LifeAI.NVFP4Weight{P,S}; portable_device::Symbol=:cuda,
+    activation_scaling::Symbol=:global,kwargs...) where {
     P<:CUDA.CuArray{UInt8,2},S<:CUDA.CuArray{UInt8,2}}
     isempty(kwargs) || throw(ArgumentError("native NVFP4 preparation does not accept extra options"))
+    portable_device in (:cuda,:cpu) || throw(ArgumentError("portable_device must be :cuda or :cpu"))
+    activation_scaling in (:global,:token) || throw(ArgumentError("activation_scaling must be :global or :token"))
     LifeAI.native_nvfp4_supported() || throw(ArgumentError("native NVFP4 requires Blackwell and cuBLASLt >=12.8"))
     CUDA.context(weight.packed) == CUDA.context(weight.block_scales) == CUDA.context() ||
         throw(ArgumentError("native NVFP4 storage must belong to the active CUDA context"))
@@ -273,8 +375,14 @@ function LifeAI.prepare_nvfp4_gemm(weight::LifeAI.NVFP4Weight{P,S}; kwargs...) w
         packed, scales = _native_fp4_repack(weight, padded_m, padded_k)
         # Preparation returns fully initialized immutable packed data.
         CUDA.synchronize()
-        prepared = CUDANVFP4Weight(weight, packed, scales, CUDA.context(),
-            padded_m, padded_k, nothing, nothing, 0, 0, false)
+        # Runtime GEMMs read only the prepared GPU layout and the portable
+        # tensor's shape/global scale. Keeping its serialization copy on the
+        # host frees a second complete set of GPU weight bytes without changing
+        # native FP4 arithmetic. The default retains previous storage identity.
+        portable = portable_device === :cpu ? LifeAI.NVFP4Weight(
+            Array(weight.packed),Array(weight.block_scales),weight.global_scale,weight.in_dim) : weight
+        prepared = CUDANVFP4Weight(portable, packed, scales, CUDA.context(),
+            padded_m, padded_k, activation_scaling, nothing, nothing, 0, 0, false)
         finalizer(prepared) do item
             if !item.closed
                 for plan in (item.plan, item.decode_plan)
@@ -376,25 +484,33 @@ function LifeAI.native_nvfp4_gemm(prepared::CUDANVFP4Weight, x::CUDA.CuArray{Flo
         padded_n = n
         activation = nothing
         decode = nothing
+        token_globals = nothing
         if n == 1
             decode = _native_fp4_decode_buffers(context, prepared.padded_k)
             CUDA.@cuda threads=256 blocks=1 _native_fp4_decode_amax_kernel!(decode.scalars, x, prepared.weight.global_scale)
             CUDA.@cuda threads=128 blocks=cld(prepared.padded_k ÷ 16,128) _native_fp4_decode_pack_kernel!(
                 decode.packed, decode.scales, decode.scalars, x, prepared.padded_k)
             bpacked, bscales = decode.packed, decode.scales
+        elseif prepared.activation_scaling === :token
+            bpacked,bscales,token_globals = _native_fp4_token_activation(x,prepared.padded_k;check_finite)
         else
             activation = LifeAI.quantize_nvfp4(permutedims(x))
             bpacked, bscales = _native_fp4_repack(activation, padded_n, prepared.padded_k)
         end
         plan = _native_fp4_get_plan!(prepared, padded_n, context, bscales)
         output = CUDA.CuArray{Float32}(undef, prepared.padded_m, padded_n)
-        alpha = n == 1 ? pointer(decode.scalars,1) : Ref{Float32}(prepared.weight.global_scale * activation.global_scale)
+        alpha = n == 1 ? pointer(decode.scalars,1) : Ref{Float32}(
+            prepared.weight.global_scale*(token_globals === nothing ? activation.global_scale : 1f0))
         beta = n == 1 ? pointer(decode.scalars,2) : Ref{Float32}(0f0)
         algorithm = Ref(plan.algorithm)
-        GC.@preserve prepared activation decode bpacked bscales output alpha beta algorithm begin
+        GC.@preserve prepared activation decode token_globals bpacked bscales output alpha beta algorithm begin
             _FP4_BLAS.cublasLtMatmul(context.handle, plan.operation, alpha,
                 prepared.packed, plan.a, bpacked, plan.b, beta, output, plan.c,
                 output, plan.c, algorithm, context.workspace, length(context.workspace), stream)
+            if token_globals !== nothing
+                CUDA.@cuda threads=256 blocks=min(cld(length(output),256),65535) _native_fp4_token_scale_output_kernel!(
+                    output,token_globals)
+            end
             if n == 1
                 # Public calls validate finite inputs. The model's internal
                 # decode path can keep this scalar entirely on-device and
@@ -464,10 +580,16 @@ function LifeAI.native_nvfp4_gemm_multi(weights::Tuple{Vararg{CUDANVFP4Weight,N}
 end
 
 function LifeAI.native_nvfp4_stats(prepared::CUDANVFP4Weight)
+    prepared_bytes = sizeof(prepared.packed)+sizeof(prepared.scales)
+    portable_bytes = sizeof(prepared.weight.packed)+sizeof(prepared.weight.block_scales)
+    portable_gpu = prepared.weight.packed isa CUDA.CuArray
     return (backend=:cublaslt_nvfp4, native_calls=prepared.native_calls,
         padded_m=prepared.padded_m, padded_k=prepared.padded_k,
         cached_shapes=Int(prepared.plan !== nothing) + Int(prepared.decode_plan !== nothing),
         workspace_bytes=8*1024*1024, shared_workspace=true,
-        prepared_weight_bytes=sizeof(prepared.packed)+sizeof(prepared.scales),
-        last_tokens=prepared.last_n, activation_quantized=true, closed=prepared.closed)
+        prepared_weight_bytes=prepared_bytes,
+        portable_device=portable_gpu ? :cuda : :cpu, portable_weight_bytes=portable_bytes,
+        gpu_weight_bytes=prepared_bytes+(portable_gpu ? portable_bytes : 0),
+        last_tokens=prepared.last_n, activation_quantized=true,
+        activation_scaling=prepared.activation_scaling,closed=prepared.closed)
 end

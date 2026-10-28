@@ -1,0 +1,131 @@
+{
+  "device": "NVIDIA RTX PRO 5000 72GB Blackwell",
+  "source_sha256": "b60364a04f4a8586b5f8c7adbf0a8e7d8dd159d4a06526714440c5967c75e4f1",
+  "dimensions": {
+    "head_dim": 128,
+    "query_heads": 32,
+    "kv_heads": 4,
+    "kv_dtype": "Float32"
+  },
+  "timing": "minimum of three CUDA event measurements after warmup",
+  "production_model_loaded": true,
+  "rows": [
+    {
+      "keys": 16,
+      "queries": 1,
+      "window": 0,
+      "samples": [
+        0.00018508799257688224,
+        1.6543999663554132e-05,
+        1.7823998859967105e-05
+      ],
+      "minimum_seconds": 1.6543999663554132e-05,
+      "scratch_bytes": 16640,
+      "old_context_seconds": 7.6063996e-05
+    },
+    {
+      "keys": 128,
+      "queries": 1,
+      "window": 0,
+      "samples": [
+        3.084800118813291e-05,
+        2.835200029949192e-05,
+        2.8927999665029347e-05
+      ],
+      "minimum_seconds": 2.835200029949192e-05,
+      "scratch_bytes": 16640,
+      "old_context_seconds": 7.1488e-05
+    },
+    {
+      "keys": 513,
+      "queries": 1,
+      "window": 513,
+      "samples": [
+        3.2640000426908955e-05,
+        2.93119992420543e-05,
+        3.094400017289445e-05
+      ],
+      "minimum_seconds": 2.93119992420543e-05,
+      "scratch_bytes": 83200,
+      "old_context_seconds": 8.448e-05
+    },
+    {
+      "keys": 2048,
+      "queries": 1,
+      "window": 0,
+      "samples": [
+        3.436800034251064e-05,
+        3.279999873484485e-05,
+        3.395200110389851e-05
+      ],
+      "minimum_seconds": 3.279999873484485e-05,
+      "scratch_bytes": 266240,
+      "old_context_seconds": 0.000116095995
+    },
+    {
+      "keys": 8192,
+      "queries": 1,
+      "window": 0,
+      "samples": [
+        9.3376002041623e-05,
+        0.00014342401118483394,
+        9.260799561161548e-05
+      ],
+      "minimum_seconds": 9.260799561161548e-05,
+      "scratch_bytes": 1064960,
+      "old_context_seconds": 0.000225792
+    },
+    {
+      "keys": 262144,
+      "queries": 1,
+      "window": 0,
+      "samples": [
+        0.004232672043144703,
+        0.0042154560796916485,
+        0.00422336021438241
+      ],
+      "minimum_seconds": 0.0042154560796916485,
+      "scratch_bytes": 2129920,
+      "old_context_seconds": null
+    },
+    {
+      "keys": 262144,
+      "queries": 128,
+      "window": 0,
+      "samples": [
+        0.03684335947036743,
+        0.03655862435698509,
+        0.0365251861512661
+      ],
+      "minimum_seconds": 0.0365251861512661,
+      "scratch_bytes": 172032000,
+      "old_context_seconds": null
+    },
+    {
+      "keys": 262144,
+      "queries": 4096,
+      "window": 0,
+      "samples": [
+        0.9264777898788452,
+        0.9265699982643127,
+        0.9258398413658142
+      ],
+      "minimum_seconds": 0.9258398413658142,
+      "scratch_bytes": 587464704,
+      "old_context_seconds": null
+    },
+    {
+      "keys": 262144,
+      "queries": 4096,
+      "window": 513,
+      "samples": [
+        0.004275904037058353,
+        0.004406495951116085,
+        0.004383808001875877
+      ],
+      "minimum_seconds": 0.004275904037058353,
+      "scratch_bytes": 587464704,
+      "old_context_seconds": null
+    }
+  ]
+}

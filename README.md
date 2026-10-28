@@ -697,6 +697,8 @@ restored = load_flint_quantized("/path/to/flint-int4")
 `load_hf_flint_model` 为浮点权重加载入口；`hf_flint_forward` 接受一条非空的
 **1-based** token ID 向量，返回 `(vocab_size, sequence_length)` logits。
 可传入 `FlintKVCache(model)` 做分块 prefill 或逐 token decode。
+`generate_flint_tokens` 默认以 4096 tokens 分批预填充，`on_prefill(processed,total)`
+回报进度；CUDA 全注意力 KV 按请求预算预留，长注意力临时内存有固定上限。
 滑窗 KV 仅保留后续计算需要的历史，全局层保留完整历史；`reset_flint_cache!`
 用于新会话。`generate_flint_tokens` 返回新增 token（含命中的停止 token）。
 原始 HuggingFace 配置中的 ID 仍为 0-based。
@@ -797,6 +799,9 @@ Flint 使用常驻 NVFP4 原生推理 worker，Qwen 复用 BF16/XLA 服务；
 一次驻留一个模型，切换时先释放旧进程的显存。
 
 Flint 已优化分组注意力、共享投影量化、融合归一化/RoPE、KV 复用和设备端
-贪心采样：本机短上下文稳定解码约 31 tok/s，本轮比复测基线提高约 61%。
+贪心采样：v3 在本机短上下文测得约 31 tok/s，比当时复测基线提高约 61%。
 测试条件、数值范围和剩余瓶颈见 [第二轮性能分析](notes/flint_performance_v3.md)，
 早期 1.24 → 18 tok/s 的记录见 [第一轮分析](notes/flint_performance.md)。
+Flint 服务支持 262144 tokens 总上下文（含模板、历史和预留输出），Lumen 可用
+`--file 文本文件` 或 `/load 文件路径` 导入长文，并显示预填充进度。
+内存方案、长输入耗时与验收范围见 [256K 上下文说明](notes/flint_context256k.md)。

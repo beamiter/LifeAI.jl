@@ -25,10 +25,12 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Tabs},
 };
 use serde_json::Value;
-use unicode_segmentation::UnicodeSegmentation;
+use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
 use unicode_width::UnicodeWidthStr;
 
-use crate::api::{Api, Generation, Message, Model, assistant_history, generation_rate};
+use crate::api::{
+    Api, Generation, MAX_INPUT_BYTES, Message, Model, assistant_history, generation_rate,
+};
 
 const BACKGROUND: Color = Color::Rgb(11, 18, 25);
 const PANEL: Color = Color::Rgb(16, 26, 35);
@@ -36,7 +38,6 @@ const TEXT: Color = Color::Rgb(220, 230, 237);
 const MUTED: Color = Color::Rgb(130, 151, 165);
 const ACCENT: Color = Color::Rgb(83, 213, 206);
 const ERROR: Color = Color::Rgb(250, 134, 128);
-const MAX_INPUT_BYTES: usize = 64 * 1024;
 
 fn index(model: Model) -> usize {
     match model {
@@ -87,13 +88,18 @@ impl Editor {
         self.text.insert_str(self.cursor, &value);
         self.cursor += value.len();
         // Pasting before an existing combining mark can merge graphemes.
-        self.cursor = self
-            .text
-            .grapheme_indices(true)
-            .map(|(i, _)| i)
-            .chain(std::iter::once(self.text.len()))
-            .find(|&i| i >= self.cursor)
-            .unwrap_or(self.text.len());
+        if self.cursor < self.text.len() {
+            let mut boundary = GraphemeCursor::new(self.cursor, self.text.len(), true);
+            if !boundary
+                .is_boundary(&self.text, 0)
+                .expect("complete UTF-8 draft")
+            {
+                self.cursor = boundary
+                    .next_boundary(&self.text, 0)
+                    .expect("complete UTF-8 draft")
+                    .unwrap_or(self.text.len());
+            }
+        }
         self.changed();
         true
     }
@@ -167,9 +173,44 @@ impl Editor {
         {
             return &self.cache;
         }
+        // Only lay out the cursor neighbourhood of large drafts. The composer
+        // displays a few lines; wrapping a multi-megabyte file on each keypress
+        // would otherwise block terminal input.
+        let (start, end) = if self.text.len() > 64 * 1024 {
+            let budget = width.saturating_mul(8);
+            let mut cells = 0usize;
+            let mut start = self.cursor;
+            for (offset, grapheme) in self.text[..self.cursor].grapheme_indices(true).rev() {
+                cells = cells.saturating_add(if grapheme == "\n" {
+                    width
+                } else {
+                    grapheme.width().max(1)
+                });
+                start = offset;
+                if cells >= budget {
+                    break;
+                }
+            }
+            cells = 0;
+            let mut end = self.cursor;
+            for (offset, grapheme) in self.text[self.cursor..].grapheme_indices(true) {
+                cells = cells.saturating_add(if grapheme == "\n" {
+                    width
+                } else {
+                    grapheme.width().max(1)
+                });
+                end = self.cursor + offset + grapheme.len();
+                if cells >= budget {
+                    break;
+                }
+            }
+            (start, end)
+        } else {
+            (0, self.text.len())
+        };
         let mut rows = vec![String::new()];
         let (mut column, mut cursor_row, mut cursor_column) = (0, 0, 0);
-        for (offset, grapheme) in self.text.grapheme_indices(true) {
+        for (offset, grapheme) in self.text[start..end].grapheme_indices(true) {
             if grapheme != "\n" {
                 let size = grapheme.width();
                 if column + size > width && column > 0 {
@@ -177,7 +218,7 @@ impl Editor {
                     column = 0;
                 }
             }
-            if offset == self.cursor {
+            if start + offset == self.cursor {
                 cursor_row = rows.len() - 1;
                 cursor_column = column;
             }
@@ -189,7 +230,7 @@ impl Editor {
                 column += grapheme.width();
             }
         }
-        if self.cursor == self.text.len() {
+        if self.cursor == end {
             if column >= width {
                 rows.push(String::new());
                 column = 0;
@@ -439,7 +480,7 @@ impl App {
 
     fn insert_input(&mut self, text: &str) {
         if !self.session().editor.insert(text) {
-            self.status = "草稿超过 64 KiB，请缩短输入。".into();
+            self.status = "草稿超过 4 MiB，请缩短输入。".into();
         }
     }
 
@@ -490,10 +531,28 @@ impl App {
             }
             "/help" | "/model" | "/models" => {
                 self.session().editor.clear();
-                self.status = "Ctrl+T/F2 切换 · Ctrl+L 清空 · Ctrl+R 重试 · Alt+Enter 换行 · PgUp/PgDn 滚动 · /model qwen|flint · /quit".into();
+                self.status = "Ctrl+T/F2 切换 · Ctrl+L 清空 · Ctrl+R 重试 · Alt+Enter 换行 · PgUp/PgDn 滚动 · /load 路径 · /model qwen|flint · /quit".into();
                 return false;
             }
             _ => {}
+        }
+        if command == "/load" || command.starts_with("/load ") {
+            let path = command.strip_prefix("/load").unwrap().trim();
+            if path.is_empty() {
+                self.status = "用法：/load UTF-8文件路径（最多 4 MiB）。".into();
+            } else {
+                match crate::read_prompt_file(std::path::Path::new(path)) {
+                    Ok(text) => {
+                        let bytes = text.len();
+                        self.session().editor.clear();
+                        self.session().editor.insert(&text);
+                        self.status =
+                            format!("已导入 {bytes} 字节到草稿；Enter 发送，Alt+Enter 继续编辑。");
+                    }
+                    Err(error) => self.status = clean_text(&format!("{error:#}；草稿已保留。")),
+                }
+            }
+            return false;
         }
         if let Some(value) = command.strip_prefix("/model ").or_else(|| {
             command
@@ -555,7 +614,10 @@ impl App {
                 );
                 self.health = Some(health);
             }
-            Update::Piece(model, piece) => self.sessions[index(model)].piece(&piece),
+            Update::Piece(model, piece) => {
+                self.sessions[index(model)].piece(&piece);
+                self.status = format!("{} 正在生成…", model.label());
+            }
             Update::Done(model, mut pending, generation) => {
                 pending.push(Message {
                     role: "assistant".into(),
@@ -836,9 +898,16 @@ fn start_worker(
                     let result = connector()
                         .and_then(|_| api.select(model, load_timeout, status))
                         .and_then(|_| {
-                            api.generate(model, &messages, |text| {
-                                let _ = updates.send(Update::Piece(model, text));
-                            })
+                            api.generate_with_progress(
+                                model,
+                                &messages,
+                                |text| {
+                                    let _ = updates.send(Update::Piece(model, text));
+                                },
+                                |phase| {
+                                    let _ = updates.send(Update::Status(phase));
+                                },
+                            )
                         });
                     let update = match result {
                         Ok(generation) => Update::Done(model, messages, generation),
@@ -990,6 +1059,46 @@ mod tests {
         let before = editor.text.clone();
         assert!(!editor.insert(&"x".repeat(MAX_INPUT_BYTES)));
         assert_eq!(editor.text, before);
+    }
+
+    #[test]
+    fn long_draft_layout_keeps_only_cursor_neighbourhood() {
+        let mut editor = Editor::default();
+        let text = "长上下文👩‍💻\n".repeat(60000);
+        assert!(text.len() > 1024 * 1024);
+        assert!(editor.insert(&text));
+        let layout = editor.layout(80);
+        assert!(layout.rows.len() < 32);
+        assert!(layout.cursor_row < layout.rows.len());
+        editor.cursor = text.len() / 2;
+        editor.changed();
+        let layout = editor.layout(80);
+        assert!(layout.rows.len() < 32);
+        assert_eq!(editor.text, text);
+        editor.end();
+        assert!(editor.insert("追加"));
+        assert!(editor.layout(80).rows.len() < 32);
+    }
+
+    #[test]
+    fn load_command_imports_utf8_draft_and_preserves_it_on_error() {
+        let (mut app, jobs) = app();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("长文.txt");
+        std::fs::write(&path, "文件中的上下文\n问题").unwrap();
+        app.session()
+            .editor
+            .insert(&format!("/load {}", path.display()));
+        assert!(!app.submit());
+        assert_eq!(app.session().editor.text, "文件中的上下文\n问题");
+        assert!(app.status.contains("已导入"));
+        assert!(jobs.try_recv().is_err());
+        app.session().editor.clear();
+        let command = format!("/load {}", path.with_extension("missing").display());
+        app.session().editor.insert(&command);
+        app.submit();
+        assert_eq!(app.session().editor.text, command);
+        assert!(app.status.contains("草稿已保留"));
     }
 
     #[test]

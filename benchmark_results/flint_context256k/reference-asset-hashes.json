@@ -1,0 +1,10 @@
+{
+  "all_four_remote_sha256_verified_equal": true,
+  "sha256": {
+    "tokenizer.json": "a263cce0b7e2b03f7ee07ce809783ef4b47f160c3f268a4ea1524f638da45b68",
+    "tokenizer_config.json": "159ac88217e90ffd0a4a294726048bb302829e82e1958dc85bb203aa79138fbf",
+    "chat_template.jinja": "7940f4ffa3275c36caa4a582f845aaad79da11018b3961e8fbcad6ae29733466",
+    "generation_config.json": "a499c71895e008abd572558a5ad5904feaed92cf2a3b6e2cb0e9cabf03b96ed3"
+  },
+  "source": "RecursiveSI/flint release assets, verified against the deployed model copy"
+}

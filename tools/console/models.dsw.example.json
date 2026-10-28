@@ -1,6 +1,6 @@
 {
   "load_timeout": 1800,
-  "request_timeout": 1800,
+  "request_timeout": 7200,
   "models": [
     {
       "key": "qwen",
@@ -45,8 +45,8 @@
       "key": "flint",
       "id": "RecursiveSI/flint",
       "label": "Flint NVFP4",
-      "context_tokens": 2048,
-      "max_new_tokens": 512,
+      "context_tokens": 262144,
+      "max_new_tokens": 4096,
       "url": "http://127.0.0.1:11437",
       "cwd": "/jfs/application/user/bgl/LifeAI.jl",
       "log": "/jfs/application/user/bgl/deployments/lifeai_console/logs/flint.log",
@@ -73,7 +73,15 @@
         "--model-dir",
         "/jfs/application/user/bgl/models/RecursiveSI/flint",
         "--port",
-        "11437"
+        "11437",
+        "--context-tokens",
+        "262144",
+        "--prefill-chunk-size",
+        "4096",
+        "--activation-scaling",
+        "token",
+        "--max-new-tokens",
+        "4096"
       ]
     }
   ]

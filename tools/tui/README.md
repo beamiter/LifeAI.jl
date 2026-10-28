@@ -20,6 +20,7 @@ lumen --model qwen
 
 # 单次提问、管道输入、只读状态查询
 lifeai chat --model flint -n 256 '1+1 等于几？'
+lifeai chat --model flint -n 2048 --file long-document.txt
 cat question.txt | lifeai chat --model qwen
 lifeai --status
 ```
@@ -40,6 +41,7 @@ lifeai --status
 | 滚动对话 | `PgUp` / `PgDn` |
 | 行首 / 行尾 | `Home` / `End`、`Ctrl+A` / `Ctrl+E` |
 | 清空草稿 | `Ctrl+U` |
+| 从 UTF-8 文件导入当前草稿 | `/load 文件路径`（最多 4 MiB） |
 | 帮助 / 退出 | `/help` / `Ctrl+C`、`Ctrl+D`、`/quit` |
 
 两个模型分别保留本次进程内的会话、草稿和滚动位置。失败或不完整回答
@@ -50,6 +52,8 @@ lifeai --status
 转义控制符不会被作为终端指令执行。界面显示加载阶段、等待时间、
 上下文限制和生成速率；网络请求在后台线程执行，加载期间仍能编辑、滚动和退出。
 长会话复用换行缓存，空闲刷新不会重复排版全部对话。
+长文件草稿只排版光标附近的内容；Flint 长输入会显示预填充 token 数与百分比，
+完成后开始显示生成内容。单次问题、文件和标准输入最多 4 MiB。
 
 一次只驻留一个模型，切换需要释放旧模型并加载新模型，可能耗时数分钟。
 加载或生成期间禁止再次切换。退出客户端会关闭它创建的 SSH 进程，
@@ -70,8 +74,10 @@ lifeai chat --url http://127.0.0.1:11435 --no-tunnel
 命令行参数优先。`--known-hosts` 可指定 SSH 主机记录文件。
 
 `-n / --max-tokens` 默认 256；`--temperature` 默认 0，上限 2（Qwen 服务仅支持 0）；
-`--timeout` 默认 300 秒，`--load-timeout` 默认 1800 秒；`--system` 设置系统提示词；
+`--timeout` 默认 7200 秒，`--load-timeout` 默认 1800 秒；`--system` 设置系统提示词；
 `--no-stream` 等待完整回答后输出。上下文和输出上限由服务发布，超出时会报错。
+Flint 的 262144-token 上限包含模板、全部历史和预留输出；文件大小不能代替
+token 预算。需要为长文件腾出预算时，可先用 `/clear` 开启新会话。
 `--status` 只读取当前驻留状态，不切换或加载默认模型。
 
 客户端使用 `/healthz`、`/api/select`、`/api/chat`；模板在服务端生成。

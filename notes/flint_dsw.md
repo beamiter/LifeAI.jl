@@ -8,8 +8,8 @@ The DSW environment already provides Julia and its dependency depot:
 
 ```bash
 cd /jfs/application/user/bgl/LifeAI.jl
-export JULIA_DEPOT_PATH=/mnt/public_data/bgl/envs/lifeai/depot
-LIFEAI_JULIA=/mnt/public_data/bgl/envs/lifeai/julia-1.12.6/bin/julia
+export JULIA_DEPOT_PATH=/jfs/application/user/bgl/envs/lifeai/depot
+LIFEAI_JULIA=/jfs/application/user/bgl/envs/lifeai/julia-1.12.6/bin/julia
 ```
 
 Use `-O1` on this host. The default optimization level stalled in Julia's
@@ -108,7 +108,16 @@ cooperative cancellation when the callback returns `false`.
 The loopback worker provides `/healthz` and `/api/chat`. It validates token
 budgets, serializes generation, preserves UTF-8 bytes across token boundaries,
 and reports native GEMM calls in the final NDJSON packet. Its default limits
-are 2048 total context tokens and 512 generated tokens.
+are 262144 total context tokens and 512 generated tokens; the DSW deployment
+sets `--max-new-tokens 4096`. This includes the
+chat template, history and reserved output. Prefill is chunked at 4096 tokens
+by default; `phase=prefill` NDJSON events report processed and total tokens.
+See [256K context](flint_context256k.md) for memory design and validation.
+The service uses `--activation-scaling token`: each token has an independent
+GPU activation scale, while GEMMs still use native FP4 inputs and weights.
+The standalone CLI supports the same option; its `global` default preserves
+the previous arithmetic. `prepare_nvfp4_gemm(...; activation_scaling=:token)`
+selects this mode through the Julia API.
 The CUDA/native worker warms prefill and decode before publishing readiness;
 `--no-warmup` is available for startup diagnostics. Final packets include the
 per-request native call delta separately from the cumulative count.

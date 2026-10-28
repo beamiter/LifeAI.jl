@@ -16,6 +16,10 @@ use std::time::{Duration, Instant};
 
 const MAX_JSON: usize = 1024 * 1024;
 const MAX_REPLY: usize = 16 * MAX_JSON;
+const MAX_REQUEST_BYTES: usize = 16 * 1024 * 1024;
+const MAX_MESSAGES: usize = 64;
+const MAX_MESSAGE_CHARS: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_INPUT_BYTES: usize = 4 * 1024 * 1024;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(3);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -294,11 +298,23 @@ impl Api {
         }
     }
 
+    // Small embedding API; interactive and CLI callers additionally show progress.
+    #[allow(dead_code)]
     pub fn generate(
         &self,
         model: Model,
         messages: &[Message],
+        emit: impl FnMut(String),
+    ) -> Result<Generation> {
+        self.generate_with_progress(model, messages, emit, |_| {})
+    }
+
+    pub fn generate_with_progress(
+        &self,
+        model: Model,
+        messages: &[Message],
         mut emit: impl FnMut(String),
+        mut progress: impl FnMut(String),
     ) -> Result<Generation> {
         let health = self.health()?;
         ensure!(
@@ -308,9 +324,18 @@ impl Api {
         );
         let (context, _) = self.validate_limits(&health)?;
         ensure!(
-            !messages.is_empty() && messages.len() <= 128,
-            "对话需包含 1 到 128 条消息；按 Ctrl+L 开始新对话。"
+            !messages.is_empty() && messages.len() <= MAX_MESSAGES,
+            "对话需包含 1 到 64 条消息；按 Ctrl+L 开始新对话。"
         );
+        let mut total_chars = 0usize;
+        for message in messages {
+            let count = message.content.chars().count();
+            total_chars = total_chars.saturating_add(count);
+            ensure!(
+                count <= MAX_MESSAGE_CHARS && total_chars <= MAX_MESSAGE_CHARS,
+                "对话文本超过 4 Mi 字符限制；请缩短内容或按 Ctrl+L 清空。"
+            );
+        }
         ensure!(
             messages
                 .iter()
@@ -343,14 +368,16 @@ impl Api {
                 }),
             )
         };
+        let body = serde_json::to_vec(&payload)?;
         ensure!(
-            serde_json::to_vec(&payload)?.len() <= MAX_JSON,
-            "对话超过服务 1 MiB 限制；请缩短内容或按 Ctrl+L 清空。"
+            body.len() <= MAX_REQUEST_BYTES,
+            "对话超过服务 16 MiB 请求限制；请缩短内容或按 Ctrl+L 清空。"
         );
         let response = self
             .client
             .post(format!("{}{endpoint}", self.url))
-            .json(&payload)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body)
             .timeout(self.timeout)
             .send()
             .context("生成请求失败。")?;
@@ -379,6 +406,9 @@ impl Api {
             let event: Value =
                 serde_json::from_slice(&record).context("服务返回了无效的 NDJSON 生成事件。")?;
             consume_event(&event, model, &mut text, &mut emit)?;
+            if let Some(status) = prefill_progress(&event)? {
+                progress(status);
+            }
             if event["done"].as_bool() == Some(true) {
                 return Ok(Generation {
                     text,
@@ -438,6 +468,24 @@ impl Api {
         }
         Ok(result)
     }
+}
+
+fn prefill_progress(event: &Value) -> Result<Option<String>> {
+    if event["phase"].as_str() != Some("prefill") {
+        return Ok(None);
+    }
+    let processed = event["prefill_processed"]
+        .as_u64()
+        .context("预填充进度缺少有效 prefill_processed。")?;
+    let total = event["prompt_eval_count"]
+        .as_u64()
+        .filter(|count| *count > 0)
+        .context("预填充进度缺少有效 prompt_eval_count。")?;
+    ensure!(processed <= total, "预填充进度超过提示词长度。");
+    Ok(Some(format!(
+        "正在预填充 · {processed}/{total} tokens · {:.1}%",
+        processed as f64 / total as f64 * 100.0
+    )))
 }
 
 fn is_busy(error: &anyhow::Error) -> bool {
@@ -814,6 +862,68 @@ mod tests {
         assert_eq!(requests[1].1["messages"][0]["content"], "你好，世界 👋");
         assert_eq!(requests[1].1["options"]["num_predict"], 256);
         assert!(requests[1].1.get("prompt").is_none());
+    }
+
+    #[test]
+    fn long_chat_crosses_old_body_limit_and_reports_prefill_separately() {
+        let content = "长上下文🌟".repeat(100_000);
+        assert!(content.len() > MAX_JSON);
+        let body = [
+            json!({"model":Model::Flint.id(),"response":"","done":false,"phase":"prefill","prefill_processed":4096,"prompt_eval_count":262000}),
+            json!({"response":"回答","done":true}),
+        ].iter().map(Value::to_string).collect::<Vec<_>>().join("\n");
+        let mock = Mock::new(vec![response(health(Model::Flint)), (200, body, 4096)]);
+        let mut statuses = Vec::new();
+        let mut emitted = String::new();
+        let generated = mock
+            .api(false, 16)
+            .generate_with_progress(
+                Model::Flint,
+                &[Message {
+                    role: "user".into(),
+                    content: content.clone(),
+                }],
+                |piece| emitted.push_str(&piece),
+                |status| statuses.push(status),
+            )
+            .unwrap();
+        assert_eq!(generated.text, "回答");
+        assert_eq!(emitted, "回答");
+        assert_eq!(statuses, ["正在预填充 · 4096/262000 tokens · 1.6%"]);
+        let requests = mock.finish();
+        assert_eq!(requests[1].1["messages"][0]["content"], content);
+    }
+
+    #[test]
+    fn invalid_prefill_progress_is_rejected() {
+        for event in [
+            json!({"phase":"prefill","prefill_processed":1,"prompt_eval_count":0}),
+            json!({"phase":"prefill","prefill_processed":3,"prompt_eval_count":2}),
+            json!({"phase":"prefill","prefill_processed":-1,"prompt_eval_count":2}),
+        ] {
+            assert!(prefill_progress(&event).is_err());
+        }
+    }
+
+    #[test]
+    fn chat_count_and_total_character_limits_reject_before_post() {
+        let short = Message {
+            role: "user".into(),
+            content: "问题".into(),
+        };
+        let large = Message {
+            role: "user".into(),
+            content: "x".repeat(MAX_MESSAGE_CHARS / 2 + 1),
+        };
+        for messages in [vec![short; MAX_MESSAGES + 1], vec![large.clone(), large]] {
+            let mock = Mock::new(vec![response(health(Model::Flint))]);
+            assert!(
+                mock.api(false, 16)
+                    .generate(Model::Flint, &messages, |_| {})
+                    .is_err()
+            );
+            assert_eq!(mock.finish().len(), 1);
+        }
     }
 
     #[test]

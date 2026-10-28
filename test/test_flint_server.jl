@@ -28,9 +28,11 @@ end
 
 @testset "Flint loopback HTTP worker protocol" begin
     finished=Ref(false)
-    fake_generator = function(bundle,ids;max_new_tokens,temperature,on_token)
+    fake_generator = function(bundle,ids;max_new_tokens,temperature,on_token,
+            prefill_chunk_size=4096,on_prefill=nothing)
         result=Int[]
         finished[]=false
+        on_prefill === nothing || on_prefill(length(ids),length(ids))
         for token in [1,2,3,4][1:min(max_new_tokens,4)]
             sleep(0.01)
             push!(result,token)
@@ -55,7 +57,8 @@ end
         health=JSON3.read(String(HTTP.get(base*"/healthz").body))
         @test health.ready && health.model == "RecursiveSI/flint"
         @test health.context_tokens == 32 && health.max_new_tokens == 8
-        @test health.inference_engine == "lifeai_flint_decode_v3"
+        @test health.inference_engine == "lifeai_flint_context256k"
+        @test health.prefill_chunk_size == 4096 && health.max_body_bytes == 16*1024^2
         response=post(payload)
         @test response.status == 200
         object=JSON3.read(String(response.body))
@@ -94,6 +97,8 @@ end
         end
         @test chunks[end].done
         @test chunks[end].native_fp4_calls_delta == 0
+        @test first(chunks).phase == "prefill"
+        @test first(chunks).prefill_processed == first(chunks).prompt_eval_count == 2
         @test join(String(chunk.response) for chunk in chunks) == "你!"
         @test all(!occursin('�',String(chunk.response)) for chunk in chunks)
         @test length(chunks) >= 3
@@ -116,7 +121,13 @@ end
         @test post(merge(payload,(messages=[(role="tool",content="x")],))).status == 400
         @test post(merge(payload,(messages=[(role="user",content=repeat("a",40))],))).status == 400
         @test HTTP.post(base*"/api/chat",headers,"{";status_exception=false).status == 400
-        @test HTTP.post(base*"/api/chat",headers,repeat("x",1024^2+1);status_exception=false).status == 413
+        @test HTTP.post(base*"/api/chat",headers,repeat("x",FHW.MAX_BODY_BYTES+1);status_exception=false).status == 413
+        # A real >1 MiB text request is accepted by the expanded protocol.
+        worker.context_tokens = 1100000
+        @test post(merge(payload,(messages=[(role="user",content=repeat("a",1024^2+1))],))).status == 200
+        worker.context_tokens = 32
+        @test_throws FHW.RequestError FHW.prepare_request(worker,JSON3.write(
+            merge(payload,(messages=[(role="user",content=repeat("a",FHW.MAX_TEXT_CHARS+1))],))))
         lock(worker.generation_lock)
         try
             @test post(payload).status == 409

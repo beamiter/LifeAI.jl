@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-28",
+  "baseline_commit": "845f440f2bdd0a8b0db664295080ec149175e881",
+  "model_revision": "2a247be0c0aec895ccb0ac7ca92229ec6df37288",
+  "device": "NVIDIA RTX PRO 5000 72GB Blackwell",
+  "runtime": "Julia1.12.6 -O1; CUDA native cuBLASLt NVFP4",
+  "deployment": {
+    "context_tokens": 262144,
+    "max_new_tokens": 4096,
+    "prefill_chunk_size": 4096,
+    "activation_scaling": "token",
+    "kv_dtype": "Float32",
+    "full_attention_layers": 14,
+    "full_kv_reservation_bytes": 15032385536,
+    "request_json_bytes_limit": 16777216,
+    "client_input_bytes_limit": 4194304,
+    "request_timeout_seconds": 7200
+  },
+  "source_sha256": {
+    "src/models/flint.jl": "5f1c295189dc24794927f24ef78330f3f9039c0b3975557fb7f0cfc2e7b148ee",
+    "ext/flint_long_attention.jl": "b60364a04f4a8586b5f8c7adbf0a8e7d8dd159d4a06526714440c5967c75e4f1",
+    "ext/flint_nvfp4_native.jl": "2706aea35144c1238c64f6e60336c62ae6fecd38a8c665ae5506801d955fef06",
+    "scripts/run_flint_server.jl": "d883bd619967fcc4b005195788d1a3ee9bf112cbc23b4140a5df34606ca06fec"
+  },
+  "native_weight_storage": {
+    "prepared_gpu_bytes": 22192275456,
+    "portable_cpu_bytes": 22192275456,
+    "scope": "Native FP4 payloads only; excludes floating weights, context and caches.",
+    "idle_before_explicit_source_release_MiB": 44082,
+    "idle_after_explicit_source_release_MiB": 27090,
+    "token_worker_idle_nvidia_smi": "84034, 26962 MiB"
+  },
+  "short_context": {
+    "prompt_tokens": 15,
+    "requested_output_tokens": 64,
+    "temperature": 0,
+    "warmup": "One excluded64-token request per candidate, then3requests.",
+    "decode_formula": "(eval_count-1)/(decode_duration/1e9)",
+    "global": {
+      "runs": [
+        {
+          "tokens": 64,
+          "wall_seconds": 3.3708403849996103,
+          "server_ttft_seconds": 0.991270544,
+          "server_seconds": 3.347798108,
+          "decode_tokens_per_second": 26.73425126123413
+        },
+        {
+          "tokens": 64,
+          "wall_seconds": 3.2787883989985858,
+          "server_ttft_seconds": 0.979416224,
+          "server_seconds": 3.255456601,
+          "decode_tokens_per_second": 27.679649551313734
+        },
+        {
+          "tokens": 64,
+          "wall_seconds": 3.3321047379977244,
+          "server_ttft_seconds": 1.236590474,
+          "server_seconds": 3.308296376,
+          "decode_tokens_per_second": 30.40972173665218
+        }
+      ],
+      "median_decode_tokens_per_second": 27.679649551313734,
+      "median_server_ttft_seconds": 0.991270544
+    },
+    "token": {
+      "runs": [
+        {
+          "tokens": 64,
+          "wall_seconds": 2.2553075559990248,
+          "server_ttft_seconds": 0.509893651,
+          "server_seconds": 2.221088082,
+          "decode_tokens_per_second": 36.816389101490714
+        },
+        {
+          "tokens": 64,
+          "wall_seconds": 2.4220209020058974,
+          "server_ttft_seconds": 0.539430939,
+          "server_seconds": 2.388404952,
+          "decode_tokens_per_second": 34.07295048878548
+        },
+        {
+          "tokens": 64,
+          "wall_seconds": 2.541928115999326,
+          "server_ttft_seconds": 0.593768897,
+          "server_seconds": 2.509016182,
+          "decode_tokens_per_second": 32.893924713225736
+        }
+      ],
+      "median_decode_tokens_per_second": 34.07295048878548,
+      "median_server_ttft_seconds": 0.539430939
+    }
+  },
+  "controlled_quality": {
+    "single_measurement_per_case": true,
+    "same_exact_prompt_files": true,
+    "cases": [
+      {
+        "context_budget": 8192,
+        "style": "repeated",
+        "global_first_token_seconds": 32.454670106002595,
+        "token_first_token_seconds": 16.32406967199495,
+        "first_token_speedup": 1.9881482227241893,
+        "global_total_seconds": 48.54899841600127,
+        "token_total_seconds": 33.702842407998105,
+        "global_strict_json_pass": false,
+        "token_strict_json_pass": false,
+        "global_actual_output_tokens": 512,
+        "token_actual_output_tokens": 512,
+        "reserved_output_tokens": 512
+      },
+      {
+        "context_budget": 8192,
+        "style": "varied",
+        "global_first_token_seconds": 33.77723347199935,
+        "token_first_token_seconds": 12.682898885002942,
+        "first_token_speedup": 2.6632108146773668,
+        "global_total_seconds": 43.64869880199694,
+        "token_total_seconds": 20.619742900002166,
+        "global_strict_json_pass": true,
+        "token_strict_json_pass": true,
+        "global_actual_output_tokens": 325,
+        "token_actual_output_tokens": 247,
+        "reserved_output_tokens": 512
+      },
+      {
+        "context_budget": 32768,
+        "style": "varied",
+        "global_first_token_seconds": 156.76076881199697,
+        "token_first_token_seconds": 57.17648373699922,
+        "first_token_speedup": 2.7417000585951774,
+        "global_total_seconds": 165.16060703399853,
+        "token_total_seconds": 64.55524520199833,
+        "global_strict_json_pass": true,
+        "token_strict_json_pass": true,
+        "global_actual_output_tokens": 205,
+        "token_actual_output_tokens": 191,
+        "reserved_output_tokens": 512
+      }
+    ]
+  },
+  "full_context": {
+    "prompt_tokens": 260096,
+    "reserved_output_tokens": 2048,
+    "total_budget": 262144,
+    "actual_output_tokens": 214,
+    "strict_json_pass": true,
+    "identifier_matches": {
+      "begin": true,
+      "middle": true,
+      "end": true
+    },
+    "final_answer": {
+      "begin": "AMBER-4827-MICA",
+      "middle": "COBALT-9156-RIVER",
+      "end": "JADE-6732-ORBIT"
+    },
+    "client_first_text_seconds": 885.3482182939988,
+    "client_total_seconds": 907.2738045950027,
+    "server_first_token_seconds": 868.973571759,
+    "decode_tokens_per_second": 9.733574603002285,
+    "peak_sampled_gpu_memory_MiB": 66123.0,
+    "native_fp4_calls_delta": 2439320,
+    "method": "One varied-text request, temperature0, resident checkpoint, exact prompt-token audit against released tokenizer.",
+    "scope": "Capacity and three-needle diagnostic; not a general256K quality evaluation."
+  },
+  "known_limitations": [
+    "Repeated8K text in both scaling modes retrieved IDs inside reasoning but exhausted512-token budget without finalJSON.",
+    "The initial global-scaling repeated261632-token input completed capacity but degenerated into repetition and failed retrieval. Corpus/mode/output budget differ from the final full run; no direct256K speedup is claimed."
+  ],
+  "validation": {
+    "native_token_and_legacy_gpu_checks": 2313,
+    "attention_checks": 108,
+    "random_256k_attention_checks": 18,
+    "full_kv_reservation_checks": 591,
+    "cpu_prefill_checks": 43,
+    "cuda_chunked_forward_checks": 28,
+    "http_utf8_checks": 48,
+    "router_control_tests": 36,
+    "rust_tests": 46,
+    "benchmark_mock_tests": 3,
+    "real_pty_loaded_bytes": 1255139,
+    "real_pty_load_seconds": 0.100466057,
+    "boundary_overflow_statuses": [
+      400,
+      400
+    ]
+  },
+  "raw_artifact_directory": "/jfs/application/user/bgl/benchmarks/flint-context256k-20261028"
+}

@@ -1,0 +1,34 @@
+{
+  "prompt_tokens": 262143,
+  "reserved_output_tokens": 2,
+  "total_budget": 262145,
+  "context_tokens": 262144,
+  "expected_worker_code": "context_length_exceeded",
+  "prompt_sha256": "8e268123722de8af7d22a724dd244020834e2d38d890d12007e981bd8f6d3d8c",
+  "request_body_bytes": 1294866,
+  "results": [
+    {
+      "service": "worker",
+      "status": 400,
+      "seconds": 2.4532003849963075,
+      "payload": {
+        "error": "Prompt (262143 tokens) plus output (2) exceeds 262144 tokens",
+        "code": "context_length_exceeded",
+        "model": "RecursiveSI/flint",
+        "response": "",
+        "done": true
+      }
+    },
+    {
+      "service": "router",
+      "status": 400,
+      "seconds": 3.285957035004685,
+      "payload": {
+        "error": "Prompt (262143 tokens) plus output (2) exceeds 262144 tokens"
+      }
+    }
+  ],
+  "status": "passed",
+  "inference_started": false,
+  "no_inference_evidence": "Worker returned context_length_exceeded from prepare_request, before generate or NDJSON headers; router returned the same HTTP400 and released its reservation."
+}

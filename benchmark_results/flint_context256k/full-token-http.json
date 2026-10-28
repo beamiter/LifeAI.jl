@@ -1,0 +1,376 @@
+{
+  "status": "complete",
+  "url": "http://127.0.0.1:11435",
+  "prompt_file": "/jfs/application/user/bgl/benchmarks/flint-context256k-20261028/quality/quality-262144-varied-prompt-260096-reserve-2048.txt",
+  "prompt_sha256": "8799543e94162d37f2531b894d65d69ae8d4c5f4c8ca1ed5a0697699dfeec537",
+  "prompt_utf8_bytes": 1234581,
+  "request_body_bytes": 1245084,
+  "expected_prompt_tokens": 260096,
+  "requested_output_tokens": 2048,
+  "reserved_output_tokens": 2048,
+  "context_budget": 262144,
+  "expected_answer": {
+    "begin": "AMBER-4827-MICA",
+    "middle": "COBALT-9156-RIVER",
+    "end": "JADE-6732-ORBIT"
+  },
+  "timeout_seconds": 7200,
+  "gpu_memory_scope": "Whole GPU, including all resident processes, sampled every configured interval.",
+  "prefill_events": [
+    {
+      "elapsed_seconds": 23.236191620999307,
+      "processed": 4096,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 29.5582986790032,
+      "processed": 8192,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 36.33251257200027,
+      "processed": 12288,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 43.38715741699707,
+      "processed": 16384,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 50.55581927100138,
+      "processed": 20480,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 57.93470418600191,
+      "processed": 24576,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 65.81432094999764,
+      "processed": 28672,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 73.69258082399756,
+      "processed": 32768,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 81.93244490600046,
+      "processed": 36864,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 90.37798002300406,
+      "processed": 40960,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 99.1015033740041,
+      "processed": 45056,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 108.37042940899846,
+      "processed": 49152,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 117.42167759499716,
+      "processed": 53248,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 126.73376289300359,
+      "processed": 57344,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 136.34193818300264,
+      "processed": 61440,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 146.4321565190039,
+      "processed": 65536,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 156.59597913199832,
+      "processed": 69632,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 167.04511152500345,
+      "processed": 73728,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 177.70646580400353,
+      "processed": 77824,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 188.7652466569998,
+      "processed": 81920,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 200.01477232199977,
+      "processed": 86016,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 211.44277700100065,
+      "processed": 90112,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 223.0491598860026,
+      "processed": 94208,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 234.93645376600034,
+      "processed": 98304,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 247.19401543000276,
+      "processed": 102400,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 259.6097510239997,
+      "processed": 106496,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 272.183267264998,
+      "processed": 110592,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 285.11738077500195,
+      "processed": 114688,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 298.26872457999707,
+      "processed": 118784,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 311.730926491,
+      "processed": 122880,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 325.4170721280025,
+      "processed": 126976,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 339.3027724940039,
+      "processed": 131072,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 353.4047386570019,
+      "processed": 135168,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 367.71871384500264,
+      "processed": 139264,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 382.2604088279986,
+      "processed": 143360,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 397.13995935500134,
+      "processed": 147456,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 412.0656900199974,
+      "processed": 151552,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 427.2269932970012,
+      "processed": 155648,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 442.482124770002,
+      "processed": 159744,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 457.8993527450002,
+      "processed": 163840,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 473.3453589690034,
+      "processed": 167936,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 489.2492810370022,
+      "processed": 172032,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 505.3734446629969,
+      "processed": 176128,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 521.7178503000032,
+      "processed": 180224,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 538.116502859004,
+      "processed": 184320,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 554.8493871460014,
+      "processed": 188416,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 571.9083375449991,
+      "processed": 192512,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 589.1685160810011,
+      "processed": 196608,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 606.6574601960019,
+      "processed": 200704,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 624.3051518700013,
+      "processed": 204800,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 642.2393682990005,
+      "processed": 208896,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 660.2434221069998,
+      "processed": 212992,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 678.5132010520028,
+      "processed": 217088,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 697.0365496239974,
+      "processed": 221184,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 715.7515590449984,
+      "processed": 225280,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 734.753742302004,
+      "processed": 229376,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 753.8965947129982,
+      "processed": 233472,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 773.1544495120033,
+      "processed": 237568,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 792.5433929200008,
+      "processed": 241664,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 812.1031609030033,
+      "processed": 245760,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 832.0056780180021,
+      "processed": 249856,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 852.3532364769999,
+      "processed": 253952,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 872.7608745640027,
+      "processed": 258048,
+      "total": 260096
+    },
+    {
+      "elapsed_seconds": 885.3479717619994,
+      "processed": 260096,
+      "total": 260096
+    }
+  ],
+  "first_token_seconds": 885.3482182939988,
+  "prefill_complete_seconds": 885.3479717619994,
+  "total_seconds": 907.2738045950027,
+  "peak_gpu_memory_MiB": 66123.0,
+  "gpu_samples": 450,
+  "gpu_sampler_errors": [],
+  "final_packet": {
+    "model": "RecursiveSI/flint",
+    "created_at": "2026-10-28T14:09:55.120",
+    "response": "",
+    "done": true,
+    "done_reason": "stop",
+    "total_duration": 890856590967,
+    "load_duration": 229450678124,
+    "prompt_eval_count": 260096,
+    "eval_count": 214,
+    "eval_duration": 890856590967,
+    "time_to_first_token": 868973571759,
+    "prompt_eval_duration": 868973571759,
+    "decode_duration": 21883019208,
+    "lifeai": {
+      "decode_tokens_per_second": 9.733574603002285,
+      "decode_eval_count": 213
+    },
+    "native_fp4_backend": "cublaslt_nvfp4",
+    "native_fp4_calls": 4310316,
+    "activation_scaling": "token",
+    "native_fp4_calls_delta": 2439320
+  },
+  "actual_output_tokens": 214,
+  "retrieved_identifiers": {
+    "begin": true,
+    "middle": true,
+    "end": true
+  }
+}

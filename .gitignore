@@ -13,6 +13,15 @@ benchmark_results/flint_decode_optimized/*
 !benchmark_results/flint_decode_optimized_v3/
 benchmark_results/flint_decode_optimized_v3/*
 !benchmark_results/flint_decode_optimized_v3/summary.json
+!benchmark_results/flint_context256k/
+benchmark_results/flint_context256k/*
+!benchmark_results/flint_context256k/*.py
+!benchmark_results/flint_context256k/*.jl
+!benchmark_results/flint_context256k/*.json
+!benchmark_results/flint_context256k/README.md
+!benchmark_results/flint_context256k/quality-reproduction.md
+!benchmark_results/flint_context256k/attention-tests.log
+!benchmark_results/flint_context256k/nvfp4-token-tests.log
 !benchmark_results/qwen3_vl_workspace_ownership/
 benchmark_results/qwen3_vl_workspace_ownership/*
 !benchmark_results/qwen3_vl_workspace_ownership/summary.json

@@ -1,0 +1,30 @@
+{
+  "label": "per-token-activation",
+  "style": "varied",
+  "context_budget": 262144,
+  "prompt_tokens": 260096,
+  "reserved_output_tokens": 2048,
+  "actual_output_tokens": 214,
+  "transport_status": "complete",
+  "first_token_seconds": 885.3482182939988,
+  "total_seconds": 907.2738045950027,
+  "peak_gpu_memory_MiB": 66123.0,
+  "done_reason": "stop",
+  "expected_answer": {
+    "begin": "AMBER-4827-MICA",
+    "middle": "COBALT-9156-RIVER",
+    "end": "JADE-6732-ORBIT"
+  },
+  "final_answer_text": "{\"begin\":\"AMBER-4827-MICA\",\"middle\":\"COBALT-9156-RIVER\",\"end\":\"JADE-6732-ORBIT\"}",
+  "strict_json_pass": true,
+  "identifier_matches": {
+    "begin": true,
+    "middle": true,
+    "end": true
+  },
+  "parsed_final_json": {
+    "begin": "AMBER-4827-MICA",
+    "middle": "COBALT-9156-RIVER",
+    "end": "JADE-6732-ORBIT"
+  }
+}

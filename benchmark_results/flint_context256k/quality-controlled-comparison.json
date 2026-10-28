@@ -1,0 +1,48 @@
+{
+  "single_measurement_per_case": true,
+  "same_exact_prompt_files": true,
+  "cases": [
+    {
+      "context_budget": 8192,
+      "style": "repeated",
+      "global_first_token_seconds": 32.454670106002595,
+      "token_first_token_seconds": 16.32406967199495,
+      "first_token_speedup": 1.9881482227241893,
+      "global_total_seconds": 48.54899841600127,
+      "token_total_seconds": 33.702842407998105,
+      "global_strict_json_pass": false,
+      "token_strict_json_pass": false,
+      "global_actual_output_tokens": 512,
+      "token_actual_output_tokens": 512,
+      "reserved_output_tokens": 512
+    },
+    {
+      "context_budget": 8192,
+      "style": "varied",
+      "global_first_token_seconds": 33.77723347199935,
+      "token_first_token_seconds": 12.682898885002942,
+      "first_token_speedup": 2.6632108146773668,
+      "global_total_seconds": 43.64869880199694,
+      "token_total_seconds": 20.619742900002166,
+      "global_strict_json_pass": true,
+      "token_strict_json_pass": true,
+      "global_actual_output_tokens": 325,
+      "token_actual_output_tokens": 247,
+      "reserved_output_tokens": 512
+    },
+    {
+      "context_budget": 32768,
+      "style": "varied",
+      "global_first_token_seconds": 156.76076881199697,
+      "token_first_token_seconds": 57.17648373699922,
+      "first_token_speedup": 2.7417000585951774,
+      "global_total_seconds": 165.16060703399853,
+      "token_total_seconds": 64.55524520199833,
+      "global_strict_json_pass": true,
+      "token_strict_json_pass": true,
+      "global_actual_output_tokens": 205,
+      "token_actual_output_tokens": 191,
+      "reserved_output_tokens": 512
+    }
+  ]
+}

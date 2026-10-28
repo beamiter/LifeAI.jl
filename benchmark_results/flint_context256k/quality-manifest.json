@@ -1,0 +1,184 @@
+{
+  "model": "RecursiveSI/flint",
+  "context_tokens": 262144,
+  "tokenizer_sha256": "a263cce0b7e2b03f7ee07ce809783ef4b47f160c3f268a4ea1524f638da45b68",
+  "renderer": "<|user|>{UTF8_FILE}<|assistant|>",
+  "expected_answer": {
+    "begin": "AMBER-4827-MICA",
+    "middle": "COBALT-9156-RIVER",
+    "end": "JADE-6732-ORBIT"
+  },
+  "cases": [
+    {
+      "file": "quality-8192-repeated-prompt-7680-reserve-512.txt",
+      "ids_file": "quality-8192-repeated-prompt-7680-reserve-512.ids.u32",
+      "style": "repeated",
+      "prompt_tokens_official_tokenizers": 7680,
+      "requested_output_tokens": 512,
+      "reserved_output_tokens": 512,
+      "total_context_budget": 8192,
+      "prompt_utf8_bytes": 36195,
+      "record_count": 1080,
+      "all_record_indices_unique": false,
+      "padding_words": 21,
+      "sha256": "c6169df7bb1042e3b9345ed2cc3035d6f0e683500503c90be80a611d4f333917",
+      "token_ids_zero_based_u32le_sha256": "553585f6cfd04cb0ea7ab019641830ce8808907554e2cb39b398a71c65482eff",
+      "marker_spans": {
+        "begin": {
+          "value": "AMBER-4827-MICA",
+          "token_start_zero_based": 24,
+          "token_end_exclusive": 31,
+          "prompt_character_fraction": 0.003865694720565496
+        },
+        "middle": {
+          "value": "COBALT-9156-RIVER",
+          "token_start_zero_based": 3820,
+          "token_end_exclusive": 3828,
+          "prompt_character_fraction": 0.49721117738016346
+        },
+        "end": {
+          "value": "JADE-6732-ORBIT",
+          "token_start_zero_based": 7638,
+          "token_end_exclusive": 7645,
+          "prompt_character_fraction": 0.9946156394963552
+        }
+      },
+      "first_record_samples": [
+        "This is a neutral filler record."
+      ],
+      "last_record_samples": [
+        "This is a neutral filler record."
+      ]
+    },
+    {
+      "file": "quality-8192-varied-prompt-7680-reserve-512.txt",
+      "ids_file": "quality-8192-varied-prompt-7680-reserve-512.ids.u32",
+      "style": "varied",
+      "prompt_tokens_official_tokenizers": 7680,
+      "requested_output_tokens": 512,
+      "reserved_output_tokens": 512,
+      "total_context_budget": 8192,
+      "prompt_utf8_bytes": 36485,
+      "record_count": 299,
+      "all_record_indices_unique": true,
+      "padding_words": 34,
+      "sha256": "0d98dea3f18a4a58fd5a443ccb603afbd1a6c96ddd59bc0ecedeadc9759d26e9",
+      "token_ids_zero_based_u32le_sha256": "a58a86efed72ea7843a102bddbf1ea1c57505a9fbf718ae945578e39ee0d160d",
+      "marker_spans": {
+        "begin": {
+          "value": "AMBER-4827-MICA",
+          "token_start_zero_based": 24,
+          "token_end_exclusive": 31,
+          "prompt_character_fraction": 0.003834986029693749
+        },
+        "middle": {
+          "value": "COBALT-9156-RIVER",
+          "token_start_zero_based": 3811,
+          "token_end_exclusive": 3819,
+          "prompt_character_fraction": 0.4973702952939243
+        },
+        "end": {
+          "value": "JADE-6732-ORBIT",
+          "token_start_zero_based": 7638,
+          "token_end_exclusive": 7645,
+          "prompt_character_fraction": 0.9946584123157837
+        }
+      },
+      "first_record_samples": [
+        "Record 000001: A postcard from the riverside market described clear skies; Leon placed it next to a simple glass bottle.\n",
+        "Record 000002: A routine inventory at the public library listed a green canvas bag; Felix signed the page marked 844.\n"
+      ],
+      "last_record_samples": [
+        "Record 000298: Under warm sunshine, Theo photographed the old observatory and wrote a brief description of a repaired desk lamp.\n",
+        "Record 000299: A routine inventory at a small bakery listed a green canvas bag; Iris signed the page marked 123.\n"
+      ]
+    },
+    {
+      "file": "quality-32768-varied-prompt-32256-reserve-512.txt",
+      "ids_file": "quality-32768-varied-prompt-32256-reserve-512.ids.u32",
+      "style": "varied",
+      "prompt_tokens_official_tokenizers": 32256,
+      "requested_output_tokens": 512,
+      "reserved_output_tokens": 512,
+      "total_context_budget": 32768,
+      "prompt_utf8_bytes": 153208,
+      "record_count": 1275,
+      "all_record_indices_unique": true,
+      "padding_words": 41,
+      "sha256": "c6cc89b8ddf10f52b68bb67a1326eddd9f2068a1111361e74cc8aca55056ca59",
+      "token_ids_zero_based_u32le_sha256": "42186aa6e06df041880f7f95bb25685fc17f5c6de10145b07c02179a843dcf58",
+      "marker_spans": {
+        "begin": {
+          "value": "AMBER-4827-MICA",
+          "token_start_zero_based": 24,
+          "token_end_exclusive": 31,
+          "prompt_character_fraction": 0.0009136651678207128
+        },
+        "middle": {
+          "value": "COBALT-9156-RIVER",
+          "token_start_zero_based": 16092,
+          "token_end_exclusive": 16100,
+          "prompt_character_fraction": 0.49874371039424653
+        },
+        "end": {
+          "value": "JADE-6732-ORBIT",
+          "token_start_zero_based": 32214,
+          "token_end_exclusive": 32221,
+          "prompt_character_fraction": 0.9987273949448211
+        }
+      },
+      "first_record_samples": [
+        "Record 000001: A postcard from the riverside market described clear skies; Leon placed it next to a simple glass bottle.\n",
+        "Record 000002: A routine inventory at the public library listed a green canvas bag; Felix signed the page marked 844.\n"
+      ],
+      "last_record_samples": [
+        "Record 001274: The weekly report records 542 ordinary visits to the town archive, where Ada displayed a simple glass bottle.\n",
+        "Record 001275: At the end of a quiet day, Iris counted 480 labels for the neighborhood school and packed a wool scarf.\n"
+      ]
+    },
+    {
+      "file": "quality-262144-varied-prompt-261632-reserve-512.txt",
+      "ids_file": "quality-262144-varied-prompt-261632-reserve-512.ids.u32",
+      "style": "varied",
+      "prompt_tokens_official_tokenizers": 261632,
+      "requested_output_tokens": 512,
+      "reserved_output_tokens": 512,
+      "total_context_budget": 262144,
+      "prompt_utf8_bytes": 1241911,
+      "record_count": 10411,
+      "all_record_indices_unique": true,
+      "padding_words": 41,
+      "sha256": "074d1b561f0a33e24de2ccb36c7f0e6aec3acc3df9756ba576cc65f0cb3e9328",
+      "token_ids_zero_based_u32le_sha256": "c9824b2735c7e5b510e1d860c029f50b5955cbd1f2b1c6cad0956e09acd8d9c5",
+      "marker_spans": {
+        "begin": {
+          "value": "AMBER-4827-MICA",
+          "token_start_zero_based": 24,
+          "token_end_exclusive": 31,
+          "prompt_character_fraction": 0.00011272758895011965
+        },
+        "middle": {
+          "value": "COBALT-9156-RIVER",
+          "token_start_zero_based": 130784,
+          "token_end_exclusive": 130792,
+          "prompt_character_fraction": 0.49975199930430975
+        },
+        "end": {
+          "value": "JADE-6732-ORBIT",
+          "token_start_zero_based": 261590,
+          "token_end_exclusive": 261597,
+          "prompt_character_fraction": 0.9998429865725338
+        }
+      },
+      "first_record_samples": [
+        "Record 000001: A postcard from the riverside market described clear skies; Leon placed it next to a simple glass bottle.\n",
+        "Record 000002: A routine inventory at the public library listed a green canvas bag; Felix signed the page marked 844.\n"
+      ],
+      "last_record_samples": [
+        "Record 010410: At the railway station, Leon checked 477 items and set a green canvas bag beside the window.\n",
+        "Record 010411: The afternoon schedule assigned Leon to the public library; the delivery contained a box of colored pencils.\n"
+      ]
+    }
+  ],
+  "note": "Output tokens are reserved budgets; EOS may stop generation earlier."
+}

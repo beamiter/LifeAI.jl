@@ -1,0 +1,82 @@
+{
+  "model": "RecursiveSI/flint",
+  "context_tokens": 262144,
+  "tokenizer_sha256": "a263cce0b7e2b03f7ee07ce809783ef4b47f160c3f268a4ea1524f638da45b68",
+  "renderer": "<|user|>{UTF8_FILE}<|assistant|>",
+  "expected_answer": {
+    "begin": "AMBER-4827-MICA",
+    "middle": "COBALT-9156-RIVER",
+    "end": "JADE-6732-ORBIT"
+  },
+  "cases": [
+    {
+      "file": "flint-261632-prompt-512-output.txt",
+      "ids_file": "flint-261632-prompt-512-output.ids.u32",
+      "prompt_tokens_official_tokenizers": 261632,
+      "requested_output_tokens": 512,
+      "total_context_budget": 262144,
+      "prompt_utf8_bytes": 1255139,
+      "padding_words": 9533,
+      "sha256": "8c1473f3467516d98374f2236a207da3696c05655b127c944d9fe1f4f4fd009e",
+      "token_ids_zero_based_u32le_sha256": "c849a89e01ceec6f25d88bba92f548f7146d5f903f9eb47922310a3884247430",
+      "marker_spans": {
+        "begin": {
+          "value": "AMBER-4827-MICA",
+          "character_offset": 140,
+          "prompt_character_fraction": 0.0001115395646770133,
+          "token_start_zero_based": 24,
+          "token_end_exclusive": 31
+        },
+        "middle": {
+          "value": "COBALT-9156-RIVER",
+          "character_offset": 594187,
+          "prompt_character_fraction": 0.4733954236910035,
+          "token_start_zero_based": 126040,
+          "token_end_exclusive": 126048
+        },
+        "end": {
+          "value": "JADE-6732-ORBIT",
+          "character_offset": 1254965,
+          "prompt_character_fraction": 0.9998446413206284,
+          "token_start_zero_based": 261590,
+          "token_end_exclusive": 261597
+        }
+      }
+    },
+    {
+      "file": "flint-262143-prompt-1-output.txt",
+      "ids_file": "flint-262143-prompt-1-output.ids.u32",
+      "prompt_tokens_official_tokenizers": 262143,
+      "requested_output_tokens": 1,
+      "total_context_budget": 262144,
+      "prompt_utf8_bytes": 1258716,
+      "padding_words": 10044,
+      "sha256": "8e268123722de8af7d22a724dd244020834e2d38d890d12007e981bd8f6d3d8c",
+      "token_ids_zero_based_u32le_sha256": "c2ea85058ab72f5eccdc5b5cd5c50b2b631dd31aefb9632db67e1ffba11cad04",
+      "marker_spans": {
+        "begin": {
+          "value": "AMBER-4827-MICA",
+          "character_offset": 140,
+          "prompt_character_fraction": 0.00011122259852534723,
+          "token_start_zero_based": 24,
+          "token_end_exclusive": 31
+        },
+        "middle": {
+          "value": "COBALT-9156-RIVER",
+          "character_offset": 594187,
+          "prompt_character_fraction": 0.4720501582141464,
+          "token_start_zero_based": 126040,
+          "token_end_exclusive": 126048
+        },
+        "end": {
+          "value": "JADE-6732-ORBIT",
+          "character_offset": 1258542,
+          "prompt_character_fraction": 0.9998450828091968,
+          "token_start_zero_based": 262101,
+          "token_end_exclusive": 262108
+        }
+      }
+    }
+  ],
+  "note": "Exact capacity is prompt tokens plus requested output budget; generation may stop early."
+}

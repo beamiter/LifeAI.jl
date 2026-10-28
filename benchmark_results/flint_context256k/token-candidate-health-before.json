@@ -1,0 +1,44 @@
+{
+  "router": {
+    "ready": true,
+    "model": "RecursiveSI/flint",
+    "selected_model": "RecursiveSI/flint",
+    "state": "ready",
+    "loading_model": null,
+    "phase": "ready",
+    "last_error": null,
+    "active_requests": 0,
+    "context_tokens": 262144,
+    "max_new_tokens": 4096,
+    "load_seconds": 293.34,
+    "models": [
+      {
+        "key": "qwen",
+        "id": "Qwen/Qwen3-8B",
+        "label": "Qwen3 8B",
+        "context_tokens": 40960,
+        "max_new_tokens": 512
+      },
+      {
+        "key": "flint",
+        "id": "RecursiveSI/flint",
+        "label": "Flint NVFP4",
+        "context_tokens": 262144,
+        "max_new_tokens": 4096
+      }
+    ]
+  },
+  "worker": {
+    "ready": true,
+    "model": "RecursiveSI/flint",
+    "context_tokens": 262144,
+    "max_new_tokens": 4096,
+    "phase": "ready",
+    "error": null,
+    "prefill_chunk_size": 4096,
+    "max_body_bytes": 16777216,
+    "activation_scaling": "token",
+    "native_fp4_backend": "cublaslt_nvfp4",
+    "inference_engine": "lifeai_flint_context256k"
+  }
+}
