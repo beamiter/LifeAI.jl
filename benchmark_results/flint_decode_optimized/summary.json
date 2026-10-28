@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-28",
+  "baseline_commit": "eb34f9d55461db34a848e4b34a8df2ea81995366",
+  "hardware": {
+    "device": "NVIDIA RTX PRO 5000 72GB Blackwell",
+    "driver": "580.126.09",
+    "julia": "1.12.6"
+  },
+  "model": {
+    "repository": "RecursiveSI/flint",
+    "revision": "2a247be0c0aec895ccb0ac7ca92229ec6df37288",
+    "weight_recipe": "LifeAI BF16-to-maxabs NVFP4; floating routers/norms/embeddings",
+    "backend": "cublaslt_nvfp4",
+    "context_limit": 2048
+  },
+  "request": {
+    "prompt": "请用中文解释什么是递归，并给出一个简单例子。",
+    "prompt_tokens": 15,
+    "generated_tokens": 64,
+    "temperature": 0,
+    "concurrent_requests": 1,
+    "streaming": true
+  },
+  "measurement": {
+    "before": "Existing warmed resident worker; two identical requests.",
+    "after": "Restarted candidate worker, one excluded 64-token warmup, then two identical measured requests.",
+    "decode_formula": "(eval_count - 1) / ((total_duration - time_to_first_token) / 1e9)",
+    "load_and_prefill_excluded_from_decode": true,
+    "gpu_sampling_interval_seconds": 0.5,
+    "scope": "Short context, batch 1; not a 128k context benchmark."
+  },
+  "before": {
+    "runs": [
+      {
+        "wall_seconds": 55.07828073499695,
+        "server_ttft_seconds": 4.441589582,
+        "server_seconds": 55.061750512,
+        "tokens": 64,
+        "end_to_end_tokens_per_second": 1.1623313716851777,
+        "decode_tokens_per_second": 1.2445634079891494
+      },
+      {
+        "wall_seconds": 57.22634657299932,
+        "server_ttft_seconds": 6.169071569,
+        "server_seconds": 57.209036393,
+        "tokens": 64,
+        "end_to_end_tokens_per_second": 1.1187043871941695,
+        "decode_tokens_per_second": 1.234326869488283
+      }
+    ],
+    "median_decode_tokens_per_second": 1.2394451387387162,
+    "gpu_mean": {
+      "utilization.gpu": 18.19724770642202,
+      "utilization.memory": 0.04128440366972477,
+      "power.draw": 68.96834862385322,
+      "clocks.current.sm": 2535.605504587156,
+      "clocks.current.memory": 13305.550458715596,
+      "memory.used": 45401.01834862385
+    },
+    "gpu_max": {
+      "utilization.gpu": 26.0,
+      "utilization.memory": 1.0,
+      "power.draw": 73.96,
+      "clocks.current.sm": 2595.0,
+      "clocks.current.memory": 13365.0,
+      "memory.used": 45523.0
+    }
+  },
+  "after": {
+    "runs": [
+      {
+        "wall_seconds": 5.014006173998496,
+        "server_ttft_seconds": 1.430182486,
+        "server_seconds": 4.99731548,
+        "tokens": 64,
+        "end_to_end_tokens_per_second": 12.80687606298572,
+        "decode_tokens_per_second": 17.66124226541804
+      },
+      {
+        "wall_seconds": 4.936286102998565,
+        "server_ttft_seconds": 1.490847682,
+        "server_seconds": 4.919263259,
+        "tokens": 64,
+        "end_to_end_tokens_per_second": 13.010078263835402,
+        "decode_tokens_per_second": 18.37583530498584
+      }
+    ],
+    "median_decode_tokens_per_second": 18.01853878520194,
+    "gpu_mean": {
+      "utilization.gpu": 34.85,
+      "utilization.memory": 2.35,
+      "power.draw": 79.013,
+      "clocks.current.sm": 2595.0,
+      "clocks.current.memory": 13365.0,
+      "memory.used": 45045.0
+    },
+    "gpu_max": {
+      "utilization.gpu": 72.0,
+      "utilization.memory": 6.0,
+      "power.draw": 84.37,
+      "clocks.current.sm": 2595.0,
+      "clocks.current.memory": 13365.0,
+      "memory.used": 45071.0
+    }
+  },
+  "decode_speedup": 14.537584780507478,
+  "native_calls_before": [
+    82847,
+    82847
+  ],
+  "native_calls_after": [
+    82829,
+    82829
+  ],
+  "greeting": {
+    "prompt": "你好",
+    "tokens": 209,
+    "seconds": 12.429597526999714,
+    "done_reason": "stop",
+    "decode_tokens_per_second": 17.746680227544363,
+    "scope": "Separate diagnostic request with one-second CPU profile; not included in two-run speedup."
+  },
+  "attention_microbenchmarks": [
+    {
+      "keys": 128,
+      "queries": 1,
+      "old_seconds": 0.003119068,
+      "new_seconds": 7.82305e-05,
+      "speedup": 39.87022964189159,
+      "max_absolute_error": 1.7881393e-07
+    },
+    {
+      "keys": 513,
+      "queries": 1,
+      "old_seconds": 0.003164374,
+      "new_seconds": 8.265550000000001e-05,
+      "speedup": 38.28388915438174,
+      "max_absolute_error": 1.6391277e-07
+    },
+    {
+      "keys": 128,
+      "queries": 16,
+      "old_seconds": 0.003298729,
+      "new_seconds": 9.8371e-05,
+      "speedup": 33.53355155482815,
+      "max_absolute_error": 7.1525574e-07
+    }
+  ],
+  "fp4_microbenchmarks": [
+    {
+      "m": 512,
+      "k": 2048,
+      "n": 1,
+      "old_seconds": 0.000215267625,
+      "new_seconds": 2.8367200000000002e-05,
+      "speedup": 7.588610261146676
+    },
+    {
+      "m": 2048,
+      "k": 512,
+      "n": 1,
+      "old_seconds": 0.00019014314999999998,
+      "new_seconds": 2.82532e-05,
+      "speedup": 6.729968640720343
+    },
+    {
+      "m": 2048,
+      "k": 2048,
+      "n": 1,
+      "old_seconds": 0.000222627425,
+      "new_seconds": 1.863515e-05,
+      "speedup": 11.94663981776374
+    }
+  ],
+  "native_kernel_evidence": {
+    "backend": "cublaslt_nvfp4",
+    "calls": 10,
+    "device_records": 31,
+    "kernel_counts": {
+      "_native_fp4_decode_amax_kernel_(CuDeviceArray<Float32, 1, 1>, CuDeviceArray<Float32, 2, 1>, Float32)": 10,
+      "cutlass3x_sm120_bstensorop_s16864gemm_block_scaled_ue4m3xe2m1_ue4m3xe2m1_f32_f32_f32_128x128x256_1x1x1_0_tnn_align32_o_vs16_bias_bf16_relu": 10,
+      "[copy pageable to device memory]": 1,
+      "_native_fp4_decode_pack_kernel_(CuDeviceArray<UInt8, 2, 1>, CuDeviceArray<UInt8, 1, 1>, CuDeviceArray<Float32, 1, 1>, CuDeviceArray<Float32, 2, 1>, Int64)": 10
+    },
+    "native_kernels": [
+      "cutlass3x_sm120_bstensorop_s16864gemm_block_scaled_ue4m3xe2m1_ue4m3xe2m1_f32_f32_f32_128x128x256_1x1x1_0_tnn_align32_o_vs16_bias_bf16_relu"
+    ],
+    "stats": {
+      "backend": "cublaslt_nvfp4",
+      "native_calls": 14,
+      "padded_m": 512,
+      "padded_k": 2048,
+      "cached_shapes": 1,
+      "workspace_bytes": 8388608,
+      "shared_workspace": true,
+      "prepared_weight_bytes": 589824,
+      "last_tokens": 1,
+      "activation_quantized": true,
+      "closed": false
+    }
+  },
+  "validation": {
+    "cpu_model_oracle_quantization_streaming": 104,
+    "cpu_utf8_and_worker_protocol": 43,
+    "cuda_attention_and_moe": 25,
+    "cuda_fused_fp4": 185,
+    "cuda_existing_native_regression": 81,
+    "quantized_test_bytes": "Packed activations/scales/global scale matched portable quantizer on all test inputs.",
+    "tiny_native_flint_relative_l2_error": 1.13e-07,
+    "cuda_attention_max_absolute_error": 7.16e-07,
+    "whole_model_greedy_text_identical": false,
+    "optimized_repeat_text_identical": true,
+    "quality_scope": "FP32 attention accumulation order changes. Greedy text diverges; no full quality benchmark was performed."
+  },
+  "remaining_hotspots": [
+    "Host launch and temporary allocation overhead",
+    "CPU expert routing and serial expert dispatch",
+    "GPU completion waits observed at host copies; inclusive profile counts are not exclusive copy time"
+  ],
+  "candidate_source_sha256": {
+    "src/models/flint.jl": "e0c9e5cceadb9e40e9308f6724fb4636bb95be1e62a9060c231136dde7ae0044",
+    "ext/flint_nvfp4_native.jl": "c791de8d8b1028cb342ee117e6ef60584ae108429961973469284b8479ad9fc3",
+    "scripts/run_flint_server.jl": "5db92e51f505c91da8944222ddcec6ab512f5f4e2cf4fceb16e9f69d198d70d8"
+  },
+  "official_sources": {
+    "checked_date": "2026-10-28",
+    "rec": "0e3150ca4262f572dee25c231d9ac7148414d2af",
+    "llama_cpp": "e486a4b559617dc88bf79978996f6c670b6bbc9d",
+    "official_blog": "https://recursive.com/updates/introducing-recursive-flint",
+    "nvfp4_model": "https://huggingface.co/RecursiveSI/flint-nvfp4-gguf"
+  }
+}

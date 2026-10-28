@@ -155,7 +155,16 @@ prepare_nvfp4_gemm(weight::NVFP4Weight; kwargs...) = throw(ArgumentError(
     "native NVFP4 GEMM requires a CUDA-resident weight and the LifeAI CUDA extension",
 ))
 
-"""Multiply a prepared NVFP4 weight by activations using native FP4 GEMM. Activations are also quantized to NVFP4."""
+"""
+    native_nvfp4_gemm(weight, activations; check_finite=true)
+
+Multiply prepared CUDA weights by NVFP4-quantized activations using native
+FP4 GEMM. Single-token inputs use a fused device quantizer and device alpha.
+The default checks for nonfinite activations. Inference internals can pass
+`check_finite=false` to keep decode asynchronous when final logits are checked
+before sampling. Scratch space is shared within a CUDA context: same-stream
+calls execute in order and transfers to another stream wait for prior work.
+"""
 function native_nvfp4_gemm end
 """Return the original portable NVFP4 weight from a prepared native weight."""
 function nvfp4_weight end

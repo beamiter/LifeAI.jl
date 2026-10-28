@@ -3,6 +3,12 @@
 module FlintHTTPWorker
 using LifeAI, HTTP, JSON3, Sockets, Random, Dates
 using CUDA
+using Profile
+
+# Linux SIGUSR1 collects a one-second diagnostic sample on demand; it adds
+# no periodic profiling to normal inference and writes only to the worker log.
+Profile.peek_report[] = () -> Profile.print(stderr; format=:flat, C=true,
+    sortedby=:count, mincount=5, groupby=:thread)
 
 const MODEL_ID = "RecursiveSI/flint"
 const MAX_BODY_BYTES = 1024 * 1024
@@ -34,7 +40,7 @@ function status(worker::Worker)
         worker.bundle.nvfp4_backend === :native ? "cublaslt_nvfp4" : "reference"
     return (ready=worker.ready, model=MODEL_ID, context_tokens=worker.context_tokens,
         max_new_tokens=worker.max_new_tokens, phase=worker.phase, error=worker.load_error,
-        native_fp4_backend=backend)
+        native_fp4_backend=backend, inference_engine="lifeai_flint_decode_v2")
 end
 
 json(value) = JSON3.write(value)
@@ -175,6 +181,10 @@ function generate(worker::Worker, request; write_piece=nothing)
         isempty(suffix) || write_piece(suffix)
     end
     duration = time_ns()-started
+    prefill_duration = first_token_ns[] === nothing ? duration : first_token_ns[]-started
+    decode_duration = max(0,duration-prefill_duration)
+    decode_count = max(0,length(output)-1)
+    decode_rate = decode_count > 0 && decode_duration > 0 ? decode_count/(decode_duration/1e9) : nothing
     stopped = !isempty(output) && last(output) in worker.bundle.model.eos_token_id .+ 1
     response = write_piece === nothing ? decode(worker.tokenizer,output;skip_special_tokens=true,errors=:replace) : ""
     native_stats = hasproperty(worker.bundle,:parameters) ? flint_native_fp4_stats(worker.bundle) :
@@ -182,7 +192,9 @@ function generate(worker::Worker, request; write_piece=nothing)
     return (model=MODEL_ID, created_at=string(now(UTC)), response=response, done=true,
         done_reason=stopped ? "stop" : "length", total_duration=duration,
         load_duration=worker.load_ns, prompt_eval_count=length(request.ids), eval_count=length(output),
-        eval_duration=duration, time_to_first_token=first_token_ns[] === nothing ? nothing : first_token_ns[]-started,
+        eval_duration=duration, time_to_first_token=first_token_ns[] === nothing ? nothing : prefill_duration,
+        prompt_eval_duration=prefill_duration,decode_duration=decode_duration,
+        lifeai=(decode_tokens_per_second=decode_rate,decode_eval_count=decode_count),
         native_fp4_backend=String(native_stats.backend),native_fp4_calls=native_stats.native_calls,
         native_fp4_calls_delta=native_stats.native_calls-native_before)
 end

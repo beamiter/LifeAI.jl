@@ -55,12 +55,18 @@ end
         health=JSON3.read(String(HTTP.get(base*"/healthz").body))
         @test health.ready && health.model == "RecursiveSI/flint"
         @test health.context_tokens == 32 && health.max_new_tokens == 8
+        @test health.inference_engine == "lifeai_flint_decode_v2"
         response=post(payload)
         @test response.status == 200
         object=JSON3.read(String(response.body))
         @test object.response == "你!" && object.done
         @test object.eval_count == 4 && object.prompt_eval_count == 2
         @test object.native_fp4_calls_delta == 0
+        @test object.prompt_eval_duration == object.time_to_first_token
+        @test object.prompt_eval_duration + object.decode_duration == object.total_duration
+        @test 0 < object.prompt_eval_duration < object.total_duration
+        @test object.lifeai.decode_eval_count == 3
+        @test object.lifeai.decode_tokens_per_second ≈ 3 / (object.decode_duration / 1e9)
         stream_payload=merge(payload,(stream=true,))
         body=JSON3.write(stream_payload)
         chunks=Any[]

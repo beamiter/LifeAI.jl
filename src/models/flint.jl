@@ -22,6 +22,8 @@ function _flint_like(x, values)
     return result
 end
 
+_flint_f32(x) = eltype(x) === Float32 ? x : Float32.(x)
+
 _flint_dequantize(w::AbstractMatrix) = Float32.(w)
 _flint_dequantize(w::Int8ChannelWeight) = Float32.(w.q) .* reshape(w.scale, :, 1)
 function _flint_dequantize(w::Int4GroupWeight)
@@ -46,7 +48,10 @@ function _flint_linear(w, x)
     return (eltype(w) === Float32 ? w : Float32.(w)) * x
 end
 
-_flint_linear(weight::AbstractNativeNVFP4Weight, x) = native_nvfp4_gemm(weight, x)
+# Intermediate model activations are checked at routing and final sampling.
+# Keep internal decode GEMMs asynchronous instead of reading a finite flag
+# back to the host for every expert projection. The public GEMM keeps checks.
+_flint_linear(weight::AbstractNativeNVFP4Weight, x) = native_nvfp4_gemm(weight, x; check_finite=false)
 
 """
     prepare_flint_nvfp4(bundle; kwargs...)
@@ -80,7 +85,7 @@ function flint_native_fp4_stats(bundle)
 end
 
 function _flint_norm(x, w, epsilon)
-    return x .* inv.(sqrt.(sum(abs2, x; dims=1) ./ size(x, 1) .+ Float32(epsilon))) .* reshape(Float32.(w), :, ntuple(_ -> 1, ndims(x)-1)...)
+    return x .* inv.(sqrt.(sum(abs2, x; dims=1) ./ size(x, 1) .+ Float32(epsilon))) .* reshape(_flint_f32(w), :, ntuple(_ -> 1, ndims(x)-1)...)
 end
 
 function _flint_rope(x, positions, theta)
@@ -90,8 +95,30 @@ function _flint_rope(x, positions, theta)
     angles = reshape(frequencies, half, 1) .* reshape(Float32.(positions), 1, :)
     cosine = reshape(_flint_like(x, cos.(angles)), half, 1, :)
     sine = reshape(_flint_like(x, sin.(angles)), half, 1, :)
-    a, b = x[1:half, :, :], x[half+1:end, :, :]
+    a, b = view(x, 1:half, :, :), view(x, half+1:d, :, :)
     return cat(a .* cosine .- b .* sine, b .* cosine .+ a .* sine; dims=1)
+end
+
+"""Grouped-query attention without one GEMM and softmax launch per query head."""
+function _flint_attention_context(q, k, v, sinks, mask)
+    d, heads, n = size(q)
+    kvheads, key_tokens = size(k, 2), size(k, 3)
+    group = heads ÷ kvheads
+    # Fold the query heads sharing each KV head into the matrix columns. This
+    # needs only kvheads GEMM batches and never duplicates the KV cache eightfold.
+    grouped_q = n == 1 ? reshape(q, d, group, kvheads) :
+        reshape(permutedims(reshape(q, d, group, kvheads, n), (1, 2, 4, 3)), d, group*n, kvheads)
+    keys = permutedims(k, (3, 1, 2))
+    scores = reshape(batched_mul(keys, grouped_q), key_tokens, group, n, kvheads)
+    scores .*= inv(sqrt(Float32(d)))
+    mask === nothing || (scores .+= reshape(mask, key_tokens, 1, n, 1))
+    sink = reshape(_flint_f32(sinks), 1, group, 1, kvheads)
+    maxima = max.(maximum(scores; dims=1), sink)
+    weights = exp.(scores .- maxima)
+    weights ./= sum(weights; dims=1) .+ exp.(sink .- maxima)
+    context = batched_mul(permutedims(v, (1, 3, 2)), reshape(weights, key_tokens, group*n, kvheads))
+    return n == 1 ? reshape(context, d, heads, 1) :
+        reshape(permutedims(reshape(context, d, group, n, kvheads), (1, 2, 4, 3)), d, heads, n)
 end
 
 function _flint_attention(model, parameters, prefix, x, layer, past, position)
@@ -114,22 +141,16 @@ function _flint_attention(model, parameters, prefix, x, layer, past, position)
     key_positions = first_position:position+n-1
     query_positions = position:position+n-1
     allowed = [kp <= qp && (!local_attention || kp > qp-model.sliding_window) for kp in key_positions, qp in query_positions]
-    mask = _flint_like(x, ifelse.(allowed, 0f0, -Inf32))
-    output = similar(x, Float32, (d, heads, n))
+    # All cached decode keys are causal; avoid a host-to-device mask transfer
+    # when there is no actual masked entry.
+    mask = all(allowed) ? nothing : _flint_like(x, ifelse.(allowed, 0f0, -Inf32))
     sinks = parameters[prefix * "softmax_offset"]
-    for h in 1:heads
-        kh = (h-1) ÷ (heads ÷ kvheads) + 1
-        scores = transpose(k[:, kh, :]) * q[:, h, :] ./ sqrt(Float32(d)) .+ mask
-        sink = reshape(Float32.(sinks[h:h]), 1, 1)
-        maximum_score = max.(maximum(scores; dims=1), sink)
-        weights = exp.(scores .- maximum_score)
-        weights ./= sum(weights; dims=1) .+ exp.(sink .- maximum_score)
-        output[:, h, :] = v[:, kh, :] * weights
-    end
+    output = _flint_attention_context(q, k, v, sinks, mask)
     # A local layer only needs the preceding W-1 entries at the next call.
     keep = local_attention ? min(size(k, 3), model.sliding_window-1) : size(k, 3)
     start = size(k, 3)-keep+1
-    updated = (key=k[:, :, start:end], value=v[:, :, start:end], first_position=position+n-keep)
+    updated = keep == size(k, 3) ? (key=k, value=v, first_position=first_position) :
+        (key=k[:, :, start:end], value=v[:, :, start:end], first_position=position+n-keep)
     return _flint_linear(parameters[prefix * "o_proj.weight"], reshape(output, d*heads, n)), updated
 end
 
@@ -143,7 +164,7 @@ end
 function flint_topk_routing(logits::AbstractMatrix, k::Integer; normalize::Bool=true)
     0 < k <= size(logits, 1) || throw(ArgumentError("invalid Flint expert top-k"))
     # Host routing is deliberate: the reference path dispatches only used experts.
-    host_logits = Array(Float32.(logits))
+    host_logits = Array(_flint_f32(logits))
     all(isfinite, host_logits) || throw(ArgumentError("Flint router logits must be finite"))
     scores = 1f0 ./ (1f0 .+ exp.(-host_logits))
     ids = Matrix{Int}(undef, k, size(scores, 2))
@@ -173,6 +194,17 @@ function _flint_feedforward(model, parameters, prefix, x, layer)
     logits = _flint_linear(parameters[prefix * "gate.weight"], x)
     routes = flint_topk_routing(logits, model.num_experts_per_tok; normalize=model.norm_topk_prob)
     result = zero(x)
+    if size(x, 2) == 1
+        # Decode routes contain one column: every selected expert consumes the
+        # same activation. Avoid gathering x, uploading one-element factors,
+        # and gathering/scattering the sole result column for each expert.
+        for route in sortperm(vec(routes.expert_ids))
+            expert = routes.expert_ids[route]
+            values = _flint_mlp(parameters, prefix * "experts.$(expert-1).", x)
+            result .+= values .* routes.weights[route]
+        end
+        return result .+ _flint_mlp(parameters, prefix * "shared_expert.", x)
+    end
     for expert in sort!(unique(vec(routes.expert_ids)))
         matches = findall(==(expert), routes.expert_ids)
         columns = [index[2] for index in matches]

@@ -9,6 +9,15 @@ const _FP4_CONTEXTS = Dict{Any,Any}()
 mutable struct _NativeFP4Context
     handle::_FP4_BLAS.cublasLtHandle_t
     workspace::CUDA.CuVector{UInt8}
+    stream
+    decode_buffers::Dict{Int,Any}
+end
+
+struct _NativeFP4DecodeBuffers
+    packed::CUDA.CuMatrix{UInt8}
+    scales::CUDA.CuVector{UInt8}
+    # alpha, beta, activation global scale, and nonfinite-input marker.
+    scalars::CUDA.CuVector{Float32}
 end
 
 mutable struct _NativeFP4Plan
@@ -47,8 +56,109 @@ function _native_fp4_context()
     return get!(_FP4_CONTEXTS, key) do
         handle = Ref{_FP4_BLAS.cublasLtHandle_t}()
         _FP4_BLAS.cublasLtCreate(handle)
-        _NativeFP4Context(handle[], CUDA.CuArray{UInt8}(undef, 8 * 1024 * 1024))
+        _NativeFP4Context(handle[], CUDA.CuArray{UInt8}(undef, 8 * 1024 * 1024),
+            CUDA.stream(), Dict{Int,Any}())
     end
+end
+
+# Host-side submission is serialized by _FP4_GLOBAL_LOCK. Calls in the same
+# CUDA stream already execute in order and may safely reuse this workspace.
+# Different Julia tasks normally own different streams; finish the previous
+# stream before transferring the shared scratch lease to another stream.
+function _native_fp4_acquire_stream!(context)
+    stream = CUDA.stream()
+    if context.stream != stream
+        CUDA.synchronize(context.stream)
+        context.stream = stream
+    end
+    return stream
+end
+
+function _native_fp4_decode_buffers(context, padded_k)
+    return get!(context.decode_buffers, padded_k) do
+        # Keep this shape cache bounded, independently of the number of experts.
+        if length(context.decode_buffers) >= 8
+            CUDA.synchronize(context.stream)
+            empty!(context.decode_buffers)
+        end
+        block_width = cld(padded_k ÷ 16, 4)*4
+        _NativeFP4DecodeBuffers(CUDA.CuArray{UInt8}(undef, padded_k ÷ 2, 1),
+            CUDA.zeros(UInt8, 128*block_width), CUDA.CuArray{Float32}(undef, 4))
+    end
+end
+
+function _native_fp4_decode_amax_kernel!(scalars, x, weight_scale)
+    thread = CUDA.threadIdx().x
+    amax = 0f0
+    index = thread
+    while index <= length(x)
+        @inbounds value = abs(x[index])
+        # Inf also represents NaN during the max reduction, so validation does
+        # not depend on hardware min/max NaN propagation rules.
+        amax = isfinite(value) ? max(amax, value) : Float32(Inf)
+        index += CUDA.blockDim().x
+    end
+    shared = CUDA.CuStaticSharedArray(Float32, 256)
+    @inbounds shared[thread] = amax
+    CUDA.sync_threads()
+    width = 128
+    while width > 0
+        if thread <= width
+            @inbounds shared[thread] = max(shared[thread], shared[thread+width])
+        end
+        CUDA.sync_threads()
+        width ÷= 2
+    end
+    if thread == 1
+        @inbounds maximum_value = shared[1]
+        valid = isfinite(maximum_value)
+        global_scale = iszero(maximum_value) || !valid ? 1f0 :
+            max(maximum_value / 2688f0, reinterpret(Float32, UInt32(1)))
+        if !isfinite(2688f0 * global_scale)
+            global_scale = reinterpret(Float32, reinterpret(UInt32, global_scale)-UInt32(1))
+        end
+        @inbounds begin
+            scalars[1] = valid ? weight_scale * global_scale : Float32(NaN)
+            scalars[2] = 0f0
+            scalars[3] = global_scale
+            scalars[4] = valid ? 0f0 : 1f0
+        end
+    end
+    return
+end
+
+# A decode token has one activation row. Write the cuBLASLt packed payload
+# and swizzled scales directly, preserving the portable quantizer's exact
+# division order, nearest-even codebooks, zero handling and K padding.
+function _native_fp4_decode_pack_kernel!(packed, scales, scalars, x, padded_k)
+    block = (CUDA.blockIdx().x-1) * CUDA.blockDim().x + CUDA.threadIdx().x - 1
+    block >= padded_k ÷ 16 && return
+    input = size(x,1)
+    first = 16block + 1
+    block_amax = 0f0
+    for offset in 0:15
+        column = first + offset
+        @inbounds value = column <= input ? abs(x[column]) : 0f0
+        value = isfinite(value) ? value : 0f0
+        block_amax = max(block_amax, value)
+    end
+    @inbounds global_scale = scalars[3]
+    scale = LifeAI._nvfp4_encode_e4m3((block_amax / 6f0) / global_scale)
+    decoded = LifeAI._nvfp4_decode_e4m3(scale)
+    denominator = iszero(decoded) ? 1f0 : decoded
+    block_width = cld(padded_k ÷ 16, 4)*4
+    @inbounds scales[_native_fp4_scale_offset(0, block, block_width)] = scale
+    for pair in 0:7
+        column = first + 2pair
+        @inbounds low_value = column <= input ? x[column] : 0f0
+        @inbounds high_value = column+1 <= input ? x[column+1] : 0f0
+        low_value = isfinite(low_value) ? low_value : 0f0
+        high_value = isfinite(high_value) ? high_value : 0f0
+        low = iszero(decoded) ? UInt8(0) : LifeAI._nvfp4_encode_e2m1((low_value / global_scale) / denominator)
+        high = iszero(decoded) ? UInt8(0) : LifeAI._nvfp4_encode_e2m1((high_value / global_scale) / denominator)
+        @inbounds packed[8block+pair+1] = low | (high << UInt8(4))
+    end
+    return
 end
 
 @inline function _native_fp4_scale_offset(row, block, block_width)
@@ -161,6 +271,9 @@ function _native_fp4_plan(prepared, n, context, bscales)
     try
         _native_fp4_attribute!(op, _FP4_BLAS.CUBLASLT_MATMUL_DESC_TRANSA, _FP4_BLAS.CUBLAS_OP_T)
         _native_fp4_attribute!(op, _FP4_BLAS.CUBLASLT_MATMUL_DESC_TRANSB, _FP4_BLAS.CUBLAS_OP_N)
+        if n == 1
+            _native_fp4_attribute!(op, _FP4_BLAS.CUBLASLT_MATMUL_DESC_POINTER_MODE, _FP4_BLAS.CUBLASLT_POINTER_MODE_DEVICE)
+        end
         _native_fp4_attribute!(op, _FP4_BLAS.CUBLASLT_MATMUL_DESC_A_SCALE_MODE, _FP4_BLAS.CUBLASLT_MATMUL_MATRIX_SCALE_VEC16_UE4M3)
         _native_fp4_attribute!(op, _FP4_BLAS.CUBLASLT_MATMUL_DESC_B_SCALE_MODE, _FP4_BLAS.CUBLASLT_MATMUL_MATRIX_SCALE_VEC16_UE4M3)
         _native_fp4_attribute!(op, _FP4_BLAS.CUBLASLT_MATMUL_DESC_A_SCALE_POINTER, pointer(prepared.scales))
@@ -193,7 +306,7 @@ function _native_fp4_plan(prepared, n, context, bscales)
     end
 end
 
-function LifeAI.native_nvfp4_gemm(prepared::CUDANVFP4Weight, x::CUDA.CuArray{Float32,2})
+function LifeAI.native_nvfp4_gemm(prepared::CUDANVFP4Weight, x::CUDA.CuArray{Float32,2}; check_finite::Bool=true)
     prepared.closed && throw(ArgumentError("native NVFP4 weight is closed"))
     size(x,1) == size(prepared.weight,2) || throw(DimensionMismatch("native NVFP4 input width mismatch"))
     size(x,2) > 0 || throw(ArgumentError("native NVFP4 input must contain tokens"))
@@ -201,12 +314,21 @@ function LifeAI.native_nvfp4_gemm(prepared::CUDANVFP4Weight, x::CUDA.CuArray{Flo
     return lock(_FP4_GLOBAL_LOCK) do
         prepared.closed && throw(ArgumentError("native NVFP4 weight is closed"))
         context = _native_fp4_context()
+        stream = _native_fp4_acquire_stream!(context)
         n = size(x,2)
         padded_n = n
-        # CUDA broadcasts and reductions keep payloads on-device; only amax,
-        # needed as the host FP32 alpha, is synchronized back to the host.
-        activation = LifeAI.quantize_nvfp4(permutedims(x))
-        bpacked, bscales = _native_fp4_repack(activation, padded_n, prepared.padded_k)
+        activation = nothing
+        decode = nothing
+        if n == 1
+            decode = _native_fp4_decode_buffers(context, prepared.padded_k)
+            CUDA.@cuda threads=256 blocks=1 _native_fp4_decode_amax_kernel!(decode.scalars, x, prepared.weight.global_scale)
+            CUDA.@cuda threads=128 blocks=cld(prepared.padded_k ÷ 16,128) _native_fp4_decode_pack_kernel!(
+                decode.packed, decode.scales, decode.scalars, x, prepared.padded_k)
+            bpacked, bscales = decode.packed, decode.scales
+        else
+            activation = LifeAI.quantize_nvfp4(permutedims(x))
+            bpacked, bscales = _native_fp4_repack(activation, padded_n, prepared.padded_k)
+        end
         if prepared.plan === nothing || prepared.plan.n != padded_n
             prepared.plan === nothing || _native_fp4_destroy_plan!(prepared.plan)
             prepared.plan = nothing
@@ -215,20 +337,28 @@ function LifeAI.native_nvfp4_gemm(prepared::CUDANVFP4Weight, x::CUDA.CuArray{Flo
         plan = prepared.plan
         _native_fp4_attribute!(plan.operation, _FP4_BLAS.CUBLASLT_MATMUL_DESC_B_SCALE_POINTER, pointer(bscales))
         output = CUDA.CuArray{Float32}(undef, prepared.padded_m, padded_n)
-        alpha = Ref{Float32}(prepared.weight.global_scale * activation.global_scale)
-        beta = Ref{Float32}(0f0)
+        alpha = n == 1 ? pointer(decode.scalars,1) : Ref{Float32}(prepared.weight.global_scale * activation.global_scale)
+        beta = n == 1 ? pointer(decode.scalars,2) : Ref{Float32}(0f0)
         algorithm = Ref(plan.algorithm)
-        GC.@preserve prepared activation bpacked bscales output alpha beta algorithm begin
+        GC.@preserve prepared activation decode bpacked bscales output alpha beta algorithm begin
             _FP4_BLAS.cublasLtMatmul(context.handle, plan.operation, alpha,
                 prepared.packed, plan.a, bpacked, plan.b, beta, output, plan.c,
-                output, plan.c, algorithm, context.workspace, length(context.workspace), CUDA.stream())
-            # Shared workspace is leased until completion; no per-layer GEMM
-            # workspace is retained and concurrent tasks cannot race its use.
-            CUDA.synchronize()
+                output, plan.c, algorithm, context.workspace, length(context.workspace), stream)
+            if n == 1
+                # Public calls validate finite inputs. The model's internal
+                # decode path can keep this scalar entirely on-device and
+                # validate the final logits instead of every projection.
+                if check_finite
+                    Array(decode.scalars)[4] == 0f0 || throw(ArgumentError("NVFP4 activations must be finite"))
+                end
+            else
+                # The multi-token path retains temporary activation arrays.
+                CUDA.synchronize(stream)
+            end
         end
         prepared.native_calls += 1
         prepared.last_n = n
-        return output[1:size(prepared.weight,1), 1:n]
+        return size(output,1) == size(prepared.weight,1) ? output : output[1:size(prepared.weight,1), 1:n]
     end
 end
 

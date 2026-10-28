@@ -112,6 +112,11 @@ are 2048 total context tokens and 512 generated tokens.
 The CUDA/native worker warms prefill and decode before publishing readiness;
 `--no-warmup` is available for startup diagnostics. Final packets include the
 per-request native call delta separately from the cumulative count.
+The optimized single-token path keeps activation scaling on-device and batches
+GQA attention heads. Final packets separately publish `prompt_eval_duration`,
+`decode_duration`, and `lifeai.decode_tokens_per_second`; `eval_duration` retains
+its previous total-generation meaning. See [performance analysis](flint_performance.md)
+for the measured 1.24 to 18.02 tok/s improvement, validation and remaining gaps.
 
 The [Lumen Rust terminal](../tools/tui/README.md) uses `lifeai chat` or `lumen`
 and keeps a separate history and draft per model. The old `qwen` command and

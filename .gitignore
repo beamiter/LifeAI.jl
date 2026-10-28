@@ -7,6 +7,9 @@ notebook/assets/
 # are reproducible, so the binaries do not belong in the repository.
 artifacts/
 benchmark_results/*
+!benchmark_results/flint_decode_optimized/
+benchmark_results/flint_decode_optimized/*
+!benchmark_results/flint_decode_optimized/summary.json
 !benchmark_results/qwen3_vl_workspace_ownership/
 benchmark_results/qwen3_vl_workspace_ownership/*
 !benchmark_results/qwen3_vl_workspace_ownership/summary.json

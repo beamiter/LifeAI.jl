@@ -20,6 +20,7 @@ include(joinpath(LIFEAI_TEST_ROOT, "test_qwen3_xla_client_limits.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_io.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_quantization.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_streaming.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "test_flint_decode_optimized.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_server.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_device_quantization.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_bf16_device_quantization.jl"))
@@ -548,5 +549,6 @@ end
 if lowercase(get(ENV, "LIFEAI_TEST_NATIVE_FP4", "false")) in ("1", "true", "yes")
     @testset "Native NVFP4 CUDA GEMM" begin
         include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_flint_nvfp4_native.jl"))
+        include(joinpath(LIFEAI_TEST_ROOT, "test_nvfp4_decode_optimized.jl"))
     end
 end
