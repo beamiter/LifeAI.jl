@@ -1,0 +1,29 @@
+[package]
+name = "lifeai-tui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Lumen — the LifeAI terminal for Qwen and Flint"
+repository = "https://github.com/beamiter/LifeAI.jl"
+publish = false
+
+[[bin]]
+name = "lifeai"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.5", features = ["derive", "env"] }
+crossterm = "0.29"
+ctrlc = "3.5"
+ratatui = "0.30.2"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+unicode-segmentation = "1.12"
+unicode-width = "0.2"
+
+[profile.release]
+lto = "thin"
+strip = true

@@ -51,8 +51,8 @@ Fixture weights are synthetic. On 2026-10-28 the complete checkpoint was
 downloaded to `/jfs/application/user/bgl/models/RecursiveSI/flint` at revision
 `2a247be0c0aec895ccb0ac7ca92229ec6df37288`: all 37 upstream file hashes and
 36,734 tensor shapes passed verification. New code, models and logs use the
-JuiceFS workspace; the established Julia runtime/depot is retained during the
-gradual migration from CPFS.
+JuiceFS workspace, including the migrated Julia runtime/depot. The old
+`/mnt/public_data/bgl` path is now a compatibility symlink to that workspace.
 
 ## NVFP4
 
@@ -113,8 +113,10 @@ The CUDA/native worker warms prefill and decode before publishing readiness;
 `--no-warmup` is available for startup diagnostics. Final packets include the
 per-request native call delta separately from the cumulative count.
 
-The [terminal console](../tools/console/README.md) routes Qwen3-8B and Flint
-through one endpoint and keeps a separate history per model. Model switching
+The [Lumen Rust terminal](../tools/tui/README.md) uses `lifeai chat` or `lumen`
+and keeps a separate history and draft per model. The old `qwen` command and
+Python TUI have been removed. The [router](../tools/console/README.md)
+serves Qwen3-8B and Flint through one endpoint. Model switching
 waits for the previous worker to exit before starting another GPU process.
 The deployed controller is
 `/jfs/application/user/bgl/deployments/lifeai_console/control.py`.

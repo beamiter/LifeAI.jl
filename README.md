@@ -786,10 +786,12 @@ julia -O1 --project=. scripts/benchmark_flint_nvfp4_native.jl --quick
 应显式选择 reference。具体 GEMM 限制见 [cuBLASLt 文档](https://docs.nvidia.com/cuda/cublas/index.html#cublasltmatmul)。
 性能取决于矩阵尺寸和激活量化开销，以本机 benchmark 为准。
 
-### Qwen / Flint 终端切换
+### Lumen（流明）：LifeAI Rust 终端
 
-[终端控制台](tools/console/README.md) 保留 `qwen` 命令，支持
-`qwen --model flint`、`--model qwen`，以及 TUI 中 `Ctrl+T` / `F2` 切换。
-两个模型分别保留会话历史，界面显示连接、GPU 量化和加载状态。
+[Lumen](tools/tui/README.md) 是仓库内的 Rust TUI，使用 Ratatui 与 Crossterm。
+运行 `./scripts/lifeai chat --model flint`；安装后可使用 `lifeai chat` 或 `lumen`。
+旧 `qwen` 命令及 Python TUI 已移除。`Ctrl+T` / `F2` 切换 Qwen 与 Flint，
+两个模型分别保留历史、草稿与滚动位置；界面显示加载阶段与流式输出，
+支持中文、emoji 字素编辑与多行粘贴。
 Flint 使用常驻 NVFP4 原生推理 worker，Qwen 复用 BF16/XLA 服务；
 一次驻留一个模型，切换时先释放旧进程的显存。

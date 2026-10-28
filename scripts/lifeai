@@ -1,0 +1,15 @@
+#!/bin/sh
+# Run the Lumen client from a LifeAI checkout, without any Python client dependency.
+set -eu
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+if [ -n "${LIFEAI_BIN:-}" ]; then
+    exec "$LIFEAI_BIN" "$@"
+fi
+for executable in \
+    "$repo_dir/tools/tui/target/release/lifeai" \
+    "$repo_dir/tools/tui/target/x86_64-unknown-linux-musl/release/lifeai"; do
+    if [ -x "$executable" ]; then
+        exec "$executable" "$@"
+    fi
+done
+exec cargo run --release --locked --manifest-path "$repo_dir/tools/tui/Cargo.toml" -- "$@"
