@@ -196,6 +196,29 @@ class RippleTests(unittest.TestCase):
             self.assertEqual(self.fixture.request(payload())[0], 413)
         self.assertEqual(self.fixture.requests, [])
 
+    def write_validated_receipt(self, cap):
+        self.fixture.receipt.write_text(json.dumps(dict(run_dir=str(self.fixture.root), validated_context_tokens=cap)))
+
+    def test_validated_context_cap_advertises_and_forwards_actual_budget(self):
+        self.fixture.ready['max_context'] = 1048576
+        (self.fixture.root / 'results/ready.json').write_text(json.dumps(self.fixture.ready))
+        for cap in (8192, 131072):
+            self.write_validated_receipt(cap)
+            code, _, raw = self.fixture.request(path='/healthz')
+            self.assertEqual(code, 200)
+            self.assertEqual(json.loads(raw)['context_tokens'], cap)
+            self.assertEqual(self.fixture.request(payload(False))[0], 200)
+            self.assertEqual(self.fixture.requests[-1][2]['context_limit'], cap)
+        self.write_validated_receipt(2097152)
+        self.assertEqual(self.fixture.backend.connect().context, 1048576)
+        for cap in (None, True, '131072', 0, -1, 512):
+            self.write_validated_receipt(cap)
+            code, _, raw = self.fixture.request(path='/healthz')
+            self.assertEqual(code, 200)
+            health = json.loads(raw)
+            self.assertFalse(health['ready'])
+            self.assertIn('validated_context_tokens', health['error'])
+
     def test_bad_options_fail_before_chat(self):
         for override in [dict(options=dict(num_predict=True)), dict(options=dict(num_predict=513)),
                          dict(options=dict(temperature=float('nan'))), dict(messages=[]),
@@ -387,6 +410,27 @@ class RippleTests(unittest.TestCase):
         self.assertIsNotNone(process.poll())
         # The independently owned upstream survives local worker shutdown.
         self.assertEqual(self.fixture.backend.health()['tensor_parallel'], 8)
+
+    def test_router_refreshes_validated_ripple_cap_without_reloading_worker(self):
+        self.fixture.ready['max_context'] = 1048576
+        (self.fixture.root / 'results/ready.json').write_text(json.dumps(self.fixture.ready))
+        self.write_validated_receipt(8192)
+        manager = self.manager()
+        self.assertTrue(manager.health()['ready'], manager.health())
+        pid = manager.process.pid
+        self.assertEqual(manager.health()['context_tokens'], 8192)
+        self.write_validated_receipt(131072)
+        self.assertEqual(manager.health()['context_tokens'], 131072)
+        self.assertEqual(manager.catalog()[0]['context_tokens'], 131072)
+        self.assertEqual(manager.process.pid, pid)
+        self.write_validated_receipt(512)
+        broken = manager.health()
+        self.assertFalse(broken['ready'])
+        self.assertEqual(broken['phase'], 'error')
+        self.assertIn('validated_context_tokens', broken['last_error'])
+        self.write_validated_receipt(131072)
+        self.assertTrue(manager.health()['ready'])
+        self.assertEqual(manager.process.pid, pid)
 
     def test_bad_credentials_fail_router_loading_without_waiting_load_timeout(self):
         (self.fixture.root / 'credentials/api_key').write_text('wrong-secret')

@@ -23,7 +23,7 @@ function RippleTPPrefixCache(bundle::RippleTensorParallelModel;max_tokens::Integ
     RippleTPPrefixCache(bundle.model,Int(max_tokens),Int[],nothing,nothing,nothing,nothing,0,0,0,0,false)
 end
 function reset_ripple_tp_prefix!(store::RippleTPPrefixCache)
-    store.needs_full_gc |= length(store.ids)>=32768
+    store.needs_full_gc |= max(length(store.ids),store.prefilled_tokens)>=32768
     empty!(store.ids);store.cache=nothing;store.checkpoint=nothing;store.logits=nothing;store.signature=nothing
     store.reused_tokens=0;store.prefilled_tokens=0
     return store

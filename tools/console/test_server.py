@@ -413,6 +413,22 @@ class ManagerLifecycleTests(unittest.TestCase):
 
 
 class WorkerHealthTests(unittest.TestCase):
+    def test_non_ripple_health_does_not_add_network_refresh_or_change_catalog(self):
+        manager = server.ModelManager(dict(models=[dict(key='flint', id='RecursiveSI/mock',
+            context_tokens=32, max_new_tokens=8, url='http://127.0.0.1:1')]))
+        class Alive:
+            def poll(self): return None
+        manager.process = Alive()
+        manager.selected, manager.state = 'RecursiveSI/mock', 'ready'
+        manager.worker_health = dict(context_tokens=64, max_new_tokens=16)
+        with patch.object(manager.opener, 'open', side_effect=AssertionError('unexpected network refresh')):
+            health = manager.health()
+            self.assertTrue(health['ready'])
+            self.assertEqual(health['context_tokens'], 64)
+            self.assertEqual(manager.catalog()[0]['context_tokens'], 32)
+        manager.process = None
+        manager.close()
+
     def test_loading_identity_and_limits_are_validated(self):
         for override in (dict(health_model='wrong/model'), dict(context_tokens=0),
                          dict(max_new_tokens=True), dict(context_tokens=16, max_new_tokens=32)):

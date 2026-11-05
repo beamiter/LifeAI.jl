@@ -56,7 +56,7 @@ def main():
         assert len(ids)+budget<=record['context_limit']
         expected_reuse=len(previous_ids) if previous_ids and ids[:len(previous_ids)]==previous_ids else 0
         assert not previous_ids or expected_reuse==len(previous_ids), "Chat template did not preserve the exact cached token prefix"
-        start=time.monotonic();payload=dict(model=ready['model_id'],messages=proposed,temperature=0,max_tokens=budget,stream=False)
+        start=time.monotonic();payload=dict(model=ready['model_id'],messages=proposed,temperature=0,max_tokens=budget,stream=False,context_limit=record['context_limit'])
         created=request('POST','/v1/chat/completions/jobs',payload,timeout=120);current_job=created['id']
         record.setdefault('requests',[]).append(dict(label=label,prompt_tokens=len(ids),reserved_output=budget,expected_reused_tokens=expected_reuse,job_id=current_job,status='running'))
         sample=record['requests'][-1];save();last_print=0

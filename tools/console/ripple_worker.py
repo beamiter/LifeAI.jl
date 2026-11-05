@@ -95,8 +95,10 @@ class RippleBackend:
     def connect(self):
         try:
             root = self.deployment
+            receipt = None
             if root.is_file():
-                root = Path(json.loads(root.read_text())['run_dir'])
+                receipt = json.loads(root.read_text())
+                root = Path(receipt['run_dir'])
             ready = json.loads((root / 'results/ready.json').read_text())
             key = (root / 'credentials/api_key').read_text().strip()
         except (OSError, ValueError, KeyError, TypeError):
@@ -110,6 +112,13 @@ class RippleBackend:
         if (any(type(v) is not int or v <= 0 for v in (context, output, world))
                 or output >= context):
             raise APIError(502, 'Ripple deployment did not publish valid generation limits.')
+        if receipt is not None and 'validated_context_tokens' in receipt:
+            validated = receipt['validated_context_tokens']
+            if type(validated) is not int or validated <= output:
+                raise APIError(502, 'Ripple validated_context_tokens must be an integer above the output cap.')
+            context = min(context, validated)
+            if context <= output:
+                raise APIError(502, 'Ripple validated context leaves no room for a prompt.')
         dtype = ready.get('projection_dtype', 'BF16')
         if dtype not in ('BF16', 'Float32'):
             raise APIError(502, 'Ripple published an unsupported projection dtype.')
@@ -176,7 +185,7 @@ class RippleBackend:
         if count > connection.output:
             raise APIError(400, f'num_predict must be 1..{connection.output}.')
         request = dict(model=connection.model, messages=messages, max_tokens=count,
-                       temperature=temperature, stream=False)
+                       temperature=temperature, stream=False, context_limit=connection.context)
         if len(json.dumps(request, ensure_ascii=False).encode()) > UPSTREAM_BODY:
             raise APIError(413, 'Ripple request exceeds the 128 MiB upstream limit.')
         return connection, request

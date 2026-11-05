@@ -42,6 +42,9 @@ function ripple_tp_prefix_checks(backend_factory;world_sizes=(1,2))
             store.needs_full_gc=true
             @test reset_ripple_tp_prefix!(store)===store
             @test store.needs_full_gc
+            store.needs_full_gc=false;store.prefilled_tokens=32768
+            reset_ripple_tp_prefix!(store)
+            @test store.needs_full_gc
             @test ripple_tp_prefix_stats(store).cached_tokens==0
         finally
             close_ripple_tp_backend!(backend)

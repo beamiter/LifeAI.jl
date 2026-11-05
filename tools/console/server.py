@@ -58,28 +58,60 @@ class ModelManager:
             raise APIError(400, 'Unknown model; choose qwen, flint or ripple.')
         return result
 
-    def catalog(self):
-        return [dict(key=m['key'], id=m['id'], label=m.get('label', m['id']),
-                     context_tokens=m['context_tokens'], max_new_tokens=m['max_new_tokens'],
-                     streaming=m.get('streaming', True))
-                for m in self.models.values()]
+    def _refresh_ripple_health(self):
+        # The lightweight adapter follows a validated-cap receipt. Refresh only
+        # the selected Ripple worker; Qwen/Flint retain their existing lifecycle.
+        spec = self.models.get(self.selected, {})
+        if (self.closed or spec.get('key') != 'ripple' or self.state not in ('ready', 'error')
+                or self.process is None or self.process.poll() is not None):
+            return
+        try:
+            with self.opener.open(spec['url'] + '/healthz', timeout=3) as response:
+                raw = response.read(1024 * 1024 + 1)
+            if len(raw) > 1024 * 1024:
+                raise ValueError('Worker health response exceeds 1 MiB.')
+            health = json.loads(raw)
+            if not isinstance(health, dict) or health.get('model') != self.selected:
+                raise ValueError('Worker model identity does not match its configuration.')
+            if health.get('ready') is not True or health.get('error'):
+                raise ValueError(str(health.get('error') or 'Ripple worker is not ready.'))
+            context, output = health.get('context_tokens'), health.get('max_new_tokens')
+            if (type(context) is not int or type(output) is not int or not 0 < output < context):
+                raise ValueError('Worker did not publish valid generation limits.')
+            self.worker_health, self.state, self.error = health, 'ready', None
+        except (OSError, ValueError) as exc:
+            self.state, self.error = 'error', 'Ripple worker health unavailable: ' + str(exc)
+
+    def catalog(self, refresh=True):
+        with self.lock:
+            if refresh:
+                self._refresh_ripple_health()
+            result = []
+            for model in self.models.values():
+                active = self.worker_health if model['id'] == self.selected and model['key'] == 'ripple' else {}
+                result.append(dict(key=model['key'], id=model['id'], label=model.get('label', model['id']),
+                    context_tokens=active.get('context_tokens', model['context_tokens']),
+                    max_new_tokens=active.get('max_new_tokens', model['max_new_tokens']),
+                    streaming=active.get('streaming', model.get('streaming', True))))
+            return result
 
     def health(self):
         with self.lock:
             if self.state == 'ready' and (self.process is None or self.process.poll() is not None):
                 self.state, self.error = 'error', 'Model worker exited; select the model to reload.'
+            self._refresh_ripple_health()
             spec = self.models.get(self.selected, {})
             return dict(ready=self.state == 'ready', model=self.selected,
                         selected_model=self.selected, state=self.state,
                         loading_model=self.selected if self.state == 'loading' else None,
-                        phase=self.worker_health.get('phase', self.state),
+                        phase='error' if spec.get('key') == 'ripple' and self.state == 'error' else self.worker_health.get('phase', self.state),
                         last_error=self.error, active_requests=self.active_requests,
                         streaming=self.worker_health.get('streaming', spec.get('streaming', True)),
                         context_tokens=self.worker_health.get('context_tokens', spec.get('context_tokens')),
                         max_new_tokens=self.worker_health.get('max_new_tokens', spec.get('max_new_tokens')),
                         load_seconds=round(time.monotonic() - self.load_started, 2)
                         if self.load_started and self.state == 'loading' else self.load_duration,
-                        models=self.catalog(),max_input_bytes=64 * 1024 * 1024,
+                        models=self.catalog(refresh=False),max_input_bytes=64 * 1024 * 1024,
                         max_message_chars=MAX_TOTAL_MESSAGE_CHARS,max_request_bytes=MAX_BODY_BYTES)
 
     def select(self, name):
