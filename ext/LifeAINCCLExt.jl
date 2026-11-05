@@ -98,6 +98,52 @@ function LifeAI._ripple_tp_allgather(b::RippleNCCLBackend,rank,value)
     return reshape(permutedims(reshape(gathered,rows,tokens,world),(1,3,2)),rows*world,tokens)
 end
 
+# One host thread submits each complete group. All allocations and layout
+# conversion happen outside it; every rank is enqueued before synchronization.
+function _collective_group(f,b)
+    try
+        NCCL.group() do
+            for rank in 0:length(b.devices)-1
+                LifeAI._ripple_tp_with_rank(b,rank) do
+                    f(rank)
+                end
+            end
+        end
+        for rank in 0:length(b.devices)-1
+            LifeAI._ripple_tp_with_rank(b,rank) do
+                LifeAI._ripple_tp_finish_rank(b,rank)
+            end
+        end
+    catch error
+        LifeAI._ripple_tp_abort!(b,error)
+        rethrow()
+    end
+    return
+end
+function LifeAI._ripple_tp_allreduce_batch!(b::RippleNCCLBackend,values)
+    GC.@preserve values begin
+        _collective_group(b) do rank
+            LifeAI._ripple_tp_allreduce!(b,rank,values[rank+1])
+        end
+    end
+    return values
+end
+function LifeAI._ripple_tp_allgather_batch(b::RippleNCCLBackend,values)
+    gathered=LifeAI._ripple_tp_compute_ranks(b) do rank
+        similar(values[rank+1],Float32,(length(values[rank+1])*length(b.devices),))
+    end
+    GC.@preserve values gathered begin
+        _collective_group(b) do rank
+            NCCL.Allgather!(values[rank+1],gathered[rank+1],b.communicators[rank+1];stream=b.streams[rank+1])
+            Threads.atomic_add!(b.gathers,1)
+        end
+    end
+    return LifeAI._ripple_tp_compute_ranks(b) do rank
+        rows,tokens=size(values[rank+1]);world=length(b.devices)
+        reshape(permutedims(reshape(gathered[rank+1],rows,tokens,world),(1,3,2)),rows*world,tokens)
+    end
+end
+
 function LifeAI.close_ripple_tp_backend!(b::RippleNCCLBackend)
     b.closed && return
     for rank in 0:length(b.devices)-1

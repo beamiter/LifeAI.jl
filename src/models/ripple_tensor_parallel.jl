@@ -204,6 +204,30 @@ function load_hf_ripple_tensor_parallel(path::AbstractString;backend::AbstractRi
     return RippleTensorParallelModel(c,local_model,ranks,backend,abspath(path))
 end
 
+# Complete local CUDA work before entering a collective phase. Allocation and
+# CUDA memory-pool reclamation may synchronize streams, so they must not run
+# between different GPUs' collective launches in the same process.
+function _ripple_tp_compute_ranks(f,b)
+    return _ripple_tp_run_ranks(b) do rank
+        _ripple_tp_with_rank(b,rank) do
+            result=f(rank)
+            _ripple_tp_finish_rank(b,rank)
+            result
+        end
+    end
+end
+function _ripple_tp_allreduce_batch!(b,values)
+    _ripple_tp_compute_ranks(b) do rank
+        _ripple_tp_allreduce!(b,rank,values[rank+1])
+    end
+    return values
+end
+function _ripple_tp_allgather_batch(b,values)
+    return _ripple_tp_compute_ranks(b) do rank
+        _ripple_tp_allgather(b,rank,values[rank+1])
+    end
+end
+
 function hf_ripple_tp_forward(bundle::RippleTensorParallelModel,token_ids::AbstractVector{<:Integer};
         cache::Union{Nothing,RippleTPKVCache}=nothing,last_only::Bool=false,
         output_logits::Bool=true,cache_capacity::Integer=0)
@@ -215,48 +239,60 @@ function hf_ripple_tp_forward(bundle::RippleTensorParallelModel,token_ids::Abstr
     position=cache===nothing ? 0 : cache.tokens
     length(ids)<=c.max_position_embeddings-position || throw(ArgumentError("Ripple TP context limit exceeded"))
     !(cache_capacity isa Bool) && 0<=cache_capacity<=c.max_position_embeddings || throw(ArgumentError("invalid Ripple TP cache reservation"))
-    results=_ripple_tp_run_ranks(b) do rank
-        _ripple_tp_with_rank(b,rank) do
-            parameters=bundle.ranks[rank+1].parameters
-            x=permutedims(Float32.(parameters["model.embed_tokens.weight"][ids,:]))
-            c.embed_scale===nothing || (x=x.*c.embed_scale)
-            seed=x;updates=Any[]
-            for layer in 1:c.num_hidden_layers
-                prefix="model.layers.$(layer-1)."
-                normalized=_flint_norm(x,parameters[prefix*"input_layernorm.weight"],c.rms_norm_eps)
-                past=cache===nothing ? nothing : cache.ranks[rank+1].layers[layer]
-                attention,updated=_ripple_attention(bundle.local_model,parameters,prefix*"self_attn.",normalized,
-                    seed,layer,past,position;cache_capacity=Int(cache_capacity))
-                _ripple_tp_allreduce!(b,rank,attention)
-                x=x.+_flint_norm(attention,parameters[prefix*"post_attention_layernorm.weight"],c.rms_norm_eps)
-                normalized=_flint_norm(x,parameters[prefix*"pre_feedforward_layernorm.weight"],c.rms_norm_eps)
-                feedforward=_ripple_mlp(bundle.local_model,parameters,prefix*"mlp.",normalized)
-                _ripple_tp_allreduce!(b,rank,feedforward)
-                x=x.+_flint_norm(feedforward,parameters[prefix*"post_feedforward_layernorm.weight"],c.rms_norm_eps)
-                push!(updates,updated)
-            end
-            logits=if output_logits
-                last_only && (x=x[:,end:end])
-                x=_flint_norm(x,parameters["model.norm.weight"],c.rms_norm_eps)
-                head=c.tie_word_embeddings ? parameters["model.embed_tokens.weight"][bundle.ranks[rank+1].vocabulary_rows,:] : parameters["lm_head.weight"]
-                local_logits=_ripple_linear(head,x)
-                _ripple_tp_allgather(b,rank,local_logits)
-            else
-                nothing
-            end
-            _ripple_tp_finish_rank(b,rank)
-            return (;logits,updates)
+    states=_ripple_tp_compute_ranks(b) do rank
+        parameters=bundle.ranks[rank+1].parameters
+        x=permutedims(Float32.(parameters["model.embed_tokens.weight"][ids,:]))
+        c.embed_scale===nothing || (x=x.*c.embed_scale)
+        (x=x,seed=x,updates=Any[])
+    end
+    for layer in 1:c.num_hidden_layers
+        prefix="model.layers.$(layer-1)."
+        attention=_ripple_tp_compute_ranks(b) do rank
+            parameters=bundle.ranks[rank+1].parameters;state=states[rank+1]
+            normalized=_flint_norm(state.x,parameters[prefix*"input_layernorm.weight"],c.rms_norm_eps)
+            past=cache===nothing ? nothing : cache.ranks[rank+1].layers[layer]
+            value,updated=_ripple_attention(bundle.local_model,parameters,prefix*"self_attn.",normalized,
+                state.seed,layer,past,position;cache_capacity=Int(cache_capacity))
+            (;value,updated)
         end
+        _ripple_tp_allreduce_batch!(b,[item.value for item in attention])
+        feedforward=_ripple_tp_compute_ranks(b) do rank
+            parameters=bundle.ranks[rank+1].parameters;state=states[rank+1]
+            x=state.x.+_flint_norm(attention[rank+1].value,parameters[prefix*"post_attention_layernorm.weight"],c.rms_norm_eps)
+            normalized=_flint_norm(x,parameters[prefix*"pre_feedforward_layernorm.weight"],c.rms_norm_eps)
+            value=_ripple_mlp(bundle.local_model,parameters,prefix*"mlp.",normalized)
+            (;x,value)
+        end
+        _ripple_tp_allreduce_batch!(b,[item.value for item in feedforward])
+        states=_ripple_tp_compute_ranks(b) do rank
+            parameters=bundle.ranks[rank+1].parameters;state=states[rank+1]
+            x=feedforward[rank+1].x.+_flint_norm(feedforward[rank+1].value,
+                parameters[prefix*"post_feedforward_layernorm.weight"],c.rms_norm_eps)
+            push!(state.updates,attention[rank+1].updated)
+            (x=x,seed=state.seed,updates=state.updates)
+        end
+    end
+    logits=if output_logits
+        local_logits=_ripple_tp_compute_ranks(b) do rank
+            parameters=bundle.ranks[rank+1].parameters;x=states[rank+1].x
+            last_only && (x=x[:,end:end])
+            x=_flint_norm(x,parameters["model.norm.weight"],c.rms_norm_eps)
+            head=c.tie_word_embeddings ? parameters["model.embed_tokens.weight"][bundle.ranks[rank+1].vocabulary_rows,:] : parameters["lm_head.weight"]
+            _ripple_linear(head,x)
+        end
+        _ripple_tp_allgather_batch(b,local_logits)[1]
+    else
+        nothing
     end
     _ripple_tp_root!(b)
     if cache!==nothing
         for rank in 1:n
-            cache.ranks[rank].layers=results[rank].updates
+            cache.ranks[rank].layers=states[rank].updates
             cache.ranks[rank].tokens=position+length(ids)
         end
         cache.tokens=position+length(ids)
     end
-    return results[1].logits
+    return logits
 end
 
 function generate_ripple_tp_tokens(bundle,prompt::AbstractVector{<:Integer};max_new_tokens::Integer=128,

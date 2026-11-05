@@ -2,6 +2,7 @@
 using LifeAI,CUDA,NCCL,JSON3,HTTP,LinearAlgebra,Sockets,UUIDs,Dates,Test
 using BFloat16s:BFloat16
 include(joinpath(@__DIR__,"..","test","ripple","test_ripple_tensor_parallel.jl"))
+include(joinpath(@__DIR__,"..","test","ripple","test_ripple_nccl_transport.jl"))
 
 function tp8_options(args)
     options=Dict("model"=>"/jfs/application/user/bgl/models/ricursiveAI/Ripple-65B-Preview",
@@ -104,6 +105,7 @@ function tp8_main(args)
     # Prove real multi-GPU collectives and the complete partition equations
     # before spending time loading 130GB of source tensors.
     @testset "Physical NCCL tensor parallelism" begin
+        ripple_nccl_transport_checks(devices)
         ripple_tp_numerical_checks(n->ripple_nccl_backend(devices[1:n]);world_sizes=(count,))
     end
     backend=ripple_nccl_backend(devices);bundle=nothing
