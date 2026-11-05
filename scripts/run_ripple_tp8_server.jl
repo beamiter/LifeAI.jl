@@ -6,6 +6,7 @@ include(joinpath(@__DIR__,"..","test","ripple","test_ripple_nccl_transport.jl"))
 include(joinpath(@__DIR__,"..","test","ripple","test_ripple_projection.jl"))
 include(joinpath(@__DIR__,"..","test","ripple","test_ripple_prefix.jl"))
 include(joinpath(@__DIR__,"..","test","ripple","test_ripple_rope.jl"))
+include(joinpath(@__DIR__,"..","test","ripple","test_ripple_long_attention_reference.jl"))
 include(joinpath(@__DIR__,"benchmark_ripple_tp_variants.jl"))
 include(joinpath(@__DIR__,"ripple_tp8_jobs.jl"))
 
@@ -125,6 +126,7 @@ function tp8_main(args)
     # before spending time loading 130GB of source tensors.
     @testset "Physical NCCL tensor parallelism" begin
         ripple_rope_reference_checks(device=CUDA.cu,reference_path=joinpath(@__DIR__,"..","test","ripple","fixtures","rope","rope-cuda.json"))
+        ripple_long_attention_reference_checks()
         ripple_nccl_transport_checks(devices)
         ripple_tp_projection_checks(devices)
         ripple_tp_prefix_checks(n->ripple_nccl_backend(devices[1:n]);world_sizes=(count,))

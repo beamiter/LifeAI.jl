@@ -401,46 +401,113 @@ function _flint_gemm_accumulate_kernel!(output,context,state,group,query_offset,
     return
 end
 
+# Allocate packed query storage directly. reshape(permutedims(reshape(view)))
+# leaves hidden owning CuArray aliases alive until CPU GC even if the outer
+# reshaped array is explicitly released.
+function _flint_gemm_pack_query_kernel!(packed,query,group,query_offset)
+    index=(CUDA.blockIdx().x-Int32(1))*CUDA.blockDim().x+CUDA.threadIdx().x
+    stride=CUDA.blockDim().x*CUDA.gridDim().x
+    d=Int32(size(packed,1));columns=Int32(size(packed,2))
+    while index<=length(packed)
+        row=(index-Int32(1))%d+Int32(1)
+        column=(index-Int32(1))÷d%columns
+        kvhead=(index-Int32(1))÷(d*columns)+Int32(1)
+        head=column%group+group*(kvhead-Int32(1))+Int32(1)
+        token=column÷group+query_offset+Int32(1)
+        @inbounds packed[index]=query[row,head,token]
+        index+=stride
+    end
+    return
+end
+
+# CuArray views can own another reference to the same device allocation. Release
+# those aliases before their base; ordinary SubArray views own no device memory.
+function _flint_gemm_scratch_view!(temporaries,parent,indices...)
+    result=view(parent,indices...)
+    result isa CUDA.CuArray && result!==parent && push!(temporaries,result)
+    return result
+end
+function _flint_gemm_free_temporaries!(temporaries,strict)
+    failure=nothing
+    for temporary in Iterators.reverse(temporaries)
+        try
+            CUDA.unsafe_free!(temporary)
+        catch error
+            failure===nothing && (failure=error)
+        end
+    end
+    empty!(temporaries)
+    strict && failure!==nothing && throw(failure)
+    return nothing
+end
+
 function _flint_attention_gemm(query,key,value,sinks,first_key_position,query_position,window;max_query_batch::Int=512)
     d,heads,queries=size(query)
     kvheads,keys=size(key,2),size(key,3)
     group=heads÷kvheads
     plan=_flint_gemm_attention_plan(d,heads,kvheads,queries,keys;max_query_batch)
-    output=CUDA.zeros(Float32,d,heads,queries)
-    keys==0 && return output
-    packed_key=CUDA.CuArray{Float32}(undef,plan.key_tile,d,kvheads)
-    packed_value=CUDA.CuArray{Float32}(undef,d,plan.key_tile,kvheads)
-    scores=CUDA.CuArray{Float32}(undef,plan.key_tile,group*plan.query_batch,kvheads)
-    context=CUDA.CuArray{Float32}(undef,d,group*plan.query_batch,kvheads)
-    state=CUDA.CuArray{Float32}(undef,4,heads,plan.query_batch)
-    scale=inv(sqrt(Float32(d)))
-    for query_offset in 0:plan.query_batch:queries-1
-        query_count=min(plan.query_batch,queries-query_offset)
-        query_view=view(query,:,:,query_offset+1:query_offset+query_count)
-        packed_query=reshape(permutedims(reshape(query_view,d,group,kvheads,query_count),(1,2,4,3)),d,group*query_count,kvheads)
-        query_state=view(state,:,:,1:query_count)
-        tile_context=view(context,:,1:group*query_count,:)
-        CUDA.@cuda threads=256 blocks=cld(heads*query_count,256) _flint_gemm_state_kernel!(query_state,sinks)
-        # Causal queries cannot read future chunks; local queries also cannot
-        # read before their earliest window. This bounds sliding work to W+Q.
-        first_key=window>0 ? max(0,query_position+query_offset-window-first_key_position+1) : 0
-        last_key=min(keys,query_position+query_offset+query_count-first_key_position)
-        first_key=min(keys,max(0,first_key))
-        if last_key<=first_key
-            continue
+    temporaries=Any[];output=nothing;succeeded=false
+    try
+        output=CUDA.zeros(Float32,d,heads,queries)
+        if keys==0
+            succeeded=true
+            return output
         end
-        for key_offset in first_key:plan.key_tile:last_key-1
-            key_count=min(plan.key_tile,last_key-key_offset)
-            tile_key=view(packed_key,1:key_count,:,:)
-            tile_value=view(packed_value,:,1:key_count,:)
-            tile_scores=view(scores,1:key_count,1:group*query_count,:)
-            CUDA.@cuda threads=(32,8) blocks=(cld(d,32),cld(key_count,32),kvheads) _flint_gemm_pack_kv_kernel!(packed_key,packed_value,key,value,Int32(key_offset),Int32(key_count))
-            batched_mul!(tile_scores,tile_key,packed_query)
-            CUDA.@cuda threads=256 blocks=(group*query_count,kvheads) _flint_gemm_softmax_kernel!(tile_scores,query_state,Int32(group),Int32(first_key_position+key_offset),Int32(query_position+query_offset),Int32(window),scale)
-            batched_mul!(tile_context,tile_value,tile_scores)
-            last_tile=key_offset+key_count==last_key
-            CUDA.@cuda threads=256 blocks=min(cld(length(tile_context),256),65535) _flint_gemm_accumulate_kernel!(output,tile_context,query_state,Int32(group),Int32(query_offset),last_tile)
+        packed_key=CUDA.CuArray{Float32}(undef,plan.key_tile,d,kvheads);push!(temporaries,packed_key)
+        packed_value=CUDA.CuArray{Float32}(undef,d,plan.key_tile,kvheads);push!(temporaries,packed_value)
+        scores=CUDA.CuArray{Float32}(undef,plan.key_tile,group*plan.query_batch,kvheads);push!(temporaries,scores)
+        context=CUDA.CuArray{Float32}(undef,d,group*plan.query_batch,kvheads);push!(temporaries,context)
+        state=CUDA.CuArray{Float32}(undef,4,heads,plan.query_batch);push!(temporaries,state)
+        scale=inv(sqrt(Float32(d)))
+        for query_offset in 0:plan.query_batch:queries-1
+            query_count=min(plan.query_batch,queries-query_offset)
+            query_temporaries=Any[];query_succeeded=false
+            try
+                packed_query=CUDA.CuArray{Float32}(undef,d,group*query_count,kvheads);push!(query_temporaries,packed_query)
+                CUDA.@cuda threads=256 blocks=min(cld(length(packed_query),256),65535) _flint_gemm_pack_query_kernel!(packed_query,query,Int32(group),Int32(query_offset))
+                query_state=_flint_gemm_scratch_view!(query_temporaries,state,:,:,1:query_count)
+                tile_context=_flint_gemm_scratch_view!(query_temporaries,context,:,1:group*query_count,:)
+                CUDA.@cuda threads=256 blocks=cld(heads*query_count,256) _flint_gemm_state_kernel!(query_state,sinks)
+                # Bound sliding work to the visible W+Q interval.
+                first_key=window>0 ? max(0,query_position+query_offset-window-first_key_position+1) : 0
+                last_key=min(keys,query_position+query_offset+query_count-first_key_position)
+                first_key=min(keys,max(0,first_key))
+                for key_offset in first_key:plan.key_tile:last_key-1
+                    key_count=min(plan.key_tile,last_key-key_offset)
+                    tile_temporaries=Any[];tile_succeeded=false
+                    try
+                        tile_key=_flint_gemm_scratch_view!(tile_temporaries,packed_key,1:key_count,:,:)
+                        tile_value=_flint_gemm_scratch_view!(tile_temporaries,packed_value,:,1:key_count,:)
+                        tile_scores=_flint_gemm_scratch_view!(tile_temporaries,scores,1:key_count,1:group*query_count,:)
+                        CUDA.@cuda threads=(32,8) blocks=(cld(d,32),cld(key_count,32),kvheads) _flint_gemm_pack_kv_kernel!(packed_key,packed_value,key,value,Int32(key_offset),Int32(key_count))
+                        batched_mul!(tile_scores,tile_key,packed_query)
+                        CUDA.@cuda threads=256 blocks=(group*query_count,kvheads) _flint_gemm_softmax_kernel!(tile_scores,query_state,Int32(group),Int32(first_key_position+key_offset),Int32(query_position+query_offset),Int32(window),scale)
+                        batched_mul!(tile_context,tile_value,tile_scores)
+                        last_tile=key_offset+key_count==last_key
+                        CUDA.@cuda threads=256 blocks=min(cld(length(tile_context),256),65535) _flint_gemm_accumulate_kernel!(output,tile_context,query_state,Int32(group),Int32(query_offset),last_tile)
+                        tile_succeeded=true
+                    finally
+                        _flint_gemm_free_temporaries!(tile_temporaries,tile_succeeded)
+                    end
+                end
+                query_succeeded=true
+            finally
+                _flint_gemm_free_temporaries!(query_temporaries,query_succeeded)
+            end
+        end
+        succeeded=true
+        return output
+    finally
+        cleanup_succeeded=false
+        try
+            _flint_gemm_free_temporaries!(temporaries,succeeded)
+            cleanup_succeeded=true
+        finally
+            # Caller inputs are never in the temporary lists. A successful
+            # returned output remains owned by the caller, including keys==0.
+            if output!==nothing && (!succeeded || !cleanup_succeeded)
+                _flint_gemm_free_temporaries!(Any[output],false)
+            end
         end
     end
-    return output
 end

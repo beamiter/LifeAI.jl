@@ -100,7 +100,7 @@ end
 function LifeAI._ripple_tp_before_forward!(b::RippleNCCLBackend,tokens::Int)
     b.decode_since_gc+=1
     if tokens>1 || b.decode_since_gc>=b.gc_interval
-        GC.gc(false);b.decode_since_gc=0;b.gc_runs+=1
+        GC.gc(tokens>=512);b.decode_since_gc=0;b.gc_runs+=1
     end
     return nothing
 end

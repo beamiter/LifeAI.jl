@@ -316,7 +316,10 @@ function hf_ripple_tp_forward(bundle::RippleTensorParallelModel,token_ids::Abstr
         end
         clock=_ripple_tp_stage(on_stage,layer,:residual,clock)
         if length(ids)>=512 && layer%prefill_gc_layers==0
-            GC.gc(false)
+            # Completed phases are safe collection boundaries. Clear persistent
+            # workers' last arguments/results and collect old large GPU arrays.
+            _ripple_tp_compute_ranks(rank->nothing,b)
+            GC.gc(true)
             clock=_ripple_tp_stage(on_stage,layer,:prefill_gc,clock)
         end
     end
