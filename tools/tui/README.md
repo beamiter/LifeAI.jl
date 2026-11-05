@@ -85,7 +85,7 @@ token 预算。需要为长文件腾出预算时，可先用 `/clear` 开启新�
 Ripple 同样连接路由的 11435 端口；DLC Bearer key 只由 DSW 适配器读取，不传到客户端。
 Ripple 当前完整回答后一次显示，`--no-stream` 也可使用；支持 system/user/assistant 多轮消息。
 该部署的总上下文为 8192 tokens、最大输出 512 tokens，超限会显示服务错误；
-TUI 显示输出 tokens 和总耗时，上游未提供 decode 计时时不显示解码速度。
+TUI 显示输出 tokens、总耗时与服务发布的真实解码速率；上游未提供 decode 计时时不显示解码速度。
 也可连接旧版单模型 Qwen `/api/generate` 服务，但该服务无法切换到 Flint。
 服务部署与 FP4 worker 说明见 [console](../console/README.md)。
 

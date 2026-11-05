@@ -363,3 +363,52 @@ Ctrl+C 退出码为 0，SSH 转发关闭，路由及 DLC 仍 ready。输出预�
 
 部署验证收据见 [`lumen.json`](../configs/deployment/ripple_tp8/lumen.json)，包含二进制与源码
 SHA-256；详细日志、终端截图文本和验证 JSON 保存在 `benchmark_results/ripple/lumen/`。
+
+## TP8 解码性能优化（2026-11-05）
+
+当前服务任务为 [dlc14tk1zf50nw9d](https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlc14tk1zf50nw9d)，服务代码固定为 `0921a3316dc3ee25b42793ab698f59c3f2ba10ed`。
+Lumen 的 `lumen --model ripple` 使用已验证的当前部署；客户端自动读取解码速率元数据。
+
+保持原始 BF16 权重值与 Float32 激活/累加，没有进行权重或激活量化。
+新增 direct BF16 split-K GEMV，直接读取 BF16 矩阵并用 Float32 合并局部和；
+多 token prefill 继续使用 FP32 GEMM，临时转换在所在 CUDA stream 上显式释放。
+解码将 FFN 后残差处理并入下一层 attention 阶段，缓存每卡的 -Inf sink 常量，
+将 gate/up clamp 与 SiLU 乘积融合。预填充仍每批回收，解码可配置有界 GC 间隔。
+所有 collective 仍由单个主机线程按 group 提交，在分配/回收前完成同步。
+
+比较在同一个节点、同一组 8×RTX PRO 5000 72GB、同一 29-token 提示词上运行，
+温度 0，固定 96 个输出 token；速率为首 token 之后的 95 次间隔。
+原始 `reference` 与最终候选各做三次，其他方案只有一次 pilot：
+
+| 方案 | 样本数 | median decode token/s |
+| --- | ---: | ---: |
+| bf16_gemv_gc16 | 3 | 6.155 |
+| reference | 3 | 2.478 |
+| bf16_gemv | 1 | 5.147 |
+| fp32 | 1 | 4.113 |
+| merged_reference | 1 | 2.609 |
+
+最终选择 `bf16_gemv_gc16`（投影 `bf16_gemv`、调度 `merged`、解码 GC 间隔 `16`）。
+三次原始结果为 `2.504, 2.478, 2.452`，优化后为 `6.155, 6.179, 6.088` token/s，
+中位数 **2.478 → 6.155 token/s，2.48×**。
+96-token 输出与基线逐 token 一致：**true**。
+在 DSW 通过真实 HTTP（包含 prefill）重复三次，整体速率中位数为 **5.833 token/s**。
+
+三组官方 PyTorch MATH 完整词表对齐继续满足 `max_abs < 1e-3`、`relative_l2 < 1e-4`；
+另以原始实现保存的 16 个预测位置（prefill 末位及 15 个缓存解码位置）逐步对比全部词表，最大绝对误差 **8.392334e-05**，
+argmax 全部一致。OK、乘法、Python 函数执行、中文与 96-token 连续生成检查通过。
+两次 7,996-token HTTP 输入完整生成最终 `OK` 并以 EOS 结束，鉴权与请求边界检查通过。
+每卡常驻权重仍为 **15.93GiB**；资源采样覆盖全部 benchmark 方案及长输入验收，
+其中包括仅用于对照的 FP32 常驻方案，因此整体采样峰值不等于最终 BF16 服务的权重占用。
+
+`prepare_ripple_tp_projections!(bundle; mode=:reference|:bf16_gemv|:fp32)` 仅在 idle 时调用；
+从 Float32 转回 BF16 会检查是否无损。`hf_ripple_tp_forward` / `generate_ripple_tp_tokens`
+可选择 `schedule=:staged|:merged`，`ripple_nccl_backend(...; gc_interval=N)` 配置回收间隔。
+CLI 服务的对应参数为 `--projection-mode`、`--schedule`、`--gc-interval`；
+DLC 配置可用 `benchmark_variants=true` 运行同机比较并选择已通过数值验证的最快方案。
+
+部署和汇总数据见 [`deployment.json`](../configs/deployment/ripple_tp8/deployment.json)、
+[`performance.json`](../configs/deployment/ripple_tp8/performance.json)。
+完整逐步 logits 参考、各方案 timings、阶段剖析、生成和接口证据保存在当前运行目录的
+`results/variants.json`、`decode-reference.jls`、`generation.json`、`http-throughput.json`、
+`http-long-context.json`、`final-verification.log` 与 `resources.csv`。

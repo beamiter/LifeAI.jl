@@ -1,13 +1,13 @@
 {
-  "job_id": "dlcgyajnv5xe0cwy",
-  "console_url": "https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlcgyajnv5xe0cwy",
-  "run_dir": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-perf-20261105T085148Z",
-  "server_code_revision": "f4ddaa6c8031f5d80d509d02dcf2f6a83d5313c8",
+  "job_id": "dlc14tk1zf50nw9d",
+  "console_url": "https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlc14tk1zf50nw9d",
+  "run_dir": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-gc16-20261105T091852Z",
+  "server_code_revision": "0921a3316dc3ee25b42793ab698f59c3f2ba10ed",
   "status_at_verification": "Running",
-  "verified_at": "2026-11-05T09:09:44.654870+00:00",
-  "endpoint": "http://10.68.4.179:18085",
-  "api_base": "http://10.68.4.179:18085/v1",
-  "api_key_file": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-perf-20261105T085148Z/credentials/api_key",
+  "verified_at": "2026-11-05T09:33:03.985431+00:00",
+  "endpoint": "http://10.68.4.183:18085",
+  "api_base": "http://10.68.4.183:18085/v1",
+  "api_key_file": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-gc16-20261105T091852Z/credentials/api_key",
   "model_id": "lifeai-ripple65b-tp8",
   "model_source": "ricursiveAI/Ripple-65B-Preview",
   "hf_revision": "e27e171792f303d74c048184e8259ba663cfa0d5",
@@ -21,7 +21,7 @@
     "activation_and_gemm_dtype": "Float32",
     "projection_mode": "bf16_gemv",
     "schedule": "merged",
-    "gc_interval": 1,
+    "gc_interval": 16,
     "cpu_weight_offload": false,
     "max_context": 8192,
     "max_output": 512,
@@ -39,7 +39,7 @@
     17101066560,
     17101066560
   ],
-  "load_seconds": 95.14326906204224,
+  "load_seconds": 93.54198002815247,
   "validation": {
     "full_checkpoint_parity": [
       {
@@ -52,7 +52,7 @@
           4013,
           100266
         ],
-        "seconds": 0.735396146774292
+        "seconds": 0.4078350067138672
       },
       {
         "name": "math",
@@ -61,7 +61,7 @@
         "relative_l2_error": 1.0616756e-06,
         "argmax_matches": true,
         "greedy_tokens": [],
-        "seconds": 0.30322694778442383
+        "seconds": 0.3927750587463379
       },
       {
         "name": "long_window",
@@ -70,9 +70,13 @@
         "relative_l2_error": 3.3494673e-06,
         "argmax_matches": true,
         "greedy_tokens": [],
-        "seconds": 1.0882740020751953
+        "seconds": 1.1725599765777588
       }
     ],
+    "teacher_forced_positions": 16,
+    "cached_decode_steps": 15,
+    "max_decode_logits_error": 8.392334e-05,
+    "same_96_tokens_as_baseline": true,
     "generation_smoke_checks": {
       "exact_ok": true,
       "math_17_times_23": true,
@@ -150,11 +154,28 @@
   },
   "performance": {
     "generated_tokens": 96,
-    "decode_tokens_per_second": 5.039759967824168,
-    "baseline_tokens_per_second": 2.5146032272674885,
-    "speedup": 2.0041968900599314,
+    "decode_tokens_per_second": 6.154901476967341,
+    "baseline_tokens_per_second": 2.47815390734839,
+    "speedup": 2.483663931734187,
     "repeats": 3,
-    "scope": "Same-GPU matched native decode; includes an original reference baseline"
+    "http_tokens_per_second": 5.8326818291533,
+    "scope": "Matched native decode baseline and candidate, same node/GPUs/prompt, three runs each"
   },
-  "previous_job_id": "dlc1x35onfyb2m10"
+  "resources": {
+    "scope": "2-second nvidia-smi sampling from startup through this capture, includes allocator cache",
+    "captured_at": "2026-11-05T09:33:03.985431+00:00",
+    "samples": 366,
+    "gpu_memory_peak_mib": {
+      "0": 55867,
+      "1": 56347,
+      "2": 59035,
+      "3": 59259,
+      "4": 57147,
+      "5": 59067,
+      "6": 56219,
+      "7": 55899
+    },
+    "gpu_aggregate_peak_mib": 458648,
+    "julia_rss_peak_bytes": 9124433920
+  }
 }

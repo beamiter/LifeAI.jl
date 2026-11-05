@@ -1,0 +1,43 @@
+{
+  "selected": "bf16_gemv_gc16",
+  "code_revision": "0921a3316dc3ee25b42793ab698f59c3f2ba10ed",
+  "same_96_tokens": true,
+  "baseline": [
+    2.5039810022679987,
+    2.47815390734839,
+    2.4516988254455425
+  ],
+  "optimized": [
+    6.154901476967341,
+    6.178529136887787,
+    6.0876670830286574
+  ],
+  "median_baseline": 2.47815390734839,
+  "median_optimized": 6.154901476967341,
+  "speedup": 2.483663931734187,
+  "median_http": 5.8326818291533,
+  "variants": {
+    "bf16_gemv_gc16": {
+      "runs": 3,
+      "median": 6.154901476967341
+    },
+    "reference": {
+      "runs": 3,
+      "median": 2.47815390734839
+    },
+    "bf16_gemv": {
+      "runs": 1,
+      "median": 5.146636076950834
+    },
+    "fp32": {
+      "runs": 1,
+      "median": 4.1127116962005665
+    },
+    "merged_reference": {
+      "runs": 1,
+      "median": 2.608702221925775
+    }
+  },
+  "max_decode_error": 8.392334e-05,
+  "run_dir": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-gc16-20261105T091852Z"
+}
