@@ -27,6 +27,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub enum Model {
     Qwen,
     Flint,
+    Ripple,
 }
 
 impl Model {
@@ -34,6 +35,7 @@ impl Model {
         match self {
             Self::Qwen => "qwen",
             Self::Flint => "flint",
+            Self::Ripple => "ripple",
         }
     }
 
@@ -41,6 +43,7 @@ impl Model {
         match self {
             Self::Qwen => "Qwen/Qwen3-8B",
             Self::Flint => "RecursiveSI/flint",
+            Self::Ripple => "ricursiveAI/Ripple-65B-Preview",
         }
     }
 
@@ -48,13 +51,15 @@ impl Model {
         match self {
             Self::Qwen => "Qwen3-8B",
             Self::Flint => "Flint NVFP4",
+            Self::Ripple => "Ripple-65B",
         }
     }
 
     pub fn next(self) -> Self {
         match self {
             Self::Qwen => Self::Flint,
-            Self::Flint => Self::Qwen,
+            Self::Flint => Self::Ripple,
+            Self::Ripple => Self::Qwen,
         }
     }
 }
@@ -72,7 +77,10 @@ impl FromStr for Model {
         match value {
             "qwen" | "Qwen/Qwen3-8B" => Ok(Self::Qwen),
             "flint" | "RecursiveSI/flint" => Ok(Self::Flint),
-            _ => Err("模型可选 qwen 或 flint。".into()),
+            "ripple" | "ricursiveAI/Ripple-65B-Preview" | "lifeai-ripple65b-tp8" => {
+                Ok(Self::Ripple)
+            }
+            _ => Err("模型可选 qwen、flint 或 ripple。".into()),
         }
     }
 }
@@ -193,7 +201,7 @@ impl Api {
             let router = is_router(&health);
             ensure!(
                 router || model == Model::Qwen,
-                "当前是旧版 Qwen 服务，不支持 Flint；请启动 LifeAI 多模型服务。"
+                "当前是旧版 Qwen 服务，只支持 Qwen；请启动 LifeAI 多模型服务。"
             );
             if is_ready(&health, model) {
                 self.validate_limits(&health)?;
@@ -357,7 +365,7 @@ impl Api {
                 }),
             )
         } else {
-            ensure!(model == Model::Qwen, "旧版服务不支持 Flint。");
+            ensure!(model == Model::Qwen, "旧版服务只支持 Qwen。");
             (
                 "/api/generate",
                 json!({
@@ -368,6 +376,9 @@ impl Api {
                 }),
             )
         };
+        if model == Model::Ripple {
+            progress("Ripple 正在生成，完成后显示整段回答…".into());
+        }
         let body = serde_json::to_vec(&payload)?;
         ensure!(
             body.len() <= MAX_REQUEST_BYTES,
@@ -524,6 +535,7 @@ fn selected(health: &Value) -> Option<&str> {
     match name {
         "qwen" => Some(Model::Qwen.id()),
         "flint" => Some(Model::Flint.id()),
+        "ripple" => Some(Model::Ripple.id()),
         name => Some(name),
     }
 }
@@ -536,7 +548,10 @@ fn validate_health(health: &Value) -> Result<()> {
     ensure!(health.is_object(), "服务 /healthz 响应必须为 JSON 对象。");
     if let Some(model) = selected(health) {
         ensure!(
-            matches!(model, "Qwen/Qwen3-8B" | "RecursiveSI/flint"),
+            matches!(
+                model,
+                "Qwen/Qwen3-8B" | "RecursiveSI/flint" | "ricursiveAI/Ripple-65B-Preview"
+            ),
             "该端口不是兼容的 LifeAI 模型服务；请检查 --url。"
         );
     } else {
@@ -558,7 +573,7 @@ fn validate_health(health: &Value) -> Result<()> {
         ensure!(
             models.iter().any(|v| matches!(
                 v["id"].as_str(),
-                Some("Qwen/Qwen3-8B" | "RecursiveSI/flint")
+                Some("Qwen/Qwen3-8B" | "RecursiveSI/flint" | "ricursiveAI/Ripple-65B-Preview")
             )),
             "服务没有发布兼容的 LifeAI 模型。"
         );
@@ -691,7 +706,7 @@ fn qwen_prompt(messages: &[Message]) -> String {
 }
 
 pub fn assistant_history(model: Model, text: &str) -> String {
-    if model == Model::Flint
+    if matches!(model, Model::Flint | Model::Ripple)
         && text.starts_with("<think>")
         && let Some((_, answer)) = text.split_once("</think>")
     {
@@ -1181,7 +1196,16 @@ mod tests {
             generation_rate(&json!({"eval_count":5,"eval_duration":2e9})),
             Some(2.5)
         );
-        assert_eq!("flint".parse::<Model>().unwrap().next(), Model::Qwen);
+        assert_eq!("flint".parse::<Model>().unwrap().next(), Model::Ripple);
+        assert_eq!(Model::Ripple.next(), Model::Qwen);
+        assert_eq!(
+            "lifeai-ripple65b-tp8".parse::<Model>().unwrap(),
+            Model::Ripple
+        );
+        assert_eq!(
+            assistant_history(Model::Ripple, "<think>思考</think>\nOK"),
+            "OK"
+        );
         assert!("invalid".parse::<Model>().is_err());
     }
 }

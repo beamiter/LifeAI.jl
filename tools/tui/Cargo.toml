@@ -3,7 +3,7 @@ name = "lifeai-tui"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-description = "Lumen — the LifeAI terminal for Qwen and Flint"
+description = "Lumen — the LifeAI terminal for Qwen, Flint and Ripple"
 repository = "https://github.com/beamiter/LifeAI.jl"
 publish = false
 

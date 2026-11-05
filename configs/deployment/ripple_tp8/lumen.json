@@ -1,0 +1,47 @@
+{
+  "verified_at": "2026-11-05T07:53:48.237850+00:00",
+  "model": "ricursiveAI/Ripple-65B-Preview",
+  "cli_model": "ripple",
+  "installed_command": "/usr/local/bin/lumen",
+  "binary": "/jfs/application/user/bgl/envs/lumen/bin/lifeai",
+  "binary_sha256": "adffb4f7fa63c33063d7952508d84c8b4132ddf8ef18b407cac0587763cc1415",
+  "router": "http://127.0.0.1:11435",
+  "adapter": "http://127.0.0.1:11438",
+  "dlc_job_id": "dlc1x35onfyb2m10",
+  "context_tokens": 8192,
+  "max_new_tokens": 512,
+  "streaming": false,
+  "tests": {
+    "rust_unit": 34,
+    "rust_cli": 15,
+    "python": 45,
+    "cargo_fmt": "passed",
+    "clippy": "passed",
+    "python_dsw": "passed"
+  },
+  "live": {
+    "dsw_installed_cli": "OK",
+    "repository_launcher": "OK",
+    "ssh_cli": "OK",
+    "ssh_seconds": 2.106588496011682,
+    "tui_first_answer": "OK",
+    "tui_second_answer": "SQUIRREL",
+    "multi_turn_memory": true,
+    "tui_exit_code": 0,
+    "ssh_tunnel_closed": true,
+    "output_cap_513_rejected": true,
+    "router_ready": true,
+    "dlc_ready": "ready"
+  },
+  "source_files_sha256": {
+    "tools/tui/src/main.rs": "4d2c336ace734a24559569dd9962fb5e8ea77702d564ab4c49f81d769eed0ae8",
+    "tools/tui/src/api.rs": "a391d0010b1ab53b851bfda816c61e4900af13d23466a11bbf05bcc4354d1529",
+    "tools/tui/src/ui.rs": "9c6df0e73622d8dc930e54cfa8128f00f9d99cc53cfad8dace66df7241ae12c0",
+    "tools/tui/Cargo.toml": "1acbb9e5310ee68f262b2feb648c64a46dd5f7d91809afdcf080483e4ebf9bc2",
+    "tools/tui/Cargo.lock": "91854ce6db73b88eb8bceecbac93174a19ba4d49d7ff7e7a3489636859fc395a",
+    "tools/console/server.py": "3bea9e7b513d093ea57fcf62cc0666987232894566768cd1ef1c238061111d00",
+    "tools/console/control.py": "da3f161f9c09f94af2851d2b2ef4490ed694dfc914d18701bec149788d769e43",
+    "tools/console/ripple_worker.py": "486b4cd3cf16af176642a0898408570e5adcb5433505bfb96cd50872e5b6d510"
+  },
+  "evidence_dir": "/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/lumen"
+}

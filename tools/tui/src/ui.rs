@@ -43,6 +43,7 @@ fn index(model: Model) -> usize {
     match model {
         Model::Qwen => 0,
         Model::Flint => 1,
+        Model::Ripple => 2,
     }
 }
 
@@ -412,7 +413,7 @@ impl Session {
         if self.rows.is_empty() {
             self.rows = [
                 "欢迎使用 Lumen。选择一个模型，开始对话。",
-                "Qwen 与 Flint 分别保留会话和草稿。",
+                "Qwen、Flint 与 Ripple 分别保留会话和草稿。",
                 "Ctrl+T / F2 切换模型，/help 查看快捷键。",
                 "首次加载需要数分钟，等待时仍可编辑与滚动。",
             ]
@@ -449,7 +450,7 @@ enum Busy {
 
 struct App {
     active: Model,
-    sessions: [Session; 2],
+    sessions: [Session; 3],
     system: String,
     ready: bool,
     busy: Option<Busy>,
@@ -463,7 +464,7 @@ impl App {
     fn new(model: Model, system: String, jobs: Sender<Job>) -> Self {
         Self {
             active: model,
-            sessions: [Session::new(&system), Session::new(&system)],
+            sessions: std::array::from_fn(|_| Session::new(&system)),
             system,
             ready: false,
             busy: None,
@@ -506,7 +507,7 @@ impl App {
         }
         self.sessions[index(self.active)] = Session::new(&self.system);
         self.status = format!(
-            "已清空 {} 的历史；另一模型的会话已保留。",
+            "已清空 {} 的历史；其他模型的会话已保留。",
             self.active.label()
         );
     }
@@ -531,7 +532,7 @@ impl App {
             }
             "/help" | "/model" | "/models" => {
                 self.session().editor.clear();
-                self.status = "Ctrl+T/F2 切换 · Ctrl+L 清空 · Ctrl+R 重试 · Alt+Enter 换行 · PgUp/PgDn 滚动 · /load 路径 · /model qwen|flint · /quit".into();
+                self.status = "Ctrl+T/F2 切换 · Ctrl+L 清空 · Ctrl+R 重试 · Alt+Enter 换行 · PgUp/PgDn 滚动 · /load 路径 · /model qwen|flint|ripple · /quit".into();
                 return false;
             }
             _ => {}
@@ -557,7 +558,7 @@ impl App {
         if let Some(value) = command.strip_prefix("/model ").or_else(|| {
             command
                 .strip_prefix('/')
-                .filter(|v| matches!(*v, "qwen" | "flint"))
+                .filter(|v| matches!(*v, "qwen" | "flint" | "ripple"))
         }) {
             match value.trim() {
                 "qwen" => {
@@ -568,7 +569,11 @@ impl App {
                     self.session().editor.clear();
                     self.select(Model::Flint);
                 }
-                _ => self.status = "用法：/model qwen 或 /model flint。".into(),
+                "ripple" => {
+                    self.session().editor.clear();
+                    self.select(Model::Ripple);
+                }
+                _ => self.status = "用法：/model qwen、/model flint 或 /model ripple。".into(),
             }
             return false;
         }
@@ -769,8 +774,8 @@ impl App {
             Span::styled("  ·  LifeAI", Style::default().fg(MUTED)),
         ]);
         frame.render_widget(Paragraph::new(header), chunks[0]);
-        let labels =
-            [Model::Qwen, Model::Flint].map(|model| Line::from(format!(" {} ", model.label())));
+        let labels = [Model::Qwen, Model::Flint, Model::Ripple]
+            .map(|model| Line::from(format!(" {} ", model.label())));
         let tabs = Tabs::new(labels)
             .select(index(self.active))
             .divider("  ")
@@ -1282,5 +1287,41 @@ mod tests {
         assert!(!rendered.contains('\x1b'));
         let mut small = Terminal::new(TestBackend::new(30, 8)).unwrap();
         small.draw(|frame| app.render(frame)).unwrap();
+    }
+    #[test]
+    fn ripple_has_an_independent_session_and_model_command() {
+        let (mut app, jobs) = app();
+        app.session().editor.insert("Qwen 草稿");
+        app.select(Model::Ripple);
+        assert!(matches!(
+            jobs.try_recv().unwrap(),
+            Job::Select(Model::Ripple)
+        ));
+        app.update(Update::Selected(
+            Model::Ripple,
+            json!({"context_tokens":8192,"max_new_tokens":512}),
+        ));
+        app.session().editor.insert("Ripple 草稿");
+        app.select(Model::Qwen);
+        jobs.try_recv().unwrap();
+        app.update(Update::Selected(
+            Model::Qwen,
+            json!({"context_tokens":40960,"max_new_tokens":512}),
+        ));
+        assert_eq!(app.session().editor.text, "Qwen 草稿");
+        app.session().editor.clear();
+        app.session().editor.insert("/model ripple");
+        app.submit();
+        assert!(matches!(
+            jobs.try_recv().unwrap(),
+            Job::Select(Model::Ripple)
+        ));
+        app.update(Update::Selected(
+            Model::Ripple,
+            json!({"context_tokens":8192,"max_new_tokens":512}),
+        ));
+        assert_eq!(app.session().editor.text, "Ripple 草稿");
+        assert_eq!(app.session().history.len(), 1);
+        assert_eq!(app.sessions[index(Model::Qwen)].history.len(), 1);
     }
 }

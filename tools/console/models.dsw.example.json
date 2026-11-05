@@ -83,6 +83,25 @@
         "--max-new-tokens",
         "4096"
       ]
+    },
+    {
+      "key": "ripple",
+      "id": "ricursiveAI/Ripple-65B-Preview",
+      "label": "Ripple-65B TP8",
+      "context_tokens": 8192,
+      "max_new_tokens": 512,
+      "streaming": false,
+      "url": "http://127.0.0.1:11438",
+      "cwd": "/jfs/application/user/bgl/LifeAI.jl",
+      "log": "/jfs/application/user/bgl/deployments/lifeai_console/logs/ripple.log",
+      "command": [
+        "python3",
+        "/jfs/application/user/bgl/LifeAI.jl/tools/console/ripple_worker.py",
+        "--deployment",
+        "/jfs/application/user/bgl/LifeAI.jl/configs/deployment/ripple_tp8/deployment.json",
+        "--port",
+        "11438"
+      ]
     }
   ]
 }

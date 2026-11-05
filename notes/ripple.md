@@ -333,3 +333,33 @@ python3 scripts/query_ripple_tp8.py /jfs/application/user/bgl/deployments/ripple
 `resources-summary.json` 分别保存接口、长输入、实际客户端与资源验收结果；
 其余完整数值/生成证据见同目录。API key 保存在该运行目录的 `credentials/api_key`，
 调用脚本自动读取，仓库收据只记录文件路径。
+
+## Lumen CLI 接入（2026-11-05）
+
+Lumen 已增加 `ripple` 模型、第三个 TUI 标签与独立会话。DSW 的已安装入口
+`/usr/local/bin/lumen`、`lifeai` 和仓库 `scripts/lifeai` 均已更新。
+
+```bash
+lumen --model ripple
+lumen --model ripple -n 8 'Reply with exactly OK.'
+lumen --model ripple --no-stream '请用一句话解释二分查找。'
+```
+
+在 TUI 使用 `/model ripple` 或 Ctrl+T/F2 切换。默认模型仍为 Qwen，
+可用 `LIFEAI_MODEL=ripple` 选择 Ripple。其他机器先按 [Lumen 说明](../tools/tui/README.md)
+编译/安装更新后的客户端；自动 SSH 转发仍连接 DSW 的 11435 路由端口。
+
+DSW 路由通过 11438 的 `ripple_worker.py` 适配器使用上述 DLC 八卡服务，
+完整保留 system/user/assistant 消息，密钥只在 DSW 读取。
+切换或退出只释放本地适配器或客户端 SSH 连接，DLC 服务继续驻留。
+上游当前非流式，完整回答到达后显示；上下文 8192、输出上限 512 tokens。
+完成的 `<think>` 内容保留显示，下一轮历史只发送最终答案。
+
+Rust 34 项单元测试、15 项 CLI HTTP 测试、Python 45 项协议/生命周期测试全部通过，
+`cargo fmt --check` 与 Clippy（警告视为错误）通过；Python 同一套测试也在 DSW 通过。
+真实安装命令、仓库启动脚本和自动 SSH 单次调用均返回 `OK`。
+真实交互终端两轮测试中，首轮记住暗号，次轮正确回答 `SQUIRREL`；
+Ctrl+C 退出码为 0，SSH 转发关闭，路由及 DLC 仍 ready。输出预算 513 被正确拒绝。
+
+部署验证收据见 [`lumen.json`](../configs/deployment/ripple_tp8/lumen.json)，包含二进制与源码
+SHA-256；详细日志、终端截图文本和验证 JSON 保存在 `benchmark_results/ripple/lumen/`。

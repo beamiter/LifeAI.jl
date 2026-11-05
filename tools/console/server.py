@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Loopback model router: one owned GPU worker at a time, Qwen or Flint."""
+"""Loopback model router: one owned adapter/worker at a time for Qwen, Flint or Ripple."""
 import argparse
 import json
 import math
@@ -52,15 +52,16 @@ class ModelManager:
 
     def resolve(self, name):
         if not isinstance(name, str):
-            raise APIError(400, 'model must be a string: qwen or flint.')
+            raise APIError(400, 'model must be a string: qwen, flint or ripple.')
         result = self.aliases.get(name, name)
         if result not in self.models:
-            raise APIError(400, 'Unknown model; choose qwen or flint.')
+            raise APIError(400, 'Unknown model; choose qwen, flint or ripple.')
         return result
 
     def catalog(self):
         return [dict(key=m['key'], id=m['id'], label=m.get('label', m['id']),
-                     context_tokens=m['context_tokens'], max_new_tokens=m['max_new_tokens'])
+                     context_tokens=m['context_tokens'], max_new_tokens=m['max_new_tokens'],
+                     streaming=m.get('streaming', True))
                 for m in self.models.values()]
 
     def health(self):
@@ -73,6 +74,7 @@ class ModelManager:
                         loading_model=self.selected if self.state == 'loading' else None,
                         phase=self.worker_health.get('phase', self.state),
                         last_error=self.error, active_requests=self.active_requests,
+                        streaming=self.worker_health.get('streaming', spec.get('streaming', True)),
                         context_tokens=self.worker_health.get('context_tokens', spec.get('context_tokens')),
                         max_new_tokens=self.worker_health.get('max_new_tokens', spec.get('max_new_tokens')),
                         load_seconds=round(time.monotonic() - self.load_started, 2)
@@ -193,7 +195,7 @@ class ModelManager:
         model = self.resolve(payload.get('model', self.selected))
         if raw:
             if self.models[model]['key'] != 'qwen' or not isinstance(payload.get('prompt'), str):
-                raise APIError(400, 'Use /api/chat with messages for Flint.')
+                raise APIError(400, 'Use /api/chat with messages for this model.')
             messages = None
             if len(payload['prompt']) > MAX_TOTAL_MESSAGE_CHARS:
                 raise APIError(413, 'Prompt exceeds the 4 Mi character limit.')

@@ -1,8 +1,8 @@
 # Lumen（流明） · LifeAI 终端
 
 Lumen 寓意把模型能力化为可交互的光。客户端使用 Rust、Ratatui 与 Crossterm，
-集成在 LifeAI 仓库内；通过现有 LifeAI 服务使用 Qwen3-8B 和 Flint。
-推理与权重留在 DSW，客户端不需要 Julia、Python 或本地 GPU。
+集成在 LifeAI 仓库内；通过 LifeAI 路由使用 Qwen3-8B、Flint 和 Ripple-65B。
+Qwen/Flint 在 DSW 推理，Ripple 使用已部署的 DLC 八卡服务；客户端不需要 Julia、Python、本地 GPU 或 DLC 密钥。
 
 ## 编译与启动
 
@@ -11,12 +11,12 @@ Lumen 寓意把模型能力化为可交互的光。客户端使用 Rust、Ratatu
 ```sh
 # 在 LifeAI 仓库根目录
 cargo build --release --locked --manifest-path tools/tui/Cargo.toml
-./scripts/lifeai chat --model flint
+./scripts/lifeai chat --model ripple
 
 # 安装到 ~/.local/bin，提供 lifeai 和 lumen 两个入口
 ./scripts/lifeai --install
 lifeai chat --model flint
-lumen --model qwen
+lumen --model ripple
 
 # 单次提问、管道输入、只读状态查询
 lifeai chat --model flint -n 256 '1+1 等于几？'
@@ -25,7 +25,7 @@ cat question.txt | lifeai chat --model qwen
 lifeai --status
 ```
 
-默认模型为 Qwen，可用 `LIFEAI_MODEL=flint` 更改。`lifeai chat` 与 `lumen`
+默认模型为 Qwen，可用 `LIFEAI_MODEL=ripple` 更改。`lifeai chat` 与 `lumen`
 都进入同一界面；旧 `qwen` 命令已废弃，不提供兼容别名。
 安装不会修改 shell 配置；请确保 `~/.local/bin` 在 `PATH` 中。
 `--prefix /path` 可更改安装位置，已有同名文件会备份为 `.before-lumen.N`。
@@ -34,7 +34,7 @@ lifeai --status
 
 | 操作 | 快捷键 / 命令 |
 | --- | --- |
-| 切换 Qwen / Flint | `Ctrl+T`、`F2`、`/model qwen`、`/model flint` |
+| 切换 Qwen / Flint / Ripple | `Ctrl+T`、`F2`、`/model qwen`、`/model flint`、`/model ripple` |
 | 发送 / 换行 | `Enter` / `Alt+Enter`（支持的终端也可用 `Shift+Enter`） |
 | 清空当前模型会话 | `Ctrl+L`、`/clear` |
 | 重试连接或加载 | `Ctrl+R` |
@@ -44,8 +44,8 @@ lifeai --status
 | 从 UTF-8 文件导入当前草稿 | `/load 文件路径`（最多 4 MiB） |
 | 帮助 / 退出 | `/help` / `Ctrl+C`、`Ctrl+D`、`/quit` |
 
-两个模型分别保留本次进程内的会话、草稿和滚动位置。失败或不完整回答
-不会写入发送给模型的历史。Flint 已完成的 `<think>` 内容显示在终端中，
+三个模型分别保留本次进程内的会话、草稿和滚动位置。失败或不完整回答
+不会写入发送给模型的历史。Flint 与 Ripple 已完成的 `<think>` 内容显示在终端中，
 下一轮只回传最终答案。退出后不保存会话。
 
 支持中文、组合字符和 emoji 的字素编辑、按显示宽度换行与多行粘贴。
@@ -55,7 +55,8 @@ lifeai --status
 长文件草稿只排版光标附近的内容；Flint 长输入会显示预填充 token 数与百分比，
 完成后开始显示生成内容。单次问题、文件和标准输入最多 4 MiB。
 
-一次只驻留一个模型，切换需要释放旧模型并加载新模型，可能耗时数分钟。
+Qwen/Flint 共用 DSW 本地 GPU，切换会释放旧 worker 并加载新模型，可能耗时数分钟。
+Ripple 切换仅连接 DSW 上的轻量适配器；DLC 模型独立常驻，切换或退出不会停止 DLC 任务。
 加载或生成期间禁止再次切换。退出客户端会关闭它创建的 SSH 进程，
 远端推理服务继续驻留。SSH 断线后可按 `Ctrl+R` 重建连接，会话保留。
 
@@ -81,6 +82,10 @@ token 预算。需要为长文件腾出预算时，可先用 `/clear` 开启新�
 `--status` 只读取当前驻留状态，不切换或加载默认模型。
 
 客户端使用 `/healthz`、`/api/select`、`/api/chat`；模板在服务端生成。
+Ripple 同样连接路由的 11435 端口；DLC Bearer key 只由 DSW 适配器读取，不传到客户端。
+Ripple 当前完整回答后一次显示，`--no-stream` 也可使用；支持 system/user/assistant 多轮消息。
+该部署的总上下文为 8192 tokens、最大输出 512 tokens，超限会显示服务错误；
+TUI 显示输出 tokens 和总耗时，上游未提供 decode 计时时不显示解码速度。
 也可连接旧版单模型 Qwen `/api/generate` 服务，但该服务无法切换到 Flint。
 服务部署与 FP4 worker 说明见 [console](../console/README.md)。
 
@@ -92,7 +97,7 @@ cargo test --locked --manifest-path tools/tui/Cargo.toml
 cargo clippy --locked --manifest-path tools/tui/Cargo.toml --all-targets -- -D warnings
 ```
 
-测试覆盖真实本地 HTTP 流、UTF-8 分段、失败与不完整事件、模型加载与限制，
+测试覆盖 Ripple 非流式上游到完整 NDJSON/JSON 的适配、鉴权与错误恢复、三模型会话，以及真实本地 HTTP 流、UTF-8 分段、失败与不完整事件、模型加载与限制，
 以及 Ratatui TestBackend 下的会话隔离、编辑和终端布局；无需连接 DSW。
 
 可生成无需目标机 Rust 环境的 Linux 静态二进制：

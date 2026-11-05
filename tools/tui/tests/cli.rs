@@ -12,6 +12,7 @@ use std::time::Duration;
 
 const QWEN: &str = "Qwen/Qwen3-8B";
 const FLINT: &str = "RecursiveSI/flint";
+const RIPPLE: &str = "ricursiveAI/Ripple-65B-Preview";
 
 #[derive(Clone, Debug)]
 struct Request {
@@ -66,7 +67,8 @@ impl Service {
                         "max_new_tokens": cap,
                         "models": [
                             {"key":"qwen", "id":QWEN, "label":"Qwen3 8B", "context_tokens":4096,"max_new_tokens":cap},
-                            {"key":"flint", "id":FLINT, "label":"Flint NVFP4", "context_tokens":4096,"max_new_tokens":cap}
+                            {"key":"flint", "id":FLINT, "label":"Flint NVFP4", "context_tokens":4096,"max_new_tokens":cap},
+                            {"key":"ripple", "id":RIPPLE, "label":"Ripple-65B", "context_tokens":8192,"max_new_tokens":cap}
                         ]
                     }).to_string(), false),
                     "/api/models" => (200, json!({"models":[
@@ -434,4 +436,44 @@ fn explicit_install_prefix_does_not_require_home_environment() {
     assert!(directory.path().join("bin/lifeai").is_file());
     assert!(directory.path().join("bin/lumen").is_file());
     assert!(!directory.path().join("bin/qwen").exists());
+}
+
+#[test]
+fn ripple_cli_handles_complete_ndjson_and_nonstream_json() {
+    for (reply, no_stream) in [(Reply::Stream, false), (Reply::Json, true)] {
+        let service = Service::new(RIPPLE, reply, 512);
+        let mut command = service.command();
+        command.args(["--model", "ripple", "--system", "中文回答", "-n", "8"]);
+        if no_stream {
+            command.arg("--no-stream");
+        }
+        let output = command.arg("你好").output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "你好🌟\n");
+        let requests = service.captured();
+        assert!(!requests.iter().any(|r| r.path == "/api/select"));
+        let chat = requests.iter().find(|r| r.path == "/api/chat").unwrap();
+        assert_eq!(chat.body["model"], RIPPLE);
+        assert_eq!(chat.body["messages"][0]["role"], "system");
+        assert_eq!(chat.body["messages"][0]["content"], "中文回答");
+        assert_eq!(chat.body["messages"][1]["content"], "你好");
+        assert_eq!(chat.body["stream"], !no_stream);
+    }
+}
+
+#[test]
+fn ripple_cli_enforces_published_output_cap() {
+    let service = Service::new(RIPPLE, Reply::Stream, 512);
+    let output = service
+        .command()
+        .args(["--model", "ripple", "-n", "513", "hello"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("512"));
+    assert!(!service.captured().iter().any(|r| r.path == "/api/chat"));
 }

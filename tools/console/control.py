@@ -110,7 +110,7 @@ def stop():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['start', 'status', 'stop'])
-    parser.add_argument('--model', choices=['qwen', 'flint'], default='flint')
+    parser.add_argument('--model', choices=['qwen', 'flint', 'ripple'], default='flint')
     args = parser.parse_args()
     if args.action == 'status':
         status()

@@ -16,8 +16,8 @@ const DSW_HOST: &str = "dsw-notebook-dsw-l3wna78bngwh3pfple-22.vpc-0jlbz3pri2042
 #[command(
     name = "lifeai",
     version,
-    about = "Lumen（流明） · LifeAI 的 Qwen / Flint 终端",
-    after_help = "lifeai chat --model flint       打开 Lumen\nlifeai chat --model qwen '你好'  单次提问\nlifeai chat --model flint --file prompt.txt\ncat question.txt | lifeai chat   从标准输入提问\nlifeai --install                安装 lifeai 与 lumen 命令\n\nTUI: /load 路径 导入草稿 · Ctrl+T / F2 切换 · Ctrl+L 清空 · Ctrl+R 重连 · Ctrl+C 退出"
+    about = "Lumen（流明） · LifeAI 的 Qwen / Flint / Ripple 终端",
+    after_help = "lifeai chat --model ripple      打开 Ripple-65B 对话\nlifeai chat --model qwen '你好'  单次提问\nlifeai chat --model flint --file prompt.txt\ncat question.txt | lifeai chat   从标准输入提问\nlifeai --install                安装 lifeai 与 lumen 命令\n\nTUI: /load 路径 导入草稿 · Ctrl+T / F2 切换 · Ctrl+L 清空 · Ctrl+R 重连 · Ctrl+C 退出"
 )]
 pub struct Args {
     /// 问题；省略时进入 TUI，也可通过标准输入提供
@@ -26,7 +26,7 @@ pub struct Args {
     /// 从 UTF-8 文件读取问题（最多 4 MiB）；TUI 中可用 /load 路径
     #[arg(long, conflicts_with = "prompt", conflicts_with = "status")]
     file: Option<PathBuf>,
-    /// qwen 或 flint
+    /// qwen、flint 或 ripple
     #[arg(long, env = "LIFEAI_MODEL", default_value = "qwen")]
     model: Model,
     /// 服务根地址
@@ -280,7 +280,7 @@ fn install(prefix: Option<&Path>) -> Result<()> {
         std::fs::copy(&target, &alias)?;
     }
     println!(
-        "已安装 Lumen: {}\n启动: lifeai chat --model flint，或 lumen --model flint",
+        "已安装 Lumen: {}\n启动: lifeai chat --model ripple，或 lumen --model ripple",
         target.display()
     );
     if !std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).any(|path| path == bin)
