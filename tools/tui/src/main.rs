@@ -23,7 +23,7 @@ pub struct Args {
     /// 问题；省略时进入 TUI，也可通过标准输入提供
     #[arg(trailing_var_arg = true)]
     prompt: Vec<String>,
-    /// 从 UTF-8 文件读取问题（最多 4 MiB）；TUI 中可用 /load 路径
+    /// 从 UTF-8 文件读取问题（最多 64 MiB）；TUI 中可用 /load 路径
     #[arg(long, conflicts_with = "prompt", conflicts_with = "status")]
     file: Option<PathBuf>,
     /// qwen、flint 或 ripple
@@ -51,7 +51,7 @@ pub struct Args {
     #[arg(short = 'n', long, default_value = "256", value_parser = clap::value_parser!(u32).range(1..))]
     max_tokens: u32,
     /// 生成超时秒数
-    #[arg(long, default_value = "7200", value_parser = positive_seconds)]
+    #[arg(long, default_value = "21600", value_parser = positive_seconds)]
     timeout: f64,
     /// 模型加载超时秒数
     #[arg(long, default_value = "1800", value_parser = positive_seconds)]
@@ -122,13 +122,17 @@ pub(crate) fn read_prompt_file(path: &Path) -> Result<String> {
 }
 
 fn read_prompt(reader: impl Read) -> Result<String> {
+    read_prompt_limited(reader, MAX_INPUT_BYTES)
+}
+
+fn read_prompt_limited(reader: impl Read, maximum: usize) -> Result<String> {
     let mut bytes = Vec::new();
     reader
-        .take((MAX_INPUT_BYTES + 1) as u64)
+        .take((maximum + 1) as u64)
         .read_to_end(&mut bytes)
         .context("无法读取问题文本。")?;
-    if bytes.len() > MAX_INPUT_BYTES {
-        bail!("输入超过 4 MiB，请缩短问题");
+    if bytes.len() > maximum {
+        bail!("输入超过 64 MiB，请缩短问题");
     }
     String::from_utf8(bytes).context("问题必须是有效 UTF-8 文本。")
 }
@@ -142,7 +146,7 @@ fn run(args: Args) -> Result<()> {
         None => args.prompt.join(" "),
     };
     if prompt.len() > MAX_INPUT_BYTES {
-        bail!("输入超过 4 MiB，请缩短问题");
+        bail!("输入超过 64 MiB，请缩短问题");
     }
     if args.file.is_some() && prompt.trim().is_empty() {
         bail!("文件中没有问题内容");
@@ -306,5 +310,17 @@ mod tests {
     #[test]
     fn never_emits_terminal_control_codes() {
         assert_eq!(clean("你好\x1b[2J\r\t\n"), "你好[2J \n");
+    }
+    #[test]
+    fn input_reader_enforces_utf8_byte_boundary() {
+        assert_eq!(read_prompt_limited("中文".as_bytes(), 6).unwrap(), "中文");
+        assert!(read_prompt_limited("中文x".as_bytes(), 6).is_err());
+        assert!(read_prompt_limited(&[0xff][..], 6).is_err());
+    }
+    #[test]
+    fn long_context_generation_timeout_keeps_load_timeout_separate() {
+        let args = Args::try_parse_from(["lifeai", "--status"]).unwrap();
+        assert_eq!(args.timeout, 21600.0);
+        assert_eq!(args.load_timeout, 1800.0);
     }
 }

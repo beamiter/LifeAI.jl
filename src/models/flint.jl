@@ -136,7 +136,7 @@ function _flint_attention_context(q, k, v, sinks, mask)
         reshape(permutedims(reshape(context, d, group, n, kvheads), (1, 2, 4, 3)), d, heads, n)
 end
 
-function _flint_attention_long(q, k, v, sinks, first_key_position, query_position, window)
+function _flint_attention_long(q, k, v, sinks, first_key_position, query_position, window;max_query_batch::Int=512)
     keys = first_key_position:first_key_position+size(k,3)-1
     queries = query_position:query_position+size(q,3)-1
     allowed = [kp <= qp && (window == 0 || kp > qp-window) for kp in keys, qp in queries]

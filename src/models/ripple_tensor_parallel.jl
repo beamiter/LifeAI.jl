@@ -252,7 +252,7 @@ end
 function hf_ripple_tp_forward(bundle::RippleTensorParallelModel,token_ids::AbstractVector{<:Integer};
         cache::Union{Nothing,RippleTPKVCache}=nothing,last_only::Bool=false,
         output_logits::Bool=true,cache_capacity::Integer=0,
-        schedule::Symbol=:merged,on_stage=nothing)
+        schedule::Symbol=:merged,on_stage=nothing,prefill_query_batch::Integer=512,prefill_gc_layers::Integer=8)
     c=bundle.model;b=bundle.backend;n=_ripple_tp_world(b)
     !isempty(token_ids) && !(eltype(token_ids)<:Bool) || throw(ArgumentError("invalid Ripple TP input IDs"))
     ids=Int.(collect(token_ids))
@@ -262,6 +262,8 @@ function hf_ripple_tp_forward(bundle::RippleTensorParallelModel,token_ids::Abstr
     length(ids)<=c.max_position_embeddings-position || throw(ArgumentError("Ripple TP context limit exceeded"))
     !(cache_capacity isa Bool) && 0<=cache_capacity<=c.max_position_embeddings || throw(ArgumentError("invalid Ripple TP cache reservation"))
     schedule in (:staged,:merged) || throw(ArgumentError("invalid Ripple TP schedule"))
+    !(prefill_query_batch isa Bool) && prefill_query_batch>0 || throw(ArgumentError("invalid prefill query batch"))
+    !(prefill_gc_layers isa Bool) && prefill_gc_layers>0 || throw(ArgumentError("invalid prefill GC layer interval"))
     merged=schedule===:merged
     clock=on_stage===nothing ? UInt64(0) : time_ns()
     _ripple_tp_before_forward!(b,length(ids))
@@ -285,7 +287,7 @@ function hf_ripple_tp_forward(bundle::RippleTensorParallelModel,token_ids::Abstr
             normalized=_flint_norm(x,parameters[prefix*"input_layernorm.weight"],c.rms_norm_eps)
             past=cache===nothing ? nothing : cache.ranks[rank+1].layers[layer]
             value,updated=_ripple_attention(bundle.local_model,parameters,prefix*"self_attn.",normalized,
-                state.seed,layer,past,position;cache_capacity=Int(cache_capacity),reuse_constants=merged)
+                state.seed,layer,past,position;cache_capacity=Int(cache_capacity),reuse_constants=merged,prefill_query_batch=Int(prefill_query_batch))
             (;x,value,updated)
         end
         clock=_ripple_tp_stage(on_stage,layer,:attention,clock)
@@ -313,6 +315,10 @@ function hf_ripple_tp_forward(bundle::RippleTensorParallelModel,token_ids::Abstr
             end
         end
         clock=_ripple_tp_stage(on_stage,layer,:residual,clock)
+        if length(ids)>=512 && layer%prefill_gc_layers==0
+            GC.gc(false)
+            clock=_ripple_tp_stage(on_stage,layer,:prefill_gc,clock)
+        end
     end
     logits=if output_logits
         local_logits=_ripple_tp_compute_ranks(b) do rank
@@ -347,26 +353,46 @@ end
 function generate_ripple_tp_tokens(bundle,prompt::AbstractVector{<:Integer};max_new_tokens::Integer=128,
         temperature::Real=0f0,top_k=nothing,top_p=1f0,rng=default_rng(),
         eos_ids=bundle.model.eos_token_id.+1,prefill_chunk_size::Integer=256,on_token=nothing,on_prefill=nothing,
-        schedule::Symbol=:merged)
+        schedule::Symbol=:merged,prefix_cache=nothing,prefill_query_batch::Integer=512,prefill_gc_layers::Integer=8)
     !(max_new_tokens isa Bool) && max_new_tokens>=0 || throw(ArgumentError("invalid Ripple TP max_new_tokens"))
     !(prefill_chunk_size isa Bool) && prefill_chunk_size>0 || throw(ArgumentError("invalid Ripple TP chunk size"))
     !isempty(prompt) && !(eltype(prompt)<:Bool) && all(id->1<=id<=bundle.model.vocab_size,prompt) || throw(ArgumentError("invalid Ripple TP prompt"))
     max_new_tokens<=bundle.model.max_position_embeddings-length(prompt) || throw(ArgumentError("Ripple TP generation exceeds context limit"))
     generated=Int[];max_new_tokens==0 && return generated
-    cache=RippleTPKVCache(bundle);logits=nothing;capacity=length(prompt)+Int(max_new_tokens)
-    for first in 1:Int(min(prefill_chunk_size,length(prompt))):length(prompt)
-        last=min(length(prompt),first+prefill_chunk_size-1)
-        logits=hf_ripple_tp_forward(bundle,prompt[first:last];cache,last_only=true,cache_capacity=capacity,
-            output_logits=last==length(prompt),schedule)
-        on_prefill===nothing || on_prefill(last,length(prompt))!==false || return generated
+    capacity=length(prompt)+Int(max_new_tokens)
+    policy=(schedule,Int(prefill_chunk_size),Int(prefill_query_batch),Int(prefill_gc_layers))
+    try
+    cache,reused,logits=prefix_cache===nothing ? (RippleTPKVCache(bundle),0,nothing) :
+        _ripple_tp_prefix_start!(prefix_cache,bundle,prompt,capacity,policy)
+    if reused>0 && on_prefill!==nothing && on_prefill(reused,length(prompt))===false
+        reset_ripple_tp_prefix!(prefix_cache);return generated
     end
+    first=reused+1
+    while first<=length(prompt)
+        last=min(length(prompt),first+prefill_chunk_size-1,(fld(first-1,4096)+1)*4096)
+        logits=hf_ripple_tp_forward(bundle,prompt[first:last];cache,last_only=true,cache_capacity=capacity,
+            output_logits=last==length(prompt),schedule,prefill_query_batch,prefill_gc_layers)
+        if on_prefill!==nothing && on_prefill(last,length(prompt))===false
+            prefix_cache===nothing || reset_ripple_tp_prefix!(prefix_cache)
+            return generated
+        end
+        first=last+1
+    end
+    prefix_cache===nothing || _ripple_tp_prefix_checkpoint!(prefix_cache,bundle,cache,prompt,logits,policy)
     for step in 1:max_new_tokens
         token=_flint_sample_token(logits,rng;temperature,top_k,top_p);push!(generated,token)
-        on_token===nothing || on_token(token)!==false || break
+        if on_token!==nothing && on_token(token)===false
+            prefix_cache===nothing || reset_ripple_tp_prefix!(prefix_cache)
+            break
+        end
         (token in eos_ids || step==max_new_tokens) && break
-        logits=hf_ripple_tp_forward(bundle,[token];cache,last_only=true,cache_capacity=capacity,schedule)
+        logits=hf_ripple_tp_forward(bundle,[token];cache,last_only=true,cache_capacity=capacity,schedule,prefill_query_batch,prefill_gc_layers)
     end
     return generated
+    catch
+        prefix_cache===nothing || reset_ripple_tp_prefix!(prefix_cache)
+        rethrow()
+    end
 end
 
 function generate_ripple_tp(bundle,tokenizer,prompt;tools=nothing,clear_thinking::Bool=false,kwargs...)

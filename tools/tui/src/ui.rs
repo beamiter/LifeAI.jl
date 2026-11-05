@@ -82,6 +82,9 @@ impl Editor {
     }
 
     fn insert(&mut self, value: &str) -> bool {
+        if self.text.len().saturating_add(value.len()) > MAX_INPUT_BYTES {
+            return false;
+        }
         let value = clean_text(value);
         if self.text.len().saturating_add(value.len()) > MAX_INPUT_BYTES {
             return false;
@@ -481,7 +484,7 @@ impl App {
 
     fn insert_input(&mut self, text: &str) {
         if !self.session().editor.insert(text) {
-            self.status = "草稿超过 4 MiB，请缩短输入。".into();
+            self.status = "草稿超过 64 MiB，请缩短输入。".into();
         }
     }
 
@@ -540,7 +543,7 @@ impl App {
         if command == "/load" || command.starts_with("/load ") {
             let path = command.strip_prefix("/load").unwrap().trim();
             if path.is_empty() {
-                self.status = "用法：/load UTF-8文件路径（最多 4 MiB）。".into();
+                self.status = "用法：/load UTF-8文件路径（最多 64 MiB）。".into();
             } else {
                 match crate::read_prompt_file(std::path::Path::new(path)) {
                     Ok(text) => {

@@ -33,6 +33,7 @@ include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_offload.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_device_reader.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_int4_gemv.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_tensor_parallel.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_prefix.jl"))
 
 chapter_test(episode, chapter, filename) =
     joinpath(LIFEAI_TEST_EPISODES, episode, chapter, filename)

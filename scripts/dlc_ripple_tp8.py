@@ -67,7 +67,7 @@ def build_request(config, root, revision):
     code = root / 'code'
     env = {
         'TZ': 'Asia/Shanghai', 'PYTHONUNBUFFERED': '1', 'WANDB_MODE': 'offline',
-        'JULIA_NUM_THREADS': '16', 'OPENBLAS_NUM_THREADS': '1', 'OMP_NUM_THREADS': '1',
+        'JULIA_NUM_THREADS': config.get('julia_threads', '16,1'), 'OPENBLAS_NUM_THREADS': '1', 'OMP_NUM_THREADS': '1',
         'JULIA_DEPOT_PATH': config['julia_depot'], 'JULIA_CUDA_SOFT_MEMORY_LIMIT': '80%',
         'NVIDIA_TF32_OVERRIDE': '0', 'NCCL_DEBUG': 'INFO', 'NCCL_ALGO': 'Ring',
         'NCCL_IB_DISABLE': '0', 'NCCL_IB_HCA': 'erdma', 'NCCL_NET_GDR_LEVEL': 'SYS', 'NCCL_P2P_LEVEL': 'SYS',
@@ -78,11 +78,18 @@ def build_request(config, root, revision):
         'LIFEAI_RIPPLE_PROJECTION_MODE': config.get('projection_mode', 'bf16_gemv'),
         'LIFEAI_RIPPLE_SCHEDULE': config.get('schedule', 'merged'),
         'LIFEAI_RIPPLE_GC_INTERVAL': str(config.get('gc_interval', 16)),
+        'LIFEAI_MAX_CONTEXT': str(config.get('max_context', 8192)),
+        'LIFEAI_PREFILL_CHUNK_SIZE': str(config.get('prefill_chunk_size', 256)),
+        'LIFEAI_PREFILL_QUERY_BATCH': str(config.get('prefill_query_batch', 512)),
+        'LIFEAI_PREFILL_GC_LAYERS': str(config.get('prefill_gc_layers', 8)),
+        'LIFEAI_MAX_BODY_BYTES': str(config.get('max_body_bytes', 128*1024*1024)),
+        'LIFEAI_REQUEST_TIMEOUT': str(config.get('request_timeout', 21600)),
+        'LIFEAI_PREFIX_CACHE': str(config.get('prefix_cache', True)).lower(),
         'LIFEAI_RIPPLE_BENCHMARK_VARIANTS': str(config.get('benchmark_variants', False)).lower()
     }
     return {
-        'DisplayName': 'lifeai-' + root.name,
-        'Description': f'Ripple-65B original BF16, tensor parallel 8; code {revision}; persistent private inference service',
+        'DisplayName': config.get('display_name', 'lifeai-' + root.name),
+        'Description': config.get('description', f'Ripple-65B original BF16, tensor parallel 8; code {revision}; persistent private inference service'),
         'JobType': 'PyTorchJob', 'WorkspaceId': config['workspace_id'], 'ResourceId': config['resource_quota_id'],
         'Priority': config['priority'], 'SchedulingStrategy': 'Binpack',
         'UserVpc': config['vpc'], 'DataSources': config['data_sources'], 'Envs': env,

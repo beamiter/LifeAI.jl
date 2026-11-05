@@ -6066,5 +6066,6 @@ include("flint_kv_decode.jl")
 include("flint_long_attention.jl")
 include("ripple_offload.jl")
 include("ripple_projection.jl")
+include("ripple_rope.jl")
 
 end # module LifeAICUDAExt

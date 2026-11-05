@@ -3,9 +3,11 @@ from pathlib import Path
 import tempfile
 import socket
 import sys
+import struct
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError
@@ -22,6 +24,13 @@ class Fixture:
         self.requests = []
         self.mode = 'ok'
         self.timing = {}
+        self.async_enabled = False
+        self.async_states = []
+        self.async_polls = 0
+        self.cancelled_paths = []
+        self.async_result = dict(model='lifeai-ripple65b-tp8', choices=[dict(
+            message=dict(role='assistant', content='异步 OK'), finish_reason='stop')],
+            usage=dict(prompt_tokens=100000, completion_tokens=3))
         self.entered, self.unblock = threading.Event(), threading.Event()
         owner = self
 
@@ -38,15 +47,33 @@ class Fixture:
 
             def do_GET(self):
                 if self.path == '/healthz':
-                    self.reply(200, dict(status='ready', model='lifeai-ripple65b-tp8', tensor_parallel=8))
+                    self.reply(200, dict(status='ready', model='lifeai-ripple65b-tp8', tensor_parallel=8,
+                                         async_jobs=owner.async_enabled))
                 elif self.headers.get('Authorization') != 'Bearer local-test-secret':
                     self.reply(401, dict(error=dict(message='Unauthorized')))
+                elif self.path.startswith('/v1/chat/completions/jobs/'):
+                    index = min(owner.async_polls, len(owner.async_states) - 1)
+                    owner.async_polls += 1
+                    packet = dict(id='owned-1', **owner.async_states[index])
+                    if packet.get('status') == 'completed':
+                        packet['result'] = owner.async_result
+                    self.reply(200, packet)
                 else:
                     self.reply(200, dict(data=[dict(id='lifeai-ripple65b-tp8')]))
+
+            def do_DELETE(self):
+                if self.headers.get('Authorization') != 'Bearer local-test-secret':
+                    self.reply(401, dict(error='Unauthorized'))
+                else:
+                    owner.cancelled_paths.append(self.path)
+                    self.reply(200, dict(id='owned-1', status='cancelled'))
 
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 owner.requests.append((self.path, self.headers.get('Authorization'), body))
+                if self.path == '/v1/chat/completions/jobs':
+                    self.reply(202, dict(id='owned-1', status='queued'))
+                    return
                 if owner.mode == 'blocked':
                     owner.entered.set()
                     owner.unblock.wait(3)
@@ -122,6 +149,7 @@ class RippleTests(unittest.TestCase):
         self.assertFalse(value['streaming'])
         self.assertNotIn(b'local-test-secret', raw)
         self.assertNotIn('local-test-secret', repr(self.fixture.backend.connect()))
+        self.assertEqual(ripple.RippleBackend(self.fixture.receipt).timeout, 21600)
 
     def test_native_stream_is_one_complete_event_and_forwards_all_roles(self):
         for stream in (True, False):
@@ -145,6 +173,28 @@ class RippleTests(unittest.TestCase):
                 self.assertEqual(body['messages'], payload()['messages'])
                 self.assertEqual((body['max_tokens'], body['temperature']), (8, 0.3))
                 self.assertNotIn(b'local-test-secret', raw)
+
+    def test_long_utf8_request_above_old_four_mib_limit_is_preserved(self):
+        value = payload(False)
+        content = '长文' * 700000
+        self.assertGreater(len(content.encode()), 4 * 1024 * 1024)
+        value['messages'] = [dict(role='user', content=content)]
+        self.assertEqual(self.fixture.request(value)[0], 200)
+        self.assertEqual(self.fixture.requests[-1][2]['messages'][0]['content'], content)
+
+    def test_transport_limits_and_small_patched_boundaries(self):
+        health = json.loads(self.fixture.request(path='/healthz')[2])
+        self.assertEqual(health['max_input_bytes'], 64 * 1024 * 1024)
+        self.assertEqual(health['max_request_bytes'], 128 * 1024 * 1024)
+        self.assertEqual(health['max_reply_bytes'], 16 * 1024 * 1024)
+        self.assertEqual(ripple.UPSTREAM_BODY, 128 * 1024 * 1024)
+        with patch.object(ripple, 'MAX_MESSAGE_CHARS', 8), patch.object(ripple, 'MAX_TOTAL_MESSAGE_CHARS', 12):
+            for messages in ([dict(role='user', content='x' * 9)],
+                             [dict(role='user', content='x' * 7), dict(role='user', content='y' * 6)]):
+                self.assertEqual(self.fixture.request({**payload(), 'messages': messages})[0], 413)
+        with patch.object(ripple, 'UPSTREAM_BODY', 32):
+            self.assertEqual(self.fixture.request(payload())[0], 413)
+        self.assertEqual(self.fixture.requests, [])
 
     def test_bad_options_fail_before_chat(self):
         for override in [dict(options=dict(num_predict=True)), dict(options=dict(num_predict=513)),
@@ -209,6 +259,92 @@ class RippleTests(unittest.TestCase):
         self.fixture.ready['projection_dtype'] = 'Float32'
         (self.fixture.root / 'results/ready.json').write_text(json.dumps(self.fixture.ready))
         self.assertEqual(json.loads(self.fixture.request(payload())[2])['lifeai']['weight_dtype'], 'Float32')
+
+    def enable_async(self, states):
+        self.fixture.async_enabled = True
+        self.fixture.async_states = states
+        self.fixture.async_polls = 0
+
+    def test_async_stream_reports_prefill_progress_then_complete_result(self):
+        self.enable_async([dict(status='queued'),
+            dict(status='running', phase='prefill', prefill_processed=256, prompt_eval_count=100000),
+            dict(status='running', phase='prefill', prefill_processed=512, prompt_eval_count=100000),
+            dict(status='running', phase='decode'), dict(status='completed')])
+        with patch.object(ripple, 'POLL_INTERVAL', .001):
+            code, content_type, raw = self.fixture.request(payload(True))
+        self.assertEqual(code, 200)
+        self.assertEqual(content_type, 'application/x-ndjson')
+        packets = [json.loads(line) for line in raw.splitlines()]
+        progress = [packet for packet in packets if packet.get('phase') == 'prefill']
+        self.assertEqual([packet['prefill_processed'] for packet in progress], [256, 512])
+        self.assertTrue(all(packet['response'] == '' and not packet['done'] for packet in progress))
+        self.assertEqual(packets[-1]['response'], '异步 OK')
+        self.assertTrue(packets[-1]['done'])
+        self.assertEqual(self.fixture.cancelled_paths, [])
+        path, auth, body = self.fixture.requests[-1]
+        self.assertEqual(path, '/v1/chat/completions/jobs')
+        self.assertEqual(auth, 'Bearer local-test-secret')
+        self.assertFalse(body['stream'])
+
+    def test_async_nonstream_waits_and_returns_single_native_json(self):
+        self.enable_async([dict(status='running', phase='prefill', prefill_processed=128, prompt_eval_count=1000),
+                           dict(status='completed')])
+        with patch.object(ripple, 'POLL_INTERVAL', .001):
+            code, content_type, raw = self.fixture.request(payload(False))
+        self.assertEqual((code, content_type), (200, 'application/json'))
+        self.assertEqual(json.loads(raw)['response'], '异步 OK')
+        self.assertEqual(self.fixture.cancelled_paths, [])
+
+    def test_async_failure_is_not_a_success_event_and_releases_busy(self):
+        self.enable_async([dict(status='running', phase='decode'), dict(status='failed', error='GPU worker failed')])
+        with patch.object(ripple, 'POLL_INTERVAL', .001):
+            code, _, raw = self.fixture.request(payload(True))
+        self.assertEqual(code, 200)
+        packets = [json.loads(line) for line in raw.splitlines()]
+        self.assertEqual(packets[-1]['error'], 'GPU worker failed')
+        self.assertTrue(packets[-1]['done'])
+        self.assertNotIn('eval_count', packets[-1])
+        self.assertNotIn(b'local-test-secret', raw)
+        self.assertEqual(self.fixture.cancelled_paths, ['/v1/chat/completions/jobs/owned-1'])
+        self.enable_async([dict(status='completed')])
+        self.assertEqual(self.fixture.request(payload(False))[0], 200)
+
+    def test_async_disconnect_cancels_only_owned_job(self):
+        self.enable_async([dict(status='running', phase='prefill', prefill_processed=128, prompt_eval_count=1000)])
+        def disconnect(_packet):
+            raise BrokenPipeError('client disconnected')
+        with self.assertRaises(BrokenPipeError):
+            self.fixture.backend.generate(payload(), on_progress=disconnect)
+        self.assertEqual(self.fixture.cancelled_paths, ['/v1/chat/completions/jobs/owned-1'])
+        self.assertTrue(self.fixture.backend.health()['ready'])
+        self.enable_async([dict(status='completed')])
+        self.assertEqual(self.fixture.request(payload(False))[0], 200)
+
+    def test_async_http_disconnect_cancels_owned_job(self):
+        self.enable_async([dict(status='running', phase='prefill', prefill_processed=128, prompt_eval_count=1000)])
+        body = json.dumps(payload(True)).encode()
+        with patch.object(ripple, 'POLL_INTERVAL', .005), patch.object(ripple, 'HEARTBEAT_INTERVAL', .005):
+            client = socket.create_connection(('127.0.0.1', self.fixture.worker.server_port), timeout=3)
+            client.sendall((f'POST /api/chat HTTP/1.1\r\nHost: localhost\r\nContent-Length: {len(body)}\r\n\r\n').encode() + body)
+            received = b''
+            while b'prefill_processed' not in received:
+                received += client.recv(65536)
+            client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+            client.close()
+            deadline = time.monotonic() + 3
+            while not self.fixture.cancelled_paths and time.monotonic() < deadline:
+                time.sleep(.01)
+        self.assertEqual(self.fixture.cancelled_paths, ['/v1/chat/completions/jobs/owned-1'])
+        self.assertTrue(self.fixture.backend.health()['ready'])
+
+    def test_async_deadline_cancels_owned_job(self):
+        self.enable_async([dict(status='queued')])
+        self.fixture.backend.timeout = .04
+        with patch.object(ripple, 'POLL_INTERVAL', .01):
+            with self.assertRaises(ripple.APIError) as caught:
+                self.fixture.backend.generate(payload())
+        self.assertEqual(caught.exception.status, 504)
+        self.assertEqual(self.fixture.cancelled_paths, ['/v1/chat/completions/jobs/owned-1'])
 
     def manager(self):
         with socket.socket() as probe:

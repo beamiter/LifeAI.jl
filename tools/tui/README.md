@@ -41,7 +41,7 @@ lifeai --status
 | 滚动对话 | `PgUp` / `PgDn` |
 | 行首 / 行尾 | `Home` / `End`、`Ctrl+A` / `Ctrl+E` |
 | 清空草稿 | `Ctrl+U` |
-| 从 UTF-8 文件导入当前草稿 | `/load 文件路径`（最多 4 MiB） |
+| 从 UTF-8 文件导入当前草稿 | `/load 文件路径`（最多 64 MiB） |
 | 帮助 / 退出 | `/help` / `Ctrl+C`、`Ctrl+D`、`/quit` |
 
 三个模型分别保留本次进程内的会话、草稿和滚动位置。失败或不完整回答
@@ -53,7 +53,8 @@ lifeai --status
 上下文限制和生成速率；网络请求在后台线程执行，加载期间仍能编辑、滚动和退出。
 长会话复用换行缓存，空闲刷新不会重复排版全部对话。
 长文件草稿只排版光标附近的内容；Flint 长输入会显示预填充 token 数与百分比，
-完成后开始显示生成内容。单次问题、文件和标准输入最多 4 MiB。
+完成后开始显示生成内容。单次问题、文件和标准输入最多 64 MiB UTF-8；全部对话合计最多 64 Mi 字符，
+序列化 JSON 请求最多 128 MiB。生成响应仍最多 16 MiB。传输上限与已验收的 token 上限分别检查。
 
 Qwen/Flint 共用 DSW 本地 GPU，切换会释放旧 worker 并加载新模型，可能耗时数分钟。
 Ripple 切换仅连接 DSW 上的轻量适配器；DLC 模型独立常驻，切换或退出不会停止 DLC 任务。
@@ -75,7 +76,7 @@ lifeai chat --url http://127.0.0.1:11435 --no-tunnel
 命令行参数优先。`--known-hosts` 可指定 SSH 主机记录文件。
 
 `-n / --max-tokens` 默认 256；`--temperature` 默认 0，上限 2（Qwen 服务仅支持 0）；
-`--timeout` 默认 7200 秒，`--load-timeout` 默认 1800 秒；`--system` 设置系统提示词；
+`--timeout` 默认 21600 秒（6 小时，最多 86400 秒），`--load-timeout` 默认 1800 秒；`--system` 设置系统提示词；
 `--no-stream` 等待完整回答后输出。上下文和输出上限由服务发布，超出时会报错。
 Flint 的 262144-token 上限包含模板、全部历史和预留输出；文件大小不能代替
 token 预算。需要为长文件腾出预算时，可先用 `/clear` 开启新会话。
@@ -84,7 +85,8 @@ token 预算。需要为长文件腾出预算时，可先用 `/clear` 开启新�
 客户端使用 `/healthz`、`/api/select`、`/api/chat`；模板在服务端生成。
 Ripple 同样连接路由的 11435 端口；DLC Bearer key 只由 DSW 适配器读取，不传到客户端。
 Ripple 当前完整回答后一次显示，`--no-stream` 也可使用；支持 system/user/assistant 多轮消息。
-该部署的总上下文为 8192 tokens、最大输出 512 tokens，超限会显示服务错误；
+上游支持异步任务时，Lumen 可显示真实预填充进度；中间心跳保持长请求连接，退出时取消本次任务。
+实际上下文上限由当前部署发布，只有通过对应阶段验收后才开放；最大输出仍为 512 tokens，超限会显示服务错误；
 TUI 显示输出 tokens、总耗时与服务发布的真实解码速率；上游未提供 decode 计时时不显示解码速度。
 也可连接旧版单模型 Qwen `/api/generate` 服务，但该服务无法切换到 Flint。
 服务部署与 FP4 worker 说明见 [console](../console/README.md)。

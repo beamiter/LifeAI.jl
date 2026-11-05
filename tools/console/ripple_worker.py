@@ -15,12 +15,17 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 MODEL = 'ricursiveAI/Ripple-65B-Preview'
-MAX_BODY = 16 * 1024 * 1024
-UPSTREAM_BODY = 4 * 1024 * 1024
+MAX_BODY = 128 * 1024 * 1024
+UPSTREAM_BODY = 128 * 1024 * 1024
+MAX_REPLY = 16 * 1024 * 1024
+MAX_MESSAGE_CHARS = 64 * 1024 * 1024
+MAX_TOTAL_MESSAGE_CHARS = 64 * 1024 * 1024
+POLL_INTERVAL = 1.0
+HEARTBEAT_INTERVAL = 10.0
 
 
 class APIError(Exception):
@@ -43,26 +48,27 @@ class Connection:
     output: int
     world_size: int
     projection_dtype: str = "BF16"
+    async_jobs: bool = False
 
 
 class RippleBackend:
-    def __init__(self, deployment, timeout=600):
+    def __init__(self, deployment, timeout=21600):
         self.deployment = Path(deployment)
         self.timeout = timeout
         self.opener = build_opener(ProxyHandler({}), NoRedirect())
         self.busy = threading.Lock()
 
-    def json_request(self, url, payload=None, key=None, timeout=None):
+    def json_request(self, url, payload=None, key=None, timeout=None, method=None):
         headers = {'Content-Type': 'application/json'}
         if key:
             headers['Authorization'] = 'Bearer ' + key
         data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode()
         if data is not None and len(data) > UPSTREAM_BODY:
-            raise APIError(413, 'Ripple request exceeds the 4 MiB upstream limit.')
+            raise APIError(413, 'Ripple request exceeds the 128 MiB upstream limit.')
         try:
-            request = Request(url, data=data, headers=headers)
+            request = Request(url, data=data, headers=headers, method=method)
             with self.opener.open(request, timeout=timeout or self.timeout) as response:
-                raw = response.read(MAX_BODY + 1)
+                raw = response.read(MAX_REPLY + 1)
         except HTTPError as error:
             detail = 'Ripple upstream rejected the request.'
             try:
@@ -76,7 +82,7 @@ class RippleBackend:
             raise APIError(error.code, detail) from None
         except OSError:
             raise APIError(503, 'Ripple DLC service is unreachable; check the DLC deployment and retry.') from None
-        if len(raw) > MAX_BODY:
+        if len(raw) > MAX_REPLY:
             raise APIError(502, 'Ripple response exceeds 16 MiB.')
         try:
             result = json.loads(raw)
@@ -133,25 +139,31 @@ class RippleBackend:
             entries = models.get('data')
             if not isinstance(entries, list) or not any(isinstance(m, dict) and m.get('id') == alias for m in entries):
                 raise APIError(502, 'Ripple authenticated model identity does not match the deployment.')
-            return Connection(endpoint, alias, key, context, output, world, dtype)
+            return Connection(endpoint, alias, key, context, output, world, dtype, health.get("async_jobs") is True)
         raise APIError(503, 'No healthy Ripple DLC endpoint is reachable from DSW.')
 
     def health(self):
         connection = self.connect()
         return dict(ready=True, model=MODEL, phase='ready', context_tokens=connection.context,
                     max_new_tokens=connection.output, streaming=False,
-                    backend='DLC tensor parallel', tensor_parallel=connection.world_size)
+                    backend='DLC tensor parallel', tensor_parallel=connection.world_size,
+                    max_input_bytes=64 * 1024 * 1024,max_message_chars=MAX_TOTAL_MESSAGE_CHARS,
+                    max_request_bytes=MAX_BODY,max_reply_bytes=MAX_REPLY,async_jobs=connection.async_jobs)
 
-    def generate(self, payload):
+    def prepare(self, payload):
         if not isinstance(payload, dict) or payload.get('model', MODEL) not in (MODEL, 'ripple'):
             raise APIError(400, 'Select model ripple for this worker.')
         messages = payload.get('messages')
         if not isinstance(messages, list) or not 1 <= len(messages) <= 64:
             raise APIError(400, 'messages must contain 1..64 chat messages.')
+        total_chars = 0
         for message in messages:
             if (not isinstance(message, dict) or message.get('role') not in ('system', 'user', 'assistant')
                     or not isinstance(message.get('content'), str)):
                 raise APIError(400, 'Each message needs a supported role and string content.')
+            total_chars += len(message['content'])
+            if len(message['content']) > MAX_MESSAGE_CHARS or total_chars > MAX_TOTAL_MESSAGE_CHARS:
+                raise APIError(413, 'Chat content exceeds the 64 Mi character limit.')
         options = payload.get('options', {})
         if not isinstance(options, dict) or type(payload.get('stream', True)) is not bool:
             raise APIError(400, 'Invalid options or stream flag.')
@@ -160,16 +172,84 @@ class RippleBackend:
             raise APIError(400, 'num_predict must be a positive integer.')
         if type(temperature) not in (int, float) or not math.isfinite(temperature) or not 0 <= temperature <= 2:
             raise APIError(400, 'temperature must be finite and between 0 and 2.')
+        connection = self.connect()
+        if count > connection.output:
+            raise APIError(400, f'num_predict must be 1..{connection.output}.')
+        request = dict(model=connection.model, messages=messages, max_tokens=count,
+                       temperature=temperature, stream=False)
+        if len(json.dumps(request, ensure_ascii=False).encode()) > UPSTREAM_BODY:
+            raise APIError(413, 'Ripple request exceeds the 128 MiB upstream limit.')
+        return connection, request
+
+    def poll_job(self, connection, request, on_progress):
+        deadline = time.monotonic() + self.timeout
+        created = self.json_request(connection.endpoint + '/v1/chat/completions/jobs',
+                                    request, key=connection.key, timeout=min(30, self.timeout))
+        job = created.get('id')
+        if not isinstance(job, str) or not job:
+            raise APIError(502, 'Ripple did not return a valid generation job ID.')
+        url = connection.endpoint + '/v1/chat/completions/jobs/' + quote(job, safe='')
+        completed = False
+        previous = None
+        last_emit = 0.0
+        try:
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise APIError(504, 'Ripple generation timed out; its owned job was cancelled.')
+                status = self.json_request(url, key=connection.key, timeout=min(30, remaining))
+                if status.get('id') != job:
+                    raise APIError(502, 'Ripple returned another generation job ID.')
+                state = status.get('status')
+                if state == 'completed':
+                    completed = True
+                    result = status.get('result')
+                    if not isinstance(result, dict):
+                        raise APIError(502, 'Ripple completed without a valid chat result.')
+                    return result
+                if state in ('failed', 'cancelled'):
+                    raise APIError(502 if state == 'failed' else 409,
+                                   str(status.get('error') or ('Ripple generation ' + state + '.')))
+                if state not in ('queued', 'running'):
+                    raise APIError(502, 'Ripple returned an invalid generation job status.')
+                phase = status.get('phase') or state
+                processed, total = status.get('prefill_processed'), status.get('prompt_eval_count')
+                if phase == 'prefill':
+                    if (type(processed) is not int or type(total) is not int
+                            or not 0 <= processed <= total or total <= 0):
+                        raise APIError(502, 'Ripple returned invalid prefill job progress.')
+                    fingerprint = (phase, processed, total)
+                else:
+                    fingerprint = (phase,)
+                now = time.monotonic()
+                if on_progress is not None and (fingerprint != previous or now - last_emit >= HEARTBEAT_INTERVAL):
+                    packet = dict(model=MODEL, response='', done=False, phase=phase)
+                    if phase == 'prefill':
+                        packet.update(prefill_processed=processed, prompt_eval_count=total)
+                    on_progress(packet)
+                    previous, last_emit = fingerprint, now
+                time.sleep(min(POLL_INTERVAL, max(0, deadline - time.monotonic())))
+        finally:
+            if not completed:
+                try:
+                    self.json_request(url, key=connection.key, method='DELETE', timeout=5)
+                except APIError:
+                    pass
+
+    def generate(self, payload, on_progress=None):
+        return self.generate_prepared(self.prepare(payload), on_progress)
+
+    def generate_prepared(self, prepared, on_progress=None):
         if not self.busy.acquire(blocking=False):
             raise APIError(409, 'Another Ripple response is in progress.')
         try:
-            connection = self.connect()
-            if count > connection.output:
-                raise APIError(400, f'num_predict must be 1..{connection.output}.')
+            connection, request = prepared
             started = time.monotonic()
-            body = self.json_request(connection.endpoint + '/v1/chat/completions',
-                dict(model=connection.model, messages=messages, max_tokens=count,
-                     temperature=temperature, stream=False), key=connection.key)
+            if connection.async_jobs:
+                body = self.poll_job(connection, request, on_progress)
+            else:
+                body = self.json_request(connection.endpoint + '/v1/chat/completions',
+                                         request, key=connection.key)
             elapsed = time.monotonic() - started
             try:
                 if body.get('model') not in (connection.model, MODEL):
@@ -224,7 +304,12 @@ def handler_for(backend):
             except APIError as error:
                 self.respond(200, dict(ready=False, model=MODEL, phase='error', error=str(error)))
 
+        def write_packet(self, packet):
+            self.wfile.write(json.dumps(packet, ensure_ascii=False).encode() + b'\n')
+            self.wfile.flush()
+
         def do_POST(self):
+            streaming = False
             try:
                 if self.path != '/api/chat':
                     raise APIError(404, 'Use /api/chat for Ripple.')
@@ -233,15 +318,33 @@ def handler_for(backend):
                 except ValueError:
                     raise APIError(400, 'Invalid Content-Length.')
                 if not 0 < length <= MAX_BODY:
-                    raise APIError(413, 'Request exceeds the 16 MiB native body limit.')
+                    raise APIError(413, 'Request exceeds the 128 MiB native body limit.')
                 try:
                     payload = json.loads(self.rfile.read(length))
                 except (ValueError, UnicodeError):
                     raise APIError(400, 'Invalid JSON.')
-                result = backend.generate(payload)
-                self.respond(200, result, stream=payload.get('stream', True))
+                prepared = backend.prepare(payload)
+                streaming = prepared[0].async_jobs and payload.get('stream', True)
+                if streaming:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/x-ndjson')
+                    self.send_header('Connection', 'close')
+                    self.end_headers()
+                    self.wfile.flush()
+                    self.close_connection = True
+                    result = backend.generate_prepared(prepared, self.write_packet)
+                    self.write_packet(result)
+                else:
+                    result = backend.generate_prepared(prepared)
+                    self.respond(200, result, stream=payload.get('stream', True))
             except APIError as error:
-                self.respond(error.status, dict(error=str(error)))
+                try:
+                    if streaming:
+                        self.write_packet(dict(model=MODEL, error=str(error), done=True))
+                    else:
+                        self.respond(error.status, dict(error=str(error)))
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
             except (BrokenPipeError, ConnectionResetError):
                 pass
     return Handler
@@ -252,7 +355,7 @@ def main():
     parser.add_argument('--deployment', required=True, type=Path)
     parser.add_argument('--host', choices=['127.0.0.1'], default='127.0.0.1')
     parser.add_argument('--port', type=int, default=11438)
-    parser.add_argument('--timeout', type=float, default=600)
+    parser.add_argument('--timeout', type=float, default=21600)
     args = parser.parse_args()
     if not math.isfinite(args.timeout) or not 0 < args.timeout <= 86400:
         parser.error('--timeout must be between 0 and 86400 seconds')

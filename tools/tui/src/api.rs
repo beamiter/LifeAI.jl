@@ -16,10 +16,10 @@ use std::time::{Duration, Instant};
 
 const MAX_JSON: usize = 1024 * 1024;
 const MAX_REPLY: usize = 16 * MAX_JSON;
-const MAX_REQUEST_BYTES: usize = 16 * 1024 * 1024;
+const MAX_REQUEST_BYTES: usize = 128 * 1024 * 1024;
 const MAX_MESSAGES: usize = 64;
-const MAX_MESSAGE_CHARS: usize = 4 * 1024 * 1024;
-pub(crate) const MAX_INPUT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_MESSAGE_CHARS: usize = 64 * 1024 * 1024;
+pub(crate) const MAX_INPUT_BYTES: usize = 64 * 1024 * 1024;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(3);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -331,25 +331,7 @@ impl Api {
             model.label()
         );
         let (context, _) = self.validate_limits(&health)?;
-        ensure!(
-            !messages.is_empty() && messages.len() <= MAX_MESSAGES,
-            "对话需包含 1 到 64 条消息；按 Ctrl+L 开始新对话。"
-        );
-        let mut total_chars = 0usize;
-        for message in messages {
-            let count = message.content.chars().count();
-            total_chars = total_chars.saturating_add(count);
-            ensure!(
-                count <= MAX_MESSAGE_CHARS && total_chars <= MAX_MESSAGE_CHARS,
-                "对话文本超过 4 Mi 字符限制；请缩短内容或按 Ctrl+L 清空。"
-            );
-        }
-        ensure!(
-            messages
-                .iter()
-                .all(|m| matches!(m.role.as_str(), "system" | "user" | "assistant")),
-            "消息角色必须为 system、user 或 assistant。"
-        );
+        validate_messages(messages, MAX_MESSAGE_CHARS)?;
         if model == Model::Qwen {
             ensure!(
                 self.temperature == 0.0,
@@ -382,7 +364,7 @@ impl Api {
         let body = serde_json::to_vec(&payload)?;
         ensure!(
             body.len() <= MAX_REQUEST_BYTES,
-            "对话超过服务 16 MiB 请求限制；请缩短内容或按 Ctrl+L 清空。"
+            "对话超过服务 128 MiB 请求限制；请缩短内容或按 Ctrl+L 清空。"
         );
         let response = self
             .client
@@ -479,6 +461,27 @@ impl Api {
         }
         Ok(result)
     }
+}
+
+fn validate_messages(messages: &[Message], maximum_chars: usize) -> Result<()> {
+    ensure!(
+        !messages.is_empty() && messages.len() <= MAX_MESSAGES,
+        "对话需包含 1 到 64 条消息；按 Ctrl+L 开始新对话。"
+    );
+    let mut total_chars = 0usize;
+    for message in messages {
+        let count = message.content.chars().count();
+        total_chars = total_chars.saturating_add(count);
+        ensure!(
+            count <= maximum_chars && total_chars <= maximum_chars,
+            "对话文本超过 64 Mi 字符限制；请缩短内容或按 Ctrl+L 清空。"
+        );
+        ensure!(
+            matches!(message.role.as_str(), "system" | "user" | "assistant"),
+            "消息角色必须为 system、user 或 assistant。"
+        );
+    }
+    Ok(())
 }
 
 fn prefill_progress(event: &Value) -> Result<Option<String>> {
@@ -926,19 +929,24 @@ mod tests {
             role: "user".into(),
             content: "问题".into(),
         };
-        let large = Message {
+        let mock = Mock::new(vec![response(health(Model::Flint))]);
+        assert!(
+            mock.api(false, 16)
+                .generate(Model::Flint, &vec![short; MAX_MESSAGES + 1], |_| {})
+                .is_err()
+        );
+        assert_eq!(mock.finish().len(), 1);
+        let msg = |text: &str| Message {
             role: "user".into(),
-            content: "x".repeat(MAX_MESSAGE_CHARS / 2 + 1),
+            content: text.into(),
         };
-        for messages in [vec![short; MAX_MESSAGES + 1], vec![large.clone(), large]] {
-            let mock = Mock::new(vec![response(health(Model::Flint))]);
-            assert!(
-                mock.api(false, 16)
-                    .generate(Model::Flint, &messages, |_| {})
-                    .is_err()
-            );
-            assert_eq!(mock.finish().len(), 1);
-        }
+        assert!(validate_messages(&[msg("中文🌟")], 3).is_ok());
+        assert!(validate_messages(&[msg("中文🌟x")], 3).is_err());
+        assert!(validate_messages(&[msg("中文"), msg("🌟x")], 3).is_err());
+        assert_eq!(MAX_MESSAGE_CHARS, 64 * 1024 * 1024);
+        assert_eq!(MAX_INPUT_BYTES, 64 * 1024 * 1024);
+        assert_eq!(MAX_REQUEST_BYTES, 128 * 1024 * 1024);
+        assert_eq!(MAX_REPLY, 16 * 1024 * 1024);
     }
 
     #[test]

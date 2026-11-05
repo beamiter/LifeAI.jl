@@ -1,0 +1,105 @@
+{
+  "repository": "ricursiveAI/Ripple-65B-Preview",
+  "revision": "e27e171792f303d74c048184e8259ba663cfa0d5",
+  "source_hashes": {
+    "configuration_ricursive.py": "002cb3915be9685eb962d617623bec14d45b5d6b5d46e689fac98a3b38cb6cf6",
+    "modeling_ricursive.py": "f83865ef643e273a6c9aecf1575e85c95ad01fd995b1e43c3c7a892765006bb3"
+  },
+  "torch_version": "2.7.0+cu128",
+  "device": "cuda",
+  "operation": "published RicursiveRotaryEmbedding.forward and apply_rotary_pos_emb",
+  "tensor_layout": "input/rotated (D,H,T); cosine/sine (D,T)",
+  "tensor_file": "rope-cuda.safetensors",
+  "cases": [
+    {
+      "name": "sparse_long",
+      "dim": 128,
+      "heads": 3,
+      "theta": 10000.0,
+      "positions_zero_based": [
+        0,
+        1,
+        1023,
+        1024,
+        4095,
+        4096,
+        4097,
+        8191,
+        8192,
+        32767,
+        32768,
+        131071,
+        131072,
+        262143,
+        262144,
+        524287,
+        524288,
+        1048575,
+        1048576,
+        2097151
+      ],
+      "input_shape": [
+        128,
+        3,
+        20
+      ]
+    },
+    {
+      "name": "window_crossing",
+      "dim": 128,
+      "heads": 3,
+      "theta": 10000.0,
+      "positions_zero_based": [
+        4094,
+        4095,
+        4096,
+        4097,
+        4098,
+        4099
+      ],
+      "input_shape": [
+        128,
+        3,
+        6
+      ]
+    },
+    {
+      "name": "near_128k",
+      "dim": 128,
+      "heads": 3,
+      "theta": 10000.0,
+      "positions_zero_based": [
+        131070,
+        131071,
+        131072,
+        131073,
+        131074,
+        131075
+      ],
+      "input_shape": [
+        128,
+        3,
+        6
+      ]
+    },
+    {
+      "name": "near_1mi",
+      "dim": 128,
+      "heads": 3,
+      "theta": 10000.0,
+      "positions_zero_based": [
+        1048574,
+        1048575,
+        1048576,
+        1048577,
+        1048578,
+        1048579
+      ],
+      "input_shape": [
+        128,
+        3,
+        6
+      ]
+    }
+  ]
+}

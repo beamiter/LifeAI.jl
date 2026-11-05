@@ -251,14 +251,23 @@ class RouterHTTPTests(unittest.TestCase):
 
     def test_long_utf8_chat_exceeds_old_body_cap_and_is_preserved(self):
         self.fixture.ready('flint')
-        content = '长上下文🌟' * 100000
-        self.assertGreater(len(content.encode()), 1024 * 1024)
+        content = '长上下文🌟' * 300000
+        self.assertGreater(len(content.encode()), 4 * 1024 * 1024)
         code, packets = self.fixture.chat(messages=[dict(role='user', content=content)])
         self.assertEqual(code, 200)
         self.assertTrue(packets[-1]['done'])
         request = [r for r in self.fixture.records() if r['event'] == 'REQUEST'][-1]
         self.assertEqual(request['payload']['messages'][0]['content'], content)
         self.assertEqual(self.fixture.manager.active_requests, 0)
+
+    def test_published_transport_limits_match_long_context_policy(self):
+        self.assertEqual(server.MAX_BODY_BYTES, 128 * 1024 * 1024)
+        self.assertEqual(server.MAX_MESSAGE_CHARS, 64 * 1024 * 1024)
+        self.assertEqual(server.MAX_TOTAL_MESSAGE_CHARS, 64 * 1024 * 1024)
+        code, health = self.fixture.request('/healthz')
+        self.assertEqual(code, 200)
+        self.assertEqual(health['max_request_bytes'], server.MAX_BODY_BYTES)
+        self.assertEqual(health['max_input_bytes'], 64 * 1024 * 1024)
 
     def test_chat_character_limits_fail_before_worker_post(self):
         self.fixture.ready('flint')

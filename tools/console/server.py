@@ -13,10 +13,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
-MAX_BODY_BYTES = 16 * 1024 * 1024
+MAX_BODY_BYTES = 128 * 1024 * 1024
 MAX_MESSAGES = 64
-MAX_MESSAGE_CHARS = 4 * 1024 * 1024
-MAX_TOTAL_MESSAGE_CHARS = 4 * 1024 * 1024
+MAX_MESSAGE_CHARS = 64 * 1024 * 1024
+MAX_TOTAL_MESSAGE_CHARS = 64 * 1024 * 1024
 
 
 class APIError(Exception):
@@ -79,7 +79,8 @@ class ModelManager:
                         max_new_tokens=self.worker_health.get('max_new_tokens', spec.get('max_new_tokens')),
                         load_seconds=round(time.monotonic() - self.load_started, 2)
                         if self.load_started and self.state == 'loading' else self.load_duration,
-                        models=self.catalog())
+                        models=self.catalog(),max_input_bytes=64 * 1024 * 1024,
+                        max_message_chars=MAX_TOTAL_MESSAGE_CHARS,max_request_bytes=MAX_BODY_BYTES)
 
     def select(self, name):
         model = self.resolve(name)
@@ -198,7 +199,7 @@ class ModelManager:
                 raise APIError(400, 'Use /api/chat with messages for this model.')
             messages = None
             if len(payload['prompt']) > MAX_TOTAL_MESSAGE_CHARS:
-                raise APIError(413, 'Prompt exceeds the 4 Mi character limit.')
+                raise APIError(413, 'Prompt exceeds the 64 Mi character limit.')
         else:
             messages = payload.get('messages')
             if not isinstance(messages, list) or not 1 <= len(messages) <= MAX_MESSAGES:
@@ -211,7 +212,7 @@ class ModelManager:
                 total_chars += len(message['content'])
                 if (len(message['content']) > MAX_MESSAGE_CHARS
                         or total_chars > MAX_TOTAL_MESSAGE_CHARS):
-                    raise APIError(413, 'Chat content exceeds the 4 Mi character limit.')
+                    raise APIError(413, 'Chat content exceeds the 64 Mi character limit.')
         options = payload.get('options', {})
         if not isinstance(options, dict) or type(payload.get('stream', True)) is not bool:
             raise APIError(400, 'Invalid options or stream flag.')
@@ -296,7 +297,7 @@ def handler_for(manager):
                     raise APIError(400, 'Invalid Content-Length.')
                 if not 0 < length <= MAX_BODY_BYTES:
                     self.close_connection = True
-                    raise APIError(413, 'JSON request must be between 1 byte and 16 MiB.')
+                    raise APIError(413, 'JSON request must be between 1 byte and 128 MiB.')
                 try:
                     payload = json.loads(self.rfile.read(length))
                 except (ValueError, UnicodeError):

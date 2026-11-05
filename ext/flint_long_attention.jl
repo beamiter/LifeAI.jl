@@ -218,7 +218,7 @@ _flint_long_array_context(array::SubArray) = _flint_long_array_context(parent(ar
 
 function LifeAI._flint_attention_long(query::CUDA.CuArray{Float32,3},
         key::CUDA.StridedCuArray{Float32,3},value::CUDA.StridedCuArray{Float32,3},
-        sinks::CUDA.CuVector{Float32},first_key_position::Integer,query_position::Integer,window::Integer)
+        sinks::CUDA.CuVector{Float32},first_key_position::Integer,query_position::Integer,window::Integer;max_query_batch::Int=512)
     d,heads,queries = size(query)
     d > 0 && heads > 0 && queries > 0 || throw(ArgumentError("Flint attention requires nonempty queries"))
     size(key) == size(value) && size(key,1) == d ||
@@ -234,7 +234,7 @@ function LifeAI._flint_attention_long(query::CUDA.CuArray{Float32,3},
     CUDA.context(query) == _flint_long_array_context(key) == _flint_long_array_context(value) ==
         CUDA.context(sinks) == context || throw(ArgumentError("Flint attention arrays must share the active CUDA context"))
     if queries >= 16
-        return _flint_attention_gemm(query,key,value,sinks,first_key_position,query_position,window)
+        return _flint_attention_gemm(query,key,value,sinks,first_key_position,query_position,window;max_query_batch)
     end
     return _flint_attention_splitk(query,key,value,sinks,first_key_position,query_position,window)
 end
@@ -265,11 +265,12 @@ end
 # and query microbatches together stay within one GiB of temporary storage.
 import NNlib: batched_mul!
 const _FLINT_GEMM_ATTN_SCRATCH_BYTES = 1024*1024*1024
-function _flint_gemm_attention_plan(d,heads,kvheads,queries,keys)
+function _flint_gemm_attention_plan(d,heads,kvheads,queries,keys;max_query_batch::Int=512)
+    max_query_batch>0 || throw(ArgumentError("attention query batch must be positive"))
     key_tile=min(max(1,keys),8192)
     fixed_bytes=2*d*kvheads*key_tile*sizeof(Float32)
     per_query=(key_tile*heads+2*d*heads+4*heads)*sizeof(Float32)
-    query_batch=min(queries,512,max(1,(_FLINT_GEMM_ATTN_SCRATCH_BYTES-fixed_bytes)÷per_query))
+    query_batch=min(queries,max_query_batch,max(1,(_FLINT_GEMM_ATTN_SCRATCH_BYTES-fixed_bytes)÷per_query))
     scratch_bytes=fixed_bytes+per_query*query_batch
     scratch_bytes<=_FLINT_GEMM_ATTN_SCRATCH_BYTES || throw(ArgumentError("Flint GEMM attention dimensions exceed scratch capacity"))
     return (;key_tile,query_batch,scratch_bytes)
@@ -400,11 +401,11 @@ function _flint_gemm_accumulate_kernel!(output,context,state,group,query_offset,
     return
 end
 
-function _flint_attention_gemm(query,key,value,sinks,first_key_position,query_position,window)
+function _flint_attention_gemm(query,key,value,sinks,first_key_position,query_position,window;max_query_batch::Int=512)
     d,heads,queries=size(query)
     kvheads,keys=size(key,2),size(key,3)
     group=heads÷kvheads
-    plan=_flint_gemm_attention_plan(d,heads,kvheads,queries,keys)
+    plan=_flint_gemm_attention_plan(d,heads,kvheads,queries,keys;max_query_batch)
     output=CUDA.zeros(Float32,d,heads,queries)
     keys==0 && return output
     packed_key=CUDA.CuArray{Float32}(undef,plan.key_tile,d,kvheads)

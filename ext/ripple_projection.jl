@@ -117,3 +117,13 @@ function LifeAI._ripple_linear(projection::RippleBF16Projection,input::CUDA.CuAr
         CUDA.unsafe_free!(converted)
     end
 end
+
+# Called only after restoring an owned prompt checkpoint, while inference is idle.
+function LifeAI._ripple_tp_reserve_prefix_layer(past::NamedTuple,capacity::Int)
+    past.key isa CUDA.StridedCuArray || return past
+    storage,end_slot=_flint_kv_storage(past.key,past.value,past,0,size(past.key,3),capacity)
+    CUDA.synchronize()
+    count=size(past.key,3)
+    return (key=view(storage.key,:,:,1:count),value=view(storage.value,:,:,1:count),
+        first_position=past.first_position,storage=storage,end_slot=count)
+end

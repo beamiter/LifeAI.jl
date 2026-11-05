@@ -1,6 +1,6 @@
 {
   "load_timeout": 1800,
-  "request_timeout": 7200,
+  "request_timeout": 21600,
   "models": [
     {
       "key": "qwen",
@@ -100,7 +100,9 @@
         "--deployment",
         "/jfs/application/user/bgl/LifeAI.jl/configs/deployment/ripple_tp8/deployment.json",
         "--port",
-        "11438"
+        "11438",
+        "--timeout",
+        "21600"
       ]
     }
   ]

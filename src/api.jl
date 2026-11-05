@@ -57,6 +57,7 @@ export RippleOffloadParameters, offload_ripple, ripple_offload_stats, load_hf_ri
 export quantize_ripple_checkpoint, load_ripple_quantized
 export AbstractRippleTPBackend, RippleTPReferenceBackend, ripple_nccl_backend, close_ripple_tp_backend!
 export RippleTensorParallelModel, RippleTPKVCache, reset_ripple_tp_cache!
+export RippleTPPrefixCache, reset_ripple_tp_prefix!, ripple_tp_prefix_stats
 export ripple_tensor_parallel_plan, ripple_tensor_partition, load_hf_ripple_tensor_parallel
 export hf_ripple_tp_forward, generate_ripple_tp_tokens, generate_ripple_tp, prepare_ripple_tp_projections!
 export load_hf_flint_model, verify_flint_checkpoint

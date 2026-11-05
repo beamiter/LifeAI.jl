@@ -95,8 +95,8 @@ function LifeAI._ripple_tp_run_ranks(f,b::RippleNCCLBackend)
     end
 end
 
-# Finished phases leave no incomplete collective. Reclaim previous forward's
-# temporaries here, while the eight persistent CUDA/cuBLAS task states survive.
+# Finished phases leave no incomplete collective. Reclaim at every prefill and
+# at bounded decode intervals; persistent CUDA/cuBLAS task states survive.
 function LifeAI._ripple_tp_before_forward!(b::RippleNCCLBackend,tokens::Int)
     b.decode_since_gc+=1
     if tokens>1 || b.decode_since_gc>=b.gc_interval
@@ -212,6 +212,17 @@ function LifeAI.prepare_ripple_tp_projections!(bundle::LifeAI.RippleTensorParall
     LifeAI._ripple_tp_root!(backend)
     GC.gc(false)
     return bundle
+end
+
+function LifeAI._ripple_tp_release_prefix!(backend::RippleNCCLBackend,large)
+    LifeAI._ripple_tp_compute_ranks(rank->nothing,backend)
+    GC.gc(large)
+    if large
+        LifeAI._ripple_tp_compute_ranks(backend) do rank
+            CUDA.reclaim()
+        end
+    end
+    return
 end
 
 function LifeAI.close_ripple_tp_backend!(b::RippleNCCLBackend)
