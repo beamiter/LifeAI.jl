@@ -14,6 +14,7 @@ function tp8_options(args)
         "api-key-file"=>get(ENV,"LIFEAI_API_KEY_FILE",""),
         "projection-mode"=>get(ENV,"LIFEAI_RIPPLE_PROJECTION_MODE","bf16_gemv"),
         "schedule"=>get(ENV,"LIFEAI_RIPPLE_SCHEDULE","merged"),
+        "gc-interval"=>get(ENV,"LIFEAI_RIPPLE_GC_INTERVAL","16"),
         "benchmark-variants"=>get(ENV,"LIFEAI_RIPPLE_BENCHMARK_VARIANTS","false"))
     mode="serve";i=1
     while i<=length(args)
@@ -33,6 +34,7 @@ function tp8_stats(bundle)
     backend=bundle.backend
     return (world_size=length(bundle.ranks),weights_per_rank=[quantized_parameter_bytes(r.parameters) for r in bundle.ranks],
         allreduce_rank_calls=backend.reductions[],allgather_rank_calls=backend.gathers[],
+        gc_interval=backend.gc_interval,gc_runs=backend.gc_runs,
         logical_allreduces=backend.reductions[]÷length(bundle.ranks),logical_allgathers=backend.gathers[]÷length(bundle.ranks))
 end
 
@@ -114,7 +116,8 @@ function tp8_main(args)
         ripple_tp_projection_checks(devices)
         ripple_tp_numerical_checks(n->ripple_nccl_backend(devices[1:n]);world_sizes=(count,))
     end
-    backend=ripple_nccl_backend(devices);bundle=nothing
+    gc_interval=parse(Int,options["gc-interval"])
+    backend=ripple_nccl_backend(devices;gc_interval);bundle=nothing
     try
         started=time()
         bundle=load_hf_ripple_tensor_parallel(options["model"];backend,dtype=BFloat16,
@@ -128,7 +131,7 @@ function tp8_main(args)
         options["benchmark-variants"] in ("true","false") || error("--benchmark-variants must be true or false")
         if options["benchmark-variants"]=="true"
             selected,benchmark=tp8_benchmark_variants(bundle,tokenizer,options["reference"],result_dir)
-            projection_mode=selected.projection;schedule=selected.schedule
+            projection_mode=selected.projection;schedule=selected.schedule;gc_interval=selected.gc_interval
             println(JSON3.write((phase="selected_variant",projection_mode=string(projection_mode),schedule=string(schedule),speedup=benchmark.speedup)));flush(stdout)
         else
             prepare_ripple_tp_projections!(bundle;mode=projection_mode)
@@ -136,7 +139,7 @@ function tp8_main(args)
         projection_dtype=projection_mode===:fp32 ? "Float32" : "BF16"
         parity=tp8_validate(bundle,tokenizer,options["reference"],result_dir;schedule)
         smokes=tp8_smoke(bundle,tokenizer,result_dir,chunk_size;schedule,projection_mode)
-        receipt=(phase="validated",world_size=count,model="ricursiveAI/Ripple-65B-Preview",weights="original BF16 checkpoint values",projection_dtype=projection_dtype,projection_mode=string(projection_mode),schedule=string(schedule),activations="Float32",
+        receipt=(phase="validated",world_size=count,model="ricursiveAI/Ripple-65B-Preview",weights="original BF16 checkpoint values",projection_dtype=projection_dtype,projection_mode=string(projection_mode),schedule=string(schedule),gc_interval=gc_interval,activations="Float32",
             hardware=hardware,nccl=string(NCCL.version()),load_seconds=load_seconds,parity=parity,stats=tp8_stats(bundle),
             code_revision=get(ENV,"LIFEAI_CODE_REVISION","unknown"),validated_at=string(now(UTC)))
         tp8_write(joinpath(result_dir,"validation.json"),receipt)
@@ -186,7 +189,7 @@ function tp8_main(args)
                     response(200,(id="chatcmpl-"*string(uuid4()),object="chat.completion",created=floor(Int,time()),model=model_id,
                         choices=[(index=0,message=(role="assistant",content=text),finish_reason=ended ? "stop" : "length")],
                         usage=(prompt_tokens=length(ids),completion_tokens=length(tokens),total_tokens=length(ids)+length(tokens)),
-                        lifeai=(tensor_parallel=count,weight_dtype=projection_dtype,activation_dtype="Float32",projection_mode=string(projection_mode),schedule=string(schedule),
+                        lifeai=(tensor_parallel=count,weight_dtype=projection_dtype,activation_dtype="Float32",projection_mode=string(projection_mode),schedule=string(schedule),gc_interval=gc_interval,
                             duration_seconds=time()-started,prefill_seconds=prefill_end[]-started,
                             decode_tokens_per_second=length(times)>1 ? (length(times)-1)/(times[end]-times[1]) : nothing)))
                 end

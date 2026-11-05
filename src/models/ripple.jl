@@ -53,8 +53,20 @@ function _ripple_attention(c, parameters, p, x, seed, layer, past, position; cac
     return _ripple_linear(parameters[p*"o_proj.weight"], output), appended.updated
 end
 
-function _ripple_mlp(c, parameters, p, x)
+function _ripple_gate_product(gate,up,limit)
+    if limit===nothing
+        return (gate ./ (1f0 .+ exp.(-gate))) .* up
+    end
+    # Min/clamp are selections of existing Float32 values. Fuse them with the
+    # activation instead of materializing two additional device matrices.
+    return @. (min(gate,limit)/(1f0+exp(-min(gate,limit))))*clamp(up,-limit,limit)
+end
+
+function _ripple_mlp(c, parameters, p, x;fuse::Bool=false)
     gate, up = _ripple_linear_multi((parameters[p*"gate_proj.weight"], parameters[p*"up_proj.weight"]), x)
+    if fuse
+        return _ripple_linear(parameters[p*"down_proj.weight"],_ripple_gate_product(gate,up,c.ffn_clamp_threshold))
+    end
     if c.ffn_clamp_threshold !== nothing
         # The SiLU gate is clipped only above; the up projection on both sides.
         limit = c.ffn_clamp_threshold

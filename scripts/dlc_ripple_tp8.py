@@ -77,6 +77,7 @@ def build_request(config, root, revision):
         'LIFEAI_CODE_ROOT': str(code), 'LIFEAI_SERVICE_PORT': str(config['port']),
         'LIFEAI_RIPPLE_PROJECTION_MODE': config.get('projection_mode', 'bf16_gemv'),
         'LIFEAI_RIPPLE_SCHEDULE': config.get('schedule', 'merged'),
+        'LIFEAI_RIPPLE_GC_INTERVAL': str(config.get('gc_interval', 16)),
         'LIFEAI_RIPPLE_BENCHMARK_VARIANTS': str(config.get('benchmark_variants', False)).lower()
     }
     return {

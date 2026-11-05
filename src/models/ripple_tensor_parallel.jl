@@ -96,6 +96,7 @@ _ripple_projection_array(weight)=weight
 function _ripple_bf16_projection end
 
 _ripple_tp_before_forward!(b::AbstractRippleTPBackend)=nothing
+_ripple_tp_before_forward!(b::AbstractRippleTPBackend,tokens::Int)=_ripple_tp_before_forward!(b)
 close_ripple_tp_backend!(b::RippleTPReferenceBackend)=nothing
 
 function ripple_tensor_parallel_plan(c::RippleConfig,world_size::Integer)
@@ -263,7 +264,7 @@ function hf_ripple_tp_forward(bundle::RippleTensorParallelModel,token_ids::Abstr
     schedule in (:staged,:merged) || throw(ArgumentError("invalid Ripple TP schedule"))
     merged=schedule===:merged
     clock=on_stage===nothing ? UInt64(0) : time_ns()
-    _ripple_tp_before_forward!(b)
+    _ripple_tp_before_forward!(b,length(ids))
     clock=_ripple_tp_stage(on_stage,0,:gc,clock)
     states=_ripple_tp_compute_ranks(b) do rank
         parameters=bundle.ranks[rank+1].parameters
@@ -294,7 +295,7 @@ function hf_ripple_tp_forward(bundle::RippleTensorParallelModel,token_ids::Abstr
             parameters=bundle.ranks[rank+1].parameters;state=states[rank+1]
             x=attention[rank+1].x.+_flint_norm(attention[rank+1].value,parameters[prefix*"post_attention_layernorm.weight"],c.rms_norm_eps)
             normalized=_flint_norm(x,parameters[prefix*"pre_feedforward_layernorm.weight"],c.rms_norm_eps)
-            value=_ripple_mlp(bundle.local_model,parameters,prefix*"mlp.",normalized)
+            value=_ripple_mlp(bundle.local_model,parameters,prefix*"mlp.",normalized;fuse=merged)
             push!(state.updates,attention[rank+1].updated)
             (x=x,value=value,seed=state.seed,updates=state.updates,pending=value)
         end

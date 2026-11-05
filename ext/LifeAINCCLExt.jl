@@ -14,17 +14,21 @@ mutable struct RippleNCCLBackend <: LifeAI.AbstractRippleTPBackend
     run_lock::ReentrantLock
     requests::Vector{Channel{Any}}
     workers::Vector{Task}
+    gc_interval::Int
+    decode_since_gc::Int
+    gc_runs::Int
     closed::Bool
 end
 
-function LifeAI.ripple_nccl_backend(devices::AbstractVector)
+function LifeAI.ripple_nccl_backend(devices::AbstractVector;gc_interval::Integer=16)
+    !(gc_interval isa Bool) && gc_interval>0 || throw(ArgumentError("Ripple GC interval must be positive"))
     devs=CUDA.CuDevice[d isa CUDA.CuDevice ? d : CUDA.CuDevice(d) for d in devices]
     !isempty(devs) && length(unique(devs))==length(devs) || throw(ArgumentError("Ripple TP devices must be nonempty and unique"))
     Threads.nthreads()>=length(devs) || throw(ArgumentError("Ripple TP needs at least one Julia thread per GPU; set JULIA_NUM_THREADS"))
     communicators=NCCL.Communicators(devs)
     streams=CUDA.CuStream[CUDA.device!(()->CUDA.CuStream(),dev) for dev in devs]
     backend=RippleNCCLBackend(devs,streams,communicators,Threads.Atomic{Int}(0),Threads.Atomic{Int}(0),
-        ReentrantLock(),ReentrantLock(),[Channel{Any}(1) for _ in devs],Task[],false)
+        ReentrantLock(),ReentrantLock(),[Channel{Any}(1) for _ in devs],Task[],Int(gc_interval),Int(gc_interval),0,false)
     for rank in 0:length(devs)-1
         push!(backend.workers,Threads.@spawn begin
             LifeAI._ripple_tp_with_rank(backend,rank) do
@@ -93,7 +97,13 @@ end
 
 # Finished phases leave no incomplete collective. Reclaim previous forward's
 # temporaries here, while the eight persistent CUDA/cuBLAS task states survive.
-LifeAI._ripple_tp_before_forward!(b::RippleNCCLBackend)=GC.gc(false)
+function LifeAI._ripple_tp_before_forward!(b::RippleNCCLBackend,tokens::Int)
+    b.decode_since_gc+=1
+    if tokens>1 || b.decode_since_gc>=b.gc_interval
+        GC.gc(false);b.decode_since_gc=0;b.gc_runs+=1
+    end
+    return nothing
+end
 
 function LifeAI._ripple_tp_upload(b::RippleNCCLBackend,rank,raw,dtype,shape,target)
     source_type=dtype=="BF16" ? BFloat16 : dtype=="F32" ? Float32 : throw(ArgumentError("unsupported Ripple TP source dtype"))

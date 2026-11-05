@@ -19,6 +19,13 @@ function ripple_nccl_transport_checks(devices)
             GC.gc(false)
         end
         @test backend.reductions[]==3*n
+        backend.gc_interval=4;backend.decode_since_gc=0;before=backend.gc_runs
+        for _ in 1:3;LifeAI._ripple_tp_before_forward!(backend,1);end
+        @test backend.gc_runs==before
+        LifeAI._ripple_tp_before_forward!(backend,1)
+        @test backend.gc_runs==before+1
+        LifeAI._ripple_tp_before_forward!(backend,32)
+        @test backend.gc_runs==before+2
         @test LifeAI._ripple_tp_compute_ranks(rank->objectid(current_task()),backend)==objectid.(backend.workers)
     finally
         close_ripple_tp_backend!(backend)
