@@ -1,17 +1,25 @@
 {
-  "job_id": "dlc1lros97lm3mxo",
-  "run_dir": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-20261105T104928Z",
-  "server_code_revision": "e067d018a455f82afb985563d7cbebe6ea1f91be",
-  "console_url": "https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlc1lros97lm3mxo",
-  "endpoint": "http://10.68.4.203:18085",
-  "api_base": "http://10.68.4.203:18085/v1",
-  "api_key_file": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-20261105T104928Z/credentials/api_key",
+  "job_id": "dlc1e0h0crzzqys0",
+  "run_dir": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context-bounded-20261105T114011Z",
+  "server_code_revision": "aea3e4f284f1c0e63a540ae31c59c70ae4cd874b",
+  "console_url": "https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlc1e0h0crzzqys0",
+  "endpoint": "http://10.68.4.208:18085",
+  "api_base": "http://10.68.4.208:18085/v1",
+  "api_key_file": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context-bounded-20261105T114011Z/credentials/api_key",
   "model_id": "lifeai-ripple65b-tp8",
-  "validated_context_tokens": 131072,
+  "validated_context_tokens": 1048576,
   "configured_context_tokens": 1048576,
   "validated_context_stages": [
-    131072
+    131072,
+    262144,
+    524288,
+    1048576
   ],
-  "stage_evidence": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-20261105T104928Z/results/context-128k-pilot.json",
-  "verified_at": "2026-11-05T11:04:09.483340+00:00"
+  "stage_evidence": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context-bounded-20261105T114011Z/results/context-stages.json",
+  "stage_evidence_sha256": "c7451237587248dd8ed0efcae8e0008675820e47605e4bc9f9736c7feff884c3",
+  "additional_stage_evidence": {
+    "131072": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-20261105T104928Z/results/context-128k-pilot.json"
+  },
+  "context_validation_completed_at": "2026-11-05T13:12:10.743432+00:00",
+  "verified_at": "2026-11-05T13:12:57.333385+00:00"
 }

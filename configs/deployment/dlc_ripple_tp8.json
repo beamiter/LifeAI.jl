@@ -37,5 +37,13 @@
   "projection_mode": "bf16_gemv",
   "schedule": "merged",
   "gc_interval": 16,
-  "benchmark_variants": false
+  "benchmark_variants": false,
+  "max_context": 1048576,
+  "prefill_chunk_size": 2048,
+  "prefill_query_batch": 2048,
+  "prefill_gc_layers": 8,
+  "prefix_cache": true,
+  "max_body_bytes": 134217728,
+  "request_timeout": 21600,
+  "julia_threads": "16,1"
 }
