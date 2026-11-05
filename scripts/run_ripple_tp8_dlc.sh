@@ -10,6 +10,8 @@ nvidia-smi --query-gpu=index,name,uuid,driver_version,memory.total --format=csv 
 nvidia-smi topo -m > "$LIFEAI_RESULT_DIR/topology.txt"
 export JULIA_NUM_THREADS="${JULIA_NUM_THREADS:-16}"
 export OPENBLAS_NUM_THREADS=1
+python3 scripts/monitor_ripple_tp8.py "$$" "$LIFEAI_RESULT_DIR" > "$LIFEAI_RESULT_DIR/monitor.log" 2>&1 &
+exec > >(tee -a "$LIFEAI_RESULT_DIR/service.log") 2>&1
 exec "${LIFEAI_JULIA:?}" --startup-file=no -O1 --project=configs/deployment/ripple_tp8 \
   scripts/run_ripple_tp8_server.jl --gpus 8 \
   --model "$LIFEAI_MODEL_DIR" --reference "$LIFEAI_REFERENCE_DIR" \
