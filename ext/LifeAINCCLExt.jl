@@ -171,6 +171,39 @@ function LifeAI._ripple_tp_allgather_batch(b::RippleNCCLBackend,values)
     end
 end
 
+function LifeAI.prepare_ripple_tp_projections!(bundle::LifeAI.RippleTensorParallelModel{RippleNCCLBackend};mode::Symbol=:bf16_gemv)
+    mode in (:reference,:bf16_gemv,:fp32) || throw(ArgumentError("unsupported Ripple projection mode"))
+    backend=bundle.backend
+    LifeAI._ripple_tp_run_ranks(backend) do rank
+        LifeAI._ripple_tp_with_rank(backend,rank) do
+            parameters=bundle.ranks[rank+1].parameters
+            for name in sort!(collect(keys(parameters)))
+                name=="model.embed_tokens.weight" && continue
+                weight=LifeAI._ripple_projection_array(parameters[name])
+                ndims(weight)==2 || continue
+                eltype(weight) in (BFloat16,Float32) || throw(ArgumentError("unsupported dense projection dtype"))
+                target=mode===:fp32 ? Float32 : BFloat16
+                if eltype(weight)!==target
+                    converted=target.(weight)
+                    if target===BFloat16 && !all(Float32.(converted).==weight)
+                        CUDA.unsafe_free!(converted)
+                        throw(ArgumentError("projection values cannot be represented losslessly as BF16"))
+                    end
+                    CUDA.synchronize(backend.streams[rank+1])
+                    parameters[name]=mode===:bf16_gemv ? LifeAI._ripple_bf16_projection(converted) : converted
+                    CUDA.unsafe_free!(weight)
+                else
+                    parameters[name]=mode===:bf16_gemv ? LifeAI._ripple_bf16_projection(weight) : weight
+                end
+            end
+            CUDA.synchronize(backend.streams[rank+1])
+        end
+    end
+    LifeAI._ripple_tp_root!(backend)
+    GC.gc(false)
+    return bundle
+end
+
 function LifeAI.close_ripple_tp_backend!(b::RippleNCCLBackend)
     for queue in b.requests;isopen(queue) && close(queue);end
     for worker in b.workers;wait(worker);end

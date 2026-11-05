@@ -42,6 +42,7 @@ class Connection:
     context: int
     output: int
     world_size: int
+    projection_dtype: str = "BF16"
 
 
 class RippleBackend:
@@ -103,6 +104,9 @@ class RippleBackend:
         if (any(type(v) is not int or v <= 0 for v in (context, output, world))
                 or output >= context):
             raise APIError(502, 'Ripple deployment did not publish valid generation limits.')
+        dtype = ready.get('projection_dtype', 'BF16')
+        if dtype not in ('BF16', 'Float32'):
+            raise APIError(502, 'Ripple published an unsupported projection dtype.')
         alias = ready.get('model_id')
         if not isinstance(alias, str) or not alias:
             raise APIError(502, 'Ripple deployment did not publish its model ID.')
@@ -129,7 +133,7 @@ class RippleBackend:
             entries = models.get('data')
             if not isinstance(entries, list) or not any(isinstance(m, dict) and m.get('id') == alias for m in entries):
                 raise APIError(502, 'Ripple authenticated model identity does not match the deployment.')
-            return Connection(endpoint, alias, key, context, output, world)
+            return Connection(endpoint, alias, key, context, output, world, dtype)
         raise APIError(503, 'No healthy Ripple DLC endpoint is reachable from DSW.')
 
     def health(self):
@@ -184,10 +188,17 @@ class RippleBackend:
                 raise APIError(502, 'Ripple returned an incomplete or invalid chat completion.') from None
             # Upstream is non-streaming. Publish exactly one complete native event,
             # with end-to-end duration rather than inventing a decode rate.
-            return dict(model=MODEL, response=text, done=True, done_reason=finish,
+            result = dict(model=MODEL, response=text, done=True, done_reason=finish,
                         prompt_eval_count=prompt, eval_count=tokens, total_duration=int(elapsed * 1e9),
-                        lifeai=dict(tensor_parallel=connection.world_size, weight_dtype='BF16',
+                        lifeai=dict(tensor_parallel=connection.world_size, weight_dtype=connection.projection_dtype,
                                     activation_dtype='Float32', duration_seconds=elapsed, streaming=False))
+            timing = body.get('lifeai', {})
+            if isinstance(timing, dict):
+                for field in ('decode_tokens_per_second', 'prefill_seconds'):
+                    value = timing.get(field)
+                    if type(value) in (int, float) and math.isfinite(value) and value >= 0:
+                        result['lifeai'][field] = value
+            return result
         finally:
             self.busy.release()
 

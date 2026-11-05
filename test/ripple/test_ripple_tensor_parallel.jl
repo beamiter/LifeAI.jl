@@ -14,21 +14,21 @@ const RIPPLE_TP_FIXTURE=joinpath(@__DIR__,"fixtures","tp8")
     @test_throws ArgumentError ripple_tensor_partition(c,"lm_head.weight",8,8)
 end
 
-function ripple_tp_numerical_checks(backend_factory;world_sizes=(1,2,4,8))
+function ripple_tp_numerical_checks(backend_factory;world_sizes=(1,2,4,8),schedules=(:staged,:merged))
     reference=JSON3.read(read(joinpath(RIPPLE_TP_FIXTURE,"reference.json"),String))
     ids=Int.(reference["input_ids"]).+1
     expected=hcat((Float32.(row) for row in reference["logits"])...)
-    for n in world_sizes
+    for n in world_sizes, schedule in schedules
         backend=backend_factory(n)
         try
             bundle=load_hf_ripple_tensor_parallel(RIPPLE_TP_FIXTURE;backend,dtype=Float32)
             @test size(bundle.ranks[1].parameters["model.layers.0.self_attn.q_proj.weight"],1)==64÷n
-            actual=Array(hf_ripple_tp_forward(bundle,ids))
+            actual=Array(hf_ripple_tp_forward(bundle,ids;schedule))
             @test actual ≈ expected atol=7f-5 rtol=7f-5
-            @test Array(hf_ripple_tp_forward(bundle,ids;last_only=true)) ≈ expected[:,end:end] atol=7f-5 rtol=7f-5
+            @test Array(hf_ripple_tp_forward(bundle,ids;last_only=true,schedule)) ≈ expected[:,end:end] atol=7f-5 rtol=7f-5
             cache=RippleTPKVCache(bundle);outputs=Matrix{Float32}[];offset=0
             for count in (2,3,length(ids)-5)
-                push!(outputs,Array(hf_ripple_tp_forward(bundle,ids[offset+1:offset+count];cache)))
+                push!(outputs,Array(hf_ripple_tp_forward(bundle,ids[offset+1:offset+count];cache,schedule)))
                 offset+=count
             end
             @test hcat(outputs...) ≈ expected atol=7f-5 rtol=7f-5
@@ -37,8 +37,8 @@ function ripple_tp_numerical_checks(backend_factory;world_sizes=(1,2,4,8))
             @test size(cache.ranks[1].layers[1].key,3)==2
             @test reset_ripple_tp_cache!(cache)===cache
             @test cache.tokens==0
-            @test generate_ripple_tp_tokens(bundle,ids;max_new_tokens=4,temperature=0,eos_ids=Int[],prefill_chunk_size=3)==Int.(reference["greedy_tokens"]).+1
-            @test generate_ripple_tp_tokens(bundle,ids;max_new_tokens=0)==Int[]
+            @test generate_ripple_tp_tokens(bundle,ids;max_new_tokens=4,temperature=0,eos_ids=Int[],prefill_chunk_size=3,schedule)==Int.(reference["greedy_tokens"]).+1
+            @test generate_ripple_tp_tokens(bundle,ids;max_new_tokens=0,schedule)==Int[]
             @test_throws ArgumentError hf_ripple_tp_forward(bundle,[0])
             @test_throws ArgumentError hf_ripple_tp_forward(bundle,[true])
             @test_throws ArgumentError generate_ripple_tp_tokens(bundle,ids;max_new_tokens=true)

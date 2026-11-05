@@ -17,7 +17,9 @@ function reset_ripple_cache!(cache::RippleKVCache)
     return cache
 end
 
-function _ripple_attention(c, parameters, p, x, seed, layer, past, position; cache_capacity=0)
+_ripple_sinks(x,heads)=_flint_like(x,fill(-Inf32,heads))
+
+function _ripple_attention(c, parameters, p, x, seed, layer, past, position; cache_capacity=0,reuse_constants::Bool=false)
     d, heads, kvheads, n = c.head_dim, c.num_attention_heads, c.num_key_value_heads, size(x, 2)
     q0, k0 = _ripple_linear_multi((parameters[p*"q_proj.weight"], parameters[p*"k_proj.weight"]), x)
     q = _flint_norm(reshape(q0, d, heads, n), parameters[p*"q_norm.weight"], c.rms_norm_eps)
@@ -40,7 +42,7 @@ function _ripple_attention(c, parameters, p, x, seed, layer, past, position; cac
     appended = _flint_kv_append(k, v, past, position, window; capacity_hint=cache_capacity)
     # Ripple has ordinary softmax, without Flint's learned attention sinks.
     # A -Inf sink has exactly zero probability in the shared attention primitive.
-    sinks = _flint_like(x, fill(-Inf32, heads))
+    sinks = reuse_constants ? _ripple_sinks(x,heads) : _flint_like(x,fill(-Inf32,heads))
     context = _flint_attention_long(q, appended.key, appended.value, sinks,
         appended.first_position, position, window)
     output = reshape(context, d*heads, n)

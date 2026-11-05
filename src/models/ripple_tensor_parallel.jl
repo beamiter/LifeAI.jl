@@ -82,6 +82,19 @@ end
 """Create a CUDA/NCCL backend after loading `CUDA` and `NCCL`. Devices must be unique."""
 function ripple_nccl_backend end
 function close_ripple_tp_backend! end
+
+"""
+    prepare_ripple_tp_projections!(bundle; mode=:bf16_gemv)
+
+Choose `:reference` (original BF16-to-FP32 GEMM), `:bf16_gemv` (direct BF16
+single-token projections with Float32 accumulation), or `:fp32` (resident
+FP32 projections). Only call while idle. Conversions back to BF16 must be
+lossless; the source checkpoint values are never quantized.
+"""
+function prepare_ripple_tp_projections! end
+_ripple_projection_array(weight)=weight
+function _ripple_bf16_projection end
+
 _ripple_tp_before_forward!(b::AbstractRippleTPBackend)=nothing
 close_ripple_tp_backend!(b::RippleTPReferenceBackend)=nothing
 
@@ -229,9 +242,16 @@ function _ripple_tp_allgather_batch(b,values)
     end
 end
 
+@inline function _ripple_tp_stage(callback,layer,stage,started)
+    callback===nothing && return UInt64(0)
+    stopped=time_ns();callback(layer,stage,Float64(stopped-started)/1e9)
+    return time_ns()
+end
+
 function hf_ripple_tp_forward(bundle::RippleTensorParallelModel,token_ids::AbstractVector{<:Integer};
         cache::Union{Nothing,RippleTPKVCache}=nothing,last_only::Bool=false,
-        output_logits::Bool=true,cache_capacity::Integer=0)
+        output_logits::Bool=true,cache_capacity::Integer=0,
+        schedule::Symbol=:merged,on_stage=nothing)
     c=bundle.model;b=bundle.backend;n=_ripple_tp_world(b)
     !isempty(token_ids) && !(eltype(token_ids)<:Bool) || throw(ArgumentError("invalid Ripple TP input IDs"))
     ids=Int.(collect(token_ids))
@@ -240,49 +260,75 @@ function hf_ripple_tp_forward(bundle::RippleTensorParallelModel,token_ids::Abstr
     position=cache===nothing ? 0 : cache.tokens
     length(ids)<=c.max_position_embeddings-position || throw(ArgumentError("Ripple TP context limit exceeded"))
     !(cache_capacity isa Bool) && 0<=cache_capacity<=c.max_position_embeddings || throw(ArgumentError("invalid Ripple TP cache reservation"))
+    schedule in (:staged,:merged) || throw(ArgumentError("invalid Ripple TP schedule"))
+    merged=schedule===:merged
+    clock=on_stage===nothing ? UInt64(0) : time_ns()
     _ripple_tp_before_forward!(b)
+    clock=_ripple_tp_stage(on_stage,0,:gc,clock)
     states=_ripple_tp_compute_ranks(b) do rank
         parameters=bundle.ranks[rank+1].parameters
         x=permutedims(Float32.(parameters["model.embed_tokens.weight"][ids,:]))
         c.embed_scale===nothing || (x=x.*c.embed_scale)
-        (x=x,seed=x,updates=Any[])
+        (x=x,seed=x,updates=Any[],pending=nothing)
     end
+    clock=_ripple_tp_stage(on_stage,0,:embedding,clock)
     for layer in 1:c.num_hidden_layers
         prefix="model.layers.$(layer-1)."
         attention=_ripple_tp_compute_ranks(b) do rank
             parameters=bundle.ranks[rank+1].parameters;state=states[rank+1]
-            normalized=_flint_norm(state.x,parameters[prefix*"input_layernorm.weight"],c.rms_norm_eps)
+            x=state.x
+            if merged && layer>1
+                previous="model.layers.$(layer-2).post_feedforward_layernorm.weight"
+                x=x.+_flint_norm(state.pending,parameters[previous],c.rms_norm_eps)
+            end
+            normalized=_flint_norm(x,parameters[prefix*"input_layernorm.weight"],c.rms_norm_eps)
             past=cache===nothing ? nothing : cache.ranks[rank+1].layers[layer]
             value,updated=_ripple_attention(bundle.local_model,parameters,prefix*"self_attn.",normalized,
-                state.seed,layer,past,position;cache_capacity=Int(cache_capacity))
-            (;value,updated)
+                state.seed,layer,past,position;cache_capacity=Int(cache_capacity),reuse_constants=merged)
+            (;x,value,updated)
         end
+        clock=_ripple_tp_stage(on_stage,layer,:attention,clock)
         _ripple_tp_allreduce_batch!(b,[item.value for item in attention])
+        clock=_ripple_tp_stage(on_stage,layer,:attention_reduce,clock)
         feedforward=_ripple_tp_compute_ranks(b) do rank
             parameters=bundle.ranks[rank+1].parameters;state=states[rank+1]
-            x=state.x.+_flint_norm(attention[rank+1].value,parameters[prefix*"post_attention_layernorm.weight"],c.rms_norm_eps)
+            x=attention[rank+1].x.+_flint_norm(attention[rank+1].value,parameters[prefix*"post_attention_layernorm.weight"],c.rms_norm_eps)
             normalized=_flint_norm(x,parameters[prefix*"pre_feedforward_layernorm.weight"],c.rms_norm_eps)
             value=_ripple_mlp(bundle.local_model,parameters,prefix*"mlp.",normalized)
-            (;x,value)
-        end
-        _ripple_tp_allreduce_batch!(b,[item.value for item in feedforward])
-        states=_ripple_tp_compute_ranks(b) do rank
-            parameters=bundle.ranks[rank+1].parameters;state=states[rank+1]
-            x=feedforward[rank+1].x.+_flint_norm(feedforward[rank+1].value,
-                parameters[prefix*"post_feedforward_layernorm.weight"],c.rms_norm_eps)
             push!(state.updates,attention[rank+1].updated)
-            (x=x,seed=state.seed,updates=state.updates)
+            (x=x,value=value,seed=state.seed,updates=state.updates,pending=value)
         end
+        clock=_ripple_tp_stage(on_stage,layer,:feedforward,clock)
+        _ripple_tp_allreduce_batch!(b,[item.value for item in feedforward])
+        clock=_ripple_tp_stage(on_stage,layer,:feedforward_reduce,clock)
+        states=if merged
+            feedforward
+        else
+            _ripple_tp_compute_ranks(b) do rank
+                parameters=bundle.ranks[rank+1].parameters;state=states[rank+1]
+                x=feedforward[rank+1].x.+_flint_norm(feedforward[rank+1].value,
+                    parameters[prefix*"post_feedforward_layernorm.weight"],c.rms_norm_eps)
+                (x=x,seed=state.seed,updates=state.updates,pending=nothing)
+            end
+        end
+        clock=_ripple_tp_stage(on_stage,layer,:residual,clock)
     end
     logits=if output_logits
         local_logits=_ripple_tp_compute_ranks(b) do rank
             parameters=bundle.ranks[rank+1].parameters;x=states[rank+1].x
+            if merged
+                final_norm_name="model.layers.$(c.num_hidden_layers-1).post_feedforward_layernorm.weight"
+                x=x.+_flint_norm(states[rank+1].pending,parameters[final_norm_name],c.rms_norm_eps)
+            end
             last_only && (x=x[:,end:end])
             x=_flint_norm(x,parameters["model.norm.weight"],c.rms_norm_eps)
             head=c.tie_word_embeddings ? parameters["model.embed_tokens.weight"][bundle.ranks[rank+1].vocabulary_rows,:] : parameters["lm_head.weight"]
             _ripple_linear(head,x)
         end
-        _ripple_tp_allgather_batch(b,local_logits)[1]
+        clock=_ripple_tp_stage(on_stage,c.num_hidden_layers,:head,clock)
+        result=_ripple_tp_allgather_batch(b,local_logits)[1]
+        clock=_ripple_tp_stage(on_stage,c.num_hidden_layers,:gather,clock)
+        result
     else
         nothing
     end
@@ -299,7 +345,8 @@ end
 
 function generate_ripple_tp_tokens(bundle,prompt::AbstractVector{<:Integer};max_new_tokens::Integer=128,
         temperature::Real=0f0,top_k=nothing,top_p=1f0,rng=default_rng(),
-        eos_ids=bundle.model.eos_token_id.+1,prefill_chunk_size::Integer=256,on_token=nothing,on_prefill=nothing)
+        eos_ids=bundle.model.eos_token_id.+1,prefill_chunk_size::Integer=256,on_token=nothing,on_prefill=nothing,
+        schedule::Symbol=:merged)
     !(max_new_tokens isa Bool) && max_new_tokens>=0 || throw(ArgumentError("invalid Ripple TP max_new_tokens"))
     !(prefill_chunk_size isa Bool) && prefill_chunk_size>0 || throw(ArgumentError("invalid Ripple TP chunk size"))
     !isempty(prompt) && !(eltype(prompt)<:Bool) && all(id->1<=id<=bundle.model.vocab_size,prompt) || throw(ArgumentError("invalid Ripple TP prompt"))
@@ -309,14 +356,14 @@ function generate_ripple_tp_tokens(bundle,prompt::AbstractVector{<:Integer};max_
     for first in 1:Int(min(prefill_chunk_size,length(prompt))):length(prompt)
         last=min(length(prompt),first+prefill_chunk_size-1)
         logits=hf_ripple_tp_forward(bundle,prompt[first:last];cache,last_only=true,cache_capacity=capacity,
-            output_logits=last==length(prompt))
+            output_logits=last==length(prompt),schedule)
         on_prefill===nothing || on_prefill(last,length(prompt))!==false || return generated
     end
     for step in 1:max_new_tokens
         token=_flint_sample_token(logits,rng;temperature,top_k,top_p);push!(generated,token)
         on_token===nothing || on_token(token)!==false || break
         (token in eos_ids || step==max_new_tokens) && break
-        logits=hf_ripple_tp_forward(bundle,[token];cache,last_only=true,cache_capacity=capacity)
+        logits=hf_ripple_tp_forward(bundle,[token];cache,last_only=true,cache_capacity=capacity,schedule)
     end
     return generated
 end

@@ -74,7 +74,10 @@ def build_request(config, root, revision):
         'LIFEAI_CODE_REVISION': revision, 'LIFEAI_API_KEY_FILE': str(root / 'credentials/api_key'),
         'LIFEAI_MODEL_DIR': config['model'], 'LIFEAI_REFERENCE_DIR': config['reference'],
         'LIFEAI_RESULT_DIR': str(root / 'results'), 'LIFEAI_JULIA': config['julia'],
-        'LIFEAI_CODE_ROOT': str(code), 'LIFEAI_SERVICE_PORT': str(config['port'])
+        'LIFEAI_CODE_ROOT': str(code), 'LIFEAI_SERVICE_PORT': str(config['port']),
+        'LIFEAI_RIPPLE_PROJECTION_MODE': config.get('projection_mode', 'bf16_gemv'),
+        'LIFEAI_RIPPLE_SCHEDULE': config.get('schedule', 'merged'),
+        'LIFEAI_RIPPLE_BENCHMARK_VARIANTS': str(config.get('benchmark_variants', False)).lower()
     }
     return {
         'DisplayName': 'lifeai-' + root.name,

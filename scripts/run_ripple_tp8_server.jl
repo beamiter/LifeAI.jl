@@ -3,13 +3,18 @@ using LifeAI,CUDA,NCCL,JSON3,HTTP,LinearAlgebra,Sockets,UUIDs,Dates,Test
 using BFloat16s:BFloat16
 include(joinpath(@__DIR__,"..","test","ripple","test_ripple_tensor_parallel.jl"))
 include(joinpath(@__DIR__,"..","test","ripple","test_ripple_nccl_transport.jl"))
+include(joinpath(@__DIR__,"..","test","ripple","test_ripple_projection.jl"))
+include(joinpath(@__DIR__,"benchmark_ripple_tp_variants.jl"))
 
 function tp8_options(args)
     options=Dict("model"=>"/jfs/application/user/bgl/models/ricursiveAI/Ripple-65B-Preview",
         "result-dir"=>"benchmark_results/ripple/dlc8/runtime","host"=>"0.0.0.0","port"=>"18085",
         "gpus"=>"8","max-context"=>"8192","max-output"=>"512","prefill-chunk-size"=>"256",
         "reference"=>"/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/full/official",
-        "api-key-file"=>get(ENV,"LIFEAI_API_KEY_FILE",""))
+        "api-key-file"=>get(ENV,"LIFEAI_API_KEY_FILE",""),
+        "projection-mode"=>get(ENV,"LIFEAI_RIPPLE_PROJECTION_MODE","bf16_gemv"),
+        "schedule"=>get(ENV,"LIFEAI_RIPPLE_SCHEDULE","merged"),
+        "benchmark-variants"=>get(ENV,"LIFEAI_RIPPLE_BENCHMARK_VARIANTS","false"))
     mode="serve";i=1
     while i<=length(args)
         if args[i]=="--test-only";mode="test";i+=1;continue;end
@@ -31,14 +36,14 @@ function tp8_stats(bundle)
         logical_allreduces=backend.reductions[]÷length(bundle.ranks),logical_allgathers=backend.gathers[]÷length(bundle.ranks))
 end
 
-function tp8_validate(bundle,tokenizer,reference_dir,result_dir)
+function tp8_validate(bundle,tokenizer,reference_dir,result_dir;schedule=:merged)
     reference=JSON3.read(read(joinpath(reference_dir,"reference.json"),String))
     get(reference,"attention_backend",nothing)=="math" || error("TP validation requires the mathematical PyTorch reference")
     oracle=open_safetensors_reader(joinpath(reference_dir,"reference.safetensors"));records=Any[]
     for (number,case) in enumerate(reference["cases"])
         ids=Int.(case["input_ids"]).+1;cache=RippleTPKVCache(bundle);started=time()
         haskey(case,"prompt") && @test encode(tokenizer,case["prompt"])==ids
-        logits=Array(hf_ripple_tp_forward(bundle,ids;cache,last_only=true))[:,1]
+        logits=Array(hf_ripple_tp_forward(bundle,ids;cache,last_only=true,schedule))[:,1]
         expected=read_safetensors_tensor(oracle,"case$(number-1).prefill_logits")
         maximum_error=maximum(abs.(logits.-expected));relative=norm(logits-expected)/norm(expected)
         @test maximum_error<1f-3
@@ -48,7 +53,7 @@ function tp8_validate(bundle,tokenizer,reference_dir,result_dir)
         for (step,expected_token) in enumerate(case["greedy_tokens"])
             token=argmax(logits);push!(generated,token);@test token==Int(expected_token)+1
             if step<length(case["greedy_tokens"])
-                logits=Array(hf_ripple_tp_forward(bundle,[token];cache,last_only=true))[:,1]
+                logits=Array(hf_ripple_tp_forward(bundle,[token];cache,last_only=true,schedule))[:,1]
             end
         end
         record=(name=String(case["name"]),prompt_tokens=length(ids),max_absolute_error=maximum_error,
@@ -59,7 +64,7 @@ function tp8_validate(bundle,tokenizer,reference_dir,result_dir)
     return records
 end
 
-function tp8_smoke(bundle,tokenizer,result_dir,chunk_size)
+function tp8_smoke(bundle,tokenizer,result_dir,chunk_size;schedule=:merged,projection_mode=:bf16_gemv)
     cases=[(name="exact_ok",text="Reply with exactly OK.",limit=32),
         (name="math",text="计算 17 × 23，只回答结果。",limit=64),
         (name="code",text="Write a Python function add(a, b). Reply only with code.",limit=128),
@@ -70,7 +75,7 @@ function tp8_smoke(bundle,tokenizer,result_dir,chunk_size)
         prompt=apply_ripple_chat_template(tokenizer,[(role="user",content=case.text)])*"<think>\n\n</think>\n"
         ids=encode(tokenizer,prompt);times=Float64[];prefill_end=Ref(0.0);started=time()
         tokens=generate_ripple_tp_tokens(bundle,ids;temperature=0,max_new_tokens=case.limit,prefill_chunk_size=chunk_size,
-            on_prefill=(done,total)->(done==total && (prefill_end[]=time());true),on_token=id->(push!(times,time());true))
+            on_prefill=(done,total)->(done==total && (prefill_end[]=time());true),on_token=id->(push!(times,time());true),schedule)
         decode_seconds=length(times)>1 ? times[end]-times[1] : 0.0
         record=(name=case.name,prompt=case.text,prompt_tokens=length(ids),token_ids=tokens,
             text=decode(tokenizer,tokens;skip_special_tokens=true,errors=:replace),generated_tokens=length(tokens),
@@ -78,7 +83,7 @@ function tp8_smoke(bundle,tokenizer,result_dir,chunk_size)
             duration_seconds=time()-started,prefill_seconds=prefill_end[]-started,
             decode_seconds=decode_seconds,decode_tokens_per_second=decode_seconds>0 ? (length(tokens)-1)/decode_seconds : nothing)
         push!(records,record);println(JSON3.write((phase="smoke",record=record)));flush(stdout)
-        tp8_write(joinpath(result_dir,"generation.json"),(tensor_parallel=length(bundle.ranks),weights="original BF16",activations="Float32",cases=records,stats=tp8_stats(bundle)))
+        tp8_write(joinpath(result_dir,"generation.json"),(tensor_parallel=length(bundle.ranks),weights="original BF16 checkpoint values",projection_mode=string(projection_mode),activations="Float32",cases=records,stats=tp8_stats(bundle)))
     end
     @test records[1].text=="OK"
     @test occursin(r"(?<!\d)391(?!\d)",records[2].text)
@@ -106,6 +111,7 @@ function tp8_main(args)
     # before spending time loading 130GB of source tensors.
     @testset "Physical NCCL tensor parallelism" begin
         ripple_nccl_transport_checks(devices)
+        ripple_tp_projection_checks(devices)
         ripple_tp_numerical_checks(n->ripple_nccl_backend(devices[1:n]);world_sizes=(count,))
     end
     backend=ripple_nccl_backend(devices);bundle=nothing
@@ -118,9 +124,19 @@ function tp8_main(args)
                 end
             end)
         load_seconds=time()-started;tokenizer=load_hf_ripple_tokenizer(options["model"])
-        parity=tp8_validate(bundle,tokenizer,options["reference"],result_dir)
-        smokes=tp8_smoke(bundle,tokenizer,result_dir,chunk_size)
-        receipt=(phase="validated",world_size=count,model="ricursiveAI/Ripple-65B-Preview",weights="BF16",activations="Float32",
+        projection_mode=Symbol(options["projection-mode"]);schedule=Symbol(options["schedule"])
+        options["benchmark-variants"] in ("true","false") || error("--benchmark-variants must be true or false")
+        if options["benchmark-variants"]=="true"
+            selected,benchmark=tp8_benchmark_variants(bundle,tokenizer,options["reference"],result_dir)
+            projection_mode=selected.projection;schedule=selected.schedule
+            println(JSON3.write((phase="selected_variant",projection_mode=string(projection_mode),schedule=string(schedule),speedup=benchmark.speedup)));flush(stdout)
+        else
+            prepare_ripple_tp_projections!(bundle;mode=projection_mode)
+        end
+        projection_dtype=projection_mode===:fp32 ? "Float32" : "BF16"
+        parity=tp8_validate(bundle,tokenizer,options["reference"],result_dir;schedule)
+        smokes=tp8_smoke(bundle,tokenizer,result_dir,chunk_size;schedule,projection_mode)
+        receipt=(phase="validated",world_size=count,model="ricursiveAI/Ripple-65B-Preview",weights="original BF16 checkpoint values",projection_dtype=projection_dtype,projection_mode=string(projection_mode),schedule=string(schedule),activations="Float32",
             hardware=hardware,nccl=string(NCCL.version()),load_seconds=load_seconds,parity=parity,stats=tp8_stats(bundle),
             code_revision=get(ENV,"LIFEAI_CODE_REVISION","unknown"),validated_at=string(now(UTC)))
         tp8_write(joinpath(result_dir,"validation.json"),receipt)
@@ -161,15 +177,18 @@ function tp8_main(args)
                 prompt=apply_ripple_chat_template(tokenizer,messages);ids=encode(tokenizer,prompt)
                 length(ids)+limit<=max_context || throw(ArgumentError("request exceeds context limit"))
                 return lock(model_lock) do
-                    started=time();times=Float64[]
+                    started=time();times=Float64[];prefill_end=Ref(started)
                     tokens=generate_ripple_tp_tokens(bundle,ids;max_new_tokens=limit,temperature,prefill_chunk_size=chunk_size,
-                        on_token=id->(push!(times,time());true))
+                        on_token=id->(push!(times,time());true),schedule,
+                        on_prefill=(done,total)->(done==total && (prefill_end[]=time());true))
                     text=decode(tokenizer,tokens;skip_special_tokens=true,errors=:replace);requests[]+=1
                     ended=!isempty(tokens) && last(tokens) in bundle.model.eos_token_id.+1
                     response(200,(id="chatcmpl-"*string(uuid4()),object="chat.completion",created=floor(Int,time()),model=model_id,
                         choices=[(index=0,message=(role="assistant",content=text),finish_reason=ended ? "stop" : "length")],
                         usage=(prompt_tokens=length(ids),completion_tokens=length(tokens),total_tokens=length(ids)+length(tokens)),
-                        lifeai=(tensor_parallel=count,weight_dtype="BF16",activation_dtype="Float32",duration_seconds=time()-started)))
+                        lifeai=(tensor_parallel=count,weight_dtype=projection_dtype,activation_dtype="Float32",projection_mode=string(projection_mode),schedule=string(schedule),
+                            duration_seconds=time()-started,prefill_seconds=prefill_end[]-started,
+                            decode_tokens_per_second=length(times)>1 ? (length(times)-1)/(times[end]-times[1]) : nothing)))
                 end
             catch error
                 status=error isa ArgumentError ? 400 : 500

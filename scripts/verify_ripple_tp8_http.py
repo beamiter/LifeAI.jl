@@ -52,7 +52,7 @@ def main():
     assert body['choices'][0]['message']['content'].strip() == 'OK'
     assert body['choices'][0]['finish_reason'] == 'stop'
     assert body['usage']['completion_tokens'] == 2
-    assert body['lifeai']['tensor_parallel'] == 8 and body['lifeai']['weight_dtype'] == 'BF16'
+    assert body['lifeai']['tensor_parallel'] == 8 and body['lifeai']['weight_dtype'] == ready.get('projection_dtype', 'BF16')
     result = {'endpoint': endpoint, 'code_revision': ready['code_revision'], 'all_passed': True,
         'checked_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'checks': checks, 'completion': body}
     # A multi-interface DLC pod may initially advertise a link-local address.

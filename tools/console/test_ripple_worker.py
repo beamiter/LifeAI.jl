@@ -21,6 +21,7 @@ class Fixture:
         self.root = Path(self.temp.name)
         self.requests = []
         self.mode = 'ok'
+        self.timing = {}
         self.entered, self.unblock = threading.Event(), threading.Event()
         owner = self
 
@@ -54,7 +55,7 @@ class Fixture:
                     return
                 reply = dict(model='lifeai-ripple65b-tp8', choices=[dict(
                     message=dict(role='assistant', content='<think>分析</think>\n你好🌟'), finish_reason='stop')],
-                    usage=dict(prompt_tokens=42, completion_tokens=5))
+                    usage=dict(prompt_tokens=42, completion_tokens=5), lifeai=owner.timing)
                 if owner.mode == 'wrong_model':
                     reply['model'] = 'other'
                 if owner.mode == 'incomplete':
@@ -195,6 +196,19 @@ class RippleTests(unittest.TestCase):
             self.assertEqual(pending.result(5)[0], 200)
         self.fixture.mode = 'ok'
         self.assertEqual(self.fixture.request(payload())[0], 200)
+
+    def test_verified_decode_timing_is_forwarded_without_inventing_a_rate(self):
+        for value in (7.5, float('nan'), True, 'fast'):
+            self.fixture.timing = dict(decode_tokens_per_second=value, prefill_seconds=.2)
+            code, _, raw = self.fixture.request(payload())
+            self.assertEqual(code, 200)
+            event = json.loads(raw)
+            self.assertEqual('decode_tokens_per_second' in event['lifeai'], type(value) is float and value==7.5)
+            self.assertEqual(event['lifeai']['prefill_seconds'], .2)
+            self.assertNotIn('eval_duration', event)
+        self.fixture.ready['projection_dtype'] = 'Float32'
+        (self.fixture.root / 'results/ready.json').write_text(json.dumps(self.fixture.ready))
+        self.assertEqual(json.loads(self.fixture.request(payload())[2])['lifeai']['weight_dtype'], 'Float32')
 
     def manager(self):
         with socket.socket() as probe:
