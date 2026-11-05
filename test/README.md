@@ -1,5 +1,10 @@
 # LifeAI.jl test suite
 
+Ripple 原生推理的独立官方 PyTorch oracle 测试位于 `test/ripple/test_ripple.jl`，
+已纳入 `runtests.jl`。CUDA 验证入口为 `scripts/verify_ripple_cuda.jl`；
+也已纳入 `LIFEAI_TEST_CUDA=true` 的主测试入口。
+运行方式与验证范围见 [Ripple 说明](../notes/ripple.md)。
+
 测试目录与 `notes/episodes/` 使用相同的 Episode / Chapter 层级。一个 Chapter
 产生的测试与冻结 fixture 放在同名目录中，因此可以从研发记录直接定位到验收证据：
 

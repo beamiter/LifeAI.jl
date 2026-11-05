@@ -28,6 +28,10 @@ include(joinpath(LIFEAI_TEST_ROOT, "test_flint_device_quantization.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_flint_bf16_device_quantization.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "test_nvfp4.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "flint", "test_flint.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_offload.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_device_reader.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_int4_gemv.jl"))
 
 chapter_test(episode, chapter, filename) =
     joinpath(LIFEAI_TEST_EPISODES, episode, chapter, filename)
@@ -538,6 +542,12 @@ if lowercase(get(ENV, "LIFEAI_TEST_CUDA", "false")) in ("1", "true", "yes")
         include(joinpath(LIFEAI_TEST_ROOT, "test_flint_long_attention.jl"))
         include(joinpath(LIFEAI_TEST_ROOT, "test_flint_prefill_cuda.jl"))
         include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_flint_cuda.jl"))
+        @testset "Ripple native CUDA parity" begin
+            ripple_numerical_checks(CUDA.cu)
+            ripple_offload_checks(CUDA.cu)
+            ripple_device_reader_checks(CUDA.cu)
+            ripple_int4_gemv_checks(CUDA.cu)
+        end
         include(joinpath(LIFEAI_REPO_ROOT, "scripts", "verify_qwen3_vl_parameter_binding_cuda.jl"))
         include(chapter_test(
             "episode10_qwen3_vl_efficient_generation",

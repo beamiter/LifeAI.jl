@@ -1,0 +1,410 @@
+[
+  {
+    "kind": "tiny",
+    "text": "",
+    "ids": [],
+    "decoded": "",
+    "decoded_all": ""
+  },
+  {
+    "kind": "tiny",
+    "text": "Hello, world!",
+    "ids": [
+      39,
+      68,
+      75,
+      75,
+      78,
+      11,
+      220,
+      86,
+      78,
+      81,
+      75,
+      67,
+      0
+    ],
+    "decoded": "Hello, world!",
+    "decoded_all": "Hello, world!"
+  },
+  {
+    "kind": "tiny",
+    "text": "hi hi",
+    "ids": [
+      278,
+      220,
+      278
+    ],
+    "decoded": "hi hi",
+    "decoded_all": "hi hi"
+  },
+  {
+    "kind": "tiny",
+    "text": "你好，世界！123456789",
+    "ids": [
+      160,
+      121,
+      254,
+      161,
+      98,
+      121,
+      171,
+      120,
+      234,
+      160,
+      116,
+      244,
+      163,
+      243,
+      234,
+      171,
+      120,
+      223,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24
+    ],
+    "decoded": "你好，世界！123456789",
+    "decoded_all": "你好，世界！123456789"
+  },
+  {
+    "kind": "tiny",
+    "text": "Café café",
+    "ids": [
+      34,
+      64,
+      69,
+      127,
+      102,
+      220,
+      66,
+      64,
+      69,
+      68,
+      136,
+      223
+    ],
+    "decoded": "Café café",
+    "decoded_all": "Café café"
+  },
+  {
+    "kind": "tiny",
+    "text": "\u0000\n\t",
+    "ids": [
+      188,
+      198,
+      197
+    ],
+    "decoded": "\u0000\n\t",
+    "decoded_all": "\u0000\n\t"
+  },
+  {
+    "kind": "tiny",
+    "text": "I'm WE'RE\r\n",
+    "ids": [
+      40,
+      6,
+      76,
+      220,
+      54,
+      36,
+      6,
+      49,
+      36,
+      201,
+      198
+    ],
+    "decoded": "I'm WE'RE\r\n",
+    "decoded_all": "I'm WE'RE\r\n"
+  },
+  {
+    "kind": "tiny",
+    "text": "a < b && c > d",
+    "ids": [
+      64,
+      220,
+      27,
+      220,
+      65,
+      220,
+      5,
+      5,
+      220,
+      66,
+      220,
+      29,
+      220,
+      67
+    ],
+    "decoded": "a < b && c > d",
+    "decoded_all": "a < b && c > d"
+  },
+  {
+    "kind": "tiny",
+    "text": "🦀🚀",
+    "ids": [
+      172,
+      253,
+      99,
+      222,
+      172,
+      253,
+      248,
+      222
+    ],
+    "decoded": "🦀🚀",
+    "decoded_all": "🦀🚀"
+  },
+  {
+    "kind": "tiny",
+    "text": "foo_bar.jl",
+    "ids": [
+      69,
+      78,
+      78,
+      62,
+      65,
+      64,
+      81,
+      13,
+      73,
+      75
+    ],
+    "decoded": "foo_bar.jl",
+    "decoded_all": "foo_bar.jl"
+  },
+  {
+    "kind": "tiny",
+    "text": "<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n",
+    "ids": [
+      264,
+      84,
+      82,
+      68,
+      81,
+      198,
+      278,
+      265,
+      198,
+      264,
+      64,
+      82,
+      82,
+      72,
+      82,
+      83,
+      64,
+      77,
+      83,
+      198
+    ],
+    "decoded": "user\nhi\nassistant\n",
+    "decoded_all": "<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n"
+  },
+  {
+    "kind": "tiny",
+    "text": "<|extra_id_0|>|||EMAIL_ADDRESS|||<|pad|>",
+    "ids": [
+      256,
+      262,
+      277
+    ],
+    "decoded": "<|extra_id_0|>|||EMAIL_ADDRESS|||",
+    "decoded_all": "<|extra_id_0|>|||EMAIL_ADDRESS|||<|pad|>"
+  },
+  {
+    "kind": "tiny",
+    "text": "  \n\n\t trailing  ",
+    "ids": [
+      220,
+      220,
+      198,
+      198,
+      197,
+      220,
+      83,
+      81,
+      64,
+      72,
+      75,
+      72,
+      77,
+      70,
+      220,
+      220
+    ],
+    "decoded": "  \n\n\t trailing  ",
+    "decoded_all": "  \n\n\t trailing  "
+  },
+  {
+    "kind": "official",
+    "text": "",
+    "ids": [],
+    "decoded": "",
+    "decoded_all": ""
+  },
+  {
+    "kind": "official",
+    "text": "Hello, world!",
+    "ids": [
+      9906,
+      11,
+      1917,
+      0
+    ],
+    "decoded": "Hello, world!",
+    "decoded_all": "Hello, world!"
+  },
+  {
+    "kind": "official",
+    "text": "hi hi",
+    "ids": [
+      6151,
+      15960
+    ],
+    "decoded": "hi hi",
+    "decoded_all": "hi hi"
+  },
+  {
+    "kind": "official",
+    "text": "你好，世界！123456789",
+    "ids": [
+      57668,
+      53901,
+      3922,
+      3574,
+      244,
+      98220,
+      6447,
+      4513,
+      10961,
+      16474
+    ],
+    "decoded": "你好，世界！123456789",
+    "decoded_all": "你好，世界！123456789"
+  },
+  {
+    "kind": "official",
+    "text": "Café café",
+    "ids": [
+      34,
+      2642,
+      978,
+      42030,
+      54939
+    ],
+    "decoded": "Café café",
+    "decoded_all": "Café café"
+  },
+  {
+    "kind": "official",
+    "text": "\u0000\n\t",
+    "ids": [
+      188,
+      198,
+      197
+    ],
+    "decoded": "\u0000\n\t",
+    "decoded_all": "\u0000\n\t"
+  },
+  {
+    "kind": "official",
+    "text": "I'm WE'RE\r\n",
+    "ids": [
+      40,
+      2846,
+      20255,
+      95253,
+      319
+    ],
+    "decoded": "I'm WE'RE\r\n",
+    "decoded_all": "I'm WE'RE\r\n"
+  },
+  {
+    "kind": "official",
+    "text": "a < b && c > d",
+    "ids": [
+      64,
+      366,
+      293,
+      1024,
+      272,
+      871,
+      294
+    ],
+    "decoded": "a < b && c > d",
+    "decoded_all": "a < b && c > d"
+  },
+  {
+    "kind": "official",
+    "text": "🦀🚀",
+    "ids": [
+      9468,
+      99,
+      222,
+      9468,
+      248,
+      222
+    ],
+    "decoded": "🦀🚀",
+    "decoded_all": "🦀🚀"
+  },
+  {
+    "kind": "official",
+    "text": "foo_bar.jl",
+    "ids": [
+      8134,
+      14725,
+      1190,
+      75
+    ],
+    "decoded": "foo_bar.jl",
+    "decoded_all": "foo_bar.jl"
+  },
+  {
+    "kind": "official",
+    "text": "<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n",
+    "ids": [
+      100264,
+      882,
+      198,
+      6151,
+      100265,
+      198,
+      100264,
+      78191,
+      198
+    ],
+    "decoded": "user\nhi\nassistant\n",
+    "decoded_all": "<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n"
+  },
+  {
+    "kind": "official",
+    "text": "<|extra_id_0|>|||EMAIL_ADDRESS|||<|pad|>",
+    "ids": [
+      100256,
+      100262,
+      100277
+    ],
+    "decoded": "<|extra_id_0|>|||EMAIL_ADDRESS|||",
+    "decoded_all": "<|extra_id_0|>|||EMAIL_ADDRESS|||<|pad|>"
+  },
+  {
+    "kind": "official",
+    "text": "  \n\n\t trailing  ",
+    "ids": [
+      19124,
+      197,
+      28848,
+      256
+    ],
+    "decoded": "  \n\n\t trailing  ",
+    "decoded_all": "  \n\n\t trailing  "
+  }
+]

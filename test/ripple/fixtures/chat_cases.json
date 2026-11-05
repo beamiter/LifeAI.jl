@@ -1,0 +1,225 @@
+[
+  {
+    "messages": [
+      {
+        "role": "system",
+        "content": "Be helpful."
+      },
+      {
+        "role": "user",
+        "content": "pwd"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "inspect",
+        "tool_calls": [
+          {
+            "function": {
+              "name": "execute_bash",
+              "arguments": {
+                "command": "pwd"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "/tmp"
+      },
+      {
+        "role": "tool",
+        "content": "ok"
+      },
+      {
+        "role": "assistant",
+        "content": "/tmp",
+        "reasoning_content": "done"
+      },
+      {
+        "role": "user",
+        "content": "next"
+      }
+    ],
+    "options": {},
+    "text": "<|im_start|>system\nBe helpful.<|im_end|>\n<|im_start|>user\npwd<|im_end|>\n<|im_start|>assistant\n<think>\ninspect\n</think>\n\n<tool_call>\n{\"name\": \"execute_bash\", \"arguments\": {\"command\": \"pwd\"}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n/tmp\n</tool_response>\n<tool_response>\nok\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think>\ndone\n</think>\n/tmp<|im_end|>\n<|im_start|>user\nnext<|im_end|>\n<|im_start|>assistant\n"
+  },
+  {
+    "messages": [
+      {
+        "role": "system",
+        "content": "Be helpful."
+      },
+      {
+        "role": "user",
+        "content": "pwd"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "inspect",
+        "tool_calls": [
+          {
+            "function": {
+              "name": "execute_bash",
+              "arguments": {
+                "command": "pwd"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "/tmp"
+      },
+      {
+        "role": "tool",
+        "content": "ok"
+      },
+      {
+        "role": "assistant",
+        "content": "/tmp",
+        "reasoning_content": "done"
+      },
+      {
+        "role": "user",
+        "content": "next"
+      }
+    ],
+    "options": {
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "execute_bash",
+            "description": "中文 <&> 🦀",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "text": "<|im_start|>system\nBe helpful.\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools> XML tags:\n<tools>\n{\"type\": \"function\", \"function\": {\"name\": \"execute_bash\", \"description\": \"中文 <&> 🦀\", \"parameters\": {\"type\": \"object\", \"properties\": {\"command\": {\"type\": \"string\"}}}}}\n</tools>\n\nFor each function call, return exactly one valid JSON object with function name and arguments inside XML tool-call tags. The arguments field must be a JSON object, not a string, and strings must use valid JSON escaping:\n<tool_call>\n{\"name\": \"execute_bash\", \"arguments\": {\"command\": \"pwd\"}}\n</tool_call><|im_end|>\n<|im_start|>user\npwd<|im_end|>\n<|im_start|>assistant\n<think>\ninspect\n</think>\n\n<tool_call>\n{\"name\": \"execute_bash\", \"arguments\": {\"command\": \"pwd\"}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n/tmp\n</tool_response>\n<tool_response>\nok\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think>\ndone\n</think>\n/tmp<|im_end|>\n<|im_start|>user\nnext<|im_end|>\n<|im_start|>assistant\n"
+  },
+  {
+    "messages": [
+      {
+        "role": "system",
+        "content": "Be helpful."
+      },
+      {
+        "role": "user",
+        "content": "pwd"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "inspect",
+        "tool_calls": [
+          {
+            "function": {
+              "name": "execute_bash",
+              "arguments": {
+                "command": "pwd"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "/tmp"
+      },
+      {
+        "role": "tool",
+        "content": "ok"
+      },
+      {
+        "role": "assistant",
+        "content": "/tmp",
+        "reasoning_content": "done"
+      },
+      {
+        "role": "user",
+        "content": "next"
+      }
+    ],
+    "options": {
+      "clear_thinking": true
+    },
+    "text": "<|im_start|>system\nBe helpful.<|im_end|>\n<|im_start|>user\npwd<|im_end|>\n<|im_start|>assistant\n<tool_call>\n{\"name\": \"execute_bash\", \"arguments\": {\"command\": \"pwd\"}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n/tmp\n</tool_response>\n<tool_response>\nok\n</tool_response><|im_end|>\n<|im_start|>assistant\n/tmp<|im_end|>\n<|im_start|>user\nnext<|im_end|>\n<|im_start|>assistant\n"
+  },
+  {
+    "messages": [
+      {
+        "role": "system",
+        "content": "Be helpful."
+      },
+      {
+        "role": "user",
+        "content": "pwd"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "inspect",
+        "tool_calls": [
+          {
+            "function": {
+              "name": "execute_bash",
+              "arguments": {
+                "command": "pwd"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "/tmp"
+      },
+      {
+        "role": "tool",
+        "content": "ok"
+      },
+      {
+        "role": "assistant",
+        "content": "/tmp",
+        "reasoning_content": "done"
+      },
+      {
+        "role": "user",
+        "content": "next"
+      }
+    ],
+    "options": {
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "execute_bash",
+            "description": "中文 <&> 🦀",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "add_generation_prompt": false
+    },
+    "text": "<|im_start|>system\nBe helpful.\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools> XML tags:\n<tools>\n{\"type\": \"function\", \"function\": {\"name\": \"execute_bash\", \"description\": \"中文 <&> 🦀\", \"parameters\": {\"type\": \"object\", \"properties\": {\"command\": {\"type\": \"string\"}}}}}\n</tools>\n\nFor each function call, return exactly one valid JSON object with function name and arguments inside XML tool-call tags. The arguments field must be a JSON object, not a string, and strings must use valid JSON escaping:\n<tool_call>\n{\"name\": \"execute_bash\", \"arguments\": {\"command\": \"pwd\"}}\n</tool_call><|im_end|>\n<|im_start|>user\npwd<|im_end|>\n<|im_start|>assistant\n<think>\ninspect\n</think>\n\n<tool_call>\n{\"name\": \"execute_bash\", \"arguments\": {\"command\": \"pwd\"}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n/tmp\n</tool_response>\n<tool_response>\nok\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think>\ndone\n</think>\n/tmp<|im_end|>\n<|im_start|>user\nnext<|im_end|>\n"
+  }
+]

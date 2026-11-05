@@ -48,6 +48,13 @@ export DATASET_ARTIFACT_VERSION, save_dataset_artifact, load_dataset_artifact
 
 # Models and HuggingFace interoperability
 export FlintConfig, load_hf_flint_config, flint_expected_tensor_shapes
+export RippleConfig, load_hf_ripple_config, ripple_expected_tensor_shapes
+export load_hf_ripple_model, verify_ripple_checkpoint
+export HFRippleTokenizer, load_hf_ripple_tokenizer, apply_ripple_chat_template
+export RippleKVCache, reset_ripple_cache!, hf_ripple_forward
+export generate_ripple_tokens, generate_ripple
+export RippleOffloadParameters, offload_ripple, ripple_offload_stats, load_hf_ripple_streamed
+export quantize_ripple_checkpoint, load_ripple_quantized
 export load_hf_flint_model, verify_flint_checkpoint
 export HFFlintTokenizer, load_hf_flint_tokenizer, apply_flint_chat_template
 export FlintKVCache, reset_flint_cache!, hf_flint_forward, flint_topk_routing

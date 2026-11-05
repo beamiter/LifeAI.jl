@@ -283,7 +283,7 @@ function _flint_artifact_path(directory, filename)
     return candidate
 end
 
-function _flint_read_array(directory, record, expected_shape; dtype=nothing)
+function _flint_read_array(directory, record, expected_shape; dtype=nothing,verified_sha256::Bool=false)
     path = _flint_artifact_path(directory, String(record["file"]))
     types = Dict("Float32" => Float32, "BFloat16" => BFloat16, "Int8" => Int8, "UInt8" => UInt8)
     type_name = String(record["dtype"])
@@ -293,7 +293,7 @@ function _flint_read_array(directory, record, expected_shape; dtype=nothing)
     Tuple(Int.(record["shape"])) == expected_shape || throw(DimensionMismatch("Flint artifact payload shape mismatch"))
     expected_bytes = prod(BigInt.(expected_shape)) * sizeof(T)
     filesize(path) == expected_bytes == record["bytes"] || throw(ArgumentError("Flint artifact payload size mismatch"))
-    bytes2hex(open(sha256, path)) == String(record["sha256"]) || throw(ArgumentError("Flint artifact checksum mismatch: $path"))
+    verified_sha256 || bytes2hex(open(sha256, path)) == String(record["sha256"]) || throw(ArgumentError("Flint artifact checksum mismatch: $path"))
     values = Array{T}(undef, expected_shape)
     open(path, "r") do io
         read!(io, values)

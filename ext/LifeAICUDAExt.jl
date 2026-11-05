@@ -6064,5 +6064,6 @@ include("flint_nvfp4_native.jl")
 include("flint_decode_kernels.jl")
 include("flint_kv_decode.jl")
 include("flint_long_attention.jl")
+include("ripple_offload.jl")
 
 end # module LifeAICUDAExt
