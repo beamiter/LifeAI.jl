@@ -6,7 +6,7 @@
   "binary_sha256": "b511baca56379fd5c91eea67a41d51f14ee57f0000451b7032f9b8d4ca275244",
   "router": "http://127.0.0.1:11435",
   "adapter": "http://127.0.0.1:11438",
-  "dlc_job_id": "dlc1e0h0crzzqys0",
+  "dlc_job_id": "dlcdyvi8bn3txeib",
   "context_tokens": 1048576,
   "max_new_tokens": 512,
   "streaming": false,
@@ -24,14 +24,29 @@
     "stage_harness": 3
   },
   "live": {
-    "installed_command": "/home/ubuntu/.local/bin/lumen",
-    "binary_sha256": "b511baca56379fd5c91eea67a41d51f14ee57f0000451b7032f9b8d4ca275244",
-    "router_advertised_context_tokens": 1048576,
-    "max_new_tokens": 512,
+    "verified_at": "2026-11-05T13:33:50.897305+00:00",
+    "job_id": "dlcdyvi8bn3txeib",
+    "server_code_revision": "4c324b4968da2a775b8fc48b86fcb013b80c9c41",
+    "all_passed": true,
+    "evidence_dir": "/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/long-context/lumen-final",
+    "evidence_files_sha256": {
+      "http-live-boundaries.json": "743e4dae19c926ffe1a0ad6a35b5785df6f9775b1b77ffc004ec3eca021c7263",
+      "http-validation.json": "4820d662bc4e0f90f023a9f7577e1d6b77b5abc6831ea8e4c10ba87dc1835663",
+      "lumen-final-dsw.json": "1b976e30db0b8823016b3776f93483e8719790fd17a12c52692fe1745d549bc8",
+      "native-provenance.json": "209805654aafcc5d865b8edba360899b39926191a374dfc53471d0e0ba1fdeb1",
+      "overbudget-verification.json": "83b94c2a4616fc71be0618f102a4e03f02eb28dfd19f15e563f8d51bdf6c65d0",
+      "overbudget.stderr.txt": "08c97b522099e01c34007c2396bc2021aceae61333fdaf89989157ac053e5b7e",
+      "overbudget.stdout.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "status.json": "2f179edd66887f0fb365badfc0194e1eddc03ad2727f5011fb8134a0d44317b2",
+      "terminal.raw": "77dead38a2216e461df9b2cf83d3aec1582de3fe32ede250295913b8aaf9cbd9",
+      "turn1.screen.txt": "419c037ddbeb28b36ba09705750299c8d7d4db7aa7f978f1a8e7e99db7a49d0c",
+      "turn2.screen.txt": "fd46672048a2d40f092038c2ae91d9b3dab9a14dabe615d8bd7cba7e44ee286a",
+      "verification.json": "d56a562a7b40c453ca86a7b79ef6d957c5c8875bbf68c6639baf5f191d9c14e8"
+    },
     "one_shot": {
       "exit_code": 0,
       "stdout": "OK",
-      "seconds": 3.6657329549780115,
+      "seconds": 2.1712448470061645,
       "ssh_tunnel_closed": true
     },
     "tui": {
@@ -41,6 +56,62 @@
       "exit_code": 0,
       "ssh_tunnel_closed": true
     },
+    "overbudget": {
+      "checked_at": "2026-11-05T13:30:23.862848+00:00",
+      "dlc_job_id": "dlcdyvi8bn3txeib",
+      "server_code_revision": "4c324b4968da2a775b8fc48b86fcb013b80c9c41",
+      "expected_http_status": 400,
+      "fixture": {
+        "purpose": "Expected HTTP 400 context rejection through Lumen --no-stream; this is not a passing 1Mi generation fixture.",
+        "file": "/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/long-context/lumen-cached-file-1mi/prompt-overbudget.txt",
+        "expected_http_status": 400,
+        "prompt_tokens": 1048848,
+        "max_tokens": 8,
+        "total_budget_tokens": 1048856,
+        "context_limit": 1048576,
+        "file_bytes": 6463268,
+        "file_sha256": "ee6a26a7439b3a8ff1555271fa43df02f00c21334b5080502e2314815c7c12c0",
+        "formatted_prompt_bytes": 6463586,
+        "prompt_ids_sha256": "0cb24c68526cbbba17bd07a8f0a6ba6080b2d84eacf64cae46c1c40cb08e9ce1",
+        "representative_json_bytes": 6507352,
+        "representative_json_sha256": "2e27f90277d85e5b4c8551df224e597639bc052576a43b11472ef179ea96dedd",
+        "json_note": "Representative compact UTF-8 chat payload; actual CLI serialization may vary slightly.",
+        "within_64_mib": true,
+        "within_128_mib": true,
+        "inference_performed": false
+      },
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Ripple 正在生成，完成后显示整段回答…\nLumen: 提示词与输出可能超过上下文；请缩短对话、降低 -n，或按 Ctrl+L 清空。HTTP 400: ArgumentError: request exceeds context limit\n",
+      "seconds": 19.794529670034535,
+      "passed": true
+    },
+    "dsw": {
+      "checked_at": "2026-11-05T13:31:03.661924+00:00",
+      "job_id": "dlcdyvi8bn3txeib",
+      "code_revision": "4c324b4968da2a775b8fc48b86fcb013b80c9c41",
+      "binary_sha256": "b511baca56379fd5c91eea67a41d51f14ee57f0000451b7032f9b8d4ca275244",
+      "all_passed": true,
+      "checks": [
+        {
+          "name": "installed",
+          "command": "/usr/local/bin/lumen",
+          "exit_code": 0,
+          "stdout": "OK"
+        },
+        {
+          "name": "repository",
+          "command": "/jfs/application/user/bgl/LifeAI.jl/scripts/lifeai",
+          "exit_code": 0,
+          "stdout": "OK"
+        }
+      ]
+    },
+    "scope": "Current v15 small one-shot/TUI, oversized-file HTTP 400, and DSW installed/repository CLI acceptance; full-length native and valid cached 1Mi file evidence remain v14. No v15 cold 1Mi prefill was run.",
+    "installed_command": "/home/ubuntu/.local/bin/lumen",
+    "binary_sha256": "b511baca56379fd5c91eea67a41d51f14ee57f0000451b7032f9b8d4ca275244",
+    "router_advertised_context_tokens": 1048576,
+    "max_new_tokens": 512,
     "large_file": {
       "checked_at": "2026-11-05T13:14:10.646529+00:00",
       "dlc_job_id": "dlc1e0h0crzzqys0",
@@ -57,7 +128,7 @@
       "stderr": "Ripple 正在生成，完成后显示整段回答…\n正在预填充 · 1048320/1048336 tokens · 100.0%\n",
       "seconds": 20.750246263109148
     },
-    "large_file_scope": "Synthetic transcript flattening with embedded role markers reproduces the previously validated multi-turn token sequence and cached prefix. This verifies installed --system/--file transport and cached continuation, not a cold arbitrary-document 1Mi prefill benchmark.",
+    "large_file_scope": "Synthetic transcript flattening with embedded role markers reproduces the previously validated multi-turn token sequence and cached prefix. This verifies installed --system/--file transport and cached continuation, not a cold arbitrary-document 1Mi prefill benchmark. This successful full-length cached continuation ran on v14, not v15.",
     "large_fixture_dir": "/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/long-context/lumen-cached-file-1mi",
     "generation_rerun_for_receipt": false
   },
@@ -71,8 +142,8 @@
     "tools/console/control.py": "da3f161f9c09f94af2851d2b2ef4490ed694dfc914d18701bec149788d769e43",
     "tools/console/ripple_worker.py": "0416ad6a73712c127578d5dfe8d3a42426bb0ae4bbbb714f3562516626d70272"
   },
-  "backend_server_code_revision": "aea3e4f284f1c0e63a540ae31c59c70ae4cd874b",
-  "verification_scope": "Existing installed Lumen v14 evidence and read-only hash verification; no inference rerun for receipt assembly",
+  "backend_server_code_revision": "4c324b4968da2a775b8fc48b86fcb013b80c9c41",
+  "verification_scope": "Current v15 small one-shot/TUI, oversized-file HTTP 400, and DSW installed/repository CLI acceptance; full-length native and valid cached 1Mi file evidence remain v14. No v15 cold 1Mi prefill was run.",
   "rust_source_commit": "e067d018a455f82afb985563d7cbebe6ea1f91be",
   "validated_context_tokens": 1048576,
   "configured_context_tokens": 1048576,
@@ -90,11 +161,12 @@
     "text_streaming": false
   },
   "promotion": {
-    "status": "v14_1mi_validated_and_public",
+    "status": "v15_public_1mi_with_v14_native_evidence_and_v15_live_http_acceptance",
     "one_mi_validated": true,
     "target_context_tokens": 1048576,
     "stage_evidence": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context-bounded-20261105T114011Z/results/context-stages.json",
-    "stage_evidence_sha256": "c7451237587248dd8ed0efcae8e0008675820e47605e4bc9f9736c7feff884c3"
+    "stage_evidence_sha256": "c7451237587248dd8ed0efcae8e0008675820e47605e4bc9f9736c7feff884c3",
+    "current_job_id": "dlcdyvi8bn3txeib"
   },
   "historical_verification": {
     "verified_at": "2026-11-05T09:38:52.897073+00:00",
@@ -127,7 +199,7 @@
     "backend_server_code_revision": "0921a3316dc3ee25b42793ab698f59c3f2ba10ed"
   },
   "candidate_http_boundary_fix": {
-    "status": "console_adapter_deployed_source_hash_verified; future Julia HTTP v15 remains pending",
+    "status": "deployed_v15_and_live_verified",
     "adapter_sha256": "0416ad6a73712c127578d5dfe8d3a42426bb0ae4bbbb714f3562516626d70272",
     "test_source_sha256": "977588bd9c7dfb4bb5588dca9e82c2a9613473534bdb60cd3bfa304b4c257760",
     "safe_4xx": [
@@ -155,7 +227,7 @@
     ],
     "unknown_status": 502
   },
-  "verified_at": "2026-11-05T13:19:10.438267+00:00",
+  "verified_at": "2026-11-05T13:33:50.897305+00:00",
   "validated_context_stages": [
     131072,
     262144,
@@ -175,10 +247,18 @@
       "scripts/ripple_tp8_jobs.jl": "ab86ee119c23bde30266e1e35d98a4b6ed2ce053161681febb689a98af2725b7"
     },
     "http_v15": {
-      "status": "not_submitted_or_live_verified",
-      "job_id": null,
-      "code_revision": null,
-      "note": "Future HTTP boundary revision requires separate live acceptance; v14 native validation does not establish v15 HTTP acceptance."
+      "status": "deployed_and_live_verified",
+      "job_id": "dlcdyvi8bn3txeib",
+      "code_revision": "4c324b4968da2a775b8fc48b86fcb013b80c9c41",
+      "http_validation_evidence": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z/results/http-validation.json",
+      "http_boundary_evidence": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z/results/http-live-boundaries.json",
+      "native_provenance_evidence": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z/results/native-provenance.json",
+      "evidence_files_sha256": {
+        "http-validation.json": "4820d662bc4e0f90f023a9f7577e1d6b77b5abc6831ea8e4c10ba87dc1835663",
+        "http-live-boundaries.json": "743e4dae19c926ffe1a0ad6a35b5785df6f9775b1b77ffc004ec3eca021c7263",
+        "native-provenance.json": "209805654aafcc5d865b8edba360899b39926191a374dfc53471d0e0ba1fdeb1"
+      },
+      "note": "Current v15 small one-shot/TUI, oversized-file HTTP 400, and DSW installed/repository CLI acceptance; full-length native and valid cached 1Mi file evidence remain v14. No v15 cold 1Mi prefill was run."
     }
   },
   "deployed_console_source_files_sha256": {
@@ -186,17 +266,74 @@
     "tools/console/control.py": "da3f161f9c09f94af2851d2b2ef4490ed694dfc914d18701bec149788d769e43",
     "tools/console/ripple_worker.py": "0416ad6a73712c127578d5dfe8d3a42426bb0ae4bbbb714f3562516626d70272"
   },
-  "evidence_dir": "/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/long-context/lumen-v14",
+  "evidence_dir": "/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/long-context/lumen-final",
   "evidence_files_sha256": {
-    "tui/verification.json": "1b5c4f2b8f5fca3f81c0b2708df9c4e588a5b157e2b8030edd7be508af2ef19e",
-    "tui/terminal.raw": "31048625fed9d35212dcffa11d7c73c4faed89895b6f1f353837c7518e9de8de",
-    "tui/turn1.screen.txt": "258c785a264d3cb5a2278961f33bda02e99884cf20bd94278384c82bffa05974",
-    "tui/turn2.screen.txt": "2eabe9753ad2f782101a6368b9fe7f14b8c4a5e44618a3c43c39930eb3b14784",
-    "file/verification.json": "97c668180c82a5ac45a356997034ff5bf3c2545d30339fa4231a862569d87ce0",
-    "file/valid.stdout.txt": "a12b7cb43c9d9134b5bb1b35e9096b66775d9e92e7611d1cc92b02edd6782a87",
-    "file/valid.stderr.txt": "e4492b22d269c8bfed97c3f7703dd40226e355f8b7ff9c467d78310959c9f30c",
-    "file/lumen-cached-file-1mi-check.log": "6986e8d0689af4512ec6ef07e90f8f318dc88ef203f8e83416185bcc626bccf5",
-    "file/lumen-cached-file-1mi-sha256.json": "3ceda6a7142689f458dd50bb11ba73e0f35339c45a38c91216737b73ed639b96",
-    "file/fixture/manifest.json": "c2c4d03896586328ec169d7bea670c83ca8a7fa2bba9c76bfc38da1595d9ec80"
+    "http-live-boundaries.json": "743e4dae19c926ffe1a0ad6a35b5785df6f9775b1b77ffc004ec3eca021c7263",
+    "http-validation.json": "4820d662bc4e0f90f023a9f7577e1d6b77b5abc6831ea8e4c10ba87dc1835663",
+    "lumen-final-dsw.json": "1b976e30db0b8823016b3776f93483e8719790fd17a12c52692fe1745d549bc8",
+    "native-provenance.json": "209805654aafcc5d865b8edba360899b39926191a374dfc53471d0e0ba1fdeb1",
+    "overbudget-verification.json": "83b94c2a4616fc71be0618f102a4e03f02eb28dfd19f15e563f8d51bdf6c65d0",
+    "overbudget.stderr.txt": "08c97b522099e01c34007c2396bc2021aceae61333fdaf89989157ac053e5b7e",
+    "overbudget.stdout.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "status.json": "2f179edd66887f0fb365badfc0194e1eddc03ad2727f5011fb8134a0d44317b2",
+    "terminal.raw": "77dead38a2216e461df9b2cf83d3aec1582de3fe32ede250295913b8aaf9cbd9",
+    "turn1.screen.txt": "419c037ddbeb28b36ba09705750299c8d7d4db7aa7f978f1a8e7e99db7a49d0c",
+    "turn2.screen.txt": "fd46672048a2d40f092038c2ae91d9b3dab9a14dabe615d8bd7cba7e44ee286a",
+    "verification.json": "d56a562a7b40c453ca86a7b79ef6d957c5c8875bbf68c6639baf5f191d9c14e8"
+  },
+  "historical_v14_live": {
+    "job_id": "dlc1e0h0crzzqys0",
+    "backend_server_code_revision": "aea3e4f284f1c0e63a540ae31c59c70ae4cd874b",
+    "live": {
+      "installed_command": "/home/ubuntu/.local/bin/lumen",
+      "binary_sha256": "b511baca56379fd5c91eea67a41d51f14ee57f0000451b7032f9b8d4ca275244",
+      "router_advertised_context_tokens": 1048576,
+      "max_new_tokens": 512,
+      "one_shot": {
+        "exit_code": 0,
+        "stdout": "OK",
+        "seconds": 3.6657329549780115,
+        "ssh_tunnel_closed": true
+      },
+      "tui": {
+        "first_answer": "OK",
+        "second_answer": "SQUIRREL",
+        "multi_turn_memory": true,
+        "exit_code": 0,
+        "ssh_tunnel_closed": true
+      },
+      "large_file": {
+        "checked_at": "2026-11-05T13:14:10.646529+00:00",
+        "dlc_job_id": "dlc1e0h0crzzqys0",
+        "server_code_revision": "aea3e4f284f1c0e63a540ae31c59c70ae4cd874b",
+        "installed_command": "/home/ubuntu/.local/bin/lumen",
+        "binary_sha256": "b511baca56379fd5c91eea67a41d51f14ee57f0000451b7032f9b8d4ca275244",
+        "prompt_tokens": 1048336,
+        "prompt_file_bytes": 6462244,
+        "total_budget_tokens": 1048344,
+        "synthetic_transcript_flattening": true,
+        "expected_cached_prefix": 1048320,
+        "exit_code": 0,
+        "stdout": "OK",
+        "stderr": "Ripple 正在生成，完成后显示整段回答…\n正在预填充 · 1048320/1048336 tokens · 100.0%\n",
+        "seconds": 20.750246263109148
+      },
+      "large_file_scope": "Synthetic transcript flattening with embedded role markers reproduces the previously validated multi-turn token sequence and cached prefix. This verifies installed --system/--file transport and cached continuation, not a cold arbitrary-document 1Mi prefill benchmark.",
+      "large_fixture_dir": "/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/long-context/lumen-cached-file-1mi",
+      "generation_rerun_for_receipt": false
+    },
+    "evidence_dir": "/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/long-context/lumen-v14",
+    "evidence_files_sha256": {
+      "tui/verification.json": "1b5c4f2b8f5fca3f81c0b2708df9c4e588a5b157e2b8030edd7be508af2ef19e",
+      "tui/terminal.raw": "31048625fed9d35212dcffa11d7c73c4faed89895b6f1f353837c7518e9de8de",
+      "tui/turn1.screen.txt": "258c785a264d3cb5a2278961f33bda02e99884cf20bd94278384c82bffa05974",
+      "tui/turn2.screen.txt": "2eabe9753ad2f782101a6368b9fe7f14b8c4a5e44618a3c43c39930eb3b14784",
+      "file/verification.json": "97c668180c82a5ac45a356997034ff5bf3c2545d30339fa4231a862569d87ce0",
+      "file/valid.stdout.txt": "a12b7cb43c9d9134b5bb1b35e9096b66775d9e92e7611d1cc92b02edd6782a87",
+      "file/valid.stderr.txt": "e4492b22d269c8bfed97c3f7703dd40226e355f8b7ff9c467d78310959c9f30c",
+      "file/lumen-cached-file-1mi-check.log": "6986e8d0689af4512ec6ef07e90f8f318dc88ef203f8e83416185bcc626bccf5",
+      "file/lumen-cached-file-1mi-sha256.json": "3ceda6a7142689f458dd50bb11ba73e0f35339c45a38c91216737b73ed639b96",
+      "file/fixture/manifest.json": "c2c4d03896586328ec169d7bea670c83ca8a7fa2bba9c76bfc38da1595d9ec80"
+    }
   }
 }

@@ -210,7 +210,7 @@ CUDA allocator 缓存另计，不能把它作为总显存上限。
 最终回归共 **669** 项断言通过：Ripple CPU 251、CUDA 124，Flint／采样 294。
 包含 INT4 GEMV 的 8／128／5,120／40,960 输入宽度、非整齐尾行、缓存解码、
 BF16/F32 设备读取、两种 SHA 校验路径以及损坏 payload 拒绝测试。
-未运行全部 Chapter 测试、行业综合 benchmark 或 1M-token 上下文验收。
+这些单卡/INT4 回归未运行全部 Chapter 测试、行业综合 benchmark 或 1M-token 上下文验收；TP8 阶段性长上下文验收另见本文末节。
 
 最终证据位于 `benchmark_results/ripple/full/`：
 
@@ -237,8 +237,8 @@ Q/K/V/g 与 gate/up 按输出行分片，O/down 按输入列分片；每层的 a
 八卡总驻留权重包含复制的 embedding；权重字节数不等于 GPU 总显存。
 
 一个 Julia 进程用每卡常驻 worker 计算本地结果，复用任务内的 CUDA/cuBLAS 状态，
-然后由单个主机线程用 NCCL group 提交全部 rank 的通信。每次 forward 前在主机侧
-回收上一轮临时对象。每个计算/通信阶段完成后同步；计算中的 CUDA 分配与回收不与未
+然后由单个主机线程用 NCCL group 提交全部 rank 的通信。初始版本每次 forward 前在主机侧
+回收临时对象，后续优化改为预填充边界与有界解码间隔回收。每个计算/通信阶段完成后同步；计算中的 CUDA 分配与回收不与未
 提交完整的 collective 交错。最初整段异步方案在 1,057-token 输入上停顿，SIGUSR1
 栈确认某 rank 卡在 finalizer 的 `cuMemFreeAsync`，其他 GPU 等待通信；分阶段提交修复
 保留相同数学方程。`test_ripple_nccl_transport.jl` 覆盖匹配该长输入的 20.6MiB
@@ -262,18 +262,19 @@ python3 scripts/verify_ripple_tp8_http.py RUN_DIR
 私网地址并从 `credentials/api_key` 读取 Bearer key，不打印 key。
 
 服务提供 `/healthz`、`/v1/models` 和基本 OpenAI 兼容的 `/v1/chat/completions`。
-当前为单请求串行、非流式文本聊天，输入与输出预算合计上限 8,192 tokens、输出上限 512 tokens、
-prefill chunk 256 tokens；流式、并发 batch、结构化 tool calls 未实现。
+初始基线为单请求串行、非逐 token 文本流式聊天，预算上限 8,192 tokens、输出上限 512 tokens、
+prefill chunk 256 tokens。后续阶段性长上下文与异步进度支持见本文末节；当前公开上限以部署收据及 `/healthz` 为准。
+并发 batch 与结构化 tool calls 未实现。
 `results/service.log`、`resources.csv`、`parity.json`、`generation.json`、`validation.json`
 保存启动、数值、输出和资源记录。采样显存包括 CUDA allocator 缓存；加载时间不包含
 Julia 导入/预编译。此节点为八张 RTX PRO 5000 72GB、PCIe PHB 互连。
 
-### 八卡实测记录（2026-11-05）
+### 历史：初始 8K 八卡实测（2026-11-05）
 
-任务 [dlc1x35onfyb2m10](https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlc1x35onfyb2m10) 保持运行，服务模型名为 `lifeai-ripple65b-tp8`，
-DSW 实测可达的 API base 为 `http://10.68.4.21:18085/v1`。
+历史任务 [dlc1x35onfyb2m10](https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlc1x35onfyb2m10) 记录了初始 8K 验收，现已退役。该次服务模型名为 `lifeai-ripple65b-tp8`，
+当时 DSW 实测的 API base 为 `http://10.68.4.21:18085/v1`；它不是当前连接地址。
 已加载的服务代码固定为 `d7340cb1fb57a379f5d18de891e60f458ca0ea2f`；后续仓库更新包含调用工具、地址元数据修正和本记录。
-完整部署收据为 [`configs/deployment/ripple_tp8/deployment.json`](../configs/deployment/ripple_tp8/deployment.json)。
+本节为历史基线；当前发布任务及公开预算以 [`deployment.json`](../configs/deployment/ripple_tp8/deployment.json) 为准，历史原始证据见本节运行目录。
 
 原始 BF16 矩阵全部驻留八卡，norms 与计算使用 Float32，每卡权重为
 **17,101,066,560 bytes（15.93GiB）**，无 CPU 权重卸载。
@@ -317,13 +318,13 @@ DSW 的 **12 项 HTTP 检查**通过：未鉴权返回 401，非法请求/超限
 **431,434MiB**；包括 CUDA allocator 缓存、临时计算和 KV。
 主 Julia 进程的 RSS 采样峰值为 **8.13GiB**，不包括预编译子进程。
 
-当前运行目录：
+历史基线运行目录：
 
 ```text
 /jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-service-20261105T070401Z
 ```
 
-在 DSW 的项目根目录直接调用：
+历史任务的复现入口如下；任务已退役，实际使用请读取当前部署收据：
 
 ```bash
 python3 scripts/query_ripple_tp8.py /jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-service-20261105T070401Z --prompt 'Reply with exactly OK.'
@@ -349,25 +350,36 @@ lumen --model ripple --no-stream '请用一句话解释二分查找。'
 可用 `LIFEAI_MODEL=ripple` 选择 Ripple。其他机器先按 [Lumen 说明](../tools/tui/README.md)
 编译/安装更新后的客户端；自动 SSH 转发仍连接 DSW 的 11435 路由端口。
 
-DSW 路由通过 11438 的 `ripple_worker.py` 适配器使用上述 DLC 八卡服务，
+DSW 路由通过 11438 的 `ripple_worker.py` 适配器使用当前发布收据选定的 DLC 八卡服务，
 完整保留 system/user/assistant 消息，密钥只在 DSW 读取。
 切换或退出只释放本地适配器或客户端 SSH 连接，DLC 服务继续驻留。
-上游当前非流式，完整回答到达后显示；上下文 8192、输出上限 512 tokens。
+模型文本完整生成后显示；异步任务可发布真实预填充进度和心跳。
+上下文上限由当前已验证档位发布，输出上限仍为 512 tokens。
+文件/标准输入与草稿上限 64MiB UTF-8、对话合计 64Mi 字符、JSON 请求 128MiB，响应上限仍为 16MiB。
+生成超时默认 21600 秒（6 小时），加载超时独立保持 1800 秒。
 完成的 `<think>` 内容保留显示，下一轮历史只发送最终答案。
 
-Rust 34 项单元测试、15 项 CLI HTTP 测试、Python 45 项协议/生命周期测试全部通过，
-`cargo fmt --check` 与 Clippy（警告视为错误）通过；Python 同一套测试也在 DSW 通过。
-真实安装命令、仓库启动脚本和自动 SSH 单次调用均返回 `OK`。
+本次传输与长请求更新：Rust **36** 项单元测试、**15** 项 CLI HTTP 测试、Python **61** 项协议/生命周期测试通过；
+`cargo fmt --check` 与 Clippy（警告视为错误）通过，Python 61 项也在 DSW 仓库通过。
+另有 Julia HTTP/队列/真实 TCP 边界 **78** 项检查和分阶段语料 harness **3** 项测试通过。
+原始接入时，真实安装命令、仓库启动脚本和自动 SSH 单次调用均返回 `OK`。
 真实交互终端两轮测试中，首轮记住暗号，次轮正确回答 `SQUIRREL`；
 Ctrl+C 退出码为 0，SSH 转发关闭，路由及 DLC 仍 ready。输出预算 513 被正确拒绝。
+上述初始接入证据作为历史保留。v14 公开 1Mi 后，真实安装的 `lumen` 单次调用 3.666 秒返回 `OK`，
+交互终端两轮正确返回 `OK` / `SQUIRREL`，退出码 0 且 SSH tunnel 已关闭。
+另以 `--system` / `--file` 读取 6,462,244-byte 文件，实际提示词 1,048,336 tokens，
+20.750 秒返回 `OK`；stderr 显示真实已复用前缀 `1048320/1048336`。
+该文件用嵌入角色标记的 synthetic transcript flatten 重现已验证多轮序列，验证大文件传输及缓存续问，
+不作为任意文档的冷启动 1Mi prefill 性能证据。小证据位于 `benchmark_results/ripple/long-context/lumen-v14/{file,tui}/`。
 
 部署验证收据见 [`lumen.json`](../configs/deployment/ripple_tp8/lumen.json)，包含二进制与源码
 SHA-256；详细日志、终端截图文本和验证 JSON 保存在 `benchmark_results/ripple/lumen/`。
 
-## TP8 解码性能优化（2026-11-05）
+## 历史：TP8 短上下文解码性能优化（2026-11-05）
 
-当前服务任务为 [dlc14tk1zf50nw9d](https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlc14tk1zf50nw9d)，服务代码固定为 `0921a3316dc3ee25b42793ab698f59c3f2ba10ed`。
-Lumen 的 `lumen --model ripple` 使用已验证的当前部署；客户端自动读取解码速率元数据。
+本节短上下文基准使用历史任务 [dlc14tk1zf50nw9d](https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlc14tk1zf50nw9d)，服务代码固定为 `0921a3316dc3ee25b42793ab698f59c3f2ba10ed`。
+该历史任务现已退役；Lumen 的 `lumen --model ripple` 使用当前部署收据选定的服务。
+客户端自动读取服务发布的有效解码速率元数据。
 
 保持原始 BF16 权重值与 Float32 激活/累加，没有进行权重或激活量化。
 新增 direct BF16 split-K GEMV，直接读取 BF16 矩阵并用 Float32 合并局部和；
@@ -378,6 +390,7 @@ Lumen 的 `lumen --model ripple` 使用已验证的当前部署；客户端自�
 
 比较在同一个节点、同一组 8×RTX PRO 5000 72GB、同一 29-token 提示词上运行，
 温度 0，固定 96 个输出 token；速率为首 token 之后的 95 次间隔。
+**这是 29-token 输入的短请求稳态基准，6.155 token/s 不代表 128K—1Mi 的预填充速度，也不是长历史追问的端到端吞吐。**
 原始 `reference` 与最终候选各做三次，其他方案只有一次 pilot：
 
 | 方案 | 样本数 | median decode token/s |
@@ -409,6 +422,104 @@ DLC 配置可用 `benchmark_variants=true` 运行同机比较并选择已通过�
 
 部署和汇总数据见 [`deployment.json`](../configs/deployment/ripple_tp8/deployment.json)、
 [`performance.json`](../configs/deployment/ripple_tp8/performance.json)。
-完整逐步 logits 参考、各方案 timings、阶段剖析、生成和接口证据保存在当前运行目录的
+本节历史短上下文的逐步 logits 参考、各方案 timings、阶段剖析、生成和接口证据保存在该历史任务运行目录的
 `results/variants.json`、`decode-reference.jls`、`generation.json`、`http-throughput.json`、
 `http-long-context.json`、`final-verification.log` 与 `resources.csv`。
+
+
+## 阶段性长上下文支持（v14 已验证 1Mi）
+
+> 128Ki pilot 与 native v14 的 256Ki、512Ki、1Mi 长测共同完成四档功能验收，公开验证上限为 **1,048,576 tokens**。
+> 当前 HTTP v15 已通过独立接口及 installed Lumen 客户端验收，详见 [上下文收据](../configs/deployment/ripple_tp8/context.json)。
+
+预算按**模板、全部消息历史与预留输出合计**，四档分别为 131,072、262,144、524,288、1,048,576 tokens。
+模型仍为原始 BF16 权重、Float32 激活/累加与 FP32 KV，单节点 TP8。
+16 层全局注意力的 1Mi KV 估算每卡 16GiB，64 层 1024-token 滑窗缓存保持有界，
+加上权重每卡约 32GiB 常驻；该估算不包含临时激活、scratch 和 allocator 缓存。
+
+### 方法与已知边界
+
+- 长输入按 2048-token 分块，attention query microbatch 最大 2048，并受 1GiB scratch guard 限制。
+  对 owning CuArray 的 view/reshape 别名及 tiled-attention 临时区显式释放，prefill 同步边界清除持久 worker 引用后 full GC，
+  解决先前约 188K 位置的显存累积问题。
+- Ripple 专用 RoPE 采用与官方 CUDA forward 一致的逆频率/三角函数计算。独立位置 oracle 覆盖
+  131072、262144、524288、1048576 附近以及 2097151；实际 CUDA 位置检查最大绝对误差为 0。
+- 一个有界、串行的 exact-token 前缀检查点只复用已预填充提示词。滑窗在提示词边界复制快照；
+  全局 KV 共享不再改写的前缀区，生成后缀不加入可复用检查点。
+  失配、运行策略变化、异常或取消会使检查点失效；长缓存记住 full-GC 需求。
+  容量增长在重新 checkpoint 前完成，清除旧 snapshot/worker 引用后回收，避免持久双份完整 KV。
+- `/v1/chat/completions/jobs` 使用共享 Bearer 鉴权，GET 轮询进度/结果；适配器按 ID 取消自身提交的 job。
+  Lumen 转发真实 prefill 计数与心跳，最终文本仍完整返回；断开或超时不停止 DLC 服务。
+  请求链路输入 64MiB、JSON 128MiB、响应 16MiB，生成超时默认 21600 秒。
+- 后台配置的 `max_context=1048576` 与公开已验证上限分开。部署收据的 `validated_context_tokens`
+  控制 Lumen/路由公布的有效上限；适配器转发 `context_limit`，模型在实际分词后校验输入+输出预算。
+  提高配置上限本身不会把未验收档位标记为已通过。
+
+每档在**新增 archive 文档段**约 5%/50%/95% 位置放置随机验证值，精确取回答案并要求 EOS；
+后续请求保留历史并验证 exact-token 前缀复用计数。最终 1Mi 也已查询最早文档中此前未查询的隐藏锚点并正确返回。
+这些是容量、检索与复用 smoke，不代表综合长上下文 benchmark。
+
+### 已完成阶段的实际结果
+
+以下 `seconds` 为测试客户端端到端耗时，包含 HTTP 轮询；不应与上文短请求 decode token/s 混用。
+128Ki 来自 `e067d018a455f82afb985563d7cbebe6ea1f91be` 的 pilot；
+256Ki/512Ki/1Mi 来自 native v14 `aea3e4f284f1c0e63a540ae31c59c70ae4cd874b`。
+
+| 阶段 | 状态 | 首问输入 tokens | 首问复用 tokens | 首问端到端秒 | 中/尾短追问秒 | 精确预算输入 + 预留输出 |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| 128Ki pilot | passed | 126,976 | 0 | 136.61 | 6.05 / 6.05 | 130,816 + 256 = 131,072 |
+| 256Ki v14 | passed | 258,048 | 0 | 657.09 | 8.07 / 8.05 | 261,888 + 256 = 262,144 |
+| 512Ki v14 | passed | 520,192 | 261,888 | 820.83 | 12.08 / 12.07 | 524,032 + 256 = 524,288 |
+| 1Mi v14 | passed | 1,044,480 | 524,032 | 2,593.71 | 22.16 / 24.15 | 1,048,320 + 256 = 1,048,576 |
+
+512Ki 首问已复用前一阶段的 261,888-token 检查点，只新增预填充 258,304 tokens；
+**820.83 秒不是冷启动处理整段 512Ki 的耗时**。中/尾短追问也复用了绝大多数历史，
+其约 6/8/12 秒为历史复用后的端到端续问时间。
+128Ki pilot 与 1Mi 均完成全局最早锚点查询；1Mi 该查询端到端 25.090 秒。
+1Mi 首问新增预填充 520,448 tokens，复用 524,032 tokens，native prefill 为 2,589.504 秒；
+2,593.71 秒为这次增量续算的客户端端到端时间。精确预算请求 43.123 秒返回 `OK`。
+这次 1Mi 首问生成 10 个 output tokens，样本 decode 为 **3.889 token/s**；这是单次长历史样本，
+与上文 29-token 输入、96-token 输出、三次重复的历史 6.155 token/s 基准分别记录。
+冻结的资源采样记录单卡峰值 51,099MiB（49.90GiB）；这是设备采样峰值，非 KV 单项大小。
+
+### 原生长测与最终 HTTP 版本分离
+
+native v14 的长测运行目录：
+
+```text
+/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context-bounded-20261105T114011Z
+```
+
+该 native 版本与当前 HTTP v15 `4c324b4968da2a775b8fc48b86fcb013b80c9c41` 的源码树完全一致：
+
+```text
+src tree: 78d19728505b8bb2ecc8b25247c810b7a82df9a4
+ext tree: 5ffacf294e90015a32f231fff97f7baec77becd4
+```
+
+native v14 的完整阶段报告 `results/context-stages.json` 在 2026-11-05T13:12:10.743432+00:00 完成，
+`all_passed=true`；SHA-256 为 `c7451237587248dd8ed0efcae8e0008675820e47605e4bc9f9736c7feff884c3`。
+其实际长测任务为 `dlc1e0h0crzzqys0`，源码为 `aea3e4f284f1c0e63a540ae31c59c70ae4cd874b`。
+
+当前 HTTP v15 任务为 `dlcdyvi8bn3txeib`，源码为
+`4c324b4968da2a775b8fc48b86fcb013b80c9c41`。该版本的标准 HTTP、headers-only 401/413、
+queued cancel 检查通过；DSW 安装命令及仓库启动脚本均返回 `OK`。
+installed Lumen 单次调用 2.171 秒返回 `OK`，交互终端两轮记忆正确返回 `OK` / `SQUIRREL`，退出码 0，SSH tunnel 关闭。
+6.46MB、1,048,848-token 输入加 8-token 输出预算为 1,048,856，实网在 19.795 秒返回 HTTP 400，
+验证超预算拒绝。v14 的完整原生阶段报告与 v15 独立 HTTP/客户端证据分别记录，
+共同覆盖当前发布的模型路径与接口边界。
+证据见 `benchmark_results/ripple/long-context/lumen-final-dsw.json` 及
+`benchmark_results/ripple/long-context/lumen-final/`；发布预算见
+[context.json](../configs/deployment/ripple_tp8/context.json)。
+
+```bash
+lumen --status
+lumen --model ripple --file /path/to/long-document.txt --timeout 21600
+```
+
+较长文件仍须满足当前已公开的 token 预算；完整消息由服务端分词，超限返回可识别的 400 类错误。
+源证据：128Ki pilot 的 `results/context-128k-pilot.json`；v14 的 `results/context-stages.json`、
+`context-stages.messages.json`、`context-stages.resume-proof.json`、`staged-run.resume-launch.json` 及 `resources.csv`。
+原先 1Mi 语料拼接遇到 BPE 尾部合并的一 token 间隙，harness 已改为按真实编码长度 bracket/search；
+resume 保留并核对已通过阶段的消息与 token 哈希。该 harness 构造失败不是模型 512Ki 失败，
+最终 1Mi 模型验收以随后完成的真实阶段报告为准。

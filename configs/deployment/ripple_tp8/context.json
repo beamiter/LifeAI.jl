@@ -459,5 +459,160 @@
     "long_attention_torch_math_max_abs_error": 3.725290298461914e-08,
     "pre_long_context_component_suite_passed": 375
   },
-  "verified_at": "2026-11-05T13:16:49.516736+00:00"
+  "verified_at": "2026-11-05T13:16:49.516736+00:00",
+  "http_release": {
+    "job_id": "dlcdyvi8bn3txeib",
+    "run_dir": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z",
+    "code_revision": "4c324b4968da2a775b8fc48b86fcb013b80c9c41",
+    "verified_at": "2026-11-05T13:33:50.897305+00:00",
+    "http_validation_evidence": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z/results/http-validation.json",
+    "http_boundary_evidence": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z/results/http-live-boundaries.json",
+    "native_provenance_evidence": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z/results/native-provenance.json",
+    "native_provenance": {
+      "reference_run_dir": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context-bounded-20261105T114011Z",
+      "candidate_run_dir": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z",
+      "src_ext_file_count": 77,
+      "src_ext_sha256_map_equal": true,
+      "validation_scope": "Native map equality reuses v14 full-length evidence; v15 will receive only small HTTP inference tests.",
+      "hardware_equal": true,
+      "gpu_count": 8,
+      "hardware": [
+        {
+          "rank": 0,
+          "name": "NVIDIA RTX PRO 5000 72GB Blackwell",
+          "memory_total_mib": 73415,
+          "driver_version": "580.126.09"
+        },
+        {
+          "rank": 1,
+          "name": "NVIDIA RTX PRO 5000 72GB Blackwell",
+          "memory_total_mib": 73415,
+          "driver_version": "580.126.09"
+        },
+        {
+          "rank": 2,
+          "name": "NVIDIA RTX PRO 5000 72GB Blackwell",
+          "memory_total_mib": 73415,
+          "driver_version": "580.126.09"
+        },
+        {
+          "rank": 3,
+          "name": "NVIDIA RTX PRO 5000 72GB Blackwell",
+          "memory_total_mib": 73415,
+          "driver_version": "580.126.09"
+        },
+        {
+          "rank": 4,
+          "name": "NVIDIA RTX PRO 5000 72GB Blackwell",
+          "memory_total_mib": 73415,
+          "driver_version": "580.126.09"
+        },
+        {
+          "rank": 5,
+          "name": "NVIDIA RTX PRO 5000 72GB Blackwell",
+          "memory_total_mib": 73415,
+          "driver_version": "580.126.09"
+        },
+        {
+          "rank": 6,
+          "name": "NVIDIA RTX PRO 5000 72GB Blackwell",
+          "memory_total_mib": 73415,
+          "driver_version": "580.126.09"
+        },
+        {
+          "rank": 7,
+          "name": "NVIDIA RTX PRO 5000 72GB Blackwell",
+          "memory_total_mib": 73415,
+          "driver_version": "580.126.09"
+        }
+      ]
+    },
+    "scope": "Current v15 small one-shot/TUI, oversized-file HTTP 400, and DSW installed/repository CLI acceptance; full-length native and valid cached 1Mi file evidence remain v14. No v15 cold 1Mi prefill was run."
+  },
+  "client_validation": {
+    "verified_at": "2026-11-05T13:33:50.897305+00:00",
+    "job_id": "dlcdyvi8bn3txeib",
+    "server_code_revision": "4c324b4968da2a775b8fc48b86fcb013b80c9c41",
+    "all_passed": true,
+    "evidence_dir": "/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/long-context/lumen-final",
+    "evidence_files_sha256": {
+      "http-live-boundaries.json": "743e4dae19c926ffe1a0ad6a35b5785df6f9775b1b77ffc004ec3eca021c7263",
+      "http-validation.json": "4820d662bc4e0f90f023a9f7577e1d6b77b5abc6831ea8e4c10ba87dc1835663",
+      "lumen-final-dsw.json": "1b976e30db0b8823016b3776f93483e8719790fd17a12c52692fe1745d549bc8",
+      "native-provenance.json": "209805654aafcc5d865b8edba360899b39926191a374dfc53471d0e0ba1fdeb1",
+      "overbudget-verification.json": "83b94c2a4616fc71be0618f102a4e03f02eb28dfd19f15e563f8d51bdf6c65d0",
+      "overbudget.stderr.txt": "08c97b522099e01c34007c2396bc2021aceae61333fdaf89989157ac053e5b7e",
+      "overbudget.stdout.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "status.json": "2f179edd66887f0fb365badfc0194e1eddc03ad2727f5011fb8134a0d44317b2",
+      "terminal.raw": "77dead38a2216e461df9b2cf83d3aec1582de3fe32ede250295913b8aaf9cbd9",
+      "turn1.screen.txt": "419c037ddbeb28b36ba09705750299c8d7d4db7aa7f978f1a8e7e99db7a49d0c",
+      "turn2.screen.txt": "fd46672048a2d40f092038c2ae91d9b3dab9a14dabe615d8bd7cba7e44ee286a",
+      "verification.json": "d56a562a7b40c453ca86a7b79ef6d957c5c8875bbf68c6639baf5f191d9c14e8"
+    },
+    "one_shot": {
+      "exit_code": 0,
+      "stdout": "OK",
+      "seconds": 2.1712448470061645,
+      "ssh_tunnel_closed": true
+    },
+    "tui": {
+      "first_answer": "OK",
+      "second_answer": "SQUIRREL",
+      "multi_turn_memory": true,
+      "exit_code": 0,
+      "ssh_tunnel_closed": true
+    },
+    "overbudget": {
+      "checked_at": "2026-11-05T13:30:23.862848+00:00",
+      "dlc_job_id": "dlcdyvi8bn3txeib",
+      "server_code_revision": "4c324b4968da2a775b8fc48b86fcb013b80c9c41",
+      "expected_http_status": 400,
+      "fixture": {
+        "purpose": "Expected HTTP 400 context rejection through Lumen --no-stream; this is not a passing 1Mi generation fixture.",
+        "file": "/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/long-context/lumen-cached-file-1mi/prompt-overbudget.txt",
+        "expected_http_status": 400,
+        "prompt_tokens": 1048848,
+        "max_tokens": 8,
+        "total_budget_tokens": 1048856,
+        "context_limit": 1048576,
+        "file_bytes": 6463268,
+        "file_sha256": "ee6a26a7439b3a8ff1555271fa43df02f00c21334b5080502e2314815c7c12c0",
+        "formatted_prompt_bytes": 6463586,
+        "prompt_ids_sha256": "0cb24c68526cbbba17bd07a8f0a6ba6080b2d84eacf64cae46c1c40cb08e9ce1",
+        "representative_json_bytes": 6507352,
+        "representative_json_sha256": "2e27f90277d85e5b4c8551df224e597639bc052576a43b11472ef179ea96dedd",
+        "json_note": "Representative compact UTF-8 chat payload; actual CLI serialization may vary slightly.",
+        "within_64_mib": true,
+        "within_128_mib": true,
+        "inference_performed": false
+      },
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Ripple 正在生成，完成后显示整段回答…\nLumen: 提示词与输出可能超过上下文；请缩短对话、降低 -n，或按 Ctrl+L 清空。HTTP 400: ArgumentError: request exceeds context limit\n",
+      "seconds": 19.794529670034535,
+      "passed": true
+    },
+    "dsw": {
+      "checked_at": "2026-11-05T13:31:03.661924+00:00",
+      "job_id": "dlcdyvi8bn3txeib",
+      "code_revision": "4c324b4968da2a775b8fc48b86fcb013b80c9c41",
+      "binary_sha256": "b511baca56379fd5c91eea67a41d51f14ee57f0000451b7032f9b8d4ca275244",
+      "all_passed": true,
+      "checks": [
+        {
+          "name": "installed",
+          "command": "/usr/local/bin/lumen",
+          "exit_code": 0,
+          "stdout": "OK"
+        },
+        {
+          "name": "repository",
+          "command": "/jfs/application/user/bgl/LifeAI.jl/scripts/lifeai",
+          "exit_code": 0,
+          "stdout": "OK"
+        }
+      ]
+    },
+    "scope": "Current v15 small one-shot/TUI, oversized-file HTTP 400, and DSW installed/repository CLI acceptance; full-length native and valid cached 1Mi file evidence remain v14. No v15 cold 1Mi prefill was run."
+  }
 }

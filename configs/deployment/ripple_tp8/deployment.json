@@ -1,11 +1,11 @@
 {
-  "job_id": "dlc1e0h0crzzqys0",
-  "run_dir": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context-bounded-20261105T114011Z",
-  "server_code_revision": "aea3e4f284f1c0e63a540ae31c59c70ae4cd874b",
-  "console_url": "https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlc1e0h0crzzqys0",
-  "endpoint": "http://10.68.4.208:18085",
-  "api_base": "http://10.68.4.208:18085/v1",
-  "api_key_file": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context-bounded-20261105T114011Z/credentials/api_key",
+  "job_id": "dlcdyvi8bn3txeib",
+  "run_dir": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z",
+  "server_code_revision": "4c324b4968da2a775b8fc48b86fcb013b80c9c41",
+  "console_url": "https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlcdyvi8bn3txeib",
+  "endpoint": "http://10.68.5.23:18085",
+  "api_base": "http://10.68.5.23:18085/v1",
+  "api_key_file": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z/credentials/api_key",
   "model_id": "lifeai-ripple65b-tp8",
   "validated_context_tokens": 1048576,
   "configured_context_tokens": 1048576,
@@ -21,5 +21,32 @@
     "131072": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-20261105T104928Z/results/context-128k-pilot.json"
   },
   "context_validation_completed_at": "2026-11-05T13:12:10.743432+00:00",
-  "verified_at": "2026-11-05T13:12:57.333385+00:00"
+  "verified_at": "2026-11-05T13:30:03.977016+00:00",
+  "display_name": "smx1105-scratch_before_s0_pilot_v15",
+  "native_context_validation_run": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context-bounded-20261105T114011Z",
+  "native_context_validation_code_revision": "aea3e4f284f1c0e63a540ae31c59c70ae4cd874b",
+  "native_sources_equal": true,
+  "http_validation_evidence": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z/results/http-validation.json",
+  "http_boundary_evidence": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z/results/http-live-boundaries.json",
+  "native_provenance_evidence": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-context1m-http-20261105T132026Z/results/native-provenance.json",
+  "client_validation": {
+    "verified_at": "2026-11-05T13:33:50.897305+00:00",
+    "all_passed": true,
+    "evidence_dir": "/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/long-context/lumen-final",
+    "evidence_files_sha256": {
+      "http-live-boundaries.json": "743e4dae19c926ffe1a0ad6a35b5785df6f9775b1b77ffc004ec3eca021c7263",
+      "http-validation.json": "4820d662bc4e0f90f023a9f7577e1d6b77b5abc6831ea8e4c10ba87dc1835663",
+      "lumen-final-dsw.json": "1b976e30db0b8823016b3776f93483e8719790fd17a12c52692fe1745d549bc8",
+      "native-provenance.json": "209805654aafcc5d865b8edba360899b39926191a374dfc53471d0e0ba1fdeb1",
+      "overbudget-verification.json": "83b94c2a4616fc71be0618f102a4e03f02eb28dfd19f15e563f8d51bdf6c65d0",
+      "overbudget.stderr.txt": "08c97b522099e01c34007c2396bc2021aceae61333fdaf89989157ac053e5b7e",
+      "overbudget.stdout.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "status.json": "2f179edd66887f0fb365badfc0194e1eddc03ad2727f5011fb8134a0d44317b2",
+      "terminal.raw": "77dead38a2216e461df9b2cf83d3aec1582de3fe32ede250295913b8aaf9cbd9",
+      "turn1.screen.txt": "419c037ddbeb28b36ba09705750299c8d7d4db7aa7f978f1a8e7e99db7a49d0c",
+      "turn2.screen.txt": "fd46672048a2d40f092038c2ae91d9b3dab9a14dabe615d8bd7cba7e44ee286a",
+      "verification.json": "d56a562a7b40c453ca86a7b79ef6d957c5c8875bbf68c6639baf5f191d9c14e8"
+    },
+    "scope": "Current v15 small one-shot/TUI, oversized-file HTTP 400, and DSW installed/repository CLI acceptance; full-length native and valid cached 1Mi file evidence remain v14. No v15 cold 1Mi prefill was run."
+  }
 }
