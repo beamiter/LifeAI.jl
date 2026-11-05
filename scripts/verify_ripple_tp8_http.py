@@ -6,14 +6,16 @@ import json
 from pathlib import Path
 import urllib.error
 import urllib.request
+from query_ripple_tp8 import discover_endpoint
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('run_dir', type=Path)
     args = parser.parse_args()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     ready = json.loads((args.run_dir / 'results/ready.json').read_text())
-    endpoint = ready['endpoint']
+    endpoint, _ = discover_endpoint(ready, opener)
     key = (args.run_dir / 'credentials/api_key').read_text().strip()
     checks = []
 
@@ -24,7 +26,7 @@ def main():
         req = urllib.request.Request(endpoint + path, method=method,
             data=None if payload is None else json.dumps(payload).encode(), headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=600) as response:
+            with opener.open(req, timeout=600) as response:
                 status, body = response.status, json.load(response)
         except urllib.error.HTTPError as error:
             status, body = error.code, json.load(error)
@@ -53,6 +55,16 @@ def main():
     assert body['lifeai']['tensor_parallel'] == 8 and body['lifeai']['weight_dtype'] == 'BF16'
     result = {'endpoint': endpoint, 'code_revision': ready['code_revision'], 'all_passed': True,
         'checked_at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'checks': checks, 'completion': body}
+    # A multi-interface DLC pod may initially advertise a link-local address.
+    # Save the endpoint only after the authenticated completion proved it from DSW.
+    if ready['endpoint'] != endpoint:
+        ready['initial_endpoint'] = ready['endpoint']
+        ready['endpoint'] = endpoint
+        ready['endpoint_verified_at'] = result['checked_at']
+        path = args.run_dir / 'results/ready.json'
+        temporary = path.with_suffix('.verified.tmp')
+        temporary.write_text(json.dumps(ready, ensure_ascii=False, indent=2) + '\n')
+        temporary.replace(path)
     (args.run_dir / 'results/http-validation.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps(result, ensure_ascii=False))
 

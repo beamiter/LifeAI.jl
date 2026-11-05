@@ -2,9 +2,34 @@
 """Query a deployed Ripple TP8 service from DSW without printing its API key."""
 import argparse
 import json
+import ipaddress
 from pathlib import Path
 import urllib.error
 import urllib.request
+import urllib.parse
+
+
+def discover_endpoint(ready, opener):
+    candidates = [ready['endpoint']] + [f'http://{ip}:{ready["port"]}' for ip in ready.get('addresses', [])]
+    endpoint = None
+    errors = []
+    for candidate in dict.fromkeys(candidates):
+        try:
+            if ipaddress.ip_address(urllib.parse.urlsplit(candidate).hostname).is_link_local:
+                continue
+        except ValueError:
+            pass
+        try:
+            with opener.open(candidate + '/healthz', timeout=5) as response:
+                health = json.load(response)
+            if health['status'] == 'ready':
+                endpoint = candidate
+                break
+        except (OSError, ValueError, KeyError, urllib.error.URLError) as error:
+            errors.append(f'{candidate}: {error}')
+    if endpoint is None:
+        raise RuntimeError('No healthy endpoint reachable from DSW: ' + '; '.join(errors))
+    return endpoint, health
 
 
 def main():
@@ -16,21 +41,9 @@ def main():
     parser.add_argument('--health-only', action='store_true')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     ready = json.loads((args.run_dir / 'results/ready.json').read_text())
-    candidates = [ready['endpoint']] + [f'http://{ip}:{ready["port"]}' for ip in ready.get('addresses', [])]
-    endpoint = None
-    errors = []
-    for candidate in dict.fromkeys(candidates):
-        try:
-            with urllib.request.urlopen(candidate + '/healthz', timeout=5) as response:
-                health = json.load(response)
-            if health['status'] == 'ready':
-                endpoint = candidate
-                break
-        except (OSError, ValueError, KeyError, urllib.error.URLError) as error:
-            errors.append(f'{candidate}: {error}')
-    if endpoint is None:
-        raise RuntimeError('No healthy endpoint reachable from DSW: ' + '; '.join(errors))
+    endpoint, health = discover_endpoint(ready, opener)
     if args.health_only:
         result = {'endpoint': endpoint, 'health': health}
     else:
@@ -39,7 +52,7 @@ def main():
                    'temperature': 0, 'max_tokens': args.max_tokens, 'stream': False}
         request = urllib.request.Request(endpoint + '/v1/chat/completions', data=json.dumps(payload).encode(),
             headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key})
-        with urllib.request.urlopen(request, timeout=args.timeout) as response:
+        with opener.open(request, timeout=args.timeout) as response:
             body = json.load(response)
         result = {'endpoint': endpoint, 'response': body}
     if args.output:

@@ -181,8 +181,11 @@ function tp8_main(args)
             end
         end
         server=HTTP.serve!(handler,options["host"],port;verbose=false)
-        addresses=string.(filter(ip->ip isa IPv4,getipaddrs()))
-        endpoint="http://"*get(ENV,"POD_IP",string(getipaddr()))*":$port"
+        addresses=string.(filter(ip->ip isa IPv4 && !startswith(string(ip),"169.254."),getipaddrs()))
+        isempty(addresses) && error("No routable IPv4 address available for the TP service")
+        preferred=get(ENV,"POD_IP","")
+        advertised=preferred in addresses ? preferred : first(addresses)
+        endpoint="http://"*advertised*":$port"
         ready=merge(receipt,(phase="ready",endpoint=endpoint,model_id=model_id,max_context=max_context,max_output=max_output,
             addresses=addresses,port=port,streaming=false,authentication=isempty(key) ? "none" : "bearer",api_key_file=options["api-key-file"]))
         tp8_write(joinpath(result_dir,"ready.json"),ready)

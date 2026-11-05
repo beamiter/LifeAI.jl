@@ -1,0 +1,192 @@
+{
+  "job_id": "dlc1x35onfyb2m10",
+  "console_url": "https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlc1x35onfyb2m10",
+  "run_dir": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-service-20261105T070401Z",
+  "server_code_revision": "d7340cb1fb57a379f5d18de891e60f458ca0ea2f",
+  "status_at_verification": "Running",
+  "verified_at": "2026-11-05T07:17:32.362712+00:00",
+  "endpoint": "http://10.68.4.21:18085",
+  "api_base": "http://10.68.4.21:18085/v1",
+  "api_key_file": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-service-20261105T070401Z/credentials/api_key",
+  "model_id": "lifeai-ripple65b-tp8",
+  "model_source": "ricursiveAI/Ripple-65B-Preview",
+  "hf_revision": "e27e171792f303d74c048184e8259ba663cfa0d5",
+  "deployment": {
+    "nodes": 1,
+    "gpus": 8,
+    "gpu_model": "NVIDIA RTX PRO 5000 72GB Blackwell",
+    "interconnect": "PCIe PHB",
+    "tensor_parallel": 8,
+    "weight_dtype": "BF16",
+    "activation_and_gemm_dtype": "Float32",
+    "cpu_weight_offload": false,
+    "max_context": 8192,
+    "max_output": 512,
+    "prefill_chunk_size": 256,
+    "streaming": false,
+    "authentication": "bearer"
+  },
+  "weights_bytes_per_rank": [
+    17101066560,
+    17101066560,
+    17101066560,
+    17101066560,
+    17101066560,
+    17101066560,
+    17101066560,
+    17101066560
+  ],
+  "load_seconds": 91.64491581916809,
+  "validation": {
+    "cpu_tp_assertions": 64,
+    "physical_nccl_assertions": 19,
+    "full_checkpoint_parity": [
+      {
+        "name": "exact_ok",
+        "prompt_tokens": 19,
+        "max_absolute_error": 4.7683716e-05,
+        "relative_l2_error": 7.7708626e-07,
+        "argmax_matches": true,
+        "greedy_tokens": [
+          4013,
+          100266
+        ],
+        "seconds": 5.5808727741241455
+      },
+      {
+        "name": "math",
+        "prompt_tokens": 28,
+        "max_absolute_error": 2.861023e-05,
+        "relative_l2_error": 1.3316906e-06,
+        "argmax_matches": true,
+        "greedy_tokens": [],
+        "seconds": 0.5235950946807861
+      },
+      {
+        "name": "long_window",
+        "prompt_tokens": 1057,
+        "max_absolute_error": 0.00037574768,
+        "relative_l2_error": 3.386717e-06,
+        "argmax_matches": true,
+        "greedy_tokens": [],
+        "seconds": 2.4389710426330566
+      }
+    ],
+    "generation_smoke_checks": {
+      "exact_ok": true,
+      "math_17_times_23": true,
+      "python_add": true,
+      "chinese_output": true,
+      "steady_decode_at_least_64_tokens": true
+    },
+    "http_checks": [
+      {
+        "name": "health",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "name": "unauthenticated_request",
+        "status": 401,
+        "passed": true
+      },
+      {
+        "name": "models",
+        "status": 200,
+        "passed": true
+      },
+      {
+        "name": "streaming_rejected",
+        "status": 400,
+        "passed": true
+      },
+      {
+        "name": "empty_messages",
+        "status": 400,
+        "passed": true
+      },
+      {
+        "name": "zero_tokens",
+        "status": 400,
+        "passed": true
+      },
+      {
+        "name": "output_limit",
+        "status": 400,
+        "passed": true
+      },
+      {
+        "name": "unknown_model",
+        "status": 400,
+        "passed": true
+      },
+      {
+        "name": "multiple_choices",
+        "status": 400,
+        "passed": true
+      },
+      {
+        "name": "context_limit",
+        "status": 400,
+        "passed": true
+      },
+      {
+        "name": "unknown_route",
+        "status": 404,
+        "passed": true
+      },
+      {
+        "name": "real_completion",
+        "status": 200,
+        "passed": true
+      }
+    ],
+    "long_http": {
+      "prompt_tokens": 7996,
+      "completion_tokens": 21,
+      "finish_reason": "stop",
+      "final_reply": "OK",
+      "seconds": 26.802773995994357
+    },
+    "startup_collectives": {
+      "world_size": 8,
+      "weights_per_rank": [
+        17101066560,
+        17101066560,
+        17101066560,
+        17101066560,
+        17101066560,
+        17101066560,
+        17101066560,
+        17101066560
+      ],
+      "allreduce_rank_calls": 216320,
+      "allgather_rank_calls": 1352,
+      "logical_allreduces": 27040,
+      "logical_allgathers": 169
+    }
+  },
+  "performance": {
+    "generated_tokens": 96,
+    "decode_seconds": 36.81385803222656,
+    "decode_tokens_per_second": 2.580549963463154,
+    "scope": "Single request, native Float32 compute path; 96-token budget"
+  },
+  "resources": {
+    "scope": "2-second nvidia-smi sampling from startup through this capture, includes allocator cache",
+    "captured_at": "2026-11-05T07:17:32.362712+00:00",
+    "samples": 347,
+    "gpu_memory_peak_mib": {
+      "0": 51411,
+      "1": 56945,
+      "2": 52465,
+      "3": 59057,
+      "4": 52881,
+      "5": 54897,
+      "6": 52113,
+      "7": 51665
+    },
+    "gpu_aggregate_peak_mib": 431434,
+    "julia_rss_peak_bytes": 8730406912
+  }
+}

@@ -221,3 +221,115 @@ BF16/F32 设备读取、两种 SHA 校验路径以及损坏 payload 拒绝测试
 - `native-int4-tests.log`：最终 669 项回归结果。
 
 模型数学参考与 INT4 生成使用不同权重精度；这些 smoke 不能替代综合质量评测。
+
+## DLC 单节点 8 卡原始权重服务
+
+通过 `scripts/dlc_ripple_tp8.py` 创建单 Worker、8 GPU 的推理任务，调度策略固定
+`Binpack`，同时挂载 `/jfs` 与 `/mnt/public_data`。任务从已提交版本导出代码快照，
+启动前核对 `CODE_REVISION` 与所有源码 SHA-256；模型仍读取共享 JFS 上已校验的原始分片。
+持久化环境为 `configs/deployment/ripple_tp8`，固定 CUDA.jl 6.2.1、NCCL.jl 0.1.3、
+NCCL 2.28.3 与 CUDA 12.9；不在容器启动时重新解析整个应用环境。
+
+采用原始 BF16 矩阵驻留、Float32 norms/activations/GEMM；每卡保留 10 个 Q heads、
+1 个 KV head、5,120 维 FFN 和 12,544 行输出词表。Embedding 与 norms 复制，
+Q/K/V/g 与 gate/up 按输出行分片，O/down 按输入列分片；每层的 attention 和 FFN
+输出均在 post norm/residual 前做求和，最终 logits 按词表 allgather。
+八卡总驻留权重包含复制的 embedding；权重字节数不等于 GPU 总显存。
+
+一个 Julia 进程用每卡常驻 worker 计算本地结果，复用任务内的 CUDA/cuBLAS 状态，
+然后由单个主机线程用 NCCL group 提交全部 rank 的通信。每次 forward 前在主机侧
+回收上一轮临时对象。每个计算/通信阶段完成后同步；计算中的 CUDA 分配与回收不与未
+提交完整的 collective 交错。最初整段异步方案在 1,057-token 输入上停顿，SIGUSR1
+栈确认某 rank 卡在 finalizer 的 `cuMemFreeAsync`，其他 GPU 等待通信；分阶段提交修复
+保留相同数学方程。`test_ripple_nccl_transport.jl` 覆盖匹配该长输入的 20.6MiB
+allreduce 与阶段间 GC，`test_ripple_tensor_parallel.jl` 对照固定版本官方 PyTorch
+fixture 验证 TP1/2/4/8、完整 logits、缓存、分块和 greedy。
+
+提交和查询（在 DSW 项目根目录执行）：
+
+```bash
+/isaac-sim/python.sh scripts/dlc_ripple_tp8.py create --name ripple65b-tp8
+/isaac-sim/python.sh scripts/dlc_ripple_tp8.py status JOB_ID
+python3 scripts/query_ripple_tp8.py RUN_DIR --prompt 'Reply with exactly OK.'
+python3 scripts/verify_ripple_tp8_http.py RUN_DIR
+/isaac-sim/python.sh scripts/verify_ripple_tp8_context.py RUN_DIR
+/isaac-sim/python.sh scripts/dlc_ripple_tp8.py stop JOB_ID
+```
+
+`create --dry-run` 生成可检查的代码快照和 `request.json`，不创建任务。
+每次实际提交都会创建独立 run directory；`job.json` 保存任务编号和控制台链接。
+服务在数值与生成验收通过后写入 `results/ready.json`。DSW 查询脚本读取该文件、探测
+私网地址并从 `credentials/api_key` 读取 Bearer key，不打印 key。
+
+服务提供 `/healthz`、`/v1/models` 和基本 OpenAI 兼容的 `/v1/chat/completions`。
+当前为单请求串行、非流式文本聊天，输入与输出预算合计上限 8,192 tokens、输出上限 512 tokens、
+prefill chunk 256 tokens；流式、并发 batch、结构化 tool calls 未实现。
+`results/service.log`、`resources.csv`、`parity.json`、`generation.json`、`validation.json`
+保存启动、数值、输出和资源记录。采样显存包括 CUDA allocator 缓存；加载时间不包含
+Julia 导入/预编译。此节点为八张 RTX PRO 5000 72GB、PCIe PHB 互连。
+
+### 八卡实测记录（2026-11-05）
+
+任务 [dlc1x35onfyb2m10](https://pai.console.aliyun.com/?regionId=cn-wulanchabu&workspaceId=253586#/dlc2/jobs/dlc1x35onfyb2m10) 保持运行，服务模型名为 `lifeai-ripple65b-tp8`，
+DSW 实测可达的 API base 为 `http://10.68.4.21:18085/v1`。
+已加载的服务代码固定为 `d7340cb1fb57a379f5d18de891e60f458ca0ea2f`；后续仓库更新包含调用工具、地址元数据修正和本记录。
+完整部署收据为 [`configs/deployment/ripple_tp8/deployment.json`](../configs/deployment/ripple_tp8/deployment.json)。
+
+原始 BF16 矩阵全部驻留八卡，norms 与计算使用 Float32，每卡权重为
+**17,101,066,560 bytes（15.93GiB）**，无 CPU 权重卸载。
+完整加载耗时 **91.64s**，不含 Julia 导入/预编译。
+CPU TP1/2/4/8 共 **64** 项断言、真实 NCCL 八卡 **19** 项断言全部通过。
+后者包括三轮 20.6MiB allreduce、阶段间 GC、常驻 worker 身份，以及官方小模型的
+完整/缓存/分块 logits 与 greedy token 对齐。
+
+| 官方完整权重参考 | 输入 tokens | 最大 logits 绝对误差 | relative L2 | argmax |
+| --- | ---: | ---: | ---: | --- |
+| exact_ok | 19 | 4.7683716e-05 | 7.7708626e-07 | 一致 |
+| math | 28 | 2.861023e-05 | 1.3316906e-06 | 一致 |
+| long_window | 1057 | 0.00037574768 | 3.386717e-06 | 一致 |
+
+1,057-token 整段输入耗时 **2.44s**；全部 logits 误差均满足
+`max_abs < 1e-3`、`relative_l2 < 1e-4`，缓存 OK/EOS token 与官方数学参考一致。
+启动验收实际执行了 **27,040** 次逻辑 allreduce 与 **169** 次词表 allgather，
+八卡 rank 调用计数分别为 **216,320** 与 **1,352**。
+
+| 真实生成任务 | 输出 tokens（含 EOS） | prefill 秒 | decode token/s | 结果 |
+| --- | ---: | ---: | ---: | --- |
+| 精确 OK | 2 | 0.55 | 2.197 | OK，EOS |
+| 17 × 23 | 9 | 0.51 | 2.294 | 17 × 23 = 391，EOS |
+| Python add | 17 | 0.43 | 2.695 | 四组执行结果通过，EOS |
+| 中文二分查找 | 41 | 0.44 | 2.627 | 完整中文解释，EOS |
+| 连续解码 | 96 | 0.38 | 2.581 | 达到 96-token 预算 |
+
+96-token 用例的稳态 decode 耗时 **36.81s**、速度 **2.581 token/s**；
+到达预算后停止。完整 Python 函数使用独立的 `add` 用例验收。
+此处为该硬件上原生 Float32 计算路径的单请求测量，五项生成检查不代表综合质量 benchmark。
+
+DSW 的 **12 项 HTTP 检查**通过：未鉴权返回 401，非法请求/超限/不支持的流式请求返回 400，
+普通聊天返回 `OK` 与 stop。另一个 **7,996-token 输入**经 256-token 分块，
+生成 **21 tokens** 后以 EOS 结束，最终回答为 `OK`，端到端 **26.80s**。
+长输入检查覆盖容量和最终回答；接口保留模型原始文本，包括可能出现的 `<think>` 标签。
+`verify_ripple_tp8_http.py` 在完成真实鉴权调用后，可将已验证的私网地址写回 `ready.json`；
+客户端跳过 link-local 地址并直接访问私网，后续服务启动也会过滤 link-local 地址。
+
+从启动到上述 HTTP 验收，每 2 秒采样一次八卡设备显存。单卡采样峰值为
+**59,057MiB（57.67GiB）**，八卡同时采样总和峰值
+**431,434MiB**；包括 CUDA allocator 缓存、临时计算和 KV。
+主 Julia 进程的 RSS 采样峰值为 **8.13GiB**，不包括预编译子进程。
+
+当前运行目录：
+
+```text
+/jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-service-20261105T070401Z
+```
+
+在 DSW 的项目根目录直接调用：
+
+```bash
+python3 scripts/query_ripple_tp8.py /jfs/application/user/bgl/deployments/ripple-dlc-tp8/ripple65b-tp8-service-20261105T070401Z --prompt 'Reply with exactly OK.'
+```
+
+`results/http-validation.json`、`http-long-context.json`、`query-client.json` 和
+`resources-summary.json` 分别保存接口、长输入、实际客户端与资源验收结果；
+其余完整数值/生成证据见同目录。API key 保存在该运行目录的 `credentials/api_key`，
+调用脚本自动读取，仓库收据只记录文件路径。
