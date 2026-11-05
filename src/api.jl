@@ -55,6 +55,10 @@ export RippleKVCache, reset_ripple_cache!, hf_ripple_forward
 export generate_ripple_tokens, generate_ripple
 export RippleOffloadParameters, offload_ripple, ripple_offload_stats, load_hf_ripple_streamed
 export quantize_ripple_checkpoint, load_ripple_quantized
+export AbstractRippleTPBackend, RippleTPReferenceBackend, ripple_nccl_backend, close_ripple_tp_backend!
+export RippleTensorParallelModel, RippleTPKVCache, reset_ripple_tp_cache!
+export ripple_tensor_parallel_plan, ripple_tensor_partition, load_hf_ripple_tensor_parallel
+export hf_ripple_tp_forward, generate_ripple_tp_tokens, generate_ripple_tp
 export load_hf_flint_model, verify_flint_checkpoint
 export HFFlintTokenizer, load_hf_flint_tokenizer, apply_flint_chat_template
 export FlintKVCache, reset_flint_cache!, hf_flint_forward, flint_topk_routing

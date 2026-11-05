@@ -5,6 +5,10 @@ authors = ["beamiter <beamiter@163.com>"]
 
 [extensions]
 LifeAICUDAExt = "CUDA"
+LifeAINCCLExt = ["CUDA", "NCCL"]
+
+[weakdeps]
+NCCL = "3fe64909-d7a1-4096-9b7d-7a0f12cf0f6b"
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
@@ -50,6 +54,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 test = ["Base64", "Test"]
 
 [compat]
+NCCL = "0.1.3, 1"
 julia = "1.12"
 Adapt = "4.7.0"
 BFloat16s = "0.6.1"

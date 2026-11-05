@@ -1,0 +1,28 @@
+{
+  "region": "cn-wulanchabu",
+  "endpoint": "pai-dlc.cn-wulanchabu.aliyuncs.com",
+  "credentials_uri": "http://localhost:7002/api/v1/credentials/0",
+  "workspace_id": "253586",
+  "resource_quota_id": "quota56m70qolsyo",
+  "priority": 4,
+  "image": "acr-zq-poc-registry-vpc.cn-wulanchabu.cr.aliyuncs.com/gpu/isaac:dsw-e09afu1r9pv35slp1z-20260812-rdma-physxsplice",
+  "cpu": "64",
+  "memory": "512Gi",
+  "shared_memory": "64Gi",
+  "vpc": {
+    "VpcId": "vpc-0jlbz3pri2042fd5xw2ov",
+    "SwitchId": "vsw-0jlozuje5tdi9g0mhk9uq",
+    "SecurityGroupId": "sg-0jlcvlwhzn358fuxaibt",
+    "ExtendedCidrs": ["10.68.16.0/23", "10.68.0.0/20"]
+  },
+  "data_sources": [
+    {"DataSourceId": "d-on9ej0musvp9khgi11", "MountPath": "/mnt/public_data"},
+    {"DataSourceId": "d-g8z8yjqxpoi5mdkzbp", "MountPath": "/jfs"}
+  ],
+  "deployments_root": "/jfs/application/user/bgl/deployments/ripple-dlc-tp8",
+  "model": "/jfs/application/user/bgl/models/ricursiveAI/Ripple-65B-Preview",
+  "reference": "/jfs/application/user/bgl/LifeAI.jl/benchmark_results/ripple/full/official",
+  "julia": "/jfs/application/user/bgl/envs/lifeai/julia-1.12.6/bin/julia",
+  "julia_depot": "/jfs/application/user/bgl/envs/lifeai/depot",
+  "port": 18085
+}
