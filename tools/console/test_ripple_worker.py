@@ -332,6 +332,37 @@ class RippleTests(unittest.TestCase):
         self.enable_async([dict(status='completed')])
         self.assertEqual(self.fixture.request(payload(False))[0], 200)
 
+    def test_async_failure_preserves_safe_backend_http_errors(self):
+        for code in (400, 401, 403, 404, 409, 413, 422, 429,
+                     500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511):
+            with self.subTest(error_status=code):
+                message = 'request exceeds context limit' if code == 400 else 'generation failed'
+                self.enable_async([dict(status='failed', error=message, error_status=code)])
+                status, _, raw = self.fixture.request(payload(False))
+                self.assertEqual(status, code)
+                self.assertEqual(json.loads(raw)['error'], message)
+                self.assertNotIn(b'local-test-secret', raw)
+                self.assertNotIn('done', json.loads(raw))
+
+    def test_async_failure_unknown_or_malformed_http_status_is_bad_gateway(self):
+        for code in (None, True, '400', 0, 200, 302, 418, 451, 499, 599, 600, 400.0):
+            with self.subTest(error_status=code):
+                self.enable_async([dict(status='failed', error='invalid job status', error_status=code)])
+                self.assertEqual(self.fixture.request(payload(False))[0], 502)
+
+    def test_async_stream_preserves_context_error_status_in_error_event(self):
+        self.enable_async([dict(status='running', phase='decode'),
+                           dict(status='failed', error='request exceeds context limit', error_status=400)])
+        with patch.object(ripple, 'POLL_INTERVAL', .001):
+            status, content_type, raw = self.fixture.request(payload(True))
+        self.assertEqual((status, content_type), (200, 'application/x-ndjson'))
+        packets = [json.loads(line) for line in raw.splitlines()]
+        self.assertEqual(packets[-1]['error_status'], 400)
+        self.assertEqual(packets[-1]['error'], 'request exceeds context limit')
+        self.assertTrue(packets[-1]['done'])
+        self.assertNotIn('eval_count', packets[-1])
+        self.assertEqual(self.fixture.cancelled_paths, ['/v1/chat/completions/jobs/owned-1'])
+
     def test_async_disconnect_cancels_only_owned_job(self):
         self.enable_async([dict(status='running', phase='prefill', prefill_processed=128, prompt_eval_count=1000)])
         def disconnect(_packet):

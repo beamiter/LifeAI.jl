@@ -26,6 +26,11 @@ MAX_MESSAGE_CHARS = 64 * 1024 * 1024
 MAX_TOTAL_MESSAGE_CHARS = 64 * 1024 * 1024
 POLL_INTERVAL = 1.0
 HEARTBEAT_INTERVAL = 10.0
+# Never turn untrusted job metadata into redirects, successful responses, or
+# arbitrary status codes. Preserve the supported client and standard server
+# error meanings; malformed/unknown status metadata is a bad upstream response.
+ASYNC_ERROR_STATUSES = frozenset((400, 401, 403, 404, 409, 413, 422, 429,
+                                500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511))
 
 
 class APIError(Exception):
@@ -217,8 +222,10 @@ class RippleBackend:
                         raise APIError(502, 'Ripple completed without a valid chat result.')
                     return result
                 if state in ('failed', 'cancelled'):
-                    raise APIError(502 if state == 'failed' else 409,
-                                   str(status.get('error') or ('Ripple generation ' + state + '.')))
+                    error_status = status.get('error_status')
+                    code = 409 if state == 'cancelled' else (
+                        error_status if type(error_status) is int and error_status in ASYNC_ERROR_STATUSES else 502)
+                    raise APIError(code, str(status.get('error') or ('Ripple generation ' + state + '.')))
                 if state not in ('queued', 'running'):
                     raise APIError(502, 'Ripple returned an invalid generation job status.')
                 phase = status.get('phase') or state
@@ -349,7 +356,7 @@ def handler_for(backend):
             except APIError as error:
                 try:
                     if streaming:
-                        self.write_packet(dict(model=MODEL, error=str(error), done=True))
+                        self.write_packet(dict(model=MODEL, error=str(error), error_status=error.status, done=True))
                     else:
                         self.respond(error.status, dict(error=str(error)))
                 except (BrokenPipeError, ConnectionResetError):

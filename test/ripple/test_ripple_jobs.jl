@@ -47,3 +47,43 @@ include(joinpath(@__DIR__,"..","..","scripts","ripple_tp8_jobs.jl"))
         close_ripple_http_jobs!(manager)
     end
 end
+
+@testset "Queued cancellation releases bounded admission immediately" begin
+    release=Threads.Atomic{Bool}(false);executed=String[];guard=ReentrantLock()
+    execute=(payload,progress,cancelled)->begin
+        lock(guard) do;push!(executed,String(payload["name"]));end
+        while get(payload,"blocked",false) && !release[] && !cancelled();sleep(.005);end
+        (ok=true,)
+    end
+    manager=RippleHTTPJobs(execute;max_pending=4)
+    try
+        active=ripple_job_submit!(manager,Dict("name"=>"active","blocked"=>true))
+        deadline=time()+3
+        while active.status!="running" && time()<deadline;sleep(.005);end
+        @test active.status=="running"
+        pending=[ripple_job_submit!(manager,Dict("name"=>"cancelled$i","blob"=>repeat("x",4096))) for i in 1:3]
+        for job in pending
+            status=ripple_job_status(manager,job.id;cancel=true)
+            @test status.status=="cancelled"
+            @test job.payload===nothing
+            waiter=@async wait(job.done)
+            @test timedwait(()->istaskdone(waiter),1)==:ok
+        end
+        @test isempty(manager.queue)
+        # This must finish before active is released; Channel tombstones would
+        # either keep admission full or block put! while holding the queue lock.
+        accepted=Task(()->[ripple_job_submit!(manager,Dict("name"=>"accepted$i")) for i in 1:3])
+        schedule(accepted)
+        @test timedwait(()->istaskdone(accepted),3)==:ok
+        next=fetch(accepted)
+        @test all(job->job.status=="queued",next)
+        @test length(manager.queue)==3
+        release[]=true
+        @test timedwait(()->all(job->job.status=="completed",next),3)==:ok
+        @test all(job->job.status=="completed",next)
+        @test lock(guard) do;executed==["active","accepted1","accepted2","accepted3"];end
+    finally
+        release[]=true;close_ripple_http_jobs!(manager)
+    end
+    @test_throws InvalidStateException ripple_job_submit!(manager,Dict("name"=>"after-close"))
+end
