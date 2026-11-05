@@ -19,6 +19,7 @@ function ripple_nccl_transport_checks(devices)
             GC.gc(false)
         end
         @test backend.reductions[]==3*n
+        @test LifeAI._ripple_tp_compute_ranks(rank->objectid(current_task()),backend)==objectid.(backend.workers)
     finally
         close_ripple_tp_backend!(backend)
     end

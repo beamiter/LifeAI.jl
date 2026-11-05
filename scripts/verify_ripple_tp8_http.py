@@ -41,7 +41,8 @@ def main():
             'temperature': 0, 'max_tokens': 64, 'stream': False}
     for name, override in [('streaming_rejected', {'stream': True}), ('empty_messages', {'messages': []}),
             ('zero_tokens', {'max_tokens': 0}), ('output_limit', {'max_tokens': ready['max_output'] + 1}),
-            ('unknown_model', {'model': 'unknown'}), ('multiple_choices', {'n': 2})]:
+            ('unknown_model', {'model': 'unknown'}), ('multiple_choices', {'n': 2}),
+            ('context_limit', {'messages': [{'role': 'user', 'content': 'x ' * ready['max_context']}], 'max_tokens': 1})]:
         request(name, '/v1/chat/completions', 400, {**base, **override})
     request('unknown_route', '/unknown', 404)
     body = request('real_completion', '/v1/chat/completions', 200, base)

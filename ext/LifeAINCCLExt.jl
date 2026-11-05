@@ -11,6 +11,9 @@ mutable struct RippleNCCLBackend <: LifeAI.AbstractRippleTPBackend
     reductions::Threads.Atomic{Int}
     gathers::Threads.Atomic{Int}
     failure_lock::ReentrantLock
+    run_lock::ReentrantLock
+    requests::Vector{Channel{Any}}
+    workers::Vector{Task}
     closed::Bool
 end
 
@@ -20,7 +23,26 @@ function LifeAI.ripple_nccl_backend(devices::AbstractVector)
     Threads.nthreads()>=length(devs) || throw(ArgumentError("Ripple TP needs at least one Julia thread per GPU; set JULIA_NUM_THREADS"))
     communicators=NCCL.Communicators(devs)
     streams=CUDA.CuStream[CUDA.device!(()->CUDA.CuStream(),dev) for dev in devs]
-    return RippleNCCLBackend(devs,streams,communicators,Threads.Atomic{Int}(0),Threads.Atomic{Int}(0),ReentrantLock(),false)
+    backend=RippleNCCLBackend(devs,streams,communicators,Threads.Atomic{Int}(0),Threads.Atomic{Int}(0),
+        ReentrantLock(),ReentrantLock(),[Channel{Any}(1) for _ in devs],Task[],false)
+    for rank in 0:length(devs)-1
+        push!(backend.workers,Threads.@spawn begin
+            LifeAI._ripple_tp_with_rank(backend,rank) do
+                for (f,results,errors,completion) in backend.requests[rank+1]
+                    try
+                        backend.closed && throw(InvalidStateException("Ripple NCCL backend is closed",:closed))
+                        results[rank+1]=f(rank)
+                    catch error
+                        errors[rank+1]=CapturedException(error,catch_backtrace())
+                        LifeAI._ripple_tp_abort!(backend,error)
+                    finally
+                        put!(completion,rank)
+                    end
+                end
+            end
+        end)
+    end
+    return backend
 end
 
 LifeAI._ripple_tp_world(b::RippleNCCLBackend)=length(b.devices)
@@ -55,18 +77,23 @@ function LifeAI._ripple_tp_abort!(b::RippleNCCLBackend,error)
 end
 
 function LifeAI._ripple_tp_run_ranks(f,b::RippleNCCLBackend)
-    b.closed && throw(InvalidStateException("Ripple NCCL backend is closed",:closed))
-    results=Vector{Any}(undef,length(b.devices))
-    @sync for rank in 0:length(b.devices)-1
-        Threads.@spawn try
-            results[rank+1]=f(rank)
-        catch error
-            LifeAI._ripple_tp_abort!(b,error)
-            rethrow()
+    lock(b.run_lock) do
+        b.closed && throw(InvalidStateException("Ripple NCCL backend is closed",:closed))
+        results=Vector{Any}(undef,length(b.devices));errors=Any[nothing for _ in b.devices]
+        completion=Channel{Int}(length(b.devices))
+        for rank in 0:length(b.devices)-1
+            put!(b.requests[rank+1],(f,results,errors,completion))
         end
+        for _ in b.devices;take!(completion);end
+        failures=[error.ex for error in errors if error!==nothing]
+        isempty(failures) || throw(CompositeException(failures))
+        return results
     end
-    return results
 end
+
+# Finished phases leave no incomplete collective. Reclaim previous forward's
+# temporaries here, while the eight persistent CUDA/cuBLAS task states survive.
+LifeAI._ripple_tp_before_forward!(b::RippleNCCLBackend)=GC.gc(false)
 
 function LifeAI._ripple_tp_upload(b::RippleNCCLBackend,rank,raw,dtype,shape,target)
     source_type=dtype=="BF16" ? BFloat16 : dtype=="F32" ? Float32 : throw(ArgumentError("unsupported Ripple TP source dtype"))
@@ -145,6 +172,8 @@ function LifeAI._ripple_tp_allgather_batch(b::RippleNCCLBackend,values)
 end
 
 function LifeAI.close_ripple_tp_backend!(b::RippleNCCLBackend)
+    for queue in b.requests;isopen(queue) && close(queue);end
+    for worker in b.workers;wait(worker);end
     b.closed && return
     for rank in 0:length(b.devices)-1
         LifeAI._ripple_tp_with_rank(b,rank) do

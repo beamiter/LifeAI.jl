@@ -82,6 +82,7 @@ end
 """Create a CUDA/NCCL backend after loading `CUDA` and `NCCL`. Devices must be unique."""
 function ripple_nccl_backend end
 function close_ripple_tp_backend! end
+_ripple_tp_before_forward!(b::AbstractRippleTPBackend)=nothing
 close_ripple_tp_backend!(b::RippleTPReferenceBackend)=nothing
 
 function ripple_tensor_parallel_plan(c::RippleConfig,world_size::Integer)
@@ -239,6 +240,7 @@ function hf_ripple_tp_forward(bundle::RippleTensorParallelModel,token_ids::Abstr
     position=cache===nothing ? 0 : cache.tokens
     length(ids)<=c.max_position_embeddings-position || throw(ArgumentError("Ripple TP context limit exceeded"))
     !(cache_capacity isa Bool) && 0<=cache_capacity<=c.max_position_embeddings || throw(ArgumentError("invalid Ripple TP cache reservation"))
+    _ripple_tp_before_forward!(b)
     states=_ripple_tp_compute_ranks(b) do rank
         parameters=bundle.ranks[rank+1].parameters
         x=permutedims(Float32.(parameters["model.embed_tokens.weight"][ids,:]))
