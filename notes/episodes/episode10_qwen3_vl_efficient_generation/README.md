@@ -123,6 +123,7 @@ CUDA Graph、零分配 decode 或长上下文部署已经完成。
 103. [`Chapter 148 — Qwen3-VL 可重放采样生成`](chapter148_qwen3_vl_sampling.md)（Closed；CPU/GPU 与 DSW 默认集成 `16,825` 项通过）
 104. [`Chapter 149 — Qwen3-VL 多图生成与上下文预算`](chapter149_qwen3_vl_multi_image.md)（Closed；双图 CPU/真实 GPU 验收通过，并修复 BF16 context GEMM 步长差异）
 105. [`Chapter 151 — Qwen3-VL 多帧视频理解与图文混合生成`](chapter151_qwen3_vl_video.md)（Closed；Episode 09/10 CPU `5,072/5,072` 通过，真实 2B Blackwell GPU 视频 Float32 8/8 token exact、最大 logits 误差 `3.7670e-5`、BF16 dynamic/static/reuse 逐位一致）
+106. [`Chapter 152 — Qwen3-VL 视频容器解码、采样生成与图文混合 Static Cache 复用`](chapter152_qwen3_vl_video_container.md)（Closed；真实 MP4 编解码/帧采样与 2B Blackwell GPU 单 `capacity=256` static cache 跨图像/8f MP4 greedy/8f MP4 sample/图文混合/16f MP4 五类请求指针身份不变且 dynamic==reused 逐位一致）
 
 ## 预期能力变化
 
@@ -241,7 +242,7 @@ prefix 仍与 HF exact，128/256 仍在 step 70 分叉。最终 logits 没有升
 - 识别并有界复用主要 per-token decoder workspace；若暂不消除，必须量化并记录
   剩余分配来源，不能把 fixed K/V storage 写成 whole-loop zero allocation。
 - 为 BF16 strict oracle、长上下文和失败恢复建立各自的门禁；batch/padding、
-  Chapter 149 已完成 raw 双图 CPU/真实 GPU 验收，Chapter 151 已完成多帧视频与图文混合 CPU/真实 GPU 验收；长视频显存压测、视频容器解码、batch/padding 和整图编译继续作为显式边界。sampling 已由 Chapter 148 完成独立验收。
+  Chapter 149 已完成 raw 双图 CPU/真实 GPU 验收，Chapter 151 已完成多帧视频与图文混合 CPU/真实 GPU 验收，Chapter 152 已完成本地视频容器解复用/官方帧采样、可重放采样及单缓存跨图像/8f/图文/16f 复用验收；超长视频（>100 帧）显存压测、batch/padding 和整图编译继续作为显式边界。sampling 已由 Chapter 148 完成独立验收。
 
 ## 为什么仍是 Open
 

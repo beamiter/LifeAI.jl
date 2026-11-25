@@ -92,7 +92,8 @@ class ModelManager:
                 result.append(dict(key=model['key'], id=model['id'], label=model.get('label', model['id']),
                     context_tokens=active.get('context_tokens', model['context_tokens']),
                     max_new_tokens=active.get('max_new_tokens', model['max_new_tokens']),
-                    streaming=active.get('streaming', model.get('streaming', True))))
+                    streaming=active.get('streaming', model.get('streaming', True)),
+                    tool_calls=active.get('tool_calls', model.get('tool_calls', False))))
             return result
 
     def health(self):
@@ -107,6 +108,7 @@ class ModelManager:
                         phase='error' if spec.get('key') == 'ripple' and self.state == 'error' else self.worker_health.get('phase', self.state),
                         last_error=self.error, active_requests=self.active_requests,
                         streaming=self.worker_health.get('streaming', spec.get('streaming', True)),
+                        tool_calls=self.worker_health.get('tool_calls', spec.get('tool_calls', False)),
                         context_tokens=self.worker_health.get('context_tokens', spec.get('context_tokens')),
                         max_new_tokens=self.worker_health.get('max_new_tokens', spec.get('max_new_tokens')),
                         load_seconds=round(time.monotonic() - self.load_started, 2)
@@ -238,13 +240,24 @@ class ModelManager:
                 raise APIError(400, f'messages must contain 1 to {MAX_MESSAGES} chat messages.')
             total_chars = 0
             for message in messages:
-                if (not isinstance(message, dict) or message.get('role') not in ('system', 'user', 'assistant')
-                        or not isinstance(message.get('content'), str)):
-                    raise APIError(400, 'Each message needs a system/user/assistant role and string content.')
-                total_chars += len(message['content'])
-                if (len(message['content']) > MAX_MESSAGE_CHARS
+                if not isinstance(message, dict):
+                    raise APIError(400, 'Each message needs a system/user/assistant/tool role and string content.')
+                role = message.get('role')
+                if role not in ('system', 'user', 'assistant', 'tool'):
+                    raise APIError(400, 'Each message needs a system/user/assistant/tool role and string content.')
+                content = message.get('content')
+                if content is None and role == 'assistant' and 'tool_calls' in message:
+                    content = ''
+                if not isinstance(content, str):
+                    raise APIError(400, 'Each message needs a system/user/assistant/tool role and string content.')
+                total_chars += len(content)
+                if (len(content) > MAX_MESSAGE_CHARS
                         or total_chars > MAX_TOTAL_MESSAGE_CHARS):
                     raise APIError(413, 'Chat content exceeds the 64 Mi character limit.')
+        tools = payload.get('tools')
+        if tools is not None:
+            if not isinstance(tools, list) or len(tools) > 64 or any(not isinstance(t, dict) for t in tools):
+                raise APIError(400, 'tools must be a list of up to 64 tool definition objects.')
         options = payload.get('options', {})
         if not isinstance(options, dict) or type(payload.get('stream', True)) is not bool:
             raise APIError(400, 'Invalid options or stream flag.')
@@ -256,6 +269,10 @@ class ModelManager:
                 raise APIError(409, 'Select the requested model first.')
             if self.active_requests:
                 raise APIError(409, 'Another response is in progress.')
+            if tools is not None and not health.get('tool_calls', False):
+                raise APIError(400, 'Selected worker does not advertise structured tool_calls support.')
+            if any(m.get('role') == 'tool' for m in (messages or [])) and not health.get('tool_calls', False):
+                raise APIError(400, 'Selected worker does not support role=tool messages.')
             count = options.get('num_predict', min(256, health['max_new_tokens']))
             if type(count) is not int or not 1 <= count <= health['max_new_tokens']:
                 raise APIError(400, f"num_predict must be 1..{health['max_new_tokens']}.")
@@ -269,12 +286,16 @@ class ModelManager:
             output = dict(model=model, stream=payload.get('stream', True),
                           options=dict(num_predict=count, temperature=temperature))
             if spec['key'] == 'qwen':
+                if any(m.get('role') == 'tool' for m in (messages or [])):
+                    raise APIError(400, 'Selected worker does not support role=tool messages.')
                 output.update(raw=True, think=False,
                               prompt=payload['prompt'] if raw else qwen_prompt(messages))
                 output['options'].update(num_ctx=health['context_tokens'], repeat_penalty=1, repeat_last_n=0)
                 endpoint = '/api/generate'
             else:
                 output['messages'] = messages
+                if tools is not None:
+                    output['tools'] = tools
                 endpoint = '/api/chat'
             self.active_requests += 1
             return spec['url'] + endpoint, output

@@ -103,6 +103,8 @@ export qwen3_vl_video_processor_spec, load_hf_qwen3_vl_video_processor_config
 export qwen3_vl_video_smart_resize, qwen3_vl_video_grid, qwen3_vl_video_token_count
 export qwen3_vl_video_timestamps, qwen3_vl_patchify_video
 export Qwen3VLProcessedVideo, qwen3_vl_process_video, qwen3_vl_expand_video_placeholders
+export Qwen3VLDecodedVideo, qwen3_vl_sample_frame_indices
+export qwen3_vl_probe_video_file, qwen3_vl_decode_video_file, qwen3_vl_encode_video_file
 export Qwen3VLVisionInput, Qwen3VLVisionFeatures
 export load_hf_qwen3_vl_vision_parameters, hf_qwen3_vl_vision_forward
 export Qwen3VLTextPrefill, load_hf_qwen3_vl_text_parameters
@@ -213,6 +215,14 @@ export execute_safe_action!, trigger_agent_estop!, clear_agent_estop!
 export render_safe_action_outcome, safe_environment_tool
 export safe_gridworld_move_tool, safe_gridworld_tool_registry
 export safe_adapter_audit_payload, verify_safe_adapter_audit
+
+# Embodied multimodal VLA closed loop (Episode 11 / Chapter 153)
+export EMBODIED_VLA_FORMAT_VERSION
+export VisualAgentObservation, render_gridworld_rgb, render_environment_rgb
+export Kinematic2DSpec, Kinematic2DEnvironment, render_kinematic2d_rgb
+export observe_visual_environment, safe_kinematic2d_tool_registry, safe_visual_tool_registry
+export EmbodiedVLAStep, EmbodiedVLATrace
+export qwen3_vl_embodied_policy, run_embodied_vla_episode, verify_embodied_vla_trace
 
 # Task-level quality evaluation
 export MMLUItem, GSM8KItem, EvalTaskSet, EvalItemResult, load_eval_tasks

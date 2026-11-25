@@ -14,9 +14,10 @@
 - [`Episode 05 — 部署、记忆与设备采样`](episodes/episode05_deployment_memory_and_sampling/README.md)：Chapter 19–23。
 - [`Episode 06 — Qwen3 MoE 与模型架构扩展`](episodes/episode06_qwen3_moe_and_model_expansion/README.md)：Chapter 24–35、41。
 - [`Episode 07 — 智能体闭环`](episodes/episode07_agent_closed_loop/README.md)：Chapter 36–39。
-- [`Episode 08 — 环境与行动闭环`](episodes/episode08_environment_action_loop/README.md)：Chapter 40、42。
-- [`Episode 09 — Qwen3-VL 多模态感知`](episodes/episode09_qwen3_vl_multimodal_perception/README.md)：Chapter 43–45。
-- [`Episode 10 — Qwen3-VL 高效生成`](episodes/episode10_qwen3_vl_efficient_generation/README.md)：Chapter 46–。
+- [`Episode 08 — 环境与行动闭环`](episodes/episode08_environment_action_loop/README.md)：Chapter 40、42、150（Closed）。
+- [`Episode 09 — Qwen3-VL 多模态感知`](episodes/episode09_qwen3_vl_multimodal_perception/README.md)：Chapter 43–45（Closed）。
+- [`Episode 10 — Qwen3-VL 高效生成`](episodes/episode10_qwen3_vl_efficient_generation/README.md)：Chapter 46–149、151–152（Open）。
+- [`Episode 11 — 具身多模态视觉-语言-行动安全闭环`](episodes/episode11_embodied_multimodal_agent/README.md)：Chapter 153–（Open）。
 
 ## Episode 与 Chapter
 

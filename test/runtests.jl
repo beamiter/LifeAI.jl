@@ -536,6 +536,23 @@ end
             "test_qwen3_vl_video.jl",
         ))
     end
+    @testset "Chapter 152 — video container demuxing and sampling" begin
+        include(chapter_test(
+            "episode10_qwen3_vl_efficient_generation",
+            "chapter152_qwen3_vl_video_container",
+            "test_qwen3_vl_video_container.jl",
+        ))
+    end
+end
+
+@testset "Episode 11 — Embodied multimodal agent loop" begin
+    @testset "Chapter 153 — Embodied multimodal VLA safety loop" begin
+        include(chapter_test(
+            "episode11_embodied_multimodal_agent",
+            "chapter153_embodied_vla_loop",
+            "test_embodied_vla_loop.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")

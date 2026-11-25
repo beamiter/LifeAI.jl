@@ -533,6 +533,73 @@ class RippleStreamingAndToolsTests(unittest.TestCase):
         code, _, _ = self.fixture.request(req)
         self.assertEqual(code, 400)
 
+    def test_router_end_to_end_streaming_and_tool_calls_through_ripple_worker(self):
+        self.fixture.streaming_enabled = True
+        self.fixture.tool_calls_enabled = True
+        self.fixture.async_enabled = True
+        tool_calls = [dict(id='call_r1', type='function', function=dict(name='move', arguments='{"direction":"east"}'))]
+        self.fixture.async_states = [
+            dict(status='running', phase='decode', prefill_processed=10, prompt_eval_count=10,
+                 deltas=['step ', 'one'], next_cursor=2),
+            dict(status='completed', phase='completed', prefill_processed=10, prompt_eval_count=10,
+                 deltas=['!'], next_cursor=3),
+        ]
+        self.fixture.async_result = dict(
+            model='lifeai-ripple65b-tp8',
+            choices=[dict(message=dict(role='assistant', content='step one!', tool_calls=tool_calls), finish_reason='tool_calls')],
+            usage=dict(prompt_tokens=10, completion_tokens=3),
+        )
+        cfg = dict(
+            request_timeout=30,
+            models=[dict(key='ripple', id=ripple.MODEL, label='Ripple',
+                         url=f'http://127.0.0.1:{self.fixture.worker.server_address[1]}',
+                         context_tokens=16384, max_new_tokens=512, streaming=False,
+                         command=[], log=str(self.fixture.root / 'router.log'))],
+        )
+        manager = router.ModelManager(cfg)
+        manager.selected = ripple.MODEL
+        manager.state = 'ready'
+        manager.process = type('P', (), {'poll': staticmethod(lambda: None), 'terminate': staticmethod(lambda: None), 'wait': staticmethod(lambda timeout=None: 0)})()
+        manager._refresh_ripple_health()
+        httpd = ThreadingHTTPServer(('127.0.0.1', 0), router.handler_for(manager))
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with self.fixture.opener.open(f'http://127.0.0.1:{port}/healthz', timeout=5) as resp:
+                h = json.load(resp)
+            self.assertTrue(h['streaming'])
+            self.assertTrue(h['tool_calls'])
+
+            req_body = dict(
+                model=ripple.MODEL,
+                stream=True,
+                messages=[dict(role='user', content='go east'), dict(role='tool', content='{"ok":true}')],
+                tools=[dict(type='function', function=dict(name='move'))],
+                options=dict(num_predict=8, temperature=0),
+            )
+            req = Request(
+                f'http://127.0.0.1:{port}/api/chat',
+                data=json.dumps(req_body).encode(),
+                headers={'Content-Type': 'application/json'},
+                method='POST',
+            )
+            with patch.object(ripple, 'POLL_INTERVAL', 0.005), patch.object(ripple, 'STREAM_DECODE_POLL_INTERVAL', 0.005):
+                with self.fixture.opener.open(req, timeout=10) as resp:
+                    packets = [json.loads(line) for line in resp.read().decode().splitlines() if line.strip()]
+            deltas = [p['response'] for p in packets if p.get('response') and not p.get('done')]
+            final = [p for p in packets if p.get('done') is True]
+            self.assertEqual(''.join(deltas), 'step one!')
+            self.assertEqual(len(final), 1)
+            self.assertEqual(final[0].get('response', ''), '')
+            self.assertEqual(final[0].get('tool_calls'), tool_calls)
+            self.assertEqual(final[0].get('done_reason'), 'tool_calls')
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            manager.process = None
+            manager.close()
+
 
 if __name__ == '__main__':
     unittest.main()

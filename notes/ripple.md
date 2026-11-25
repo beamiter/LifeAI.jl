@@ -537,4 +537,25 @@ resume 保留并核对已通过阶段的消息与 token 哈希。该 harness 构
    - `POST /v1/chat/completions` 支持 `stream: true` 实时 TCP OpenAI SSE 推送（含断开协作取消），`GET /v1/chat/completions/jobs/{id}?after=N` 支持增量文本游标拉取。
    - `POST /v1/chat/completions` 与 `/v1/chat/completions/jobs` 支持 `tools` 定义、`role="tool"` 消息及 assistant `tool_calls` 返回（`finish_reason="tool_calls"`）；`/healthz` 公布 `streaming=true, tool_calls=true`。
    - `tools/console/ripple_worker.py` 同步支持增量 delta 转发（不重复输出最终文本）与结构化 `tools`/`tool_calls` 透传，并在上游未声明支持时保持向后兼容与 fail-closed。
-   - 验收：Ripple Julia 组合套件（`test_ripple.jl`、`test_ripple_jobs.jl`、`test_ripple_http_admission.jl`、`test_ripple_streaming_and_tools.jl`、`test_ripple_nvfp4_native.jl`）**281/281** 通过；Python console 套件（`test_server.py`、`test_control.py`、`test_ripple_worker.py`）**64/64** 在本地与 DSW 均通过；Rust Lumen 客户端 **51/51** 通过。当前尚未重启远程 8 卡 DLC TP8 任务上线新服务代码，生产上线需另行部署。
+   - 验收：Ripple Julia 组合套件（`test_ripple.jl`、`test_ripple_jobs.jl`、`test_ripple_http_admission.jl`、`test_ripple_streaming_and_tools.jl`、`test_ripple_nvfp4_native.jl`）**281/281** 通过；Python console 套件（`test_server.py`、`test_control.py`、`test_ripple_worker.py`，含 Console Router → `ripple_worker` → 上游 TP8 端到端流式 delta 与结构化 `tools`/`tool_calls` 路由，以及无工具能力 worker 的 fail-closed 拒收）**65/65** 在本地与 DSW 均通过；Rust Lumen 客户端 **51/51** 通过。当前尚未重启远程 8 卡 DLC TP8 任务上线新服务代码，生产上线需另行部署。
+
+3. **Ripple-65B 投影几何 Blackwell 原生 cuBLASLt NVFP4 微基准（`scripts/benchmark_ripple_nvfp4_blackwell.jl`）**
+   - 在 DSW `NVIDIA RTX PRO 5000 72GB Blackwell`（sm_120）上使用精确 Ripple-65B 投影形状（合成随机权重，**不代表完整 65B 权重语言质量**）对比 BF16 稠密 GEMM、packed INT4/group128 与原生 cuBLASLt NVFP4（`:global` 与 `:token` 激活缩放），收据冻结于 [`benchmark_results/ripple_nvfp4_blackwell/summary.json`](../benchmark_results/ripple_nvfp4_blackwell/summary.json)（SHA-256 `83926ee158e9d6f3e045b911ec5015d532d21653ce37f43dc00ef8302e2634f8`）：
+
+   | 投影形状 | Tokens | BF16 (ms) | INT4 (ms) | NVFP4 `:global` (ms) | NVFP4 `:token` (ms) | `:token` vs BF16 | `:token` Cosine |
+   | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+   | `q_proj` (`10240×5120`) | 1 | 0.1301 | 0.1048 | 0.0540 | **0.0531** | **2.45×** | 0.991065 |
+   | `q_proj` (`10240×5120`) | 64 | 0.1102 | 8.6532 | 0.2501 | **0.0540** | **2.04×** | 0.990951 |
+   | `q_proj` (`10240×5120`) | 256 | 0.1856 | 9.2723 | 0.4200 | **0.0808** | **2.30×** | 0.990958 |
+   | `o_proj` (`5120×10240`) | 1 | 0.1019 | 0.1779 | 0.0566 | **0.0561** | **1.82×** | 0.990942 |
+   | `o_proj` (`5120×10240`) | 64 | 0.1905 | 8.8210 | 0.2833 | **0.0576** | **3.31×** | 0.991029 |
+   | `o_proj` (`5120×10240`) | 256 | 0.1856 | 9.2293 | 0.5455 | **0.0864** | **2.15×** | 0.990983 |
+   | `gate_proj_16k` (`16384×5120`) | 1 | 0.1862 | 0.1572 | **0.0766** | 0.0768 | **2.42×** | 0.990895 |
+   | `gate_proj_16k` (`16384×5120`) | 64 | 0.2555 | 13.7668 | 0.2699 | **0.0721** | **3.54×** | 0.990985 |
+   | `gate_proj_16k` (`16384×5120`) | 256 | 0.2729 | 14.9141 | 0.4545 | **0.1194** | **2.29×** | 0.990964 |
+   | `down_proj_16k` (`5120×16384`) | 1 | 0.1796 | 0.2713 | 0.0703 | **0.0692** | **2.60×** | 0.991124 |
+   | `down_proj_16k` (`5120×16384`) | 64 | 0.2786 | 13.8867 | 0.4077 | **0.1049** | **2.66×** | 0.991022 |
+   | `down_proj_16k` (`5120×16384`) | 256 | 0.2662 | 14.5026 | 0.7889 | **0.1252** | **2.13×** | 0.990984 |
+
+   - **共享输入多投影（`gate_up_16k`）**：`tokens=1` 从 `0.1520 ms` 降至 `0.1439 ms`（`1.056×`）；`tokens=256` 从 `1.0237 ms` 降至 `1.0120 ms`（`1.012×`）。
+   - **关键工程结论**：在 Blackwell 上，**`:token` 激活缩放同时在 decode（相对 BF16 `1.82×–2.60×`、相对 INT4 `1.97×–3.92×`）与 prefill（相对 BF16 `2.04×–3.54×`、相对 INT4 分块反量化 `107×–191×`）显著胜出**，避免了 `:global` 在多 token prefill 上因全局归约导致的减速（`0.34×–0.95×` vs BF16），且两种缩放的 cosine 精度一致（`0.9909–0.9911`）。

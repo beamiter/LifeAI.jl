@@ -2196,20 +2196,49 @@ end
 
 """
     qwen3_vl_process_video(frames; fps=24.0, frame_indices=nothing,
+                           target_fps=2.0, min_frames=4, max_frames=32,
                            layout=:auto, spec=qwen3_vl_video_processor_spec())
 
-Decode/normalize a sequence of video frames (vector of paths or 3D UInt8 arrays,
-or a 4D UInt8 tensor `(T, H, W, 3)`), smart-resize with the frozen video policy,
-apply fused uint8 bicubic normalization, patchify temporally, and compute
-official midpoint timestamps.
+Decode/normalize a local video container file path (MP4/MKV/WebM via ffmpeg),
+a sequence of video frames (vector of paths or 3D UInt8 arrays), or a 4D UInt8
+tensor `(T, H, W, 3)`, smart-resize with the frozen video policy, apply fused
+uint8 bicubic normalization, patchify temporally, and compute official midpoint
+timestamps.
 """
 function qwen3_vl_process_video(
     frames;
     fps::Real=24.0,
     frame_indices=nothing,
+    target_fps::Real=2.0,
+    min_frames::Integer=4,
+    max_frames::Integer=32,
     layout::Symbol=:auto,
     spec::Qwen3VLProcessorSpec=qwen3_vl_video_processor_spec(),
 )
+    if frames isa AbstractString
+        decoded = qwen3_vl_decode_video_file(
+            frames;
+            target_fps,
+            min_frames,
+            max_frames,
+            frame_factor=spec.temporal_patch_size,
+        )
+        return qwen3_vl_process_video(
+            decoded.frames;
+            fps=decoded.source_fps,
+            frame_indices=decoded.frame_indices,
+            layout=:hwc,
+            spec,
+        )
+    elseif frames isa Qwen3VLDecodedVideo
+        return qwen3_vl_process_video(
+            frames.frames;
+            fps=frames.source_fps,
+            frame_indices=frames.frame_indices,
+            layout=:hwc,
+            spec,
+        )
+    end
     raw_frames = if frames isa AbstractArray{UInt8,4}
         if layout === :thwc || (layout === :auto && size(frames, 4) == 3)
             [frames[t, :, :, :] for t in axes(frames, 1)]

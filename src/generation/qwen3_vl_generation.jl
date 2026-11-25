@@ -696,7 +696,10 @@ function _qwen3_vl_generation_media(messages)
                 ))
                 fps = _qwen3_vl_content_value(item, :fps; default=24.0)
                 frame_indices = _qwen3_vl_content_value(item, :frame_indices; default=nothing)
-                push!(media, (; kind=:video, payload=video, fps, frame_indices))
+                target_fps = _qwen3_vl_content_value(item, :target_fps; default=2.0)
+                min_frames = _qwen3_vl_content_value(item, :min_frames; default=4)
+                max_frames = _qwen3_vl_content_value(item, :max_frames; default=32)
+                push!(media, (; kind=:video, payload=video, fps, frame_indices, target_fps, min_frames, max_frames))
             end
         end
     end
@@ -779,6 +782,9 @@ function _qwen3_vl_generation_process_media(
                 entry.payload;
                 fps=entry.fps,
                 frame_indices=entry.frame_indices,
+                target_fps=entry.target_fps,
+                min_frames=entry.min_frames,
+                max_frames=entry.max_frames,
                 spec=video_processor_spec,
             )
             push!(pixel_blocks, item.pixel_values)
