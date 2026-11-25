@@ -523,3 +523,18 @@ lumen --model ripple --file /path/to/long-document.txt --timeout 21600
 原先 1Mi 语料拼接遇到 BPE 尾部合并的一 token 间隙，harness 已改为按真实编码长度 bracket/search；
 resume 保留并核对已通过阶段的消息与 token 哈希。该 harness 构造失败不是模型 512Ki 失败，
 最终 1Mi 模型验收以随后完成的真实阶段报告为准。
+
+## 增量更新：原生 Blackwell NVFP4 GEMM、实时流式 SSE 与结构化 Tool Calls（2026-11-25）
+
+1. **Ripple 原生 Blackwell NVFP4 cuBLASLt GEMM（`src/models/ripple.jl`、`scripts/run_ripple.jl`）**
+   - 新增 `prepare_ripple_nvfp4(bundle; activation_scaling=:global|:token)` 与 `ripple_native_fp4_stats(bundle)`，支持直接参数字典和 `RippleOffloadParameters`（对 GPU 常驻 NVFP4 权重准备 Blackwell 原生 cuBLASLt FP4 GEMM，保持 host 卸载权重不变）。
+   - 为 `_ripple_linear_multi` 增加 `NTuple{N,AbstractNativeNVFP4Weight}` 特化，使 Q/K 与 gate/up 共享输入激活的量化结果。
+   - `scripts/run_ripple.jl` 新增 `--nvfp4-backend auto|native|reference` 与 `--activation-scaling global|token`。
+   - 验收：在 DSW `NVIDIA RTX PRO 5000 72GB Blackwell`（sm_120，`native_nvfp4_supported() == true`）上运行 `test/ripple/test_ripple_nvfp4_native.jl`，通过原生 cuBLASLt NVFP4 单投影（cosine > 0.985）、5 层端到端前向（cosine > 0.95）、多步解码与 offload 驻留路径验收。注意：当前仅在合成 5 层 fixture 上完成原生 NVFP4 实测，尚未导出或压测完整 65B NVFP4 包。
+
+2. **TP8 HTTP 实时逐 token SSE 流式与结构化 Tool Calls（`src/data/hf_ripple_tokenizer.jl`、`scripts/ripple_tp8_jobs.jl`、`scripts/run_ripple_tp8_server.jl`、`tools/console/ripple_worker.py`）**
+   - `parse_ripple_tool_calls` 解析 Ripple 官方 `<tool_call>` 输出为结构化工具调用对象。
+   - `POST /v1/chat/completions` 支持 `stream: true` 实时 TCP OpenAI SSE 推送（含断开协作取消），`GET /v1/chat/completions/jobs/{id}?after=N` 支持增量文本游标拉取。
+   - `POST /v1/chat/completions` 与 `/v1/chat/completions/jobs` 支持 `tools` 定义、`role="tool"` 消息及 assistant `tool_calls` 返回（`finish_reason="tool_calls"`）；`/healthz` 公布 `streaming=true, tool_calls=true`。
+   - `tools/console/ripple_worker.py` 同步支持增量 delta 转发（不重复输出最终文本）与结构化 `tools`/`tool_calls` 透传，并在上游未声明支持时保持向后兼容与 fail-closed。
+   - 验收：Ripple Julia 组合套件（`test_ripple.jl`、`test_ripple_jobs.jl`、`test_ripple_http_admission.jl`、`test_ripple_streaming_and_tools.jl`、`test_ripple_nvfp4_native.jl`）**281/281** 通过；Python console 套件（`test_server.py`、`test_control.py`、`test_ripple_worker.py`）**64/64** 在本地与 DSW 均通过；Rust Lumen 客户端 **51/51** 通过。当前尚未重启远程 8 卡 DLC TP8 任务上线新服务代码，生产上线需另行部署。

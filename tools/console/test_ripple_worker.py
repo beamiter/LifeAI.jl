@@ -25,6 +25,8 @@ class Fixture:
         self.mode = 'ok'
         self.timing = {}
         self.async_enabled = False
+        self.streaming_enabled = False
+        self.tool_calls_enabled = False
         self.async_states = []
         self.async_polls = 0
         self.cancelled_paths = []
@@ -48,7 +50,9 @@ class Fixture:
             def do_GET(self):
                 if self.path == '/healthz':
                     self.reply(200, dict(status='ready', model='lifeai-ripple65b-tp8', tensor_parallel=8,
-                                         async_jobs=owner.async_enabled))
+                                         async_jobs=owner.async_enabled,
+                                         streaming=owner.streaming_enabled,
+                                         tool_calls=owner.tool_calls_enabled))
                 elif self.headers.get('Authorization') != 'Bearer local-test-secret':
                     self.reply(401, dict(error=dict(message='Unauthorized')))
                 elif self.path.startswith('/v1/chat/completions/jobs/'):
@@ -468,6 +472,66 @@ class RippleTests(unittest.TestCase):
         manager = self.manager()
         self.assertEqual(manager.health()['state'], 'error')
         self.assertIn('authentication', manager.health()['last_error'])
+
+
+class RippleStreamingAndToolsTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = Fixture()
+        self.addCleanup(self.fixture.close)
+
+    def test_async_streaming_forwards_token_deltas_without_duplication(self):
+        self.fixture.async_enabled = True
+        self.fixture.streaming_enabled = True
+        self.fixture.async_states = [
+            dict(status='running', phase='prefill', prefill_processed=16, prompt_eval_count=16, deltas=[], next_cursor=0),
+            dict(status='running', phase='decode', prefill_processed=16, prompt_eval_count=16, deltas=['你', '好'], next_cursor=2),
+            dict(status='completed', phase='completed', prefill_processed=16, prompt_eval_count=16, deltas=['!'], next_cursor=3),
+        ]
+        self.fixture.async_result = dict(
+            model='lifeai-ripple65b-tp8',
+            choices=[dict(message=dict(role='assistant', content='你好!'), finish_reason='stop')],
+            usage=dict(prompt_tokens=16, completion_tokens=3),
+        )
+        health = json.loads(self.fixture.request(path='/healthz')[2])
+        self.assertTrue(health['streaming'])
+        with patch.object(ripple, 'POLL_INTERVAL', 0.005), patch.object(ripple, 'STREAM_DECODE_POLL_INTERVAL', 0.005):
+            code, ctype, raw = self.fixture.request(payload(stream=True))
+        self.assertEqual(code, 200)
+        self.assertIn('ndjson', ctype)
+        events = [json.loads(line) for line in raw.decode().splitlines() if line.strip()]
+        text_pieces = [e['response'] for e in events if e.get('response')]
+        self.assertEqual(''.join(text_pieces), '你好!')
+        self.assertEqual(events[-1]['done'], True)
+        self.assertEqual(events[-1]['response'], '')
+        self.assertTrue(events[-1]['lifeai']['streaming'])
+
+    def test_structured_tool_calls_forwarded_when_upstream_advertises_support(self):
+        self.fixture.tool_calls_enabled = True
+        self.fixture.async_enabled = True
+        self.fixture.async_states = [
+            dict(status='completed', phase='completed', prefill_processed=12, prompt_eval_count=12),
+        ]
+        tool_calls = [dict(id='call_1', type='function', function=dict(name='calc', arguments='{"x":1}'))]
+        self.fixture.async_result = dict(
+            model='lifeai-ripple65b-tp8',
+            choices=[dict(message=dict(role='assistant', content='', tool_calls=tool_calls), finish_reason='tool_calls')],
+            usage=dict(prompt_tokens=12, completion_tokens=8),
+        )
+        req = payload(stream=False)
+        req['tools'] = [dict(type='function', function=dict(name='calc'))]
+        req['messages'].append(dict(role='tool', content='42'))
+        code, _, raw = self.fixture.request(req)
+        self.assertEqual(code, 200, raw)
+        body = json.loads(raw)
+        self.assertEqual(body['done_reason'], 'tool_calls')
+        self.assertEqual(body['tool_calls'], tool_calls)
+        self.assertEqual(self.fixture.requests[-1][2]['tools'], req['tools'])
+
+    def test_tools_rejected_when_upstream_lacks_tool_support(self):
+        req = payload(stream=False)
+        req['tools'] = [dict(type='function', function=dict(name='calc'))]
+        code, _, _ = self.fixture.request(req)
+        self.assertEqual(code, 400)
 
 
 if __name__ == '__main__':

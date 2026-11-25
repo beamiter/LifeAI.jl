@@ -34,6 +34,9 @@ include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_device_reader.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_int4_gemv.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_tensor_parallel.jl"))
 include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_prefix.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_jobs.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_http_admission.jl"))
+include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_streaming_and_tools.jl"))
 
 chapter_test(episode, chapter, filename) =
     joinpath(LIFEAI_TEST_EPISODES, episode, chapter, filename)
@@ -322,6 +325,14 @@ end
             "test_environment_event_memory.jl",
         ))
     end
+
+    @testset "Chapter 150 — Adapter action safety contract" begin
+        include(chapter_test(
+            "episode08_environment_action_loop",
+            "chapter150_adapter_action_safety",
+            "test_adapter_action_safety.jl",
+        ))
+    end
 end
 
 @testset "Episode 09 — Qwen3-VL multimodal perception" begin
@@ -518,6 +529,13 @@ end
             "test_qwen3_vl_attention_context_stride.jl",
         ))
     end
+    @testset "Chapter 151 — video multi-frame generation" begin
+        include(chapter_test(
+            "episode10_qwen3_vl_efficient_generation",
+            "chapter151_qwen3_vl_video",
+            "test_qwen3_vl_video.jl",
+        ))
+    end
 end
 
 if lowercase(get(ENV, "LIFEAI_TEST_XLA", "false")) in ("1", "true", "yes")
@@ -572,5 +590,6 @@ if lowercase(get(ENV, "LIFEAI_TEST_NATIVE_FP4", "false")) in ("1", "true", "yes"
         include(joinpath(LIFEAI_TEST_ROOT, "test_nvfp4_multi_projection.jl"))
         include(joinpath(LIFEAI_TEST_ROOT, "test_nvfp4_host_portable.jl"))
         include(joinpath(LIFEAI_TEST_ROOT, "test_nvfp4_token_activation.jl"))
+        include(joinpath(LIFEAI_TEST_ROOT, "ripple", "test_ripple_nvfp4_native.jl"))
     end
 end

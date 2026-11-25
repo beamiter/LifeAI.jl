@@ -1198,7 +1198,8 @@ function _qwen3_vl_cached_prompt_contract(
     tokens,
     rope_layout::Qwen3VLRopeLayout,
     cache::Qwen3VLKVCache,
-    logits_to_keep::Int,
+    logits_to_keep::Int;
+    allow_video::Bool=false,
 )
     spec = _qwen3_vl_cache_spec(parameters)
     sequence_length, batch_size = size(tokens)
@@ -1222,7 +1223,8 @@ function _qwen3_vl_cached_prompt_contract(
         parameters,
         tokens,
         rope_layout.visual_mask,
-        rope_layout.attention_mask,
+        rope_layout.attention_mask;
+        allow_video,
     )
     rope_deltas = _qwen3_vl_prompt_rope_deltas(
         spec,
@@ -1245,10 +1247,11 @@ end
                                     vision_features=nothing, cache,
                                     logits_to_keep=1,
                                     capture_input_embeddings=true,
-                                    capture_final_hidden=true)
+                                    capture_final_hidden=true,
+                                    allow_video=false)
 
 Run one batch-1, all-ones-mask Qwen3-VL prompt and populate a dynamic KV
-cache.  Main visual embeddings replace image-token embeddings before layer 0,
+cache.  Main visual embeddings replace visual-token embeddings before layer 0,
 and the three DeepStack tensors are added after decoder layers 0, 1, and 2.
 
 Returns `(prefill_result, updated_cache)`.  The result uses the same
@@ -1267,6 +1270,7 @@ function hf_qwen3_vl_text_prefill_cached(
     logits_to_keep::Integer=1,
     capture_input_embeddings::Bool=true,
     capture_final_hidden::Bool=true,
+    allow_video::Bool=false,
 )
     options = _qwen3_vl_prefill_options(logits_to_keep)
     tokens = _qwen3_vl_token_matrix(input_ids)
@@ -1275,7 +1279,8 @@ function hf_qwen3_vl_text_prefill_cached(
         tokens,
         rope_layout,
         cache,
-        options.logits_to_keep,
+        options.logits_to_keep;
+        allow_video,
     )
 
     if vision_features === nothing
@@ -2004,7 +2009,8 @@ function _qwen3_vl_static_prompt_contract(
     tokens,
     rope_layout::Qwen3VLRopeLayout,
     cache::Qwen3VLStaticKVCache,
-    logits_to_keep::Int,
+    logits_to_keep::Int;
+    allow_video::Bool=false,
 )
     spec = _qwen3_vl_cache_spec(parameters)
     sequence_length, batch_size = size(tokens)
@@ -2028,7 +2034,8 @@ function _qwen3_vl_static_prompt_contract(
         parameters,
         tokens,
         rope_layout.visual_mask,
-        rope_layout.attention_mask,
+        rope_layout.attention_mask;
+        allow_video,
     )
     rope_deltas = _qwen3_vl_prompt_rope_deltas(
         spec,
@@ -2051,7 +2058,8 @@ end
                                     vision_features=nothing, cache,
                                     logits_to_keep=1,
                                     capture_input_embeddings=true,
-                                    capture_final_hidden=true)
+                                    capture_final_hidden=true,
+                                    allow_video=false)
 
 Run one batch-1 Qwen3-VL prompt and write every layer's K/V tensors into the
 fixed `1:prompt_length` prefix of `cache`. The returned cache is the same
@@ -2068,6 +2076,7 @@ function hf_qwen3_vl_text_prefill_static(
     logits_to_keep::Integer=1,
     capture_input_embeddings::Bool=true,
     capture_final_hidden::Bool=true,
+    allow_video::Bool=false,
 )
     options = _qwen3_vl_prefill_options(logits_to_keep)
     tokens = _qwen3_vl_token_matrix(input_ids)
@@ -2076,7 +2085,8 @@ function hf_qwen3_vl_text_prefill_static(
         tokens,
         rope_layout,
         cache,
-        options.logits_to_keep,
+        options.logits_to_keep;
+        allow_video,
     )
 
     if vision_features === nothing

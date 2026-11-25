@@ -161,6 +161,22 @@ const _QWEN3_VL_PROCESSOR_SPEC = Qwen3VLProcessorSpec(
 """Return the immutable Qwen3-VL image-processor boundary specification."""
 qwen3_vl_processor_spec() = _QWEN3_VL_PROCESSOR_SPEC
 
+const _QWEN3_VL_VIDEO_PROCESSOR_SPEC = Qwen3VLProcessorSpec(
+    "7768af27c1fafa9cc9011c1dc20067e03f8915e03b63504550e11d5066986d13",
+    "Qwen3VLProcessor",
+    "Qwen3VLVideoProcessor",
+    4_096,
+    25_165_824,
+    16,
+    2,
+    2,
+    (0.5f0, 0.5f0, 0.5f0),
+    (0.5f0, 0.5f0, 0.5f0),
+)
+
+"""Return the immutable Qwen3-VL video-processor boundary specification."""
+qwen3_vl_video_processor_spec() = _QWEN3_VL_VIDEO_PROCESSOR_SPEC
+
 _qwen3_vl_processor_sha256_file(path::AbstractString) = open(path, "r") do io
     bytes2hex(sha256(io))
 end
@@ -1567,6 +1583,7 @@ end
 function qwen3_vl_rope_layout(
     input_ids,
     image_grid_thw=nothing;
+    video_grid_thw=nothing,
     attention_mask=nothing,
     checkpoint::Qwen3VLCheckpointSpec=qwen3_vl_checkpoint_spec(),
 )
@@ -1612,33 +1629,60 @@ function qwen3_vl_rope_layout(
 
     grids = image_grid_thw === nothing ? NTuple{3,Int}[] :
         _qwen3_vl_grid_columns(image_grid_thw)
+    # Qwen3-VL represents video timestamps as text between per-temporal-group
+    # <|vision_start|><|video_pad|>...<|vision_end|> blocks, so each (t, h, w)
+    # video grid is split into `t` temporal blocks of (1, h, w), matching
+    # Transformers' `get_rope_index`.
+    raw_video_grids = video_grid_thw === nothing ? NTuple{3,Int}[] :
+        _qwen3_vl_grid_columns(video_grid_thw)
+    split_video_grids = NTuple{3,Int}[]
+    for (grid_t, grid_h, grid_w) in raw_video_grids
+        for _ in 1:grid_t
+            push!(split_video_grids, (1, grid_h, grid_w))
+        end
+    end
+
     position_ids = ones(Int, 3, sequence_length, batch_size)
     visual_mask = falses(sequence_length, batch_size)
     deltas = Matrix{Int}(undef, batch_size, 1)
     merge_size = checkpoint.vision.spatial_merge_size
-    grid_index = 0
+    image_grid_index = 0
+    video_grid_index = 0
 
     for batch in 1:batch_size
         valid_positions = findall(view(mask, :, batch))
         filtered = tokens[valid_positions, batch]
-        video_token in filtered && throw(ArgumentError(
-            "Qwen3-VL video mRoPE requires the timestamp video processor",
-        ))
-        image_starts = Int[]
+        if video_grid_thw === nothing && (video_token in filtered)
+            throw(ArgumentError(
+                "Qwen3-VL video mRoPE requires the timestamp video processor",
+            ))
+        end
+        media_starts = Tuple{Symbol,Int}[]
         for index in eachindex(filtered)
             filtered[index] == vision_start || continue
             index < length(filtered) || throw(ArgumentError(
                 "Qwen3-VL vision_start token cannot terminate the prompt",
             ))
-            filtered[index + 1] == image_token && push!(image_starts, index + 1)
+            next_tok = filtered[index + 1]
+            if next_tok == image_token
+                push!(media_starts, (:image, index + 1))
+            elseif next_tok == video_token
+                push!(media_starts, (:video, index + 1))
+            end
         end
 
-        if isempty(image_starts)
+        if isempty(media_starts)
             isempty(grids) || throw(ArgumentError(
                 "Qwen3-VL image grids were provided without image placeholders",
             ))
+            isempty(split_video_grids) || throw(ArgumentError(
+                "Qwen3-VL video grids were provided without video placeholders",
+            ))
             image_token in filtered && throw(ArgumentError(
                 "Qwen3-VL image placeholder is not preceded by vision_start",
+            ))
+            video_token in filtered && throw(ArgumentError(
+                "Qwen3-VL video placeholder is not preceded by vision_start",
             ))
             for (offset, source_position) in enumerate(valid_positions)
                 value = offset - 1
@@ -1655,46 +1699,55 @@ function qwen3_vl_rope_layout(
         sizehint!(columns, length(filtered))
         cursor = 1
         next_base = 0
-        for image_start in image_starts
-            grid_index += 1
-            grid_index <= length(grids) || throw(ArgumentError(
-                "Qwen3-VL prompt contains more image placeholders than grids",
-            ))
-            grid_t, grid_h, grid_w = grids[grid_index]
-            grid_t == 1 || throw(ArgumentError(
-                "Qwen3-VL image grids must have grid_t == 1",
-            ))
+        for (media_kind, media_start) in media_starts
+            expected_token = media_kind === :image ? image_token : video_token
+            grid_t, grid_h, grid_w = if media_kind === :image
+                image_grid_index += 1
+                image_grid_index <= length(grids) || throw(ArgumentError(
+                    "Qwen3-VL prompt contains more image placeholders than grids",
+                ))
+                gt, gh, gw = grids[image_grid_index]
+                gt == 1 || throw(ArgumentError(
+                    "Qwen3-VL image grids must have grid_t == 1",
+                ))
+                (gt, gh, gw)
+            else
+                video_grid_index += 1
+                video_grid_index <= length(split_video_grids) || throw(ArgumentError(
+                    "Qwen3-VL prompt contains more video placeholders than video grids",
+                ))
+                split_video_grids[video_grid_index]
+            end
             (grid_h % merge_size == 0 && grid_w % merge_size == 0) ||
                 throw(ArgumentError(
-                    "Qwen3-VL image grid is not divisible by spatial merge size",
+                    "Qwen3-VL $(media_kind) grid is not divisible by spatial merge size",
                 ))
             merged_h = grid_h ÷ merge_size
             merged_w = grid_w ÷ merge_size
-            image_start >= cursor || throw(ArgumentError(
-                "Qwen3-VL image placeholders overlap",
+            media_start >= cursor || throw(ArgumentError(
+                "Qwen3-VL $(media_kind) placeholders overlap",
             ))
             span = _qwen3_vl_visual_span(
                 grid_t,
                 merged_h,
                 merged_w,
-                image_start,
+                media_start,
                 length(filtered),
             )
-            visual_length = span.visual_length
             last_visual = span.last_visual
-            all(==(image_token), view(filtered, image_start:last_visual)) ||
+            all(==(expected_token), view(filtered, media_start:last_visual)) ||
                 throw(ArgumentError(
-                    "Qwen3-VL image placeholder run is not contiguous or " *
+                    "Qwen3-VL $(media_kind) placeholder run is not contiguous or " *
                     "has the wrong length",
                 ))
             last_visual < length(filtered) || throw(ArgumentError(
-                "Qwen3-VL image placeholder run must be followed by vision_end",
+                "Qwen3-VL $(media_kind) placeholder run must be followed by vision_end",
             ))
             filtered[last_visual + 1] == vision_end || throw(ArgumentError(
-                "Qwen3-VL image placeholder run must be followed by vision_end",
+                "Qwen3-VL $(media_kind) placeholder run must be followed by vision_end",
             ))
 
-            text_length = image_start - cursor
+            text_length = media_start - cursor
             _qwen3_vl_append_text_positions!(
                 columns,
                 text_length,
@@ -1710,7 +1763,7 @@ function qwen3_vl_rope_layout(
                 ))
             end
             next_base = visual_base + max(grid_t, merged_h, merged_w)
-            for filtered_index in image_start:last_visual
+            for filtered_index in media_start:last_visual
                 visual_mask[valid_positions[filtered_index], batch] = true
             end
             cursor = last_visual + 1
@@ -1727,17 +1780,588 @@ function qwen3_vl_rope_layout(
         length(columns) == length(filtered) || error(
             "internal Qwen3-VL mRoPE position length mismatch",
         )
-        count(==(image_token), filtered) == count(view(visual_mask, :, batch)) ||
+        total_visual_tokens = count(t -> t == image_token || t == video_token, filtered)
+        total_visual_tokens == count(view(visual_mask, :, batch)) ||
             throw(ArgumentError(
-                "Qwen3-VL prompt contains an orphan or extra image placeholder",
+                "Qwen3-VL prompt contains an orphan or extra visual placeholder",
             ))
         for (index, source_position) in enumerate(valid_positions)
             position_ids[:, source_position, batch] .= columns[index]
         end
         deltas[batch, 1] = next_base - sequence_length
     end
-    grid_index == length(grids) || throw(ArgumentError(
+    image_grid_index == length(grids) || throw(ArgumentError(
         "Qwen3-VL image grid count exceeds prompt image placeholders",
     ))
+    video_grid_index == length(split_video_grids) || throw(ArgumentError(
+        "Qwen3-VL video grid count exceeds prompt video placeholders",
+    ))
     return Qwen3VLRopeLayout(position_ids, deltas, visual_mask, mask)
+end
+
+# ---------------------------------------------------------------------------
+# Chapter 151: Qwen3-VL video preprocessing, patchify, and timestamp expansion
+# ---------------------------------------------------------------------------
+
+"""
+    load_hf_qwen3_vl_video_processor_config(path, vision_spec)
+
+Strictly parse `video_preprocessor_config.json`, verify its frozen SHA-256 and
+supported fields, and require its patch geometry to match `Qwen3VLVisionSpec`.
+"""
+function load_hf_qwen3_vl_video_processor_config(
+    path::AbstractString,
+    vision_spec::Qwen3VLVisionSpec=qwen3_vl_checkpoint_spec().vision,
+)
+    config = _json_object(path)
+    _qwen3_vl_exact_json_keys(
+        config,
+        (
+            "size",
+            "patch_size",
+            "temporal_patch_size",
+            "merge_size",
+            "image_mean",
+            "image_std",
+            "processor_class",
+            "video_processor_type",
+        ),
+        path,
+        "video preprocessor config",
+    )
+    size_config = _json_required(config, "size", path)
+    _qwen3_vl_exact_json_keys(
+        size_config,
+        ("shortest_edge", "longest_edge"),
+        path,
+        "size",
+    )
+    parsed = Qwen3VLProcessorSpec(
+        qwen3_vl_video_processor_spec().preprocessor_config_sha256,
+        _qwen3_vl_processor_string(
+            _json_required(config, "processor_class", path),
+            "processor_class",
+            path,
+        ),
+        _qwen3_vl_processor_string(
+            _json_required(config, "video_processor_type", path),
+            "video_processor_type",
+            path,
+        ),
+        _qwen3_vl_processor_int(
+            _json_required(size_config, "shortest_edge", path),
+            "size.shortest_edge",
+            path,
+        ),
+        _qwen3_vl_processor_int(
+            _json_required(size_config, "longest_edge", path),
+            "size.longest_edge",
+            path,
+        ),
+        _qwen3_vl_processor_int(
+            _json_required(config, "patch_size", path),
+            "patch_size",
+            path,
+        ),
+        _qwen3_vl_processor_int(
+            _json_required(config, "temporal_patch_size", path),
+            "temporal_patch_size",
+            path,
+        ),
+        _qwen3_vl_processor_int(
+            _json_required(config, "merge_size", path),
+            "merge_size",
+            path,
+        ),
+        _qwen3_vl_processor_triplet(
+            _json_required(config, "image_mean", path),
+            "image_mean",
+            path,
+        ),
+        _qwen3_vl_processor_triplet(
+            _json_required(config, "image_std", path),
+            "image_std",
+            path,
+        ),
+    )
+    frozen = qwen3_vl_video_processor_spec()
+    parsed.processor_class == frozen.processor_class || throw(ArgumentError(
+        "unsupported Qwen3-VL video processor_class $(repr(parsed.processor_class))",
+    ))
+    parsed.image_processor_type == frozen.image_processor_type || throw(ArgumentError(
+        "unsupported Qwen3-VL video_processor_type $(repr(parsed.image_processor_type))",
+    ))
+    parsed.min_pixels == frozen.min_pixels &&
+        parsed.max_pixels == frozen.max_pixels &&
+        parsed.patch_size == frozen.patch_size &&
+        parsed.temporal_patch_size == frozen.temporal_patch_size &&
+        parsed.merge_size == frozen.merge_size &&
+        parsed.image_mean == frozen.image_mean &&
+        parsed.image_std == frozen.image_std || throw(ArgumentError(
+            "Qwen3-VL video preprocessor parameters do not match the frozen spec",
+        ))
+    _qwen3_vl_processor_matches_vision(parsed, vision_spec) || throw(ArgumentError(
+        "Qwen3-VL video processor patch geometry does not match the vision architecture",
+    ))
+    actual_sha256 = _qwen3_vl_processor_sha256_file(path)
+    actual_sha256 == frozen.preprocessor_config_sha256 || throw(ArgumentError(
+        "Qwen3-VL video preprocessor config checksum mismatch: expected " *
+        "$(frozen.preprocessor_config_sha256), computed $actual_sha256",
+    ))
+    return frozen
+end
+
+"""
+    qwen3_vl_video_smart_resize(num_frames, height, width;
+                                spec=qwen3_vl_video_processor_spec())
+
+Official Transformers `video_processing_qwen3_vl.smart_resize` policy.
+"""
+function qwen3_vl_video_smart_resize(
+    num_frames,
+    height,
+    width;
+    spec::Qwen3VLProcessorSpec=qwen3_vl_video_processor_spec(),
+    temporal_factor=nothing,
+    factor=nothing,
+    min_pixels=nothing,
+    max_pixels=nothing,
+)
+    t_int = _qwen3_vl_positive_host_int(num_frames, "num_frames")
+    height_int = _qwen3_vl_positive_host_int(height, "height")
+    width_int = _qwen3_vl_positive_host_int(width, "width")
+    tf_int = _qwen3_vl_positive_host_int(
+        temporal_factor === nothing ? spec.temporal_patch_size : temporal_factor,
+        "temporal_factor",
+    )
+    factor_int = _qwen3_vl_positive_host_int(
+        factor === nothing ?
+            _qwen3_vl_checked_mul(spec.patch_size, spec.merge_size, "video resize factor") :
+            factor,
+        "factor",
+    )
+    min_pixels_int = _qwen3_vl_positive_host_int(
+        min_pixels === nothing ? spec.min_pixels : min_pixels,
+        "min_pixels",
+    )
+    max_pixels_int = _qwen3_vl_positive_host_int(
+        max_pixels === nothing ? spec.max_pixels : max_pixels,
+        "max_pixels",
+    )
+    min_pixels_int <= max_pixels_int || throw(ArgumentError(
+        "video min_pixels must not exceed max_pixels",
+    ))
+    t_int >= tf_int || throw(ArgumentError(
+        "video num_frames ($t_int) must be at least temporal_factor ($tf_int)",
+    ))
+    (height_int >= factor_int && width_int >= factor_int) || throw(ArgumentError(
+        "video frame dimensions ($height_int, $width_int) must be at least factor ($factor_int)",
+    ))
+    longer = max(height_int, width_int)
+    shorter = min(height_int, width_int)
+    widemul(shorter, 200) >= longer || throw(ArgumentError(
+        "video frame aspect ratio must not exceed 200",
+    ))
+
+    wide_type = widen(Int)
+    h_bar = round(wide_type, Float64(height_int) / Float64(factor_int), RoundNearest) * factor_int
+    w_bar = round(wide_type, Float64(width_int) / Float64(factor_int), RoundNearest) * factor_int
+    t_bar = round(wide_type, Float64(t_int) / Float64(tf_int), RoundNearest) * tf_int
+
+    volume = t_bar * h_bar * w_bar
+    original_volume = Float64(widemul(widemul(t_int, height_int), width_int))
+    if volume > max_pixels_int
+        beta = sqrt(original_volume / Float64(max_pixels_int))
+        hq = floor(Int, Float64(height_int) / beta / Float64(factor_int))
+        wq = floor(Int, Float64(width_int) / beta / Float64(factor_int))
+        resized_height = max(factor_int, _qwen3_vl_checked_mul(hq, factor_int, "resized height"))
+        resized_width = max(factor_int, _qwen3_vl_checked_mul(wq, factor_int, "resized width"))
+    elseif volume < min_pixels_int
+        beta = sqrt(Float64(min_pixels_int) / original_volume)
+        hq = ceil(Int, Float64(height_int) * beta / Float64(factor_int))
+        wq = ceil(Int, Float64(width_int) * beta / Float64(factor_int))
+        resized_height = _qwen3_vl_checked_mul(hq, factor_int, "resized height")
+        resized_width = _qwen3_vl_checked_mul(wq, factor_int, "resized width")
+    else
+        resized_height = Int(h_bar)
+        resized_width = Int(w_bar)
+    end
+    return resized_height, resized_width
+end
+
+"""Return `(grid_t, grid_h, grid_w)` for a video with `num_frames` frames."""
+function qwen3_vl_video_grid(
+    num_frames,
+    height,
+    width;
+    spec::Qwen3VLProcessorSpec=qwen3_vl_video_processor_spec(),
+)
+    t_int = _qwen3_vl_positive_host_int(num_frames, "num_frames")
+    resized_h, resized_w = qwen3_vl_video_smart_resize(t_int, height, width; spec)
+    tp = spec.temporal_patch_size
+    padded_t = t_int % tp == 0 ? t_int : t_int + (tp - (t_int % tp))
+    grid_t = padded_t ÷ tp
+    grid_h = resized_h ÷ spec.patch_size
+    grid_w = resized_w ÷ spec.patch_size
+    return (grid_t, grid_h, grid_w)
+end
+
+"""Return merged visual token count `grid_t * (grid_h ÷ merge) * (grid_w ÷ merge)`."""
+function qwen3_vl_video_token_count(
+    grid;
+    spec::Qwen3VLProcessorSpec=qwen3_vl_video_processor_spec(),
+)
+    grid_t, grid_h, grid_w = _qwen3_vl_image_grid_tuple(grid)
+    (grid_h % spec.merge_size == 0 && grid_w % spec.merge_size == 0) ||
+        throw(ArgumentError("video grid height and width must be divisible by merge_size"))
+    per_frame = _qwen3_vl_checked_mul(
+        grid_h ÷ spec.merge_size,
+        grid_w ÷ spec.merge_size,
+        "video per-frame token count",
+    )
+    return _qwen3_vl_checked_mul(grid_t, per_frame, "video total token count")
+end
+
+"""
+    qwen3_vl_video_timestamps(frame_indices, fps; merge_size=2)
+
+Compute per-temporal-group midpoint timestamps matching
+`Qwen3VLProcessor._calculate_timestamps`.
+"""
+function qwen3_vl_video_timestamps(
+    frame_indices,
+    fps::Real;
+    merge_size::Integer=2,
+)
+    fps isa Bool && throw(ArgumentError("video fps must be a positive real number"))
+    fps_f64 = Float64(fps)
+    isfinite(fps_f64) && fps_f64 > 0.0 || throw(ArgumentError(
+        "video fps must be finite and positive",
+    ))
+    ms = _qwen3_vl_positive_host_int(merge_size, "merge_size")
+    indices = _strict_host_int_array(collect(frame_indices), "video frame_indices")
+    !isempty(indices) || throw(ArgumentError("video frame_indices must not be empty"))
+    all(i -> i >= 0, indices) || throw(ArgumentError(
+        "video frame_indices must be non-negative",
+    ))
+    padded = copy(indices)
+    remainder = length(padded) % ms
+    if remainder != 0
+        for _ in 1:(ms - remainder)
+            push!(padded, padded[end])
+        end
+    end
+    raw_ts = Float64[Float64(idx) / fps_f64 for idx in padded]
+    return Float64[
+        (raw_ts[i] + raw_ts[i + ms - 1]) / 2.0
+        for i in 1:ms:length(raw_ts)
+    ]
+end
+
+function _qwen3_vl_format_timestamp_1dp(value::Float64)
+    tenths = round(Int64, value * 10.0, RoundNearest)
+    sign_prefix = tenths < 0 ? "-" : ""
+    abs_tenths = abs(tenths)
+    return string(sign_prefix, abs_tenths ÷ 10, '.', abs_tenths % 10)
+end
+
+"""
+    qwen3_vl_patchify_video(frames; spec=qwen3_vl_video_processor_spec())
+
+Patchify a sequence of normalized `C×H×W` Float32 frames into LifeAI layout
+`(C * temporal_patch_size * patch_size^2, grid_t * grid_h * grid_w)`, matching
+Transformers `Qwen3VLVideoProcessor._preprocess` exact merge-group and temporal
+patch ordering.
+"""
+function qwen3_vl_patchify_video(
+    frames::AbstractVector{<:AbstractArray{<:AbstractFloat,3}};
+    spec::Qwen3VLProcessorSpec=qwen3_vl_video_processor_spec(),
+)
+    !isempty(frames) || throw(ArgumentError("Qwen3-VL video requires at least one frame"))
+    length(frames) >= spec.temporal_patch_size || throw(ArgumentError(
+        "Qwen3-VL video requires at least $(spec.temporal_patch_size) frames",
+    ))
+    ref_size = size(frames[1])
+    channels, height, width = ref_size
+    channels == length(spec.image_mean) || throw(ArgumentError(
+        "Qwen3-VL video patchify expects $(length(spec.image_mean)) channels; got $channels",
+    ))
+    factor = _qwen3_vl_checked_mul(spec.patch_size, spec.merge_size, "video patch/merge factor")
+    (height > 0 && width > 0 && height % factor == 0 && width % factor == 0) ||
+        throw(ArgumentError(
+            "video frame height and width must be positive multiples of $factor",
+        ))
+    elem_type = eltype(frames[1])
+    for (idx, frame) in enumerate(frames)
+        size(frame) == ref_size || throw(DimensionMismatch(
+            "video frame $idx shape $(size(frame)) does not match frame 1 shape $ref_size",
+        ))
+        all(d -> axes(frame, d) == Base.OneTo(size(frame, d)), 1:3) ||
+            throw(ArgumentError("video frame $idx must use one-based axes"))
+        all(isfinite, frame) || throw(ArgumentError(
+            "video frame $idx must contain only finite values",
+        ))
+    end
+
+    tp = spec.temporal_patch_size
+    padded_frames = Any[frame for frame in frames]
+    rem_t = length(padded_frames) % tp
+    if rem_t != 0
+        for _ in 1:(tp - rem_t)
+            push!(padded_frames, padded_frames[end])
+        end
+    end
+    grid_t = length(padded_frames) ÷ tp
+    grid_h = height ÷ spec.patch_size
+    grid_w = width ÷ spec.patch_size
+    group_grid_h = grid_h ÷ spec.merge_size
+    group_grid_w = grid_w ÷ spec.merge_size
+    total_patches = _qwen3_vl_checked_mul(
+        grid_t,
+        _qwen3_vl_checked_mul(grid_h, grid_w, "video frame patch count"),
+        "video total patch count",
+    )
+    feature_width = _qwen3_vl_checked_mul(
+        channels,
+        _qwen3_vl_checked_mul(
+            tp,
+            _qwen3_vl_checked_mul(spec.patch_size, spec.patch_size, "patch area"),
+            "temporal patch area",
+        ),
+        "video patch feature width",
+    )
+    flattened = Matrix{elem_type}(undef, feature_width, total_patches)
+    patch_index = 0
+    @inbounds for t_idx in 0:(grid_t - 1)
+        t_base = t_idx * tp
+        for group_h in 0:(group_grid_h - 1)
+            for group_w in 0:(group_grid_w - 1)
+                for merge_h in 0:(spec.merge_size - 1)
+                    for merge_w in 0:(spec.merge_size - 1)
+                        patch_index += 1
+                        patch_h = group_h * spec.merge_size + merge_h
+                        patch_w = group_w * spec.merge_size + merge_w
+                        feature_index = 0
+                        for channel in 1:channels
+                            for dt in 1:tp
+                                frame = padded_frames[t_base + dt]
+                                for inner_h in 1:spec.patch_size
+                                    source_h = patch_h * spec.patch_size + inner_h
+                                    for inner_w in 1:spec.patch_size
+                                        source_w = patch_w * spec.patch_size + inner_w
+                                        feature_index += 1
+                                        flattened[feature_index, patch_index] =
+                                            frame[channel, source_h, source_w]
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return flattened
+end
+
+"""Validated output of processing one raw video frame sequence for Qwen3-VL."""
+struct Qwen3VLProcessedVideo
+    pixel_values::Matrix{Float32}
+    grid_thw::Matrix{Int}
+    original_size::Tuple{Int,Int}
+    resized_size::Tuple{Int,Int}
+    num_frames::Int
+    fps::Float64
+    frame_indices::Vector{Int}
+    timestamps::Vector{Float64}
+end
+
+function _qwen3_vl_video_frame_to_hwc(frame, layout::Symbol)
+    if frame isa AbstractString
+        return _qwen3_vl_decode_rgb(frame)
+    elseif frame isa AbstractArray{UInt8,3}
+        resolved_layout = if layout === :auto
+            size(frame, 3) == 3 ? :hwc :
+            size(frame, 1) == 3 ? :chw :
+            throw(DimensionMismatch("video UInt8 frame must have three RGB channels"))
+        else
+            layout
+        end
+        return _qwen3_vl_rgb_hwc(frame, resolved_layout)
+    end
+    throw(ArgumentError(
+        "video frame must be a local image path or a 3D UInt8 RGB array",
+    ))
+end
+
+"""
+    qwen3_vl_process_video(frames; fps=24.0, frame_indices=nothing,
+                           layout=:auto, spec=qwen3_vl_video_processor_spec())
+
+Decode/normalize a sequence of video frames (vector of paths or 3D UInt8 arrays,
+or a 4D UInt8 tensor `(T, H, W, 3)`), smart-resize with the frozen video policy,
+apply fused uint8 bicubic normalization, patchify temporally, and compute
+official midpoint timestamps.
+"""
+function qwen3_vl_process_video(
+    frames;
+    fps::Real=24.0,
+    frame_indices=nothing,
+    layout::Symbol=:auto,
+    spec::Qwen3VLProcessorSpec=qwen3_vl_video_processor_spec(),
+)
+    raw_frames = if frames isa AbstractArray{UInt8,4}
+        if layout === :thwc || (layout === :auto && size(frames, 4) == 3)
+            [frames[t, :, :, :] for t in axes(frames, 1)]
+        elseif layout === :hwct || (layout === :auto && size(frames, 3) == 3)
+            [frames[:, :, :, t] for t in axes(frames, 4)]
+        elseif layout === :tchw || (layout === :auto && size(frames, 2) == 3)
+            [permutedims(frames[t, :, :, :], (2, 3, 1)) for t in axes(frames, 1)]
+        else
+            throw(DimensionMismatch("4D UInt8 video tensor must have 3 RGB channels"))
+        end
+    elseif frames isa AbstractVector || frames isa Tuple
+        collect(Any, frames)
+    else
+        throw(ArgumentError(
+            "Qwen3-VL video payload must be a vector/tuple of frames or a 4D UInt8 tensor",
+        ))
+    end
+    num_frames = length(raw_frames)
+    num_frames >= spec.temporal_patch_size || throw(ArgumentError(
+        "Qwen3-VL video requires at least $(spec.temporal_patch_size) frames; got $num_frames",
+    ))
+
+    rgb_frames = Array{UInt8,3}[]
+    sizehint!(rgb_frames, num_frames)
+    original_size = nothing
+    for (idx, frame) in enumerate(raw_frames)
+        hwc = _qwen3_vl_video_frame_to_hwc(frame, frames isa AbstractArray{UInt8,4} ? :hwc : layout)
+        fsize = (size(hwc, 1), size(hwc, 2))
+        if original_size === nothing
+            original_size = fsize
+        else
+            fsize == original_size || throw(DimensionMismatch(
+                "video frame $idx size $fsize does not match frame 1 size $original_size",
+            ))
+        end
+        push!(rgb_frames, hwc)
+    end
+    original_height, original_width = original_size
+    resized_height, resized_width = qwen3_vl_video_smart_resize(
+        num_frames,
+        original_height,
+        original_width;
+        spec,
+    )
+    normalized_frames = Array{Float32,3}[]
+    sizehint!(normalized_frames, num_frames)
+    for hwc in rgb_frames
+        resized = _qwen3_vl_resize_bicubic(hwc, resized_height, resized_width)
+        normalized = Array{Float32}(undef, 3, resized_height, resized_width)
+        @inbounds for channel in 1:3
+            mean_u8 = 255.0f0 * spec.image_mean[channel]
+            std_u8 = 255.0f0 * spec.image_std[channel]
+            for row in 1:resized_height, column in 1:resized_width
+                normalized[channel, row, column] =
+                    (Float32(resized[row, column, channel]) - mean_u8) / std_u8
+            end
+        end
+        push!(normalized_frames, normalized)
+    end
+    grid = qwen3_vl_video_grid(num_frames, original_height, original_width; spec)
+    grid_thw = reshape(Int[grid...], 3, 1)
+    pixels = qwen3_vl_patchify_video(normalized_frames; spec)
+
+    resolved_indices = frame_indices === nothing ? collect(0:(num_frames - 1)) :
+        _strict_host_int_array(collect(frame_indices), "video frame_indices")
+    length(resolved_indices) == num_frames || throw(DimensionMismatch(
+        "video frame_indices length ($(length(resolved_indices))) must equal num_frames ($num_frames)",
+    ))
+    timestamps = qwen3_vl_video_timestamps(
+        resolved_indices,
+        fps;
+        merge_size=spec.temporal_patch_size,
+    )
+    length(timestamps) == grid[1] || error(
+        "internal Qwen3-VL video timestamp count mismatch",
+    )
+    return Qwen3VLProcessedVideo(
+        pixels,
+        grid_thw,
+        original_size,
+        (resized_height, resized_width),
+        num_frames,
+        Float64(fps),
+        resolved_indices,
+        timestamps,
+    )
+end
+
+"""
+    qwen3_vl_expand_video_placeholders(text, video_grids, timestamps_list;
+                                       spec=qwen3_vl_video_processor_spec())
+
+Expand each `<|vision_start|><|video_pad|><|vision_end|>` (or bare
+`<|video_pad|>`) placeholder into official timestamped per-temporal-group runs:
+`"<t.d seconds><|vision_start|><|video_pad|>...<|vision_end|>"`.
+"""
+function qwen3_vl_expand_video_placeholders(
+    text::AbstractString,
+    video_grids,
+    timestamps_list;
+    spec::Qwen3VLProcessorSpec=qwen3_vl_video_processor_spec(),
+)
+    grid_values = _qwen3_vl_grid_columns(video_grids)
+    ts_list = if !isempty(grid_values) && timestamps_list isa AbstractVector{<:Real}
+        [Float64.(collect(timestamps_list))]
+    else
+        [Float64.(collect(ts)) for ts in timestamps_list]
+    end
+    length(ts_list) == length(grid_values) || throw(ArgumentError(
+        "Qwen3-VL video timestamps count $(length(ts_list)) does not match video grid count $(length(grid_values))",
+    ))
+    vision_start = "<|vision_start|>"
+    video_token = "<|video_pad|>"
+    vision_end = "<|vision_end|>"
+    wrapped = vision_start * video_token * vision_end
+    placeholder_sentinel = "\0__LIFEAI_VIDEO_PAD__\0"
+
+    rendered = String(text)
+    count_found = 0
+    for index in eachindex(grid_values)
+        grid_t, grid_h, grid_w = grid_values[index]
+        (grid_h % spec.merge_size == 0 && grid_w % spec.merge_size == 0) ||
+            throw(ArgumentError("video grid height and width must be divisible by merge_size"))
+        ts = ts_list[index]
+        length(ts) == grid_t || throw(ArgumentError(
+            "video $index timestamp length ($(length(ts))) must equal grid_t ($grid_t)",
+        ))
+        frame_seqlen = _qwen3_vl_checked_mul(
+            grid_h ÷ spec.merge_size,
+            grid_w ÷ spec.merge_size,
+            "video frame token count",
+        )
+        io = IOBuffer()
+        for frame_idx in 1:grid_t
+            print(io, "<", _qwen3_vl_format_timestamp_1dp(ts[frame_idx]), " seconds>")
+            print(io, vision_start, repeat(placeholder_sentinel, frame_seqlen), vision_end)
+        end
+        replacement = String(take!(io))
+        if occursin(wrapped, rendered)
+            rendered = replace(rendered, wrapped => replacement; count=1)
+            count_found += 1
+        elseif occursin(video_token, rendered)
+            rendered = replace(rendered, video_token => replacement; count=1)
+            count_found += 1
+        else
+            throw(ArgumentError(
+                "Qwen3-VL video placeholder count $count_found does not match video grid count $(length(grid_values))",
+            ))
+        end
+    end
+    occursin(video_token, rendered) && throw(ArgumentError(
+        "Qwen3-VL prompt contains more video placeholders than video grids",
+    ))
+    return replace(rendered, placeholder_sentinel => video_token)
 end

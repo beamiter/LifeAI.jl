@@ -164,7 +164,8 @@ function tp8_main(args)
         model_id="lifeai-ripple65b-tp$count";model_lock=ReentrantLock();requests=Threads.Atomic{Int}(0)
         prefix_store=prefix_enabled ? RippleTPPrefixCache(bundle;max_tokens=max_context) : nothing
         function validate_payload(payload)
-            get(payload,"stream",false)===false || throw(ArgumentError("This endpoint supports non-streaming text completions"))
+            stream_flag=get(payload,"stream",false)
+            stream_flag isa Bool || throw(ArgumentError("stream must be a boolean"))
             get(payload,"n",1)==1 || throw(ArgumentError("n must be 1"))
             model=get(payload,"model",model_id)
             model in (model_id,"ricursiveAI/Ripple-65B-Preview") || throw(ArgumentError("unknown model"))
@@ -172,29 +173,45 @@ function tp8_main(args)
             messages isa AbstractVector && 1<=length(messages)<=64 || throw(ArgumentError("messages must contain 1..64 entries"))
             total_chars=0
             for message in messages
-                message isa AbstractDict && get(message,"role",nothing) in ("system","user","assistant") && get(message,"content",nothing) isa AbstractString || throw(ArgumentError("messages require supported roles and text content"))
-                total_chars+=length(message["content"])
+                message isa AbstractDict || throw(ArgumentError("each message must be an object"))
+                role=get(message,"role",nothing)
+                role in ("system","user","assistant","tool") || throw(ArgumentError("messages require supported roles and text content"))
+                content=get(message,"content",nothing)
+                if content===nothing && role=="assistant" && haskey(message,"tool_calls")
+                    content=""
+                end
+                content isa AbstractString || throw(ArgumentError("messages require supported roles and text content"))
+                total_chars+=length(content)
             end
-            total_chars<=64*1024^2 || throw(ArgumentError("chat exceeds the64Mi-character text limit"))
+            total_chars<=64*1024^2 || throw(ArgumentError("chat exceeds the 64Mi-character text limit"))
             tools=get(payload,"tools",nothing)
-            (tools===nothing || tools isa AbstractVector && isempty(tools)) || throw(ArgumentError("This text endpoint does not expose structured tool calls"))
+            if tools!==nothing
+                tools isa AbstractVector || throw(ArgumentError("tools must be a list of tool definitions"))
+                length(tools)<=64 || throw(ArgumentError("tools exceeds maximum of 64 entries"))
+                for tool in tools
+                    tool isa AbstractDict || throw(ArgumentError("each tool definition must be an object"))
+                end
+            end
             limit=get(payload,"max_tokens",128)
             limit isa Integer && !(limit isa Bool) && 0<limit<=max_output || throw(ArgumentError("invalid max_tokens"))
             temperature=get(payload,"temperature",0.0)
             temperature isa Real && !(temperature isa Bool) && isfinite(temperature) && 0<=temperature<=2 || throw(ArgumentError("invalid temperature"))
             context_limit=get(payload,"context_limit",max_context)
             context_limit isa Integer && !(context_limit isa Bool) && limit<context_limit<=max_context || throw(ArgumentError("invalid context_limit"))
-            return (messages=messages,limit=Int(limit),temperature=Float64(temperature),context_limit=Int(context_limit))
+            return (messages=messages,tools=(tools===nothing || isempty(tools) ? nothing : tools),
+                stream=stream_flag,limit=Int(limit),temperature=Float64(temperature),context_limit=Int(context_limit))
         end
-        function execute(input,progress,cancelled)
+        function execute(input,progress,cancelled,emit_delta=_->nothing)
             lock(model_lock) do
                 started=time();times=Float64[];prefill_end=Ref(started)
                 progress("tokenizing",0,0)
-                prompt=apply_ripple_chat_template(tokenizer,input.messages);ids=encode(tokenizer,prompt)
+                prompt=apply_ripple_chat_template(tokenizer,input.messages;tools=input.tools);ids=encode(tokenizer,prompt)
                 length(ids)+input.limit<=input.context_limit || throw(ArgumentError("request exceeds context limit"))
                 cancelled() && throw(InterruptException())
                 progress("prefill",0,length(ids))
                 last_report=Ref(0)
+                emitted_tokens=Int[]
+                emitted_text=Ref("")
                 on_prefill=(done,total)->begin
                     progress("prefill",done,total)
                     done==total && (prefill_end[]=time())
@@ -205,7 +222,19 @@ function tp8_main(args)
                     !cancelled()
                 end
                 on_token=id->begin
-                    push!(times,time());progress("decode",length(ids),length(ids));!cancelled()
+                    push!(times,time())
+                    push!(emitted_tokens,id)
+                    if input.tools===nothing
+                        # UTF-8 safe incremental delta: only emit valid complete characters.
+                        decoded_now=decode(tokenizer,emitted_tokens;skip_special_tokens=true,errors=:replace)
+                        if !endswith(decoded_now,'\ufffd') && startswith(decoded_now,emitted_text[]) && ncodeunits(decoded_now)>ncodeunits(emitted_text[])
+                            delta=SubString(decoded_now,ncodeunits(emitted_text[])+1)
+                            emitted_text[]=decoded_now
+                            emit_delta(delta)
+                        end
+                    end
+                    progress("decode",length(ids),length(ids))
+                    !cancelled()
                 end
                 try
                     tokens=generate_ripple_tp_tokens(bundle,ids;max_new_tokens=input.limit,temperature=input.temperature,
@@ -213,10 +242,21 @@ function tp8_main(args)
                         prefill_query_batch=query_batch,prefill_gc_layers)
                     cancelled() && throw(InterruptException())
                     text=decode(tokenizer,tokens;skip_special_tokens=true,errors=:replace);Threads.atomic_add!(requests,1)
+                    if input.tools===nothing && ncodeunits(text)>ncodeunits(emitted_text[]) && startswith(text,emitted_text[])
+                        emit_delta(SubString(text,ncodeunits(emitted_text[])+1))
+                    end
                     ended=!isempty(tokens) && last(tokens) in bundle.model.eos_token_id.+1
                     prefix=prefix_store===nothing ? nothing : ripple_tp_prefix_stats(prefix_store)
+                    parsed_tools=input.tools===nothing ? nothing : parse_ripple_tool_calls(text)
+                    choice=if parsed_tools!==nothing && !isempty(parsed_tools.calls)
+                        formatted_calls=[(id="call_"*replace(string(uuid4()),"-"=>"")[1:16],type="function",
+                            var"function"=(name=c.name,arguments=c.arguments_json)) for c in parsed_tools.calls]
+                        (index=0,message=(role="assistant",content=parsed_tools.content,tool_calls=formatted_calls),finish_reason="tool_calls")
+                    else
+                        (index=0,message=(role="assistant",content=text),finish_reason=ended ? "stop" : "length")
+                    end
                     return (id="chatcmpl-"*string(uuid4()),object="chat.completion",created=floor(Int,time()),model=model_id,
-                        choices=[(index=0,message=(role="assistant",content=text),finish_reason=ended ? "stop" : "length")],
+                        choices=[choice],
                         usage=(prompt_tokens=length(ids),completion_tokens=length(tokens),total_tokens=length(ids)+length(tokens)),
                         lifeai=(tensor_parallel=count,weight_dtype=projection_dtype,activation_dtype="Float32",projection_mode=string(projection_mode),schedule=string(schedule),gc_interval=gc_interval,
                             duration_seconds=time()-started,prefill_seconds=prefill_end[]-started,prefix_cache=prefix,
@@ -231,7 +271,7 @@ function tp8_main(args)
                 end
             end
         end
-        health=()->(status="ready",model=model_id,tensor_parallel=count,requests=requests[],max_context=max_context,max_output=max_output)
+        health=()->(status="ready",model=model_id,tensor_parallel=count,requests=requests[],max_context=max_context,max_output=max_output,streaming=true,tool_calls=true)
         handler,job_manager=ripple_tp_http_handler(execute,validate_payload;key,model_id,health,max_body,timeout=request_timeout)
         stream_handler=ripple_tp_http_stream_handler(handler;key,max_body)
         server=HTTP.serve!(stream_handler,options["host"],port;stream=true,verbose=false)
@@ -241,7 +281,7 @@ function tp8_main(args)
         advertised=preferred in addresses ? preferred : first(addresses)
         endpoint="http://"*advertised*":$port"
         ready=merge(receipt,(phase="ready",endpoint=endpoint,model_id=model_id,max_context=max_context,max_output=max_output,
-            addresses=addresses,port=port,streaming=false,async_jobs=true,prefix_cache=prefix_enabled,prefill_chunk_size=chunk_size,prefill_query_batch=query_batch,prefill_gc_layers=prefill_gc_layers,max_request_bytes=max_body,request_timeout=request_timeout,authentication=isempty(key) ? "none" : "bearer",api_key_file=options["api-key-file"]))
+            addresses=addresses,port=port,streaming=true,tool_calls=true,async_jobs=true,prefix_cache=prefix_enabled,prefill_chunk_size=chunk_size,prefill_query_batch=query_batch,prefill_gc_layers=prefill_gc_layers,max_request_bytes=max_body,request_timeout=request_timeout,authentication=isempty(key) ? "none" : "bearer",api_key_file=options["api-key-file"]))
         tp8_write(joinpath(result_dir,"ready.json"),ready)
         println(JSON3.write((phase="ready",endpoint=endpoint,model=model_id,tensor_parallel=count)));flush(stdout)
         wait(server)

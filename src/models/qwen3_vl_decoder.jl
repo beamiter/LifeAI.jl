@@ -726,7 +726,8 @@ function _qwen3_vl_prompt_visual_token_contract(
     parameters,
     tokens,
     visual_mask,
-    attention_mask,
+    attention_mask;
+    allow_video::Bool=false,
 )
     hasproperty(parameters, :checkpoint) || return nothing
     size(visual_mask) == size(tokens) || throw(DimensionMismatch(
@@ -765,16 +766,26 @@ function _qwen3_vl_prompt_visual_token_contract(
         BigInt(raw_video_token) + 1,
         "Qwen3-VL one-based video token id",
     )
-    any((tokens .== video_token) .& attention_mask) && throw(ArgumentError(
-        "Qwen3-VL video placeholders are not supported by image-only text prefill",
-    ))
-    expected_visual_mask = (tokens .== image_token) .& attention_mask
-    all((.!expected_visual_mask) .| visual_mask) || throw(ArgumentError(
-        "Qwen3-VL checkpoint image tokens must be marked by visual_mask",
-    ))
-    all((.!visual_mask) .| expected_visual_mask) || throw(ArgumentError(
-        "Qwen3-VL visual_mask must only mark attended image input tokens",
-    ))
+    if !allow_video
+        any((tokens .== video_token) .& attention_mask) && throw(ArgumentError(
+            "Qwen3-VL video placeholders are not supported by image-only text prefill",
+        ))
+        expected_visual_mask = (tokens .== image_token) .& attention_mask
+        all((.!expected_visual_mask) .| visual_mask) || throw(ArgumentError(
+            "Qwen3-VL checkpoint image tokens must be marked by visual_mask",
+        ))
+        all((.!visual_mask) .| expected_visual_mask) || throw(ArgumentError(
+            "Qwen3-VL visual_mask must only mark attended image input tokens",
+        ))
+    else
+        expected_visual_mask = ((tokens .== image_token) .| (tokens .== video_token)) .& attention_mask
+        all((.!expected_visual_mask) .| visual_mask) || throw(ArgumentError(
+            "Qwen3-VL checkpoint visual tokens must be marked by visual_mask",
+        ))
+        all((.!visual_mask) .| expected_visual_mask) || throw(ArgumentError(
+            "Qwen3-VL visual_mask must only mark attended visual input tokens",
+        ))
+    end
     return (;
         checkpoint,
         image_token_id=raw_image_token,
@@ -786,7 +797,8 @@ function _qwen3_vl_cache_free_prompt_contract(
     parameters,
     tokens,
     rope_layout::Qwen3VLRopeLayout,
-    max_prefill_tokens::Int,
+    max_prefill_tokens::Int;
+    allow_video::Bool=false,
 )
     spec = parameters.spec
     sequence_length, batch_size = size(tokens)
@@ -809,7 +821,8 @@ function _qwen3_vl_cache_free_prompt_contract(
         parameters,
         tokens,
         visual_mask,
-        rope_layout.attention_mask,
+        rope_layout.attention_mask;
+        allow_video,
     )
 
     _qwen3_vl_prompt_rope_deltas(
@@ -828,10 +841,11 @@ end
 """
     hf_qwen3_vl_text_prefill(parameters, input_ids, rope_layout;
                              vision_features=nothing, logits_to_keep=1,
-                             capture_layers=(), max_prefill_tokens=2048)
+                             capture_layers=(), max_prefill_tokens=2048,
+                             allow_video=false)
 
 Run a cache-free Qwen3-VL decoder prefill.  Main vision embeddings replace
-image-token embeddings before layer 0; DeepStack features are added after
+visual-token embeddings before layer 0; DeepStack features are added after
 decoder layers 0, 1, and 2.  `capture_layers` uses official zero-based layer
 numbers and stores both the raw block output and the post-DeepStack layer
 output. Cached dynamic and bounded-static generation use their dedicated
@@ -846,6 +860,7 @@ function hf_qwen3_vl_text_prefill(
     capture_layers=(),
     capture_input_embeddings::Bool=false,
     max_prefill_tokens::Integer=2_048,
+    allow_video::Bool=false,
 )
     options = _qwen3_vl_prefill_options(
         logits_to_keep;
@@ -873,7 +888,8 @@ function hf_qwen3_vl_text_prefill(
         parameters,
         tokens,
         rope_layout,
-        options.max_prefill_tokens,
+        options.max_prefill_tokens;
+        allow_video,
     )
     options.logits_to_keep <= sequence_length || throw(ArgumentError(
         "logits_to_keep must be between zero and the prefill length",

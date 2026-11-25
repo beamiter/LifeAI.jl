@@ -51,8 +51,10 @@ export FlintConfig, load_hf_flint_config, flint_expected_tensor_shapes
 export RippleConfig, load_hf_ripple_config, ripple_expected_tensor_shapes
 export load_hf_ripple_model, verify_ripple_checkpoint
 export HFRippleTokenizer, load_hf_ripple_tokenizer, apply_ripple_chat_template
+export parse_ripple_tool_calls
 export RippleKVCache, reset_ripple_cache!, hf_ripple_forward
 export generate_ripple_tokens, generate_ripple
+export prepare_ripple_nvfp4, ripple_native_fp4_stats
 export RippleOffloadParameters, offload_ripple, ripple_offload_stats, load_hf_ripple_streamed
 export quantize_ripple_checkpoint, load_ripple_quantized
 export AbstractRippleTPBackend, RippleTPReferenceBackend, ripple_nccl_backend, close_ripple_tp_backend!
@@ -97,6 +99,10 @@ export qwen3_vl_image_grid, qwen3_vl_image_token_count, qwen3_vl_patchify
 export Qwen3VLProcessedImage, qwen3_vl_process_image
 export qwen3_vl_expand_image_placeholders, Qwen3VLRopeLayout
 export qwen3_vl_rope_layout
+export qwen3_vl_video_processor_spec, load_hf_qwen3_vl_video_processor_config
+export qwen3_vl_video_smart_resize, qwen3_vl_video_grid, qwen3_vl_video_token_count
+export qwen3_vl_video_timestamps, qwen3_vl_patchify_video
+export Qwen3VLProcessedVideo, qwen3_vl_process_video, qwen3_vl_expand_video_placeholders
 export Qwen3VLVisionInput, Qwen3VLVisionFeatures
 export load_hf_qwen3_vl_vision_parameters, hf_qwen3_vl_vision_forward
 export Qwen3VLTextPrefill, load_hf_qwen3_vl_text_parameters
@@ -196,6 +202,17 @@ export agent_environment_memory_events, append_agent_environment_events!
 export validate_agent_environment_memory_record
 export agent_environment_memory_records
 export retrieve_gridworld_memory_context, select_gridworld_memory_context
+
+# Cross-adapter action safety contracts (Episode 08 / Chapter 150)
+export AGENT_SAFETY_FORMAT_VERSION
+export AGENT_ACTION_OUTCOME_STATUSES, AGENT_FAILURE_MODES, AGENT_SIDE_EFFECT_CERTAINTIES
+export AgentActionExecutionError, ActionSafetyPolicy, SafeActionRequest
+export EmergencyStopState, SafeAdapterSafetyEvent, SafeActionOutcome
+export SafeEnvironmentAdapter
+export execute_safe_action!, trigger_agent_estop!, clear_agent_estop!
+export render_safe_action_outcome, safe_environment_tool
+export safe_gridworld_move_tool, safe_gridworld_tool_registry
+export safe_adapter_audit_payload, verify_safe_adapter_audit
 
 # Task-level quality evaluation
 export MMLUItem, GSM8KItem, EvalTaskSet, EvalItemResult, load_eval_tasks

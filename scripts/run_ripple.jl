@@ -10,7 +10,8 @@ function ripple_main(args)
     path = first(args)
     options = Dict("prompt" => "写一个 Julia 二分查找函数。", "device" => "cpu", "scheme" => "float",
         "dtype" => "bf16", "group" => "", "max-new-tokens" => "128", "prefill-chunk-size" => "1024",
-        "temperature" => "0", "seed" => "42", "resident-gib" => "", "quantized-output" => "")
+        "temperature" => "0", "seed" => "42", "resident-gib" => "", "quantized-output" => "",
+        "nvfp4-backend" => "auto", "activation-scaling" => "global")
     raw = false
     streamed = false
     i = 2
@@ -63,6 +64,15 @@ function ripple_main(args)
         load_hf_ripple_model(path; device, scheme, group,dtype,
             quantize_on_device=options["device"] == "cuda")
     end
+    options["nvfp4-backend"] in ("auto", "native", "reference") || error("invalid --nvfp4-backend")
+    options["activation-scaling"] in ("global", "token") || error("invalid --activation-scaling")
+    if bundle.quantization === :nvfp4 && options["device"] == "cuda"
+        use_native = options["nvfp4-backend"] == "native" ||
+            (options["nvfp4-backend"] == "auto" && native_nvfp4_supported())
+        if use_native
+            bundle = prepare_ripple_nvfp4(bundle; activation_scaling=Symbol(options["activation-scaling"]))
+        end
+    end
     load_seconds = time()-started
     prompt = raw ? options["prompt"] : [(role="user", content=options["prompt"])]
     started = time()
@@ -70,7 +80,8 @@ function ripple_main(args)
         prefill_chunk_size=chunk, rng=Xoshiro(parse(Int, options["seed"])))
     println(JSON3.write((text=output.text, token_ids=output.token_ids, generated_tokens=length(output.token_ids),
         device=options["device"], scheme=bundle.quantization, load_seconds=load_seconds,
-        generation_seconds=time()-started,checksum_backend=hasproperty(bundle,:checksum_backend) ? bundle.checksum_backend : :none,offload=ripple_offload_stats(bundle))))
+        generation_seconds=time()-started,checksum_backend=hasproperty(bundle,:checksum_backend) ? bundle.checksum_backend : :none,
+        offload=ripple_offload_stats(bundle), nvfp4=ripple_native_fp4_stats(bundle))))
 end
 if abspath(PROGRAM_FILE) == @__FILE__
     ripple_main(ARGS)

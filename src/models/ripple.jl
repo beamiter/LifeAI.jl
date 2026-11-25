@@ -3,6 +3,71 @@
 # the decoder equations and checkpoint names below are Ricursive's architecture.
 _ripple_linear(weight,x) = _flint_linear(weight,x)
 _ripple_linear_multi(weights::Tuple,x) = map(weight->_ripple_linear(weight,x),weights)
+_ripple_linear_multi(weights::NTuple{N,AbstractNativeNVFP4Weight},x) where {N} =
+    native_nvfp4_gemm_multi(weights,x;check_finite=false)
+
+"""
+    prepare_ripple_nvfp4(bundle; on_progress=nothing, kwargs...)
+
+Prepare CUDA-resident NVFP4 projections in a Ripple bundle for native Blackwell
+cuBLASLt FP4 GEMM without floating-point weight expansion. Supports both direct
+parameter dictionaries and `RippleOffloadParameters` (preparing resident GPU
+weights while keeping offloaded host weights intact).
+"""
+function prepare_ripple_nvfp4(bundle; on_progress=nothing, kwargs...)
+    params = bundle.parameters
+    if params isa RippleOffloadParameters
+        resident = Dict{String,Any}()
+        total = length(params.resident)
+        for (index, (name, weight)) in enumerate(params.resident)
+            resident[name] = weight isa NVFP4Weight ? prepare_nvfp4_gemm(weight; kwargs...) : weight
+            on_progress === nothing || on_progress(name, index, total)
+        end
+        updated = RippleOffloadParameters(
+            params.host, resident, Dict{String,Any}(), params.fetch, params.device,
+            params.resident_bytes, params.budget_bytes, params.uploaded_bytes,
+            params.uploads, 0, params.peak_transient_bytes,
+        )
+        return merge(bundle, (parameters=updated, nvfp4_backend=:native,
+            nvfp4_activation_scaling=get(kwargs, :activation_scaling, :global)))
+    end
+    parameters = Dict{String,Any}()
+    total = length(params)
+    for (index, (name, weight)) in enumerate(params)
+        parameters[name] = weight isa NVFP4Weight ? prepare_nvfp4_gemm(weight; kwargs...) : weight
+        on_progress === nothing || on_progress(name, index, total)
+    end
+    return merge(bundle, (parameters=parameters, nvfp4_backend=:native,
+        nvfp4_activation_scaling=get(kwargs, :activation_scaling, :global)))
+end
+
+"""Report native cuBLASLt NVFP4 GEMM usage and memory footprint for a Ripple bundle."""
+function ripple_native_fp4_stats(bundle)
+    params = bundle.parameters
+    table = params isa RippleOffloadParameters ? params.resident : params
+    prepared_weights = native_calls = prepared_weight_bytes = shared_workspace_bytes = 0
+    gpu_weight_bytes = host_portable_weight_bytes = 0
+    for weight in values(table)
+        weight isa AbstractNativeNVFP4Weight || continue
+        stats = native_nvfp4_stats(weight)
+        prepared_weights += 1
+        native_calls += Int(get(stats, :native_calls, 0))
+        prepared_weight_bytes += Int(get(stats, :prepared_weight_bytes, 0))
+        gpu_weight_bytes += Int(get(stats, :gpu_weight_bytes, 0))
+        get(stats, :portable_device, :cuda) === :cpu &&
+            (host_portable_weight_bytes += Int(get(stats, :portable_weight_bytes, 0)))
+        shared_workspace_bytes = max(shared_workspace_bytes, Int(get(stats, :workspace_bytes, 0)))
+    end
+    return (
+        backend=iszero(prepared_weights) ? :reference : :cublaslt_nvfp4,
+        prepared_weights=prepared_weights,
+        native_calls=native_calls,
+        prepared_weight_bytes=prepared_weight_bytes,
+        shared_workspace_bytes=shared_workspace_bytes,
+        gpu_weight_bytes=gpu_weight_bytes,
+        host_portable_weight_bytes=host_portable_weight_bytes,
+    )
+end
 
 mutable struct RippleKVCache
     model::RippleConfig

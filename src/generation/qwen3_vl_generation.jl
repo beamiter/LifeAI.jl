@@ -262,7 +262,8 @@ function _qwen3_vl_generation_prompt_contract(
     tokens,
     rope_layout::Qwen3VLRopeLayout,
     vision_features,
-    max_new_tokens::Int,
+    max_new_tokens::Int;
+    allow_video::Bool=false,
 )
     spec = text_parameters.spec
     rope_deltas = _qwen3_vl_generation_mrope_horizon_preflight(
@@ -288,7 +289,8 @@ function _qwen3_vl_generation_prompt_contract(
         text_parameters,
         tokens,
         visual_mask,
-        rope_layout.attention_mask,
+        rope_layout.attention_mask;
+        allow_video,
     )
     vision_sources = if vision_features === nothing
         any(visual_mask) && throw(ArgumentError(
@@ -531,6 +533,7 @@ function generate_hf_qwen3_vl_tokens(
     rng::AbstractRNG=default_rng(),
     sample_uniforms=nothing,
     capture_distribution::Bool=false,
+    allow_video::Bool=false,
 )
     preflight = _qwen3_vl_generation_preflight(
         text_parameters,
@@ -559,7 +562,8 @@ function generate_hf_qwen3_vl_tokens(
         tokens,
         prompt_rope_layout,
         vision_features,
-        requested,
+        requested;
+        allow_video,
     )
     stops = preflight.stops
     prompt_ids = vec(copy(tokens))
@@ -641,8 +645,8 @@ function generate_hf_qwen3_vl_tokens(
     )
 end
 
-function _qwen3_vl_generation_images(messages)
-    images = Any[]
+function _qwen3_vl_generation_media(messages)
+    media = Any[]
     for message in messages
         role = _hf_message_value(message, :role; required=true)
         role isa AbstractString || throw(ArgumentError(
@@ -653,36 +657,53 @@ function _qwen3_vl_generation_images(messages)
         items = _qwen3_vl_content_list(raw_content, "Qwen3-VL generation")
         for item in items
             content_type = _qwen3_vl_content_value(item, :type; default=nothing)
-            has_video = content_type == "video" ||
-                _qwen3_vl_content_has(item, :video)
-            has_video && throw(ArgumentError(
-                "Qwen3-VL video generation is not implemented",
-            ))
             has_image = content_type == "image" ||
                 _qwen3_vl_content_has(item, :image) ||
                 _qwen3_vl_content_has(item, :image_url)
-            has_image || continue
-            String(role) == "user" || throw(ArgumentError(
-                "Qwen3-VL generation only accepts image content in user messages",
-            ))
-            _qwen3_vl_content_has(item, :image_url) && throw(ArgumentError(
-                "Qwen3-VL image_url loading is not implemented; pass an image path " *
-                "or UInt8 array in the image field",
-            ))
-            _qwen3_vl_content_has(item, :image) || throw(ArgumentError(
-                "Qwen3-VL image content requires an image payload",
-            ))
-            image = _qwen3_vl_content_value(item, :image; default=nothing)
-            image === nothing && throw(ArgumentError(
-                "Qwen3-VL image payload must not be null",
-            ))
-            push!(images, image)
+            has_video = content_type == "video" ||
+                _qwen3_vl_content_has(item, :video) ||
+                _qwen3_vl_content_has(item, :video_url)
+            if has_image
+                String(role) == "user" || throw(ArgumentError(
+                    "Qwen3-VL generation only accepts image content in user messages",
+                ))
+                _qwen3_vl_content_has(item, :image_url) && throw(ArgumentError(
+                    "Qwen3-VL image_url loading is not implemented; pass an image path " *
+                    "or UInt8 array in the image field",
+                ))
+                _qwen3_vl_content_has(item, :image) || throw(ArgumentError(
+                    "Qwen3-VL image content requires an image payload",
+                ))
+                image = _qwen3_vl_content_value(item, :image; default=nothing)
+                image === nothing && throw(ArgumentError(
+                    "Qwen3-VL image payload must not be null",
+                ))
+                push!(media, (; kind=:image, payload=image))
+            elseif has_video
+                String(role) == "user" || throw(ArgumentError(
+                    "Qwen3-VL generation only accepts video content in user messages",
+                ))
+                _qwen3_vl_content_has(item, :video_url) && throw(ArgumentError(
+                    "Qwen3-VL video_url loading is not implemented; pass a frame sequence " *
+                    "or 4D UInt8 tensor in the video field",
+                ))
+                _qwen3_vl_content_has(item, :video) || throw(ArgumentError(
+                    "Qwen3-VL video content requires a video payload",
+                ))
+                video = _qwen3_vl_content_value(item, :video; default=nothing)
+                video === nothing && throw(ArgumentError(
+                    "Qwen3-VL video payload must not be null",
+                ))
+                fps = _qwen3_vl_content_value(item, :fps; default=24.0)
+                frame_indices = _qwen3_vl_content_value(item, :frame_indices; default=nothing)
+                push!(media, (; kind=:video, payload=video, fps, frame_indices))
+            end
         end
     end
-    isempty(images) && throw(ArgumentError(
-        "Qwen3-VL raw generation requires at least one image",
+    isempty(media) && throw(ArgumentError(
+        "Qwen3-VL raw generation requires at least one image or video",
     ))
-    return images
+    return media
 end
 
 function _qwen3_vl_generation_process_image(image, processor_spec)
@@ -706,19 +727,79 @@ function _qwen3_vl_generation_process_image(image, processor_spec)
     ))
 end
 
+function _qwen3_vl_generation_images(messages)
+    media = _qwen3_vl_generation_media(messages)
+    any(entry -> entry.kind !== :image, media) && throw(ArgumentError(
+        "Qwen3-VL image-only helper received non-image media",
+    ))
+    return Any[entry.payload for entry in media]
+end
+
 function _qwen3_vl_generation_process_images(images, processor_spec)
     isempty(images) && throw(ArgumentError(
         "Qwen3-VL raw generation requires at least one image",
     ))
-    # Keep media in exactly the traversal order used by the chat renderer.
-    # Each image owns its resize geometry and patch sequence. The vision tower
-    # uses the grid columns to keep attention isolated between image frames.
     processed = map(image -> _qwen3_vl_generation_process_image(image, processor_spec), images)
     return (;
         pixel_values=reduce(hcat, [item.pixel_values for item in processed]),
         grid_thw=reduce(hcat, [item.grid_thw for item in processed]),
         original_sizes=[item.original_size for item in processed],
         resized_sizes=[item.resized_size for item in processed],
+    )
+end
+
+function _qwen3_vl_generation_process_media(
+    media,
+    processor_spec::Qwen3VLProcessorSpec,
+    video_processor_spec::Qwen3VLProcessorSpec,
+)
+    isempty(media) && throw(ArgumentError(
+        "Qwen3-VL raw generation requires at least one image or video",
+    ))
+    pixel_blocks = Matrix{Float32}[]
+    combined_grids = Matrix{Int}[]
+    image_grids = Matrix{Int}[]
+    video_grids = Matrix{Int}[]
+    original_image_sizes = Tuple{Int,Int}[]
+    resized_image_sizes = Tuple{Int,Int}[]
+    original_video_sizes = Tuple{Int,Int}[]
+    resized_video_sizes = Tuple{Int,Int}[]
+    video_timestamps = Vector{Float64}[]
+
+    for entry in media
+        if entry.kind === :image
+            item = _qwen3_vl_generation_process_image(entry.payload, processor_spec)
+            push!(pixel_blocks, item.pixel_values)
+            push!(combined_grids, item.grid_thw)
+            push!(image_grids, item.grid_thw)
+            push!(original_image_sizes, item.original_size)
+            push!(resized_image_sizes, item.resized_size)
+        else
+            item = qwen3_vl_process_video(
+                entry.payload;
+                fps=entry.fps,
+                frame_indices=entry.frame_indices,
+                spec=video_processor_spec,
+            )
+            push!(pixel_blocks, item.pixel_values)
+            push!(combined_grids, item.grid_thw)
+            push!(video_grids, item.grid_thw)
+            push!(original_video_sizes, item.original_size)
+            push!(resized_video_sizes, item.resized_size)
+            push!(video_timestamps, item.timestamps)
+        end
+    end
+
+    return (;
+        pixel_values=reduce(hcat, pixel_blocks),
+        grid_thw=reduce(hcat, combined_grids),
+        image_grid_thw=isempty(image_grids) ? nothing : reduce(hcat, image_grids),
+        video_grid_thw=isempty(video_grids) ? nothing : reduce(hcat, video_grids),
+        original_image_sizes,
+        resized_image_sizes,
+        original_video_sizes,
+        resized_video_sizes,
+        video_timestamps,
     )
 end
 
@@ -730,19 +811,16 @@ function _qwen3_vl_generation_visual_token_preflight(
     prompt_ids::AbstractVector{<:Integer},
 )
     size(grid_thw, 1) == 3 && size(grid_thw, 2) > 0 || throw(DimensionMismatch(
-        "Qwen3-VL image grids must have shape (3, image_count) with at least one image",
+        "Qwen3-VL media grids must have shape (3, media_count) with at least one item",
     ))
-    visual_tokens = sum(big(qwen3_vl_image_token_count(
-        Tuple(grid_thw[:, image]); spec=processor_spec,
-    )) for image in axes(grid_thw, 2))
+    visual_tokens = sum(big(qwen3_vl_video_token_count(
+        Tuple(grid_thw[:, media]); spec=processor_spec,
+    )) for media in axes(grid_thw, 2))
     limit = text_parameters.spec.max_position_embeddings
     visual_tokens <= limit ||
         throw(ArgumentError(
             "Qwen3-VL visual merge token count exceeds max_position_embeddings",
         ))
-    # The mRoPE builder checks the exact placeholder runs against every grid.
-    # This budget check also remains usable for parameter trees without a
-    # checkpoint (for example the independent tiny decoder fixtures).
     visual_tokens <= length(prompt_ids) || throw(ArgumentError(
         "Qwen3-VL visual tokens exceed the expanded prompt length",
     ))
@@ -774,20 +852,12 @@ end
     generate_hf_qwen3_vl(vision_parameters, text_parameters, tokenizer,
                          messages; max_new_tokens=32, ...)
 
-Run the raw image Qwen3-VL chat path: exact image processing,
-content-list rendering, per-grid placeholder expansion, tokenizer encoding,
-mRoPE layout, vision tower, cached multimodal prefill, and incremental
-decode. Image content must carry either a local path or an HWC/CHW UInt8 array
-in its `image` field. One or more images may occur in user messages; image
-patches, grid columns, and visual features follow message/content order.
-`original_image_sizes` and `resized_image_sizes` report each image's geometry;
-the legacy singular fields contain a tuple for one image and `nothing` for
-multiple images. URL, video, padding, and batched generation remain explicit
-non-goals. Pass `cache=existing_cache` to reuse a bounded
-static cache across requests; validation and vision preparation complete before
-the existing cache is reset.
-The `strategy`, sampling options, RNG, and trace options have the same
-semantics as `generate_hf_qwen3_vl_tokens` and are validated before image work.
+Run the raw image/video Qwen3-VL chat path: exact image/video processing,
+content-list rendering, per-grid placeholder and timestamp expansion, tokenizer
+encoding, mRoPE layout, vision tower, cached multimodal prefill, and
+incremental decode. Image content must carry a local path or 3D UInt8 array in
+`image`; video content must carry a frame sequence (paths or 3D UInt8 frames)
+or a 4D UInt8 tensor in `video` (with optional `fps` and `frame_indices`).
 """
 function generate_hf_qwen3_vl(
     vision_parameters,
@@ -802,6 +872,7 @@ function generate_hf_qwen3_vl(
     decode_errors::Symbol=:replace,
     skip_special_tokens::Bool=true,
     processor_spec::Qwen3VLProcessorSpec=qwen3_vl_processor_spec(),
+    video_processor_spec::Qwen3VLProcessorSpec=qwen3_vl_video_processor_spec(),
     cache::Union{Symbol,Qwen3VLStaticKVCache}=:dynamic,
     static_capacity=nothing,
     capture_prefill_states::Bool=false,
@@ -846,8 +917,13 @@ function generate_hf_qwen3_vl(
     )
 
     message_list = collect(Any, messages)
-    images = _qwen3_vl_generation_images(message_list)
-    processed = _qwen3_vl_generation_process_images(images, processor_spec)
+    media = _qwen3_vl_generation_media(message_list)
+    processed = _qwen3_vl_generation_process_media(
+        media,
+        processor_spec,
+        video_processor_spec,
+    )
+    has_videos = processed.video_grid_thw !== nothing
     prompt = apply_qwen3_vl_chat_template(
         tokenizer,
         message_list;
@@ -855,11 +931,22 @@ function generate_hf_qwen3_vl(
         add_generation_prompt=true,
         add_vision_id,
     )
-    expanded_prompt = qwen3_vl_expand_image_placeholders(
-        prompt,
-        processed.grid_thw;
-        spec=processor_spec,
-    )
+    expanded_prompt = prompt
+    if processed.image_grid_thw !== nothing
+        expanded_prompt = qwen3_vl_expand_image_placeholders(
+            expanded_prompt,
+            processed.image_grid_thw;
+            spec=processor_spec,
+        )
+    end
+    if has_videos
+        expanded_prompt = qwen3_vl_expand_video_placeholders(
+            expanded_prompt,
+            processed.video_grid_thw,
+            processed.video_timestamps;
+            spec=video_processor_spec,
+        )
+    end
     prompt_ids = encode(tokenizer, expanded_prompt; add_special_tokens=false)
     required_capacity = _qwen3_vl_generation_prompt_preflight(
         text_parameters,
@@ -870,7 +957,8 @@ function generate_hf_qwen3_vl(
     _qwen3_vl_generation_existing_capacity(cache, required_capacity)
     rope_layout = qwen3_vl_rope_layout(
         prompt_ids,
-        processed.grid_thw;
+        processed.image_grid_thw;
+        video_grid_thw=processed.video_grid_thw,
         checkpoint=text_parameters.checkpoint,
     )
     _qwen3_vl_generation_mrope_horizon_preflight(
@@ -910,6 +998,7 @@ function generate_hf_qwen3_vl(
         rng,
         sample_uniforms=sampling.uniforms,
         capture_distribution,
+        allow_video=has_videos,
     )
     completion = decode(
         tokenizer,
@@ -923,16 +1012,21 @@ function generate_hf_qwen3_vl(
         errors=decode_errors,
         skip_special_tokens,
     )
+    image_count = length(processed.original_image_sizes)
     return merge(generated, (;
         prompt,
         expanded_prompt,
         completion,
         text,
-        image_grid_thw=copy(processed.grid_thw),
-        original_image_sizes=processed.original_sizes,
-        resized_image_sizes=processed.resized_sizes,
-        original_image_size=length(images) == 1 ? only(processed.original_sizes) : nothing,
-        resized_image_size=length(images) == 1 ? only(processed.resized_sizes) : nothing,
+        image_grid_thw=processed.image_grid_thw === nothing ? nothing : copy(processed.image_grid_thw),
+        video_grid_thw=processed.video_grid_thw === nothing ? nothing : copy(processed.video_grid_thw),
+        original_image_sizes=processed.original_image_sizes,
+        resized_image_sizes=processed.resized_image_sizes,
+        original_image_size=image_count == 1 ? only(processed.original_image_sizes) : nothing,
+        resized_image_size=image_count == 1 ? only(processed.resized_image_sizes) : nothing,
+        original_video_sizes=processed.original_video_sizes,
+        resized_video_sizes=processed.resized_video_sizes,
+        video_timestamps=processed.video_timestamps,
         rope_layout,
     ))
 end

@@ -194,3 +194,65 @@ function apply_ripple_chat_template(t::HFRippleTokenizer, messages; add_generati
     text = String(take!(io))
     return tokenize ? encode(t, text) : text
 end
+
+"""
+    parse_ripple_tool_calls(text)
+
+Parse official Ripple `<tool_call>...</tool_call>` blocks into structured tool
+calls (`name`, `arguments`, `raw_json`) and return remaining visible content
+plus any malformed blocks. Arguments must be a JSON object, matching the
+Ripple chat template contract.
+"""
+function parse_ripple_tool_calls(text::AbstractString)
+    source = String(text)
+    calls = NamedTuple[]
+    invalid_blocks = String[]
+    content_io = IOBuffer()
+    cursor = firstindex(source)
+    open_tag = "<tool_call>"
+    close_tag = "</tool_call>"
+    while cursor <= lastindex(source)
+        found_open = findnext(open_tag, source, cursor)
+        if found_open === nothing
+            print(content_io, SubString(source, cursor))
+            break
+        end
+        if first(found_open) > cursor
+            print(content_io, SubString(source, cursor, prevind(source, first(found_open))))
+        end
+        body_start = nextind(source, last(found_open))
+        found_close = body_start <= lastindex(source) ? findnext(close_tag, source, body_start) : nothing
+        if found_close === nothing
+            push!(invalid_blocks, String(SubString(source, first(found_open))))
+            break
+        end
+        raw_body = body_start <= prevind(source, first(found_close)) ?
+            strip(String(SubString(source, body_start, prevind(source, first(found_close))))) : ""
+        parsed_ok = false
+        try
+            obj = parse_qwen3_json(raw_body)
+            if obj isa AbstractDict
+                name = get(obj, "name", nothing)
+                args = get(obj, "arguments", nothing)
+                if name isa AbstractString && !isempty(strip(String(name))) && args isa AbstractDict
+                    push!(calls, (
+                        name=String(name),
+                        arguments=args,
+                        arguments_json=_ripple_tojson(args),
+                        raw=raw_body,
+                    ))
+                    parsed_ok = true
+                end
+            end
+        catch
+            parsed_ok = false
+        end
+        parsed_ok || push!(invalid_blocks, raw_body)
+        cursor = nextind(source, last(found_close))
+    end
+    return (
+        content=strip(String(take!(content_io))),
+        calls=calls,
+        invalid_blocks=invalid_blocks,
+    )
+end

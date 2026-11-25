@@ -25,6 +25,7 @@ MAX_REPLY = 16 * 1024 * 1024
 MAX_MESSAGE_CHARS = 64 * 1024 * 1024
 MAX_TOTAL_MESSAGE_CHARS = 64 * 1024 * 1024
 POLL_INTERVAL = 1.0
+STREAM_DECODE_POLL_INTERVAL = 0.05
 HEARTBEAT_INTERVAL = 10.0
 # Never turn untrusted job metadata into redirects, successful responses, or
 # arbitrary status codes. Preserve the supported client and standard server
@@ -54,6 +55,8 @@ class Connection:
     world_size: int
     projection_dtype: str = "BF16"
     async_jobs: bool = False
+    streaming: bool = False
+    tool_calls: bool = False
 
 
 class RippleBackend:
@@ -153,16 +156,20 @@ class RippleBackend:
             entries = models.get('data')
             if not isinstance(entries, list) or not any(isinstance(m, dict) and m.get('id') == alias for m in entries):
                 raise APIError(502, 'Ripple authenticated model identity does not match the deployment.')
-            return Connection(endpoint, alias, key, context, output, world, dtype, health.get("async_jobs") is True)
+            return Connection(endpoint, alias, key, context, output, world, dtype,
+                              health.get("async_jobs") is True,
+                              health.get("streaming") is True,
+                              health.get("tool_calls") is True)
         raise APIError(503, 'No healthy Ripple DLC endpoint is reachable from DSW.')
 
     def health(self):
         connection = self.connect()
         return dict(ready=True, model=MODEL, phase='ready', context_tokens=connection.context,
-                    max_new_tokens=connection.output, streaming=False,
+                    max_new_tokens=connection.output, streaming=connection.streaming,
+                    tool_calls=connection.tool_calls,
                     backend='DLC tensor parallel', tensor_parallel=connection.world_size,
-                    max_input_bytes=64 * 1024 * 1024,max_message_chars=MAX_TOTAL_MESSAGE_CHARS,
-                    max_request_bytes=MAX_BODY,max_reply_bytes=MAX_REPLY,async_jobs=connection.async_jobs)
+                    max_input_bytes=64 * 1024 * 1024, max_message_chars=MAX_TOTAL_MESSAGE_CHARS,
+                    max_request_bytes=MAX_BODY, max_reply_bytes=MAX_REPLY, async_jobs=connection.async_jobs)
 
     def prepare(self, payload):
         if not isinstance(payload, dict) or payload.get('model', MODEL) not in (MODEL, 'ripple'):
@@ -170,14 +177,10 @@ class RippleBackend:
         messages = payload.get('messages')
         if not isinstance(messages, list) or not 1 <= len(messages) <= 64:
             raise APIError(400, 'messages must contain 1..64 chat messages.')
-        total_chars = 0
-        for message in messages:
-            if (not isinstance(message, dict) or message.get('role') not in ('system', 'user', 'assistant')
-                    or not isinstance(message.get('content'), str)):
-                raise APIError(400, 'Each message needs a supported role and string content.')
-            total_chars += len(message['content'])
-            if len(message['content']) > MAX_MESSAGE_CHARS or total_chars > MAX_TOTAL_MESSAGE_CHARS:
-                raise APIError(413, 'Chat content exceeds the 64 Mi character limit.')
+        tools = payload.get('tools')
+        if tools is not None:
+            if not isinstance(tools, list) or len(tools) > 64 or not all(isinstance(t, dict) for t in tools):
+                raise APIError(400, 'tools must be a list of at most 64 tool definition objects.')
         options = payload.get('options', {})
         if not isinstance(options, dict) or type(payload.get('stream', True)) is not bool:
             raise APIError(400, 'Invalid options or stream flag.')
@@ -187,10 +190,27 @@ class RippleBackend:
         if type(temperature) not in (int, float) or not math.isfinite(temperature) or not 0 <= temperature <= 2:
             raise APIError(400, 'temperature must be finite and between 0 and 2.')
         connection = self.connect()
+        allowed_roles = ('system', 'user', 'assistant', 'tool') if connection.tool_calls else ('system', 'user', 'assistant')
+        total_chars = 0
+        for message in messages:
+            if not isinstance(message, dict) or message.get('role') not in allowed_roles:
+                raise APIError(400, 'Each message needs a supported role and string content.')
+            content = message.get('content')
+            if content is None and connection.tool_calls and message.get('role') == 'assistant' and 'tool_calls' in message:
+                content = ''
+            if not isinstance(content, str):
+                raise APIError(400, 'Each message needs a supported role and string content.')
+            total_chars += len(content)
+            if len(content) > MAX_MESSAGE_CHARS or total_chars > MAX_TOTAL_MESSAGE_CHARS:
+                raise APIError(413, 'Chat content exceeds the 64 Mi character limit.')
+        if tools and not connection.tool_calls:
+            raise APIError(400, 'Upstream Ripple deployment does not support structured tool calls.')
         if count > connection.output:
             raise APIError(400, f'num_predict must be 1..{connection.output}.')
         request = dict(model=connection.model, messages=messages, max_tokens=count,
                        temperature=temperature, stream=False, context_limit=connection.context)
+        if tools:
+            request['tools'] = tools
         if len(json.dumps(request, ensure_ascii=False).encode()) > UPSTREAM_BODY:
             raise APIError(413, 'Ripple request exceeds the 128 MiB upstream limit.')
         return connection, request
@@ -202,25 +222,38 @@ class RippleBackend:
         job = created.get('id')
         if not isinstance(job, str) or not job:
             raise APIError(502, 'Ripple did not return a valid generation job ID.')
-        url = connection.endpoint + '/v1/chat/completions/jobs/' + quote(job, safe='')
+        base_url = connection.endpoint + '/v1/chat/completions/jobs/' + quote(job, safe='')
         completed = False
         previous = None
         last_emit = 0.0
+        cursor = 0
+        streamed_text = []
         try:
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise APIError(504, 'Ripple generation timed out; its owned job was cancelled.')
-                status = self.json_request(url, key=connection.key, timeout=min(30, remaining))
+                poll_url = f'{base_url}?after={cursor}' if connection.streaming else base_url
+                status = self.json_request(poll_url, key=connection.key, timeout=min(30, remaining))
                 if status.get('id') != job:
                     raise APIError(502, 'Ripple returned another generation job ID.')
+                if connection.streaming and on_progress is not None:
+                    deltas = status.get('deltas')
+                    next_cursor = status.get('next_cursor')
+                    if isinstance(deltas, list) and type(next_cursor) is int and next_cursor >= cursor:
+                        for delta in deltas:
+                            if isinstance(delta, str) and delta:
+                                streamed_text.append(delta)
+                                on_progress(dict(model=MODEL, response=delta, done=False, phase='decode'))
+                                last_emit = time.monotonic()
+                        cursor = next_cursor
                 state = status.get('status')
                 if state == 'completed':
                     completed = True
                     result = status.get('result')
                     if not isinstance(result, dict):
                         raise APIError(502, 'Ripple completed without a valid chat result.')
-                    return result
+                    return result, ''.join(streamed_text)
                 if state in ('failed', 'cancelled'):
                     error_status = status.get('error_status')
                     code = 409 if state == 'cancelled' else (
@@ -244,11 +277,12 @@ class RippleBackend:
                         packet.update(prefill_processed=processed, prompt_eval_count=total)
                     on_progress(packet)
                     previous, last_emit = fingerprint, now
-                time.sleep(min(POLL_INTERVAL, max(0, deadline - time.monotonic())))
+                interval = STREAM_DECODE_POLL_INTERVAL if (connection.streaming and phase == 'decode') else POLL_INTERVAL
+                time.sleep(min(interval, max(0, deadline - time.monotonic())))
         finally:
             if not completed:
                 try:
-                    self.json_request(url, key=connection.key, method='DELETE', timeout=5)
+                    self.json_request(base_url, key=connection.key, method='DELETE', timeout=5)
                 except APIError:
                     pass
 
@@ -261,8 +295,9 @@ class RippleBackend:
         try:
             connection, request = prepared
             started = time.monotonic()
+            already_streamed = ''
             if connection.async_jobs:
-                body = self.poll_job(connection, request, on_progress)
+                body, already_streamed = self.poll_job(connection, request, on_progress)
             else:
                 body = self.json_request(connection.endpoint + '/v1/chat/completions',
                                          request, key=connection.key)
@@ -273,21 +308,28 @@ class RippleBackend:
                 choices = body['choices']
                 if not isinstance(choices, list) or len(choices) != 1:
                     raise ValueError('choice count')
-                text = choices[0]['message']['content']
+                message = choices[0]['message']
+                text = message.get('content')
+                if text is None and message.get('tool_calls'):
+                    text = ''
+                tool_calls = message.get('tool_calls')
                 finish = choices[0]['finish_reason']
                 usage = body['usage']
                 prompt, tokens = usage['prompt_tokens'], usage['completion_tokens']
-                if (not isinstance(text, str) or finish not in ('stop', 'length')
+                valid_finishes = ('stop', 'length', 'tool_calls') if connection.tool_calls else ('stop', 'length')
+                if (not isinstance(text, str) or finish not in valid_finishes
                         or any(type(v) is not int or v < 0 for v in (prompt, tokens))):
                     raise ValueError('invalid completion')
             except (KeyError, TypeError, IndexError, ValueError):
                 raise APIError(502, 'Ripple returned an incomplete or invalid chat completion.') from None
-            # Upstream is non-streaming. Publish exactly one complete native event,
-            # with end-to-end duration rather than inventing a decode rate.
-            result = dict(model=MODEL, response=text, done=True, done_reason=finish,
+            remaining_text = text[len(already_streamed):] if (already_streamed and text.startswith(already_streamed)) else text
+            used_streaming = bool(already_streamed)
+            result = dict(model=MODEL, response=remaining_text, done=True, done_reason=finish,
                         prompt_eval_count=prompt, eval_count=tokens, total_duration=int(elapsed * 1e9),
                         lifeai=dict(tensor_parallel=connection.world_size, weight_dtype=connection.projection_dtype,
-                                    activation_dtype='Float32', duration_seconds=elapsed, streaming=False))
+                                    activation_dtype='Float32', duration_seconds=elapsed, streaming=used_streaming))
+            if tool_calls:
+                result['tool_calls'] = tool_calls
             timing = body.get('lifeai', {})
             if isinstance(timing, dict):
                 for field in ('decode_tokens_per_second', 'prefill_seconds'):
